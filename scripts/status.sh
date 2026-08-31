@@ -1,6 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")/.."
-docker compose ps
+
+DOCKER=(docker)
+if ! docker info >/dev/null 2>&1; then
+  if sudo docker info >/dev/null 2>&1; then
+    DOCKER=(sudo docker)
+  else
+    echo "Docker non accessibile. Esegui prima ./scripts/install.sh" >&2
+    exit 1
+  fi
+fi
+
+"${DOCKER[@]}" compose ps
 echo
-docker compose logs --tail=80 livevault
+"${DOCKER[@]}" compose logs --tail=80 livevault

@@ -84,6 +84,8 @@ Pixeldrain richiede autenticazione API per creare file. Inserisci una API key va
 
 Vedi **[START_HERE.md](START_HERE.md)**.
 
+Per una VPS gratuita compatibile con registrazione 24/7, storage persistente e Docker, vedi **[HOSTING.md](HOSTING.md)**. La scelta consigliata e documentata e Oracle Cloud Always Free (Ampere A1).
+
 In breve:
 
 ```bash
