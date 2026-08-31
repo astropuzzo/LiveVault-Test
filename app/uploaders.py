@@ -42,9 +42,50 @@ def _file_chunks(path: Path, callback: Callable[[int, int], None] | None = None,
             yield chunk
 
 
-def _multipart_stream(path: Path, folder_id: str, callback: Callable[[int, int], None] | None, digest=None):
+class _StreamingFile:
+    """Length-aware file iterator used for streaming PUT bodies without chunked encoding."""
+
+    def __init__(self, path: Path, callback=None, digest=None):
+        self.path = path
+        self.callback = callback
+        self.digest = digest
+
+    def __len__(self):
+        return self.path.stat().st_size
+
+    def __iter__(self):
+        yield from _file_chunks(self.path, self.callback, digest=self.digest)
+
+
+class _StreamingMultipart:
+    """Iterable with a real length so requests does not add Transfer-Encoding: chunked."""
+
+    def __init__(self, prefix: list[bytes], path: Path, trailer: bytes, callback, digest):
+        self.prefix = prefix
+        self.path = path
+        self.trailer = trailer
+        self.callback = callback
+        self.digest = digest
+        self.length = sum(len(x) for x in prefix) + path.stat().st_size + len(trailer)
+
+    def __len__(self):
+        return self.length
+
+    def __iter__(self):
+        yield from self.prefix
+        yield from _file_chunks(self.path, self.callback, digest=self.digest)
+        yield self.trailer
+
+
+def _multipart_stream(path: Path, folder_id: str, callback: Callable[[int, int], None] | None, digest=None, token: str = ""):
     boundary = "----LiveVault" + uuid.uuid4().hex
     chunks: list[bytes] = []
+    if token:
+        chunks.append((
+            f"--{boundary}\r\n"
+            'Content-Disposition: form-data; name="token"\r\n\r\n'
+            f"{token}\r\n"
+        ).encode())
     if folder_id:
         chunks.append((
             f"--{boundary}\r\n"
@@ -59,15 +100,8 @@ def _multipart_stream(path: Path, folder_id: str, callback: Callable[[int, int],
     ).encode()
     trailer = f"\r\n--{boundary}--\r\n".encode()
     chunks.append(file_header)
-    content_length = sum(len(x) for x in chunks) + path.stat().st_size + len(trailer)
-
-    def iterator():
-        for chunk in chunks:
-            yield chunk
-        yield from _file_chunks(path, callback, digest=digest)
-        yield trailer
-
-    return boundary, content_length, iterator()
+    body = _StreamingMultipart(chunks, path, trailer, callback, digest)
+    return boundary, len(body), body
 
 
 def _response_error(response: requests.Response, provider: str) -> UploadError:
@@ -114,19 +148,34 @@ def _gofile_endpoints(region: str) -> list[str]:
     return result
 
 
+def _gofile_headers(token: str) -> dict[str, str]:
+    return {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/json",
+        "User-Agent": "LiveVault/2.0.1",
+    }
+
+
+def _gofile_auth_error(value) -> bool:
+    text = str(value).lower()
+    return any(x in text for x in ("error-wrongtoken", "error-notauthenticated", "http 401", "invalid token", "wrong token"))
+
+
 def upload_gofile(path: Path, progress: Callable[[int, int], None] | None = None) -> UploadResult:
     cfg = runtime()
     if not cfg.gofile_token:
         raise UploadError("Gofile API token non configurato")
-    headers = {"Authorization": f"Bearer {cfg.gofile_token}"}
+    headers = _gofile_headers(cfg.gofile_token)
     last_error: Exception | None = None
     for endpoint in _gofile_endpoints(cfg.gofile_region):
         for attempt in range(2):
             try:
                 total = path.stat().st_size
                 local_md5 = hashlib.md5()  # nosec B324 - compatibility checksum, not used for security
-                boundary, content_length, body = _multipart_stream(path, cfg.gofile_folder_id, progress, digest=local_md5)
-                request_headers = {**headers, "Content-Type": f"multipart/form-data; boundary={boundary}", "Content-Length": str(content_length)}
+                boundary, content_length, body = _multipart_stream(
+                    path, cfg.gofile_folder_id, progress, digest=local_md5, token=cfg.gofile_token
+                )
+                request_headers = {**headers, "Content-Type": f"multipart/form-data; boundary={boundary}"}
                 response = requests.post(
                     endpoint,
                     headers=request_headers,
@@ -155,8 +204,6 @@ def upload_gofile(path: Path, progress: Callable[[int, int], None] | None = None
                     except (TypeError, ValueError):
                         size_verified = False
                 md5_verified = bool(remote_md5) and remote_md5 == local_md5.hexdigest().lower()
-                # Gofile normally returns MD5 and current responses may also include size.
-                # Never delete the local file unless at least one remote checksum/size check succeeds.
                 verified = md5_verified or size_verified
                 if not verified:
                     if remote_md5:
@@ -167,6 +214,8 @@ def upload_gofile(path: Path, progress: Callable[[int, int], None] | None = None
                 return UploadResult("gofile", remote_id, remote_url, True, remote_size)
             except Exception as exc:
                 last_error = exc
+                if _gofile_auth_error(exc):
+                    raise UploadError(str(exc)) from exc
                 if attempt == 0:
                     time.sleep(2)
     raise UploadError(str(last_error or "Gofile upload failed"))
@@ -181,9 +230,9 @@ def upload_pixeldrain(path: Path, progress: Callable[[int, int], None] | None = 
     local_sha256 = hashlib.sha256()
     response = requests.put(
         f"https://pixeldrain.com/api/file/{encoded_name}",
-        data=_file_chunks(path, progress, digest=local_sha256),
+        data=_StreamingFile(path, progress, digest=local_sha256),
         auth=("", cfg.pixeldrain_api_key),
-        headers={"Content-Type": "application/octet-stream", "Content-Length": str(total)},
+        headers={"Content-Type": "application/octet-stream"},
         timeout=(20, 7200),
     )
     payload = _json(response, "Pixeldrain")
@@ -227,7 +276,14 @@ def test_provider(provider: str) -> dict:
     if provider == "gofile":
         if not cfg.gofile_token:
             raise UploadError("Gofile API token non configurato")
-        r = requests.get("https://api.gofile.io/accounts/getid", headers={"Authorization": f"Bearer {cfg.gofile_token}"}, timeout=20)
+        r = requests.get("https://api.gofile.io/accounts/getid", headers=_gofile_headers(cfg.gofile_token), timeout=20)
+        if r.status_code == 401 or _gofile_auth_error((r.text or "")):
+            r = requests.get(
+                "https://api.gofile.io/accounts/getid",
+                params={"token": cfg.gofile_token},
+                headers={"Accept": "application/json", "User-Agent": "LiveVault/2.0.1"},
+                timeout=20,
+            )
         payload = _json(r, "Gofile")
         if str(payload.get("status", "")).lower() not in {"ok", "success"}:
             raise UploadError(f"Gofile: token rifiutato ({payload.get('status') or 'risposta non valida'})")
@@ -252,10 +308,44 @@ def test_provider(provider: str) -> dict:
     raise UploadError(f"Provider sconosciuto: {provider}")
 
 
-def upload(path: Path, provider: str, progress: Callable[[int, int], None] | None = None) -> UploadResult:
+def _upload_one(path: Path, provider: str, progress: Callable[[int, int], None] | None = None) -> UploadResult:
     provider = provider.lower().strip()
     if provider == "gofile":
         return upload_gofile(path, progress)
     if provider == "pixeldrain":
         return upload_pixeldrain(path, progress)
     raise UploadError(f"Provider sconosciuto: {provider}")
+
+
+def upload_with_fallback(
+    path: Path,
+    providers: list[str],
+    progress: Callable[[int, int], None] | None = None,
+    provider_started: Callable[[str], None] | None = None,
+    uploader=None,
+) -> tuple[UploadResult | None, list[str]]:
+    uploader = uploader or _upload_one
+    errors: list[str] = []
+    for provider in providers:
+        if provider_started:
+            provider_started(provider)
+        try:
+            result = uploader(path, provider, progress)
+            if result.verified:
+                return result, errors
+            errors.append(f"{provider}: verifica remota non riuscita")
+        except Exception as exc:
+            errors.append(f"{provider}: {exc}")
+    return None, errors
+
+
+def upload(path: Path, provider: str, progress: Callable[[int, int], None] | None = None) -> UploadResult:
+    provider = provider.lower().strip()
+    cfg = runtime()
+    fallback = cfg.fallback_uploader.lower().strip()
+    if provider == cfg.primary_uploader.lower().strip() and fallback not in {"", "none", provider} and provider_available(fallback):
+        result, errors = upload_with_fallback(path, [provider, fallback], progress, uploader=_upload_one)
+        if result and result.verified:
+            return result
+        raise UploadError(" | ".join(errors) or "Upload fallito su primario e fallback")
+    return _upload_one(path, provider, progress)
