@@ -49,3 +49,5 @@ jobs:
           git add -A
           git commit -m 'Release LiveVault v2.0.0 with Codespaces smoke tests'
           git push origin HEAD:main
+
+# Triggered intentionally to validate the clean v2 payload and Codespaces path.
