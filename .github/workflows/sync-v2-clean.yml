@@ -43,11 +43,15 @@ jobs:
         run: |
           set -euo pipefail
           rm -rf .sync-v2 .sync-v2-new
-          rm -f .github/workflows/sync-v2.yml .github/workflows/sync-v2-clean.yml
+          # GitHub Actions tokens cannot rewrite workflow files unless the app has
+          # the dedicated workflows permission. Keep the currently authorized
+          # workflow files untouched here; they are updated separately after
+          # the tested source commit lands.
+          git checkout HEAD -- .github/workflows
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add -A
-          git commit -m 'Release LiveVault v2.0.0 with Codespaces smoke tests'
+          git commit -m 'Release LiveVault v2.0.0 tested source'
           git push origin HEAD:main
 
-# Second clean run: no repository mutations will occur while this job is running.
+# Source publication is intentionally separated from workflow maintenance.
