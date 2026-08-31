@@ -1,16 +1,45 @@
 name: CI
+
 on:
   push:
   pull_request:
+
 jobs:
   test:
+    name: Core tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13'
-      - run: sudo apt-get update && sudo apt-get install -y ffmpeg
-      - run: pip install -r requirements-dev.txt
-      - run: python -m compileall app
-      - run: PYTHONPATH=. pytest -q
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install FFmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+      - name: Compile Python
+        run: python -m compileall -q app tests
+      - name: Run tests
+        run: PYTHONPATH=. pytest -q
+      - name: Check JavaScript
+        run: node --check app/static/app.js
+      - name: Check shell scripts
+        run: bash -n scripts/*.sh
+      - name: Validate devcontainer JSON
+        run: python -m json.tool .devcontainer/devcontainer.json >/dev/null
+
+  codespaces-smoke:
+    name: Codespaces smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Prepare using Codespaces script
+        run: bash scripts/codespaces-prepare.sh
+      - name: Start v2 and exercise API
+        run: bash scripts/codespaces-smoke.sh
