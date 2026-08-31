@@ -17,6 +17,7 @@ services:
       - caddy_config:/config
     security_opt:
       - no-new-privileges:true
+
 volumes:
   caddy_data:
   caddy_config:

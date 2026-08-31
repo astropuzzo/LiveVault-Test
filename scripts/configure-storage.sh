@@ -1,23 +1,70 @@
 #!/usr/bin/env bash
 set -euo pipefail
-cd "$(dirname "$0")/.."; [ -f .env ] || { echo "Esegui prima install.sh"; exit 1; }
-read -r -s -p "Token Gofile (INVIO lascia invariato): " G; echo
-read -r -s -p "API key Pixeldrain (INVIO lascia invariata): " P; echo
-read -r -p "Provider primario [gofile/pixeldrain/none] (default gofile): " R; R=${R:-gofile}; case "$R" in gofile) F=pixeldrain;; pixeldrain) F=gofile;; none) F=none;; *) exit 1;; esac
-G="$G" P="$P" R="$R" F="$F" python3 - <<'PY'
+
+cd "$(dirname "$0")/.."
+
+echo "Nota: dalla v2 puoi configurare e testare i provider direttamente da Settings nella web app. Questo script resta per compatibilità/recupero."
+
+if [[ ! -f .env ]]; then
+  echo "Errore: .env non trovato. Esegui prima ./scripts/install.sh" >&2
+  exit 1
+fi
+
+printf 'Token Gofile (INVIO per lasciare invariato): '
+IFS= read -r -s GOFILE_INPUT
+echo
+printf 'API key Pixeldrain (INVIO per lasciare invariata): '
+IFS= read -r -s PIXELDRAIN_INPUT
+echo
+printf 'Provider primario [gofile/pixeldrain/none] (INVIO = gofile): '
+IFS= read -r PRIMARY_INPUT
+PRIMARY_INPUT="${PRIMARY_INPUT:-gofile}"
+case "$PRIMARY_INPUT" in
+  gofile) FALLBACK_INPUT="pixeldrain" ;;
+  pixeldrain) FALLBACK_INPUT="gofile" ;;
+  none) FALLBACK_INPUT="none" ;;
+  *) echo "Provider non valido." >&2; exit 1 ;;
+esac
+
+GOFILE_INPUT="$GOFILE_INPUT" PIXELDRAIN_INPUT="$PIXELDRAIN_INPUT" PRIMARY_INPUT="$PRIMARY_INPUT" FALLBACK_INPUT="$FALLBACK_INPUT" python3 - <<'PY'
 from pathlib import Path
 import os
-u={'PRIMARY_UPLOADER':os.environ['R'],'FALLBACK_UPLOADER':os.environ['F']}
-if os.environ['G']:u['GOFILE_TOKEN']=os.environ['G']
-if os.environ['P']:u['PIXELDRAIN_API_KEY']=os.environ['P']
-p=Path('.env'); out=[]; seen=set()
-for l in p.read_text().splitlines():
- k=l.split('=',1)[0] if '=' in l and not l.lstrip().startswith('#') else ''
- if k in u:out.append(f'{k}={u[k]}');seen.add(k)
- else:out.append(l)
-for k,v in u.items():
- if k not in seen:out.append(f'{k}={v}')
-p.write_text('\n'.join(out)+'\n')
+
+path = Path('.env')
+updates = {
+    'PRIMARY_UPLOADER': os.environ['PRIMARY_INPUT'],
+    'FALLBACK_UPLOADER': os.environ['FALLBACK_INPUT'],
+}
+if os.environ.get('GOFILE_INPUT'):
+    updates['GOFILE_TOKEN'] = os.environ['GOFILE_INPUT']
+if os.environ.get('PIXELDRAIN_INPUT'):
+    updates['PIXELDRAIN_API_KEY'] = os.environ['PIXELDRAIN_INPUT']
+
+lines = path.read_text().splitlines()
+seen = set()
+out = []
+for line in lines:
+    if '=' in line and not line.lstrip().startswith('#'):
+        key = line.split('=', 1)[0]
+        if key in updates:
+            out.append(f"{key}={updates[key]}")
+            seen.add(key)
+            continue
+    out.append(line)
+for key, value in updates.items():
+    if key not in seen:
+        out.append(f"{key}={value}")
+path.write_text('\n'.join(out) + '\n')
 PY
-docker compose up -d
-echo "Storage configurato."
+
+DOCKER=(docker)
+if ! docker info >/dev/null 2>&1; then
+  if sudo docker info >/dev/null 2>&1; then DOCKER=(sudo docker); else
+    echo "Configurazione salvata. Docker non accessibile: riavvia LiveVault manualmente." >&2
+    exit 0
+  fi
+fi
+
+"${DOCKER[@]}" compose up -d
+
+echo "Storage legacy configurato in .env. Per la gestione quotidiana usa Settings nella web app (segreti cifrati nel DB)."

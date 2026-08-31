@@ -1,15 +1,164 @@
 <!doctype html>
 <html lang="it">
 <head>
-  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><meta name="theme-color" content="#0a0d14"><meta name="color-scheme" content="dark"><title>LiveVault</title><link rel="manifest" href="/manifest.webmanifest"><link rel="icon" href="/static/icon.svg" type="image/svg+xml"><link rel="stylesheet" href="/static/style.css">
-</head><body><div class="ambient ambient-one"></div><div class="ambient ambient-two"></div>
-<section id="login" class="login-shell hidden"><div class="login-card glass"><div class="logo-mark"><span></span></div><div class="eyebrow">PRIVATE STREAM ARCHIVE</div><h1>LiveVault</h1><p class="login-copy">Il tuo recorder remoto, sempre pronto. Registra, trasferisce e libera spazio automaticamente.</p><form id="loginForm" class="login-form"><label class="field"><span>Password</span><input id="password" type="password" autocomplete="current-password" placeholder="Inserisci la password" required autofocus></label><button class="btn btn-primary btn-wide" type="submit"><span>Accedi</span><span>→</span></button><div id="loginError" class="form-error"></div></form><div class="login-foot"><span class="security-dot"></span> Accesso protetto · dati gestiti sul tuo server</div></div></section>
-<div id="app" class="app-shell hidden"><header class="topbar"><div class="topbar-inner"><div class="brand-wrap"><div class="logo-mark compact"><span></span></div><div><div class="brand">LiveVault</div><div id="versionLabel" class="brand-sub">REMOTE RECORDER</div></div></div><div class="top-actions"><div id="healthPill" class="health-pill"><span class="health-dot"></span><span>Online</span></div><button id="refreshBtn" class="icon-btn" type="button">↻</button><button id="logoutBtn" class="btn btn-soft top-logout" type="button">Esci</button></div></div></header>
-<main class="content"><section class="page-intro"><div><div class="eyebrow">CONTROL CENTER</div><h1>Dashboard</h1><p id="lastRefresh" class="subtle">Sincronizzazione in corso…</p></div><button id="showAddBtn" class="btn btn-primary" type="button"><span class="plus">+</span> Aggiungi sorgente</button></section>
-<section id="activeStrip" class="active-strip hidden"><div class="live-pulse"><span></span></div><div class="active-copy"><strong id="activeStripTitle">Registrazione in corso</strong><span id="activeStripMeta">—</span></div><div id="activeStripSize" class="active-size">—</div></section>
-<section class="metrics-grid"><article class="metric-card"><div class="metric-icon rec-icon">●</div><div class="metric-main"><span class="metric-label">Registrazioni attive</span><strong id="activeCount">0</strong><span id="activeNames" class="metric-note truncate">Nessuna sorgente live</span></div></article><article class="metric-card"><div class="metric-icon queue-icon">⇧</div><div class="metric-main"><span class="metric-label">Coda cloud</span><strong id="queueCount">0</strong><span id="queueNote" class="metric-note">Nessun file in attesa</span></div></article><article class="metric-card storage-card"><div class="storage-top"><div><span class="metric-label">Storage server</span><div class="storage-values"><strong id="freeSpace">—</strong><span>liberi</span></div></div><span id="diskBadge" class="status-chip neutral">—</span></div><div class="progress-track"><div id="diskBar" class="progress-fill"></div></div><div class="storage-foot"><span id="diskUsage">—</span><span id="localBuffer">Buffer: —</span></div></article><article class="metric-card"><div class="metric-icon cloud-icon">☁</div><div class="metric-main"><span class="metric-label">Upload</span><strong id="uploadState">Pronto</strong><span id="uploadDetail" class="metric-note truncate">Nessun trasferimento attivo</span></div></article></section>
-<section class="section-card"><div class="section-header"><div><div class="section-kicker">MONITOR</div><h2>Sorgenti</h2><p>Il controllo è automatico. Metti in pausa una sorgente senza perdere lo storico.</p></div><div class="section-meta"><span id="sourceCount" class="count-pill">0</span></div></div><div id="sources" class="source-grid"></div></section>
-<section class="section-card"><div class="section-header recordings-head"><div><div class="section-kicker">ARCHIVIO</div><h2>Registrazioni</h2><p>I file locali vengono rimossi automaticamente solo dopo un upload verificato.</p></div><div id="uploadConfig" class="provider-route">—</div></div><div class="toolbar"><label class="search-box"><span>⌕</span><input id="recordingSearch" type="search" placeholder="Cerca sorgente o file…"></label><select id="recordingStatus" class="filter-select"><option value="all">Tutti gli stati</option><option value="uploaded">Caricati</option><option value="pending">In attesa</option><option value="uploading">In upload</option><option value="failed">Falliti</option><option value="waiting_config">Da configurare</option><option value="missing">Mancanti</option></select><button id="retryAllBtn" class="btn btn-soft hidden" type="button">Riprova falliti</button><button id="cleanupBtn" class="btn btn-soft" type="button">Libera copie locali</button></div><div id="recordings" class="recording-list"></div><div id="recordingFooter" class="list-footer hidden"></div></section>
-<section id="errorsPanel" class="section-card diagnostic hidden"><button id="diagnosticToggle" class="diagnostic-title" type="button"><span><span class="warning-mark">!</span> Diagnostica</span><span id="diagnosticCount" class="count-pill warn">0</span></button><div id="diagnosticBody" class="diagnostic-body"><pre id="errors"></pre></div></section></main>
-<nav class="mobile-nav"><button id="mobileRefreshBtn" type="button"><span>↻</span><small>Aggiorna</small></button><button id="mobileAddBtn" type="button" class="mobile-primary"><span>+</span><small>Aggiungi</small></button><button id="mobileTopBtn" type="button"><span>↑</span><small>Inizio</small></button></nav></div>
-<div id="sourceModal" class="modal hidden" role="dialog" aria-modal="true"><div class="modal-backdrop" data-close-modal="1"></div><div class="modal-card glass"><div class="modal-head"><div><div class="section-kicker">SORGENTE</div><h2 id="modalTitle">Aggiungi sorgente</h2></div><button id="closeModalBtn" class="icon-btn" type="button">×</button></div><form id="sourceForm" class="source-form"><input id="sourceId" type="hidden"><label class="field"><span>Nome visualizzato</span><input id="sourceName" maxlength="120" placeholder="Es. Studio A" required></label><label class="field"><span>Username o URL</span><input id="sourceSlug" maxlength="180" placeholder="username oppure URL" required></label><label class="field"><span>Qualità massima</span><select id="sourceQuality"><option value="best">Migliore disponibile</option><option value="1080p">Fino a 1080p</option><option value="720p">Fino a 720p</option><option value="480p">Fino a 480p</option></select></label><label id="consentRow" class="consent-row"><input id="sourceConsent" type="checkbox"><span><strong>Autorizzazione confermata</strong><small>Confermo di essere autorizzato a registrare questa sorgente.</small></span></label><div id="sourceError" class="form-error"></div><div class="modal-actions"><button id="cancelModalBtn" type="button" class="btn btn-soft">Annulla</button><button id="saveSourceBtn" type="submit" class="btn btn-primary">Salva sorgente</button></div></form></div></div><div id="toastRegion" class="toast-region" aria-live="polite"></div><script src="/static/app.js" defer></script></body></html>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#090d14">
+  <meta name="color-scheme" content="dark">
+  <title>LiveVault</title>
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/static/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <section id="login" class="login-shell hidden">
+    <form id="loginForm" class="login-card panel">
+      <div class="logo">LV</div>
+      <div class="eyebrow">PRIVATE REMOTE RECORDER</div>
+      <h1>LiveVault</h1>
+      <p>Controllo completo di registrazione, buffer, integrità e cloud.</p>
+      <label class="field"><span>Password</span><input id="password" type="password" autocomplete="current-password" required autofocus></label>
+      <button class="btn primary wide" type="submit">Accedi</button>
+      <div id="loginError" class="error-text"></div>
+    </form>
+  </section>
+
+  <div id="app" class="hidden">
+    <header class="topbar">
+      <div class="topbar-inner">
+        <div class="brand"><div class="logo small">LV</div><div><strong>LiveVault</strong><small id="versionLabel">v2</small></div></div>
+        <div class="top-actions">
+          <span id="healthPill" class="pill good">● Online</span>
+          <button id="settingsBtn" class="btn soft" type="button">⚙ Settings</button>
+          <button id="logoutBtn" class="btn soft" type="button">Esci</button>
+        </div>
+      </div>
+    </header>
+
+    <main class="shell">
+      <section class="hero-row">
+        <div><div class="eyebrow">CONTROL CENTER</div><h1>Dashboard</h1><p id="lastRefresh">Caricamento…</p></div>
+        <button id="showAddBtn" class="btn primary" type="button">+ Aggiungi sorgente</button>
+      </section>
+
+      <section class="control-strip panel">
+        <div class="control-state"><span class="label">Registrazioni</span><strong id="recordingControlState">Attive</strong></div>
+        <button id="pauseRecordingsBtn" class="btn soft" type="button">Pausa registrazioni</button>
+        <div class="divider"></div>
+        <div class="control-state"><span class="label">Upload</span><strong id="uploadControlState">Attivo</strong></div>
+        <button id="pauseUploadsBtn" class="btn soft" type="button">Pausa upload</button>
+        <button id="runUploadsBtn" class="btn accent" type="button">⇧ Upload ora</button>
+        <button id="refreshBtn" class="btn soft" type="button">↻ Controlla sorgenti</button>
+      </section>
+
+      <section class="metrics-grid">
+        <article class="metric panel"><span>REC attive</span><strong id="activeCount">0</strong><small id="activeNames">Nessuna</small></article>
+        <article class="metric panel"><span>Coda upload</span><strong id="queueCount">0</strong><small id="queueNote">Vuota</small></article>
+        <article class="metric panel"><span>Buffer locale</span><strong id="bufferValue">—</strong><small id="bufferNote">—</small><div class="meter"><i id="bufferBar"></i></div></article>
+        <article class="metric panel"><span>Disco libero</span><strong id="freeSpace">—</strong><small id="diskUsage">—</small><div class="meter"><i id="diskBar"></i></div></article>
+      </section>
+
+      <section id="uploadNowCard" class="upload-card panel hidden">
+        <div><span class="live-dot"></span><strong id="uploadNowTitle">Upload in corso</strong><small id="uploadNowMeta">—</small></div>
+        <div class="upload-progress"><div class="meter big"><i id="uploadProgressBar"></i></div><span id="uploadProgressText">0%</span></div>
+      </section>
+
+      <section class="panel section">
+        <div class="section-head"><div><div class="eyebrow">MONITOR</div><h2>Sorgenti</h2><p>Ogni sorgente può essere fermata o riattivata indipendentemente.</p></div><span id="sourceCount" class="count">0</span></div>
+        <div id="sources" class="source-grid"></div>
+      </section>
+
+      <section class="panel section">
+        <div class="section-head"><div><div class="eyebrow">ARCHIVIO</div><h2>Registrazioni</h2><p>Miniature, anteprima locale, integrità, conversione MP4 e gestione upload.</p></div><span id="providerRoute" class="route">—</span></div>
+        <div class="toolbar">
+          <input id="recordingSearch" type="search" placeholder="Cerca sorgente, sessione o file…">
+          <select id="recordingStatus">
+            <option value="all">Tutti</option><option value="uploaded">Caricati</option><option value="pending">In attesa</option><option value="uploading">Upload</option><option value="failed">Falliti</option><option value="integrity_failed">Integrità fallita</option><option value="converting">Conversione MP4</option><option value="waiting_config">Config mancante</option>
+          </select>
+          <button id="retryAllBtn" class="btn soft" type="button">Riprova falliti</button>
+          <button id="cleanupBtn" class="btn soft" type="button">Libera caricati</button>
+        </div>
+        <div id="recordings" class="recording-grid"></div>
+        <div id="recordingFooter" class="footer-note"></div>
+      </section>
+
+      <section id="errorsPanel" class="panel section hidden">
+        <div class="section-head"><div><div class="eyebrow danger-text">DIAGNOSTICA</div><h2>Errori recenti</h2></div><span id="diagnosticCount" class="count danger">0</span></div>
+        <pre id="errors"></pre>
+      </section>
+    </main>
+  </div>
+
+  <div id="sourceModal" class="modal hidden">
+    <div class="backdrop" data-close-modal="source"></div>
+    <form id="sourceForm" class="modal-card panel">
+      <div class="modal-head"><div><div class="eyebrow">SORGENTE</div><h2 id="sourceModalTitle">Aggiungi sorgente</h2></div><button class="icon-btn" type="button" data-close-modal="source">×</button></div>
+      <input id="sourceId" type="hidden">
+      <label class="field"><span>Nome</span><input id="sourceName" maxlength="120" required></label>
+      <label class="field"><span>Username o URL</span><input id="sourceSlug" maxlength="180" required></label>
+      <label class="field"><span>Qualità</span><select id="sourceQuality"><option value="best">Best</option><option value="1080p">1080p</option><option value="720p">720p</option><option value="480p">480p</option></select></label>
+      <label class="check"><input id="sourceConsent" type="checkbox"><span>Confermo di avere l'autorizzazione alla registrazione.</span></label>
+      <div id="sourceError" class="error-text"></div>
+      <div class="modal-actions"><button class="btn soft" type="button" data-close-modal="source">Annulla</button><button class="btn primary" type="submit">Salva</button></div>
+    </form>
+  </div>
+
+  <div id="settingsModal" class="modal hidden">
+    <div class="backdrop" data-close-modal="settings"></div>
+    <form id="settingsForm" class="modal-card settings-card panel">
+      <div class="modal-head sticky"><div><div class="eyebrow">CONFIGURAZIONE</div><h2>Settings</h2><p>Le modifiche sono applicate live.</p></div><button class="icon-btn" type="button" data-close-modal="settings">×</button></div>
+
+      <div class="settings-section"><h3>Registrazione</h3><div class="form-grid">
+        <label class="field"><span>Segmento (minuti)</span><input id="setSegment" type="number" min="5" max="120"></label>
+        <label class="field"><span>Container</span><select id="setContainer"><option value="mp4">MP4 diretto (consigliato)</option><option value="mkv">MKV</option></select></label>
+        <label class="field"><span>Polling sorgenti (sec)</span><input id="setPoll" type="number" min="15" max="600"></label>
+        <label class="field"><span>Controlli contemporanei</span><input id="setProbe" type="number" min="1" max="12"></label>
+        <label class="field"><span>Integrità</span><select id="setIntegrity"><option value="packet">Packet scan + SHA-256</option><option value="quick">FFprobe + SHA-256</option></select></label>
+        <label class="check span2"><input id="setThumbs" type="checkbox"><span>Genera miniature e mantienile anche dopo la rimozione del video locale</span></label>
+      </div></div>
+
+      <div class="settings-section"><h3>Buffer e disco</h3><div class="form-grid">
+        <label class="field"><span>Buffer locale massimo (GB)</span><input id="setBuffer" type="number" min="0" step="0.5"><small>0 = illimitato</small></label>
+        <label class="check"><input id="setHardStop" type="checkbox"><span>Hard stop controllato quando il buffer supera il limite</span></label>
+        <label class="field"><span>Warning spazio libero (GB)</span><input id="setMinFree" type="number" min="0.25" step="0.25"></label>
+        <label class="field"><span>Blocca nuove REC sotto (GB)</span><input id="setCriticalFree" type="number" min="0.1" step="0.1"></label>
+        <label class="field"><span>Stop emergenza sotto (GB)</span><input id="setEmergencyFree" type="number" min="0.05" step="0.05"></label>
+        <label class="check"><input id="setDeleteAfter" type="checkbox"><span>Elimina il video locale dopo upload verificato</span></label>
+      </div></div>
+
+      <div class="settings-section"><h3>Upload</h3><div class="form-grid">
+        <label class="field"><span>Provider primario</span><select id="setPrimary"><option value="gofile">Gofile</option><option value="pixeldrain">Pixeldrain</option><option value="none">Nessuno</option></select></label>
+        <label class="field"><span>Fallback</span><select id="setFallback"><option value="pixeldrain">Pixeldrain</option><option value="gofile">Gofile</option><option value="none">Nessuno</option></select></label>
+        <label class="field"><span>Retry base (sec)</span><input id="setRetry" type="number" min="30" max="3600"></label>
+        <label class="field"><span>Max tentativi</span><input id="setAttempts" type="number" min="1" max="100"></label>
+      </div></div>
+
+      <div class="settings-section provider-box"><div class="provider-head"><div><h3>Gofile</h3><span id="gofileState" class="provider-state">Non configurato</span></div><button id="testGofileBtn" class="btn soft" type="button">Test connessione</button></div><div class="form-grid">
+        <label class="field span2"><span>API / Account token</span><input id="setGofileToken" type="password" autocomplete="off" placeholder="Lascia vuoto per non modificarlo"><small id="gofileHint"></small></label>
+        <label class="field"><span>Folder ID (opzionale)</span><input id="setGofileFolder"></label>
+        <label class="field"><span>Upload proxy</span><select id="setGofileRegion"><option value="auto">Auto + fallback EU</option><option value="eu-par">Europe · Paris</option><option value="na-phx">North America · Phoenix</option><option value="ap-sgp">Asia · Singapore</option><option value="ap-hkg">Asia · Hong Kong</option><option value="ap-tyo">Asia · Tokyo</option><option value="sa-sao">South America · São Paulo</option></select></label>
+        <label class="check span2"><input id="clearGofile" type="checkbox"><span>Rimuovi il token salvato</span></label>
+      </div></div>
+
+      <div class="settings-section provider-box"><div class="provider-head"><div><h3>Pixeldrain</h3><span id="pixeldrainState" class="provider-state">Non configurato</span></div><button id="testPixeldrainBtn" class="btn soft" type="button">Test connessione</button></div><div class="form-grid">
+        <label class="field span2"><span>API key</span><input id="setPixeldrainKey" type="password" autocomplete="off" placeholder="Lascia vuoto per non modificarla"><small id="pixeldrainHint"></small></label>
+        <label class="check span2"><input id="clearPixeldrain" type="checkbox"><span>Rimuovi la key salvata</span></label>
+      </div></div>
+
+      <div id="settingsError" class="error-text"></div>
+      <div class="modal-actions sticky-bottom"><button class="btn soft" type="button" data-close-modal="settings">Chiudi</button><button class="btn primary" type="submit">Salva settings</button></div>
+    </form>
+  </div>
+
+  <div id="videoModal" class="modal hidden">
+    <div class="backdrop" data-close-modal="video"></div>
+    <div class="modal-card video-card panel">
+      <div class="modal-head"><div><div class="eyebrow">ANTEPRIMA</div><h2 id="videoTitle">Video</h2></div><button class="icon-btn" type="button" data-close-modal="video">×</button></div>
+      <video id="videoPlayer" controls preload="metadata"></video>
+    </div>
+  </div>
+
+  <div id="toastRegion" class="toasts"></div>
+  <script src="/static/app.js" defer></script>
+</body>
+</html>

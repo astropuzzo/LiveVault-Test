@@ -1,1 +1,9 @@
-{"name":"LiveVault Remote Recorder","short_name":"LiveVault","description":"Dashboard privata per monitoraggio, registrazione e archiviazione automatica di sorgenti autorizzate.","start_url":"/","scope":"/","display":"standalone","orientation":"any","background_color":"#080b11","theme_color":"#0a0d14","icons":[{"src":"/static/icon.svg","sizes":"any","type":"image/svg+xml","purpose":"any maskable"}]}
+{
+  "name":"LiveVault",
+  "short_name":"LiveVault",
+  "start_url":"/",
+  "display":"standalone",
+  "background_color":"#070a10",
+  "theme_color":"#090d14",
+  "icons":[{"src":"/static/icon.svg","sizes":"any","type":"image/svg+xml","purpose":"any maskable"}]
+}

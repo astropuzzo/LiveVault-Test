@@ -1,11 +1,12 @@
 {
-  "name": "LiveVault Free Test",
+  "name": "LiveVault v2 Test",
   "image": "mcr.microsoft.com/devcontainers/python:1-3.13-bookworm",
   "forwardPorts": [8080],
   "portsAttributes": {
     "8080": {
       "label": "LiveVault",
-      "onAutoForward": "notify"
+      "onAutoForward": "notify",
+      "visibility": "private"
     }
   },
   "postCreateCommand": "bash scripts/codespaces-prepare.sh"

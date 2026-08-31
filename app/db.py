@@ -4,7 +4,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from typing import Iterator
 
-from sqlalchemy import Boolean, DateTime, Float, Integer, String, Text, create_engine, event
+from sqlalchemy import Boolean, DateTime, Float, Integer, String, Text, create_engine, event, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 
 from .config import settings
@@ -51,6 +51,22 @@ class Recording(Base):
     upload_attempts: Mapped[int] = mapped_column(Integer, default=0)
     last_error: Mapped[str] = mapped_column(Text, default="")
     local_deleted: Mapped[bool] = mapped_column(Boolean, default=False)
+    thumbnail_path: Mapped[str] = mapped_column(Text, default="")
+    integrity_status: Mapped[str] = mapped_column(String(30), default="pending", index=True)
+    integrity_error: Mapped[str] = mapped_column(Text, default="")
+    integrity_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    container_format: Mapped[str] = mapped_column(String(16), default="")
+    upload_priority: Mapped[int] = mapped_column(Integer, default=0, index=True)
+    uploaded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class AppSetting(Base):
+    __tablename__ = "app_settings"
+
+    key: Mapped[str] = mapped_column(String(120), primary_key=True)
+    value: Mapped[str] = mapped_column(Text, default="")
+    is_secret: Mapped[bool] = mapped_column(Boolean, default=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
 engine = create_engine(f"sqlite:///{settings.db_path}", connect_args={"check_same_thread": False})
@@ -66,8 +82,33 @@ def _sqlite_pragmas(dbapi_connection, _connection_record):
     cursor.close()
 
 
+def _columns(table: str) -> set[str]:
+    with engine.connect() as conn:
+        return {row[1] for row in conn.exec_driver_sql(f"PRAGMA table_info({table})").fetchall()}
+
+
+def _migrate_recordings() -> None:
+    existing = _columns("recordings")
+    additions = {
+        "thumbnail_path": "TEXT NOT NULL DEFAULT ''",
+        "integrity_status": "VARCHAR(30) NOT NULL DEFAULT 'passed'",
+        "integrity_error": "TEXT NOT NULL DEFAULT ''",
+        "integrity_checked_at": "DATETIME",
+        "container_format": "VARCHAR(16) NOT NULL DEFAULT ''",
+        "upload_priority": "INTEGER NOT NULL DEFAULT 0",
+        "uploaded_at": "DATETIME",
+    }
+    with engine.begin() as conn:
+        for name, ddl in additions.items():
+            if name not in existing:
+                conn.execute(text(f"ALTER TABLE recordings ADD COLUMN {name} {ddl}"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_recordings_integrity_status ON recordings (integrity_status)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_recordings_upload_priority ON recordings (upload_priority)"))
+
+
 def init_db() -> None:
     Base.metadata.create_all(engine)
+    _migrate_recordings()
 
 
 @contextmanager

@@ -1,416 +1,57 @@
-'use strict';
+const $ = s => document.querySelector(s);
+const app = $('#app'), login = $('#login');
+let sources = [], recordings = [], statusData = null, settingsData = null, refreshBusy = false;
 
-const $ = (s, root = document) => root.querySelector(s);
-const $$ = (s, root = document) => [...root.querySelectorAll(s)];
-const login = $('#login');
-const app = $('#app');
-let sourceCache = [];
-let recordingCache = [];
-let statusCache = null;
-let refreshRunning = false;
-let refreshQueued = false;
+function esc(v=''){return String(v).replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));}
+function safeUrl(v=''){try{const u=new URL(v,location.origin);return ['http:','https:'].includes(u.protocol)?u.href:'';}catch{return '';}}
+function humanBytes(n=0){let v=Number(n)||0;for(const u of ['B','KB','MB','GB','TB']){if(v<1024||u==='TB')return `${v.toFixed(1)} ${u}`;v/=1024}}
+function duration(s){s=Math.max(0,Math.round(Number(s)||0));const h=Math.floor(s/3600),m=Math.floor((s%3600)/60),x=s%60;return h?`${h}h ${m}m`:`${m}:${String(x).padStart(2,'0')}`}
+function ago(iso){if(!iso)return 'mai';const sec=Math.max(0,(Date.now()-new Date(iso).getTime())/1000);if(sec<60)return 'ora';if(sec<3600)return `${Math.floor(sec/60)} min fa`;if(sec<86400)return `${Math.floor(sec/3600)} h fa`;return `${Math.floor(sec/86400)} g fa`}
+function dateText(iso){if(!iso)return '—';return new Intl.DateTimeFormat('it-IT',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}).format(new Date(iso))}
+function toast(msg,type='good'){const el=document.createElement('div');el.className=`toast ${type}`;el.textContent=msg;$('#toastRegion').append(el);setTimeout(()=>el.remove(),4200)}
+async function api(url,opt={}){const headers={'Content-Type':'application/json',...(opt.headers||{})};const r=await fetch(url,{credentials:'same-origin',...opt,headers});if(r.status===401&&url!=='/api/login'){app.classList.add('hidden');login.classList.remove('hidden');throw new Error('Sessione scaduta')}let data={};try{data=await r.json()}catch{}if(!r.ok)throw new Error(data.detail||data.message||`HTTP ${r.status}`);return data}
+function setBusy(btn,busy,label){if(!btn)return; if(busy){btn.dataset.old=btn.textContent;btn.disabled=true;if(label)btn.textContent=label}else{btn.disabled=false;if(btn.dataset.old)btn.textContent=btn.dataset.old}}
+function openModal(id){$(`#${id}`).classList.remove('hidden')}
+function closeModal(id){const el=$(`#${id}`);el.classList.add('hidden');if(id==='videoModal'){$('#videoPlayer').pause();$('#videoPlayer').removeAttribute('src');$('#videoPlayer').load()}}
 
-async function api(path, opts = {}) {
-  const options = {...opts};
-  const headers = {...(opts.headers || {})};
-  if (opts.body && !(opts.body instanceof FormData)) headers['Content-Type'] = 'application/json';
-  options.headers = headers;
-  const response = await fetch(path, options);
-  if (response.status === 401) {
-    showLogin();
-    throw new Error('auth');
-  }
-  let data = null;
-  try { data = await response.json(); } catch (_) {}
-  if (!response.ok) throw new Error(data?.detail || `HTTP ${response.status}`);
-  return data;
-}
+document.addEventListener('click',e=>{const close=e.target.closest('[data-close-modal]');if(close){const x=close.dataset.closeModal;closeModal(x==='source'?'sourceModal':x==='settings'?'settingsModal':'videoModal')}});
 
-function showLogin() {
-  app.classList.add('hidden');
-  login.classList.remove('hidden');
-  setTimeout(() => $('#password')?.focus(), 50);
-}
-function showApp() {
-  login.classList.add('hidden');
-  app.classList.remove('hidden');
-}
-function esc(value) {
-  return String(value ?? '').replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
-}
-function safeUrl(value) {
-  try {
-    const url = new URL(value);
-    return ['https:', 'http:'].includes(url.protocol) ? url.href : '';
-  } catch (_) { return ''; }
-}
-function humanBytes(n) {
-  let v = Number(n || 0);
-  const units = ['B','KB','MB','GB','TB'];
-  for (const unit of units) {
-    if (v < 1024 || unit === 'TB') return `${v.toFixed(v >= 100 ? 0 : v >= 10 ? 1 : 2)} ${unit}`;
-    v /= 1024;
-  }
-  return `${v.toFixed(1)} TB`;
-}
-function duration(seconds, compact = false) {
-  const s = Math.max(0, Number(seconds || 0));
-  if (!s) return '—';
-  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = Math.floor(s % 60);
-  if (compact) return h ? `${h}h ${m}m` : m ? `${m}m` : `${sec}s`;
-  return h ? `${h}h ${m}m` : `${m} min`;
-}
-function localDate(value) {
-  if (!value) return '—';
-  try { return new Intl.DateTimeFormat('it-IT', {day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}).format(new Date(value)); }
-  catch (_) { return value; }
-}
-function ago(value) {
-  if (!value) return 'mai';
-  const sec = Math.max(0, (Date.now() - new Date(value).getTime()) / 1000);
-  if (sec < 60) return 'ora';
-  if (sec < 3600) return `${Math.floor(sec/60)} min fa`;
-  if (sec < 86400) return `${Math.floor(sec/3600)} h fa`;
-  return `${Math.floor(sec/86400)} g fa`;
-}
-function statusLabel(status) {
-  return ({recording:'REC',live:'LIVE',offline:'Offline',error:'Errore',paused:'In pausa',unknown:'In attesa'})[status] || status;
-}
-function uploadLabel(status) {
-  return ({uploaded:'Caricato',uploading:'Upload',pending:'In attesa',failed:'Fallito',waiting_config:'Configura cloud',missing:'Mancante'})[status] || status;
-}
-function toast(message, type = 'good') {
-  const el = document.createElement('div');
-  el.className = `toast ${type}`;
-  el.textContent = message;
-  $('#toastRegion').append(el);
-  setTimeout(() => el.remove(), 3600);
-}
-function setBusy(button, busy, label) {
-  if (!button) return;
-  if (busy) {
-    button.dataset.oldText = button.textContent;
-    button.disabled = true;
-    if (label) button.textContent = label;
-  } else {
-    button.disabled = false;
-    if (button.dataset.oldText) button.textContent = button.dataset.oldText;
-  }
-}
+async function boot(){try{await api('/api/me');login.classList.add('hidden');app.classList.remove('hidden');await refresh()}catch(e){if(e.message==='auth'){login.classList.remove('hidden')}}}
+$('#loginForm').addEventListener('submit',async e=>{e.preventDefault();$('#loginError').textContent='';try{await api('/api/login',{method:'POST',body:JSON.stringify({password:$('#password').value})});$('#password').value='';login.classList.add('hidden');app.classList.remove('hidden');await refresh()}catch(err){if(err.message!=='auth')$('#loginError').textContent=err.message}});
+$('#logoutBtn').addEventListener('click',async()=>{await api('/api/logout',{method:'POST'}).catch(()=>{});app.classList.add('hidden');login.classList.remove('hidden')});
 
-async function boot() {
-  if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
-  try {
-    await api('/api/me');
-    showApp();
-    await refresh();
-  } catch (e) {
-    if (e.message !== 'auth') showLogin();
-  }
-}
+$('#refreshBtn').addEventListener('click',async e=>{setBusy(e.currentTarget,true,'Controllo…');try{await api('/api/sources/check-now',{method:'POST'});toast('Controllo sorgenti richiesto');setTimeout(refresh,1000)}catch(x){toast(x.message,'bad')}finally{setBusy(e.currentTarget,false)}});
+$('#showAddBtn').addEventListener('click',()=>showSource());
+$('#settingsBtn').addEventListener('click',async()=>{await loadSettings();openModal('settingsModal')});
+$('#recordingSearch').addEventListener('input',renderRecordings);$('#recordingStatus').addEventListener('change',renderRecordings);
 
-$('#loginForm').addEventListener('submit', async e => {
-  e.preventDefault();
-  $('#loginError').textContent = '';
-  const button = e.currentTarget.querySelector('button[type="submit"]');
-  setBusy(button, true, 'Accesso…');
-  try {
-    await api('/api/login', {method:'POST', body:JSON.stringify({password:$('#password').value})});
-    $('#password').value = '';
-    showApp();
-    await refresh();
-  } catch (err) {
-    if (err.message !== 'auth') $('#loginError').textContent = err.message;
-  } finally { setBusy(button, false); }
-});
+$('#pauseRecordingsBtn').addEventListener('click',async e=>{const paused=!!statusData?.config?.recording_paused;setBusy(e.currentTarget,true);try{await api('/api/control/recordings',{method:'POST',body:JSON.stringify({paused:!paused,stop_active:true})});toast(!paused?'Registrazioni messe in pausa':'Registrazioni riattivate');await refresh()}catch(x){toast(x.message,'bad')}finally{setBusy(e.currentTarget,false)}});
+$('#pauseUploadsBtn').addEventListener('click',async e=>{const paused=!!statusData?.config?.upload_paused;setBusy(e.currentTarget,true);try{await api('/api/control/uploads',{method:'POST',body:JSON.stringify({paused:!paused,stop_active:false})});toast(!paused?'Upload in pausa':'Upload riattivati');await refresh()}catch(x){toast(x.message,'bad')}finally{setBusy(e.currentTarget,false)}});
+$('#runUploadsBtn').addEventListener('click',async e=>{setBusy(e.currentTarget,true,'Avvio…');try{const r=await api('/api/uploads/run-now',{method:'POST'});toast(`Coda upload avviata${r.changed?` · ${r.changed} retry`:''}`);await refresh()}catch(x){toast(x.message,'bad')}finally{setBusy(e.currentTarget,false)}});
+$('#retryAllBtn').addEventListener('click',async e=>{setBusy(e.currentTarget,true);try{const r=await api('/api/recordings/retry-failed',{method:'POST'});toast(`${r.changed} file rimessi in coda`);await refresh()}catch(x){toast(x.message,'bad')}finally{setBusy(e.currentTarget,false)}});
+$('#cleanupBtn').addEventListener('click',async e=>{if(!confirm('Eliminare solo le copie locali già caricate e verificate? Le miniature restano.'))return;setBusy(e.currentTarget,true);try{const r=await api('/api/recordings/cleanup-uploaded',{method:'POST'});toast(`Liberati ${r.freed_human}`);await refresh()}catch(x){toast(x.message,'bad')}finally{setBusy(e.currentTarget,false)}});
 
-$('#logoutBtn').addEventListener('click', async () => {
-  await api('/api/logout', {method:'POST'}).catch(() => {});
-  showLogin();
-});
+function showSource(s=null){$('#sourceId').value=s?.id||'';$('#sourceName').value=s?.name||'';$('#sourceSlug').value=s?.slug||'';$('#sourceQuality').value=s?.quality||'best';$('#sourceConsent').checked=!!s?.consent_confirmed;$('#sourceModalTitle').textContent=s?'Modifica sorgente':'Aggiungi sorgente';$('#sourceError').textContent='';openModal('sourceModal')}
+$('#sourceForm').addEventListener('submit',async e=>{e.preventDefault();const id=$('#sourceId').value;const body={name:$('#sourceName').value.trim(),slug:$('#sourceSlug').value.trim(),quality:$('#sourceQuality').value,consent_confirmed:$('#sourceConsent').checked};try{await api(id?`/api/sources/${id}`:'/api/sources',{method:id?'PATCH':'POST',body:JSON.stringify(body)});closeModal('sourceModal');toast(id?'Sorgente aggiornata':'Sorgente aggiunta');await refresh()}catch(x){$('#sourceError').textContent=x.message}});
+$('#sources').addEventListener('click',async e=>{const b=e.target.closest('[data-action]');if(!b)return;const id=Number(b.dataset.id),s=sources.find(x=>x.id===id);if(!s)return;if(b.dataset.action==='edit')return showSource(s);if(b.dataset.action==='delete'){if(!confirm(`Rimuovere ${s.name}? Lo storico registrazioni resta.`))return;try{await api(`/api/sources/${id}`,{method:'DELETE'});toast('Sorgente rimossa');await refresh()}catch(x){toast(x.message,'bad')}return}if(b.dataset.action==='toggle'){try{await api(`/api/sources/${id}`,{method:'PATCH',body:JSON.stringify({enabled:!s.enabled})});toast(s.enabled?'Sorgente in pausa':'Sorgente riattivata');await refresh()}catch(x){toast(x.message,'bad')}}});
 
-function openSourceModal(source = null) {
-  $('#sourceId').value = source?.id || '';
-  $('#sourceName').value = source?.name || '';
-  $('#sourceSlug').value = source?.slug || '';
-  $('#sourceQuality').value = source?.quality || 'best';
-  $('#sourceConsent').checked = source ? Boolean(source.consent_confirmed) : false;
-  $('#modalTitle').textContent = source ? 'Modifica sorgente' : 'Aggiungi sorgente';
-  $('#saveSourceBtn').textContent = source ? 'Salva modifiche' : 'Salva sorgente';
-  $('#sourceError').textContent = '';
-  $('#sourceModal').classList.remove('hidden');
-  document.body.style.overflow = 'hidden';
-  setTimeout(() => $('#sourceName').focus(), 50);
-}
-function closeSourceModal() {
-  $('#sourceModal').classList.add('hidden');
-  document.body.style.overflow = '';
-}
+function statusLabel(v){return ({recording:'REC',live:'LIVE',offline:'Offline',paused:'Pausa',error:'Errore',unknown:'—'})[v]||v}
+function renderSources(){const root=$('#sources');$('#sourceCount').textContent=sources.length;if(!sources.length){root.innerHTML='<div class="empty">Nessuna sorgente configurata.</div>';return}root.innerHTML=sources.map(s=>{const live=['recording','live'].includes(s.last_status);return `<article class="source-card ${live?'live':''}"><div class="source-top"><div><div class="source-name">${esc(s.name)}</div><div class="source-slug">@${esc(s.slug)}</div></div><span class="source-status ${esc(s.last_status)}">${esc(statusLabel(s.last_status))}</span></div><div class="source-meta"><span class="chip">${esc(s.quality)}</span><span class="chip">check ${esc(ago(s.last_checked_at))}</span><span class="chip">live ${esc(ago(s.last_live_at))}</span></div><div class="source-actions"><button class="btn soft" data-action="edit" data-id="${s.id}" type="button">Modifica</button><button class="btn soft" data-action="toggle" data-id="${s.id}" type="button">${s.enabled?(live?'Stop + pausa':'Pausa'):'Riattiva'}</button><span class="spacer"></span><button class="btn danger" data-action="delete" data-id="${s.id}" type="button">Rimuovi</button></div></article>`}).join('')}
 
-$('#showAddBtn').addEventListener('click', () => openSourceModal());
-$('#mobileAddBtn').addEventListener('click', () => openSourceModal());
-$('#closeModalBtn').addEventListener('click', closeSourceModal);
-$('#cancelModalBtn').addEventListener('click', closeSourceModal);
-$('#sourceModal').addEventListener('click', e => { if (e.target.dataset.closeModal) closeSourceModal(); });
-document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#sourceModal').classList.contains('hidden')) closeSourceModal(); });
+function uploadLabel(v){return ({pending:'In coda',uploading:'Upload',uploaded:'Caricato',failed:'Fallito',waiting_config:'Config mancante',integrity_failed:'Integrità fallita',converting:'Conversione MP4',missing:'Mancante'})[v]||v}
+function renderRecordings(){const q=$('#recordingSearch').value.trim().toLowerCase(),filter=$('#recordingStatus').value;const list=recordings.filter(r=>(filter==='all'||r.upload_status===filter)&&(!q||`${r.source_name} ${r.filename} ${r.session_id}`.toLowerCase().includes(q)));const root=$('#recordings');if(!list.length){root.innerHTML='<div class="empty">Nessuna registrazione corrispondente.</div>';$('#recordingFooter').textContent='';return}root.innerHTML=list.map(r=>{const remote=safeUrl(r.remote_url);const thumb=r.thumbnail_available?`<img src="${esc(r.thumbnail_url)}" loading="lazy" alt="Miniatura ${esc(r.filename)}">`:'';const preview=r.local_available?'<span class="play-badge">▶ Anteprima</span>':'';const err=r.integrity_error||r.last_error||'';return `<article class="rec-card"><div class="thumb ${thumb?'':'empty'}" data-rec-action="preview" data-id="${r.id}">${thumb||'▣'}${preview}</div><div class="rec-body"><div class="rec-title">${esc(r.source_name)}</div><div class="rec-file">${esc(r.filename)}</div><div class="rec-meta"><span class="chip">${esc(r.size_human)}</span><span class="chip">${esc(duration(r.duration_seconds))}</span><span class="chip">${esc((r.container_format||'').toUpperCase())}</span><span class="integrity ${esc(r.integrity_status)}">${r.integrity_status==='passed'?'✓':r.integrity_status==='integrity_failed'||r.integrity_status==='failed'?'✕':'…'} ${esc(r.integrity_status==='passed'?'Integro':r.integrity_status==='integrity_failed'?'Fallita':r.integrity_status)}</span><span class="upload-status ${esc(r.upload_status)}">${esc(uploadLabel(r.upload_status))}${r.upload_provider?` · ${esc(r.upload_provider)}`:''}</span></div>${err?`<div class="rec-error" title="${esc(err)}">${esc(err)}</div>`:''}<div class="rec-actions">${r.local_available?`<button class="btn soft" data-rec-action="preview" data-id="${r.id}" type="button">Vedi</button><a class="btn soft" href="/api/recordings/${r.id}/download">Scarica</a>`:''}${remote?`<a class="btn soft" href="${esc(remote)}" target="_blank" rel="noopener">Cloud</a>`:''}${r.local_available&&r.integrity_status==='passed'?`<button class="btn accent" data-rec-action="upload-now" data-id="${r.id}" type="button">Upload ora</button>`:''}${r.local_available?`<button class="btn soft" data-rec-action="integrity" data-id="${r.id}" type="button">Ricontrolla</button>`:''}${r.local_available&&r.container_format!=='mp4'?`<button class="btn soft" data-rec-action="convert" data-id="${r.id}" type="button">→ MP4</button>`:''}${r.upload_status==='uploaded'&&r.local_available?`<button class="btn danger" data-rec-action="delete-local" data-id="${r.id}" type="button">Libera</button>`:''}</div></div></article>`}).join('');$('#recordingFooter').textContent=`${list.length} visualizzate · ${recordings.length} totali`}
 
-$('#sourceForm').addEventListener('submit', async e => {
-  e.preventDefault();
-  const id = $('#sourceId').value;
-  const body = {
-    name: $('#sourceName').value.trim(),
-    slug: $('#sourceSlug').value.trim(),
-    quality: $('#sourceQuality').value,
-    consent_confirmed: $('#sourceConsent').checked,
-  };
-  $('#sourceError').textContent = '';
-  if (!body.consent_confirmed) {
-    $('#sourceError').textContent = 'Devi confermare l’autorizzazione per attivare la sorgente.';
-    return;
-  }
-  const button = $('#saveSourceBtn');
-  setBusy(button, true, 'Salvataggio…');
-  try {
-    if (id) await api(`/api/sources/${id}`, {method:'PATCH', body:JSON.stringify(body)});
-    else await api('/api/sources', {method:'POST', body:JSON.stringify({...body, platform:'chaturbate'})});
-    closeSourceModal();
-    toast(id ? 'Sorgente aggiornata' : 'Sorgente aggiunta');
-    await refresh();
-  } catch (err) {
-    $('#sourceError').textContent = err.message;
-  } finally { setBusy(button, false); }
-});
+$('#recordings').addEventListener('click',async e=>{const b=e.target.closest('[data-rec-action]');if(!b)return;const id=Number(b.dataset.id),r=recordings.find(x=>x.id===id);if(!r)return;const action=b.dataset.recAction;if(action==='preview'){if(!r.local_available)return toast('Anteprima video non disponibile: copia locale rimossa','bad');$('#videoTitle').textContent=`${r.source_name} · ${r.filename}`;$('#videoPlayer').src=r.view_url;openModal('videoModal');return}setBusy(b,true);try{if(action==='upload-now'){await api(`/api/recordings/${id}/upload-now`,{method:'POST'});toast('File messo in testa alla coda')}if(action==='integrity'){const x=await api(`/api/recordings/${id}/integrity`,{method:'POST'});toast(x.ok?'Integrità confermata':`Integrità fallita: ${x.error}`,x.ok?'good':'bad')}if(action==='convert'){if(!confirm('Convertire questo file in MP4 senza ricodifica? Se era già caricato, il nuovo MP4 verrà rimesso in coda.'))return;await api(`/api/recordings/${id}/convert-mp4`,{method:'POST'});toast('Conversione MP4 completata')}if(action==='delete-local'){if(!confirm('Eliminare la copia video locale? La miniatura resterà disponibile.'))return;await api(`/api/recordings/${id}/local`,{method:'DELETE'});toast('Copia locale rimossa')}await refresh()}catch(x){toast(x.message,'bad')}finally{setBusy(b,false)}});
 
-async function checkNow(button = null) {
-  setBusy(button, true, '…');
-  try {
-    await api('/api/sources/check-now', {method:'POST'});
-    toast('Controllo live richiesto');
-    await new Promise(r => setTimeout(r, 600));
-    await refresh();
-  } catch (err) {
-    if (err.message !== 'auth') toast(err.message, 'bad');
-  } finally { setBusy(button, false); }
-}
-$('#refreshBtn').addEventListener('click', e => checkNow(e.currentTarget));
-$('#mobileRefreshBtn').addEventListener('click', e => checkNow(e.currentTarget));
-$('#mobileTopBtn').addEventListener('click', () => window.scrollTo({top:0, behavior:'smooth'}));
+async function loadSettings(){const r=await api('/api/settings');settingsData=r.settings;const s=settingsData;$('#setSegment').value=s.segment_minutes;$('#setContainer').value=s.container_format;$('#setPoll').value=s.poll_seconds;$('#setProbe').value=s.max_probe_concurrency;$('#setIntegrity').value=s.integrity_mode;$('#setThumbs').checked=s.generate_thumbnails;$('#setBuffer').value=s.buffer_max_gb;$('#setHardStop').checked=s.buffer_hard_stop;$('#setMinFree').value=s.min_free_gb;$('#setCriticalFree').value=s.critical_free_gb;$('#setEmergencyFree').value=s.emergency_free_gb;$('#setDeleteAfter').checked=s.delete_after_upload;$('#setPrimary').value=s.primary_uploader;$('#setFallback').value=s.fallback_uploader;$('#setRetry').value=s.upload_retry_seconds;$('#setAttempts').value=s.max_upload_attempts;$('#setGofileFolder').value=s.gofile_folder_id||'';$('#setGofileRegion').value=s.gofile_region||'auto';$('#setGofileToken').value='';$('#setPixeldrainKey').value='';$('#clearGofile').checked=false;$('#clearPixeldrain').checked=false;$('#gofileHint').textContent=s.gofile_configured?`Token salvato ${s.gofile_token_hint}`:'Nessun token salvato';$('#pixeldrainHint').textContent=s.pixeldrain_configured?`Key salvata ${s.pixeldrain_key_hint}`:'Nessuna key salvata';$('#gofileState').textContent=s.gofile_configured?'Configurato':'Non configurato';$('#gofileState').className=`provider-state ${s.gofile_configured?'ok':''}`;$('#pixeldrainState').textContent=s.pixeldrain_configured?'Configurato':'Non configurato';$('#pixeldrainState').className=`provider-state ${s.pixeldrain_configured?'ok':''}`;$('#settingsError').textContent=''}
+$('#settingsForm').addEventListener('submit',async e=>{e.preventDefault();const body={segment_minutes:Number($('#setSegment').value),container_format:$('#setContainer').value,poll_seconds:Number($('#setPoll').value),max_probe_concurrency:Number($('#setProbe').value),integrity_mode:$('#setIntegrity').value,generate_thumbnails:$('#setThumbs').checked,buffer_max_gb:Number($('#setBuffer').value),buffer_hard_stop:$('#setHardStop').checked,min_free_gb:Number($('#setMinFree').value),critical_free_gb:Number($('#setCriticalFree').value),emergency_free_gb:Number($('#setEmergencyFree').value),delete_after_upload:$('#setDeleteAfter').checked,primary_uploader:$('#setPrimary').value,fallback_uploader:$('#setFallback').value,upload_retry_seconds:Number($('#setRetry').value),max_upload_attempts:Number($('#setAttempts').value),gofile_folder_id:$('#setGofileFolder').value.trim(),gofile_region:$('#setGofileRegion').value,clear_gofile_token:$('#clearGofile').checked,clear_pixeldrain_api_key:$('#clearPixeldrain').checked};if($('#setGofileToken').value.trim())body.gofile_token=$('#setGofileToken').value.trim();if($('#setPixeldrainKey').value.trim())body.pixeldrain_api_key=$('#setPixeldrainKey').value.trim();try{await api('/api/settings',{method:'PATCH',body:JSON.stringify(body)});toast('Settings salvati');await loadSettings();await refresh()}catch(x){$('#settingsError').textContent=x.message}});
+async function testProvider(provider,btn,state){setBusy(btn,true,'Test…');state.textContent='Test in corso…';state.className='provider-state';try{const r=await api(`/api/settings/test/${provider}`,{method:'POST'});state.textContent=r.message+(r.username?` · ${r.username}`:'');state.className='provider-state ok';toast(r.message)}catch(x){state.textContent=x.message;state.className='provider-state bad';toast(x.message,'bad')}finally{setBusy(btn,false)}}
+async function saveSecretBeforeTest(provider){const isG=provider==='gofile';const input=$(isG?'#setGofileToken':'#setPixeldrainKey');const value=input.value.trim();if(!value)return;await api('/api/settings',{method:'PATCH',body:JSON.stringify(isG?{gofile_token:value}:{pixeldrain_api_key:value})});input.value='';await loadSettings()}
+$('#testGofileBtn').addEventListener('click',async()=>{const b=$('#testGofileBtn');try{setBusy(b,true);await saveSecretBeforeTest('gofile');await testProvider('gofile',b,$('#gofileState'))}catch(x){toast(x.message,'bad')}finally{setBusy(b,false)}});
+$('#testPixeldrainBtn').addEventListener('click',async()=>{const b=$('#testPixeldrainBtn');try{setBusy(b,true);await saveSecretBeforeTest('pixeldrain');await testProvider('pixeldrain',b,$('#pixeldrainState'))}catch(x){toast(x.message,'bad')}finally{setBusy(b,false)}});
 
-$('#sources').addEventListener('click', async e => {
-  const button = e.target.closest('[data-action]');
-  if (!button) return;
-  const id = Number(button.dataset.id);
-  const source = sourceCache.find(s => s.id === id);
-  if (!source) return;
-  const action = button.dataset.action;
-  try {
-    if (action === 'edit') return openSourceModal(source);
-    if (action === 'toggle') {
-      setBusy(button, true, source.enabled ? 'Stop…' : 'Avvio…');
-      await api(`/api/sources/${id}`, {method:'PATCH', body:JSON.stringify({enabled:!source.enabled})});
-      toast(source.enabled ? 'Sorgente messa in pausa' : 'Sorgente riattivata');
-      await refresh();
-    }
-    if (action === 'delete') {
-      if (!confirm(`Rimuovere “${source.name}”? Lo storico delle registrazioni resterà disponibile.`)) return;
-      setBusy(button, true, '…');
-      await api(`/api/sources/${id}`, {method:'DELETE'});
-      toast('Sorgente rimossa');
-      await refresh();
-    }
-  } catch (err) {
-    if (err.message !== 'auth') toast(err.message, 'bad');
-    setBusy(button, false);
-  }
-});
+function renderStatus(s){statusData=s;$('#versionLabel').textContent=`v${s.config.version}`;const active=s.worker.active||[];$('#activeCount').textContent=active.length;$('#activeNames').textContent=active.length?active.map(x=>x.source_name).join(', '):'Nessuna';$('#queueCount').textContent=s.queue.pending;$('#queueNote').textContent=s.queue.integrity_failed?`${s.queue.integrity_failed} integrità fallita`:s.queue.failed?`${s.queue.failed} falliti`:s.queue.pending?'file in attesa':'Coda vuota';$('#bufferValue').textContent=s.queue.local_human;$('#bufferNote').textContent=s.config.buffer_max_gb?`${s.queue.buffer_percent}% di ${s.queue.buffer_max_human}`:'Nessun limite';$('#bufferBar').style.width=`${Math.min(100,s.queue.buffer_percent||0)}%`;$('#bufferBar').className=s.queue.buffer_percent>95?'bad':s.queue.buffer_percent>80?'warn':'';$('#freeSpace').textContent=s.disk.free_human;$('#diskUsage').textContent=`${s.disk.used_human} / ${s.disk.total_human} usati`;const used=s.disk.total?Math.min(100,s.disk.used/s.disk.total*100):0;$('#diskBar').style.width=`${used}%`;$('#diskBar').className=s.disk.pressure==='critical'?'bad':s.disk.pressure==='warning'?'warn':'';$('#providerRoute').textContent=`${s.config.primary_uploader} → ${s.config.fallback_uploader}`;$('#recordingControlState').textContent=s.config.recording_paused?'In pausa':'Attive';$('#uploadControlState').textContent=s.config.upload_paused?'In pausa':'Attivo';$('#pauseRecordingsBtn').textContent=s.config.recording_paused?'Riprendi registrazioni':'Pausa registrazioni';$('#pauseUploadsBtn').textContent=s.config.upload_paused?'Riprendi upload':'Pausa upload';const current=s.worker.upload_current;if(current){$('#uploadNowCard').classList.remove('hidden');$('#uploadNowTitle').textContent=`${current.provider||'Cloud'} · ${current.source_name}`;$('#uploadNowMeta').textContent=`${current.filename} · ${humanBytes(current.sent_bytes||0)} / ${humanBytes(current.size_bytes||0)}`;$('#uploadProgressBar').style.width=`${current.percent||0}%`;$('#uploadProgressText').textContent=`${current.percent||0}%`}else $('#uploadNowCard').classList.add('hidden');const errors=s.worker.errors||{};const n=Object.keys(errors).length;if(n){$('#errorsPanel').classList.remove('hidden');$('#diagnosticCount').textContent=n;$('#errors').textContent=Object.entries(errors).map(([k,v])=>`${k}\n${v}`).join('\n\n')}else $('#errorsPanel').classList.add('hidden');const health=$('#healthPill');if(s.disk.pressure==='critical'){health.className='pill bad';health.textContent='● Disco critico'}else if(n||s.queue.integrity_failed){health.className='pill warn';health.textContent='● Da controllare'}else{health.className='pill good';health.textContent='● Online'}}
 
-$('#recordings').addEventListener('click', async e => {
-  const button = e.target.closest('[data-rec-action]');
-  if (!button) return;
-  const id = Number(button.dataset.id);
-  try {
-    if (button.dataset.recAction === 'retry') {
-      setBusy(button, true, '…');
-      await api(`/api/recordings/${id}/retry`, {method:'POST'});
-      toast('Upload rimesso in coda');
-      await refresh();
-    }
-    if (button.dataset.recAction === 'delete-local') {
-      if (!confirm('Eliminare la copia locale? La copia cloud verificata resterà disponibile.')) return;
-      setBusy(button, true, '…');
-      await api(`/api/recordings/${id}/local`, {method:'DELETE'});
-      toast('Copia locale eliminata');
-      await refresh();
-    }
-  } catch (err) {
-    if (err.message !== 'auth') toast(err.message, 'bad');
-    setBusy(button, false);
-  }
-});
+async function refresh(){if(refreshBusy)return;refreshBusy=true;try{const [st,ss,rr]=await Promise.all([api('/api/status'),api('/api/sources'),api('/api/recordings?limit=1000')]);statusData=st;sources=ss;recordings=rr;renderStatus(st);renderSources();renderRecordings();$('#lastRefresh').textContent=`Aggiornato ${new Intl.DateTimeFormat('it-IT',{hour:'2-digit',minute:'2-digit',second:'2-digit'}).format(new Date())}`}catch(e){if(e.message!=='auth')$('#lastRefresh').textContent=`Errore: ${e.message}`}finally{refreshBusy=false}}
 
-$('#retryAllBtn').addEventListener('click', async e => {
-  setBusy(e.currentTarget, true, 'Riprovo…');
-  try {
-    const result = await api('/api/recordings/retry-failed', {method:'POST'});
-    toast(`${result.changed} file rimessi in coda`);
-    await refresh();
-  } catch (err) { toast(err.message, 'bad'); }
-  finally { setBusy(e.currentTarget, false); }
-});
-
-$('#cleanupBtn').addEventListener('click', async e => {
-  if (!confirm('Eliminare dal server tutte le copie locali che risultano già caricate e verificate?')) return;
-  setBusy(e.currentTarget, true, 'Pulizia…');
-  try {
-    const result = await api('/api/recordings/cleanup-uploaded', {method:'POST'});
-    toast(`Liberati ${result.freed_human} · ${result.removed} file`);
-    await refresh();
-  } catch (err) { toast(err.message, 'bad'); }
-  finally { setBusy(e.currentTarget, false); }
-});
-
-$('#recordingSearch').addEventListener('input', renderRecordings);
-$('#recordingStatus').addEventListener('change', renderRecordings);
-$('#diagnosticToggle').addEventListener('click', () => $('#errorsPanel').classList.toggle('collapsed'));
-
-function renderSources() {
-  const el = $('#sources');
-  $('#sourceCount').textContent = sourceCache.length;
-  if (!sourceCache.length) {
-    el.innerHTML = '<div class="empty-state"><div class="empty-icon">◎</div><strong>Nessuna sorgente</strong><span>Aggiungi la prima sorgente autorizzata per iniziare.</span></div>';
-    return;
-  }
-  el.innerHTML = sourceCache.map(s => {
-    const live = ['recording','live'].includes(s.last_status);
-    const checked = s.last_checked_at ? `Controllata ${ago(s.last_checked_at)}` : 'Non ancora controllata';
-    const lastLive = s.last_live_at ? `Ultima live ${ago(s.last_live_at)}` : 'Nessuna live registrata';
-    return `<article class="source-card ${live ? 'live-card' : ''}">
-      <div class="source-top">
-        <div class="source-title-wrap"><div class="source-name">${esc(s.name)}</div><div class="source-slug">@${esc(s.slug)}</div></div>
-        <span class="source-status ${esc(s.last_status)}"><span class="dot"></span>${esc(statusLabel(s.last_status))}</span>
-      </div>
-      <div class="source-meta"><span class="meta-chip">${esc(s.quality === 'best' ? 'Best' : s.quality)}</span><span class="meta-chip">${esc(checked)}</span><span class="meta-chip">${esc(lastLive)}</span></div>
-      <div class="source-actions">
-        <button class="btn btn-soft" type="button" data-action="edit" data-id="${s.id}">Modifica</button>
-        <button class="btn btn-soft" type="button" data-action="toggle" data-id="${s.id}">${s.enabled ? (live ? 'Stop & pausa' : 'Pausa') : 'Riattiva'}</button>
-        <span class="spacer"></span>
-        <button class="btn btn-danger" type="button" data-action="delete" data-id="${s.id}">Rimuovi</button>
-      </div>
-    </article>`;
-  }).join('');
-}
-
-function renderRecordings() {
-  const el = $('#recordings');
-  const query = $('#recordingSearch').value.trim().toLowerCase();
-  const status = $('#recordingStatus').value;
-  const filtered = recordingCache.filter(r => {
-    if (status !== 'all' && r.upload_status !== status) return false;
-    if (query && !`${r.source_name} ${r.filename} ${r.session_id || ''}`.toLowerCase().includes(query)) return false;
-    return true;
-  });
-  const failedCount = recordingCache.filter(r => ['failed','waiting_config'].includes(r.upload_status) && r.local_available).length;
-  $('#retryAllBtn').classList.toggle('hidden', failedCount === 0);
-  if (!filtered.length) {
-    el.innerHTML = `<div class="empty-state"><div class="empty-icon">▱</div><strong>${recordingCache.length ? 'Nessun risultato' : 'Archivio vuoto'}</strong><span>${recordingCache.length ? 'Prova a cambiare ricerca o filtro.' : 'Le registrazioni completate compariranno qui.'}</span></div>`;
-    $('#recordingFooter').classList.add('hidden');
-    return;
-  }
-  el.innerHTML = filtered.map(r => {
-    const remoteUrl = safeUrl(r.remote_url);
-    const remote = remoteUrl ? `<a class="btn btn-soft" href="${esc(remoteUrl)}" target="_blank" rel="noopener noreferrer">Cloud</a>` : '';
-    const local = r.local_available ? `<a class="btn btn-soft" href="/api/recordings/${r.id}/download">Scarica</a>` : '';
-    const retry = ['failed','waiting_config'].includes(r.upload_status) && r.local_available ? `<button class="btn btn-soft" type="button" data-rec-action="retry" data-id="${r.id}">Riprova</button>` : '';
-    const del = r.upload_status === 'uploaded' && r.local_available ? `<button class="btn btn-danger" type="button" data-rec-action="delete-local" data-id="${r.id}">Libera</button>` : '';
-    return `<article class="rec-row">
-      <div class="rec-primary"><div class="rec-name">${esc(r.source_name)} · ${esc(r.filename)}</div><div class="rec-sub"><span>${esc(localDate(r.finalized_at))}</span><span>•</span><span>${r.local_available ? 'locale + cloud' : (r.remote_url ? 'solo cloud' : 'solo indice')}</span></div></div>
-      <div class="rec-size"><span class="rec-cell-label">Dimensione</span><span class="rec-value">${esc(r.size_human)}</span></div>
-      <div class="rec-duration"><span class="rec-cell-label">Durata</span><span class="rec-value">${esc(duration(r.duration_seconds))}</span></div>
-      <div class="rec-provider"><span class="upload-pill ${esc(r.upload_status)}">${esc(uploadLabel(r.upload_status))}${r.upload_provider ? ` · ${esc(r.upload_provider)}` : ''}</span>${r.last_error ? `<div class="rec-error" title="${esc(r.last_error)}">${esc(r.last_error.slice(0,120))}</div>` : ''}</div>
-      <div class="rec-actions">${local}${remote}${retry}${del}</div>
-    </article>`;
-  }).join('');
-  const footer = $('#recordingFooter');
-  footer.textContent = `${filtered.length} visualizzate su ${recordingCache.length} registrazioni caricate`;
-  footer.classList.remove('hidden');
-}
-
-function renderStatus(status) {
-  statusCache = status;
-  const active = status.worker.active || [];
-  $('#versionLabel').textContent = `REMOTE RECORDER · v${status.config.version || '—'}`;
-  $('#activeCount').textContent = active.length;
-  $('#activeNames').textContent = active.length ? active.map(x => x.source_name).join(', ') : 'Nessuna sorgente live';
-  $('#queueCount').textContent = status.queue.pending;
-  $('#queueNote').textContent = status.queue.failed ? `${status.queue.failed} con errore` : status.queue.pending ? 'segmenti da trasferire' : 'Nessun file in attesa';
-  $('#freeSpace').textContent = status.disk.free_human;
-  $('#diskUsage').textContent = `${status.disk.used_human} usati / ${status.disk.total_human}`;
-  $('#localBuffer').textContent = `Buffer: ${status.queue.local_human}`;
-  const usedPct = status.disk.total ? Math.min(100, Math.max(0, status.disk.used / status.disk.total * 100)) : 0;
-  $('#diskBar').style.width = `${usedPct}%`;
-  $('#diskBar').className = `progress-fill ${status.disk.pressure}`;
-  const badge = $('#diskBadge');
-  badge.className = `status-chip ${status.disk.pressure}`;
-  badge.textContent = ({ok:'OK',warning:'Attenzione',critical:'Critico'})[status.disk.pressure] || status.disk.pressure;
-  $('#uploadConfig').textContent = `${status.config.primary_uploader} → ${status.config.fallback_uploader}`;
-
-  const current = status.worker.upload_current;
-  if (current) {
-    $('#uploadState').textContent = 'In upload';
-    $('#uploadDetail').textContent = `${current.provider || 'cloud'} · ${current.filename}`;
-  } else {
-    $('#uploadState').textContent = status.queue.pending ? 'In coda' : 'Pronto';
-    $('#uploadDetail').textContent = status.queue.pending ? `${status.queue.pending} segmenti in attesa` : 'Nessun trasferimento attivo';
-  }
-
-  const activeStrip = $('#activeStrip');
-  if (active.length) {
-    const first = active[0];
-    activeStrip.classList.remove('hidden');
-    $('#activeStripTitle').textContent = active.length === 1 ? `${first.source_name} · registrazione in corso` : `${active.length} registrazioni in corso`;
-    $('#activeStripMeta').textContent = active.length === 1 ? `REC ${duration(first.elapsed_seconds, true)} · segmenti da ${status.config.segment_minutes} min` : active.map(x => x.source_name).join(' · ');
-    $('#activeStripSize').textContent = active.length === 1 ? humanBytes(first.local_bytes) : `${active.length} stream`;
-  } else activeStrip.classList.add('hidden');
-
-  const errorCount = Object.keys(status.worker.errors || {}).length;
-  const health = $('#healthPill');
-  health.className = `health-pill ${status.disk.pressure === 'critical' || errorCount ? (status.disk.pressure === 'critical' ? 'bad' : 'warning') : ''}`;
-  health.querySelector('span:last-child').textContent = status.disk.pressure === 'critical' ? 'Storage critico' : errorCount ? 'Da controllare' : 'Online';
-
-  const errors = status.worker.errors || {};
-  if (errorCount) {
-    $('#errorsPanel').classList.remove('hidden');
-    $('#diagnosticCount').textContent = errorCount;
-    $('#errors').textContent = Object.entries(errors).map(([k,v]) => `${k}\n${v}`).join('\n\n');
-  } else {
-    $('#errorsPanel').classList.add('hidden');
-  }
-}
-
-async function refresh() {
-  if (refreshRunning) { refreshQueued = true; return; }
-  refreshRunning = true;
-  try {
-    const [status, sources, recordings] = await Promise.all([
-      api('/api/status'), api('/api/sources'), api('/api/recordings?limit=500')
-    ]);
-    sourceCache = sources;
-    recordingCache = recordings;
-    renderStatus(status);
-    renderSources();
-    renderRecordings();
-    $('#lastRefresh').textContent = `Aggiornato ${new Intl.DateTimeFormat('it-IT',{hour:'2-digit',minute:'2-digit',second:'2-digit'}).format(new Date())}`;
-  } catch (e) {
-    if (e.message !== 'auth') {
-      console.error(e);
-      $('#lastRefresh').textContent = `Errore aggiornamento · ${e.message}`;
-    }
-  } finally {
-    refreshRunning = false;
-    if (refreshQueued) { refreshQueued = false; setTimeout(refresh, 50); }
-  }
-}
-
-boot();
-setInterval(() => { if (!app.classList.contains('hidden') && !document.hidden) refresh(); }, 8000);
-document.addEventListener('visibilitychange', () => { if (!document.hidden && !app.classList.contains('hidden')) refresh(); });
+boot();setInterval(()=>{if(!document.hidden&&!app.classList.contains('hidden'))refresh()},5000);document.addEventListener('visibilitychange',()=>{if(!document.hidden&&!app.classList.contains('hidden'))refresh()});

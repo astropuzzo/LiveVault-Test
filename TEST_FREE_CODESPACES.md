@@ -1,45 +1,38 @@
-# Test gratuito di LiveVault con GitHub Codespaces
+# Test LiveVault v2 gratis con GitHub Codespaces
 
-Questo percorso serve esclusivamente a collaudare LiveVault prima di comprare una VPS.
-Non è pensato come hosting 24/7: GitHub Codespaces si arresta dopo inattività e usa una quota mensile di compute.
+Questa modalita serve per provare la build corrente della repository prima del deploy su VPS.
+Non e' pensata come hosting 24/7.
 
-## Cosa puoi testare
+## Avvio manuale
 
-- dashboard e login;
-- aggiunta/modifica sorgenti;
-- rilevamento LIVE;
-- avvio/stop FFmpeg;
-- segmentazione (10 minuti nel preset test);
-- upload Gofile;
-- fallback Pixeldrain;
-- verifica upload e cancellazione locale;
-- retry e storico registrazioni.
+1. GitHub: **Code -> Codespaces -> Create codespace on main**.
+2. Attendi che `postCreateCommand` completi la preparazione.
+3. Nel terminale esegui:
 
-## Avvio
+   ```bash
+   ./scripts/codespaces-run.sh
+   ```
 
-1. Apri il repository in GitHub.
-2. `Code` -> `Codespaces` -> `Create codespace on main`.
-3. Attendi il completamento di `postCreateCommand`.
-4. Nel terminale esegui:
+4. Scegli una password temporanea di almeno 10 caratteri.
+5. Apri la scheda **PORTS** e la porta **8080**. L'URL deve restare **Private**.
+6. Accedi a LiveVault.
+7. Le API key Gofile/Pixeldrain si configurano e si testano ora direttamente da **Settings** nella web app.
+
+## Smoke test automatico
+
+Per verificare backend, login e Settings API senza configurare provider:
 
 ```bash
-./scripts/codespaces-run.sh
+./scripts/codespaces-smoke.sh
 ```
 
-5. Scegli una password temporanea per LiveVault.
-6. Incolla, se vuoi testare gli upload, token Gofile e API key Pixeldrain. Puoi lasciare vuota una delle due.
-7. Apri la scheda **PORTS** e clicca sull'URL della porta `8080`.
-8. Mantieni la porta **Private**: non serve renderla pubblica.
-9. Accedi a LiveVault e aggiungi una sorgente di prova autorizzata.
+Il test avvia una istanza temporanea, controlla `/healthz`, effettua login, legge e modifica Settings, quindi chiude l'istanza.
 
-## Arresto
+## Cosa viene verificato in GitHub Actions
 
-Nel terminale premi `CTRL+C`, poi dal menu Codespaces scegli **Stop codespace** per non consumare quota gratuita inutilmente.
+La workflow CI esegue due job:
 
-## Dati
+- `test`: unit/integration tests, Python compile, JavaScript syntax e shell syntax;
+- `codespaces-smoke`: usa gli stessi script Codespaces (`codespaces-prepare.sh` + `codespaces-smoke.sh`) per assicurarsi che l'ambiente di prova possa realmente avviare LiveVault v2.
 
-I file di test e SQLite restano nella cartella `data/` del codespace finché il codespace esiste. Non committare `data/` né credenziali.
-
-## Nota sui segreti
-
-`codespaces-run.sh` tiene password e token solo nelle variabili d'ambiente del processo di test; non li scrive nel repository.
+Una release non va considerata pronta se uno dei due job e' rosso.

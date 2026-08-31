@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import os
 import signal
-import subprocess
 import shutil
 from dataclasses import dataclass
 from datetime import datetime
@@ -12,6 +11,7 @@ from zoneinfo import ZoneInfo
 
 from .config import settings
 from .db import Source
+from .settings_store import runtime
 from .source_providers import ResolvedInput, resolve_inputs
 from .utils import safe_name
 
@@ -24,6 +24,7 @@ class RecorderSession:
     directory: Path
     process: asyncio.subprocess.Process
     started_at: datetime
+    extension: str
 
 
 def _ffmpeg_headers(headers: dict[str, str]) -> str:
@@ -35,7 +36,10 @@ def _ffmpeg_headers(headers: dict[str, str]) -> str:
     return "\r\n".join(lines) + ("\r\n" if lines else "")
 
 
-def build_ffmpeg_command(inputs: list[ResolvedInput], output_pattern: Path) -> list[str]:
+def build_ffmpeg_command(inputs: list[ResolvedInput], output_pattern: Path, *, segment_minutes: int | None = None, container_format: str | None = None) -> list[str]:
+    cfg = runtime()
+    segment_minutes = int(segment_minutes or cfg.segment_minutes)
+    container_format = (container_format or cfg.container_format).lower()
     cmd = ["ffmpeg", "-hide_banner", "-loglevel", "warning", "-nostdin"]
     for item in inputs:
         cmd += ["-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "5"]
@@ -49,43 +53,45 @@ def build_ffmpeg_command(inputs: list[ResolvedInput], output_pattern: Path) -> l
     if len(inputs) == 1:
         cmd += ["-map", "0:v:0?", "-map", "0:a:0?"]
     else:
-        if video_idx is not None:
-            cmd += ["-map", f"{video_idx}:v:0?"]
-        else:
-            cmd += ["-map", "0:v:0?"]
-        if audio_idx is not None:
-            cmd += ["-map", f"{audio_idx}:a:0?"]
-        else:
-            cmd += ["-map", "0:a:0?"]
+        cmd += ["-map", f"{video_idx}:v:0?" if video_idx is not None else "0:v:0?"]
+        cmd += ["-map", f"{audio_idx}:a:0?" if audio_idx is not None else "0:a:0?"]
 
     cmd += [
         "-c", "copy",
         "-max_interleave_delta", "0",
         "-f", "segment",
-        "-segment_time", str(max(60, settings.segment_minutes * 60)),
+        "-segment_time", str(max(60, segment_minutes * 60)),
         "-reset_timestamps", "1",
-        "-segment_format", "matroska",
-        str(output_pattern),
     ]
+    if container_format == "mp4":
+        cmd += [
+            "-segment_format", "mp4",
+            "-segment_format_options", "movflags=+frag_keyframe+empty_moov+default_base_moof",
+        ]
+    else:
+        cmd += ["-segment_format", "matroska"]
+    cmd += [str(output_pattern)]
     return cmd
 
 
 async def start_recorder(source: Source) -> RecorderSession:
+    cfg = runtime()
     inputs = await resolve_inputs(source.platform, source.slug, source.quality)
     local_now = datetime.now(ZoneInfo(settings.timezone))
     source_name = safe_name(source.name)
     session_id = f"{source_name}_{local_now:%Y-%m-%d_%H-%M-%S}"
     directory = settings.recordings_dir / source_name / session_id
     directory.mkdir(parents=True, exist_ok=True)
-    output_pattern = directory / f"{session_id}_part%03d.mkv"
-    cmd = build_ffmpeg_command(inputs, output_pattern)
+    extension = ".mp4" if cfg.container_format == "mp4" else ".mkv"
+    output_pattern = directory / f"{session_id}_part%03d{extension}"
+    cmd = build_ffmpeg_command(inputs, output_pattern, segment_minutes=cfg.segment_minutes, container_format=cfg.container_format)
     process = await asyncio.create_subprocess_exec(
         *cmd,
         stdout=asyncio.subprocess.DEVNULL,
         stderr=asyncio.subprocess.PIPE,
         start_new_session=True,
     )
-    return RecorderSession(source.id, source.name, session_id, directory, process, local_now)
+    return RecorderSession(source.id, source.name, session_id, directory, process, local_now, extension)
 
 
 async def stop_recorder(session: RecorderSession) -> None:
@@ -108,26 +114,27 @@ async def stop_recorder(session: RecorderSession) -> None:
                 pass
 
 
-async def remux_to_mp4(path: Path) -> Path:
+async def remux_to_mp4(path: Path, *, require_space: bool = True) -> Path:
+    if path.suffix.lower() == ".mp4":
+        return path
     if path.suffix.lower() != ".mkv":
-        return path
-    # Remux temporarily needs roughly another file-sized allocation. Under disk
-    # pressure keep the resilient MKV rather than risking a full filesystem.
+        raise RuntimeError(f"Unsupported container for MP4 remux: {path.suffix}")
     free = shutil.disk_usage(path.parent).free
-    if free < path.stat().st_size + 512 * 1024 * 1024:
-        return path
+    if require_space and free < path.stat().st_size + 256 * 1024 * 1024:
+        raise RuntimeError("Spazio insufficiente per il remux MP4")
     output = path.with_suffix(".mp4")
     tmp = path.with_suffix(".tmp.mp4")
     proc = await asyncio.create_subprocess_exec(
         "ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", str(path),
         "-map", "0", "-dn", "-ignore_unknown", "-c", "copy", "-movflags", "+faststart", str(tmp),
         stdout=asyncio.subprocess.DEVNULL,
-        stderr=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.PIPE,
     )
+    stderr = await proc.stderr.read() if proc.stderr else b""
     rc = await proc.wait()
     if rc == 0 and tmp.exists() and tmp.stat().st_size > 0:
         tmp.replace(output)
         path.unlink(missing_ok=True)
         return output
     tmp.unlink(missing_ok=True)
-    return path
+    raise RuntimeError((stderr.decode(errors="replace") or "FFmpeg remux failed")[-1500:])
