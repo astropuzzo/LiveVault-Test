@@ -51,6 +51,9 @@ iterations=310_000
 digest=hashlib.pbkdf2_hmac('sha256', password, salt, iterations)
 b64=lambda b: base64.urlsafe_b64encode(b).decode().rstrip('=')
 password_hash=f"pbkdf2_sha256${iterations}${b64(salt)}${b64(digest)}"
+# Docker Compose expands dollar-prefixed text while loading .env. Escaping each
+# dollar preserves the literal PBKDF2 separators inside the container.
+password_hash_for_compose=password_hash.replace('$', '$$')
 secret=secrets.token_urlsafe(48)
 p=Path('.env')
 lines=p.read_text().splitlines()
@@ -59,12 +62,12 @@ for line in lines:
     if line.startswith('APP_PASSWORD='):
         out.append('APP_PASSWORD='); seen.add('APP_PASSWORD')
     elif line.startswith('APP_PASSWORD_HASH='):
-        out.append('APP_PASSWORD_HASH='+password_hash); seen.add('APP_PASSWORD_HASH')
+        out.append('APP_PASSWORD_HASH='+password_hash_for_compose); seen.add('APP_PASSWORD_HASH')
     elif line.startswith('APP_SECRET='):
         out.append('APP_SECRET='+secret); seen.add('APP_SECRET')
     else:
         out.append(line)
-if 'APP_PASSWORD_HASH' not in seen: out.append('APP_PASSWORD_HASH='+password_hash)
+if 'APP_PASSWORD_HASH' not in seen: out.append('APP_PASSWORD_HASH='+password_hash_for_compose)
 if 'APP_SECRET' not in seen: out.append('APP_SECRET='+secret)
 p.write_text('\n'.join(out)+'\n')
 PY
