@@ -30,3 +30,4 @@ jobs:
           git add -A
           git commit -m 'Release LiveVault v2.0.0'
           git push origin HEAD:main
+# trigger sync
