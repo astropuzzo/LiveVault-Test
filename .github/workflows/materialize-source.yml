@@ -1,0 +1,47 @@
+name: Materialize LiveVault source
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Expand source archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ ! -f .livevault-source.tar.gz ]; then
+            echo "Source already materialized."
+            exit 0
+          fi
+          mkdir -p /tmp/livevault-src
+          tar -xzf .livevault-source.tar.gz -C /tmp/livevault-src
+          rsync -a --delete \
+            --exclude='.git/' \
+            --exclude='.github/workflows/materialize-source.yml' \
+            /tmp/livevault-src/ ./
+          rm -f .livevault-source.tar.gz
+          chmod +x scripts/*.sh
+      - name: Commit expanded project
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -f .livevault-source.tar.gz ]; then
+            echo "Archive still present; refusing to commit."
+            exit 1
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "Nothing to commit."
+          else
+            git commit -m "Materialize LiveVault v1.1.2 source"
+            git push
+          fi

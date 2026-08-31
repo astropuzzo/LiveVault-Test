@@ -1,0 +1,9 @@
+{
+  "name": "LiveVault Free Test",
+  "image": "mcr.microsoft.com/devcontainers/python:1-3.13-bookworm",
+  "forwardPorts": [8080],
+  "portsAttributes": {
+    "8080": {"label": "LiveVault", "onAutoForward": "notify"}
+  },
+  "postCreateCommand": "if [ -f .livevault-source.tar.gz ]; then tar -xzf .livevault-source.tar.gz; fi; bash scripts/codespaces-prepare.sh"
+}
