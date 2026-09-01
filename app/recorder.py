@@ -13,7 +13,7 @@ from .config import settings
 from .db import Source
 from .settings_store import runtime
 from .source_providers import ResolvedInput, resolve_inputs
-from .utils import safe_name
+from .utils import safe_name, utcnow
 
 
 @dataclass
@@ -49,7 +49,11 @@ def build_ffmpeg_command(inputs: list[ResolvedInput], output_pattern: Path, *, s
         cmd += ["-i", item.url]
 
     video_idx = next((i for i, item in enumerate(inputs) if item.kind == "video"), None)
+    if video_idx is None:
+        video_idx = next((i for i, item in enumerate(inputs) if item.kind == "media"), None)
     audio_idx = next((i for i, item in enumerate(inputs) if item.kind == "audio"), None)
+    if audio_idx is None:
+        audio_idx = next((i for i, item in enumerate(inputs) if item.kind == "media"), None)
     if len(inputs) == 1:
         cmd += ["-map", "0:v:0?", "-map", "0:a:0?"]
     else:
@@ -58,7 +62,7 @@ def build_ffmpeg_command(inputs: list[ResolvedInput], output_pattern: Path, *, s
 
     cmd += [
         "-c", "copy",
-        "-max_interleave_delta", "0",
+        "-max_interleave_delta", "10000000",
         "-f", "segment",
         "-segment_time", str(max(60, segment_minutes * 60)),
         "-reset_timestamps", "1",
@@ -91,7 +95,7 @@ async def start_recorder(source: Source) -> RecorderSession:
         stderr=asyncio.subprocess.PIPE,
         start_new_session=True,
     )
-    return RecorderSession(source.id, source.name, session_id, directory, process, local_now, extension)
+    return RecorderSession(source.id, source.name, session_id, directory, process, utcnow(), extension)
 
 
 async def stop_recorder(session: RecorderSession) -> None:
@@ -99,14 +103,14 @@ async def stop_recorder(session: RecorderSession) -> None:
         return
     try:
         os.killpg(session.process.pid, signal.SIGINT)
-        await asyncio.wait_for(session.process.wait(), timeout=20)
+        await asyncio.wait_for(session.process.wait(), timeout=7)
     except Exception:
         try:
             os.killpg(session.process.pid, signal.SIGTERM)
         except Exception:
             pass
         try:
-            await asyncio.wait_for(session.process.wait(), timeout=10)
+            await asyncio.wait_for(session.process.wait(), timeout=2)
         except Exception:
             try:
                 os.killpg(session.process.pid, signal.SIGKILL)

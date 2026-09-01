@@ -18,6 +18,20 @@ class IntegrityResult:
     error: str = ""
     streams: list[dict] | None = None
 
+    @property
+    def has_video(self) -> bool:
+        return any(stream.get("codec_type") == "video" for stream in (self.streams or []))
+
+    @property
+    def has_audio(self) -> bool:
+        return any(stream.get("codec_type") == "audio" for stream in (self.streams or []))
+
+    def codec(self, stream_type: str) -> str:
+        return next(
+            (str(stream.get("codec_name") or "") for stream in (self.streams or []) if stream.get("codec_type") == stream_type),
+            "",
+        )
+
 
 def safe_name(value: str) -> str:
     value = SAFE_RE.sub("_", value.strip())
@@ -36,37 +50,61 @@ def sha256_file(path: Path, chunk_size: int = 1024 * 1024) -> str:
     return h.hexdigest()
 
 
-def probe_media(path: Path) -> IntegrityResult:
+def _probe_duration(path: Path) -> float | None:
+    """Duration is useful metadata, but it must never block file recovery."""
+    try:
+        result = subprocess.run(
+            [
+                "ffprobe", "-v", "error", "-show_entries", "format=duration",
+                "-of", "default=noprint_wrappers=1:nokey=1", str(path),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+        value = (result.stdout or "").strip()
+        return float(value) if result.returncode == 0 and value not in {"", "N/A"} else None
+    except (subprocess.TimeoutExpired, TypeError, ValueError):
+        return None
+
+
+def probe_media(path: Path, *, require_audio: bool = True) -> IntegrityResult:
     try:
         p = subprocess.run(
             [
-                "ffprobe", "-v", "error", "-show_entries",
-                "format=duration,format_name:stream=index,codec_type,codec_name",
+                "ffprobe", "-v", "error", "-probesize", "32M", "-analyzeduration", "20M",
+                "-read_intervals", "%+15", "-show_entries",
+                "format=format_name:stream=index,codec_type,codec_name",
                 "-of", "json", str(path),
             ],
             capture_output=True,
             text=True,
-            timeout=45,
+            timeout=60,
             check=False,
         )
         if p.returncode != 0:
             return IntegrityResult(False, None, (p.stderr or "ffprobe failed")[-1200:])
         payload = json.loads(p.stdout or "{}")
         streams = payload.get("streams") or []
-        has_media = any(x.get("codec_type") in {"video", "audio"} for x in streams)
-        duration_raw = (payload.get("format") or {}).get("duration")
-        duration = float(duration_raw) if duration_raw not in (None, "N/A", "") else None
-        if not has_media:
+        duration = _probe_duration(path)
+        has_video = any(x.get("codec_type") == "video" for x in streams)
+        has_audio = any(x.get("codec_type") == "audio" for x in streams)
+        if not has_video:
             return IntegrityResult(False, duration, "Nessuno stream audio/video valido trovato", streams)
+        if require_audio and not has_audio:
+            return IntegrityResult(False, duration, "Traccia audio assente: il file non verrà caricato come video muto", streams)
         if path.stat().st_size <= 0:
             return IntegrityResult(False, duration, "File vuoto", streams)
         return IntegrityResult(True, duration, "", streams)
+    except subprocess.TimeoutExpired:
+        return IntegrityResult(False, None, "Analisi stream ffprobe scaduta dopo 60 secondi; riprova quando il file è stabile")
     except Exception as exc:
         return IntegrityResult(False, None, str(exc)[-1200:])
 
 
-def verify_media(path: Path, mode: str = "packet") -> IntegrityResult:
-    quick = probe_media(path)
+def verify_media(path: Path, mode: str = "packet", *, require_audio: bool = True) -> IntegrityResult:
+    quick = probe_media(path, require_audio=require_audio)
     if not quick.ok or mode == "quick":
         return quick
     try:
@@ -85,7 +123,7 @@ def verify_media(path: Path, mode: str = "packet") -> IntegrityResult:
 
 
 def media_duration(path: Path) -> float | None:
-    return probe_media(path).duration
+    return probe_media(path, require_audio=False).duration
 
 
 def generate_thumbnail(path: Path, output: Path, duration: float | None = None) -> bool:

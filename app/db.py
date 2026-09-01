@@ -27,6 +27,8 @@ class Source(Base):
     last_status: Mapped[str] = mapped_column(String(40), default="unknown")
     last_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_live_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    status_changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_error: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
@@ -58,6 +60,10 @@ class Recording(Base):
     container_format: Mapped[str] = mapped_column(String(16), default="")
     upload_priority: Mapped[int] = mapped_column(Integer, default=0, index=True)
     uploaded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    has_video: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    has_audio: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    video_codec: Mapped[str] = mapped_column(String(40), default="")
+    audio_codec: Mapped[str] = mapped_column(String(40), default="")
 
 
 class AppSetting(Base):
@@ -97,6 +103,10 @@ def _migrate_recordings() -> None:
         "container_format": "VARCHAR(16) NOT NULL DEFAULT ''",
         "upload_priority": "INTEGER NOT NULL DEFAULT 0",
         "uploaded_at": "DATETIME",
+        "has_video": "BOOLEAN",
+        "has_audio": "BOOLEAN",
+        "video_codec": "VARCHAR(40) NOT NULL DEFAULT ''",
+        "audio_codec": "VARCHAR(40) NOT NULL DEFAULT ''",
     }
     with engine.begin() as conn:
         for name, ddl in additions.items():
@@ -104,11 +114,36 @@ def _migrate_recordings() -> None:
                 conn.execute(text(f"ALTER TABLE recordings ADD COLUMN {name} {ddl}"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS ix_recordings_integrity_status ON recordings (integrity_status)"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS ix_recordings_upload_priority ON recordings (upload_priority)"))
+        # Older releases mixed local wall-clock values with UTC in started_at.
+        # The segment mtime and probed duration provide an unambiguous UTC start.
+        conn.execute(text("""
+            UPDATE recordings
+            SET started_at = datetime(finalized_at, '-' || duration_seconds || ' seconds')
+            WHERE duration_seconds IS NOT NULL
+              AND duration_seconds > 0
+              AND (
+                julianday(started_at) > julianday(finalized_at)
+                OR abs((julianday(finalized_at) - julianday(started_at)) * 86400 - duration_seconds) > 300
+              )
+        """))
+
+
+def _migrate_sources() -> None:
+    existing = _columns("sources")
+    additions = {
+        "status_changed_at": "DATETIME",
+        "last_error": "TEXT NOT NULL DEFAULT ''",
+    }
+    with engine.begin() as conn:
+        for name, ddl in additions.items():
+            if name not in existing:
+                conn.execute(text(f"ALTER TABLE sources ADD COLUMN {name} {ddl}"))
 
 
 def init_db() -> None:
     Base.metadata.create_all(engine)
     _migrate_recordings()
+    _migrate_sources()
 
 
 @contextmanager

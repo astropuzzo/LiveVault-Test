@@ -16,6 +16,7 @@ def test_generated_ui_uses_delegated_events():
     assert "onclick=" not in js
     assert "data-action=" in js
     assert "data-rec-action=" in js
+    assert "if(!value)return ''" in js
 
 
 def test_pwa_service_worker_exists():

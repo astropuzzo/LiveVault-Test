@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.1.0 - 2026-09-01
+
+- Corretto il mapping FFmpeg: gli input combinati mantengono sia video sia audio anche quando yt-dlp restituisce più formati.
+- Ogni nuovo file deve contenere una traccia video e una audio prima di entrare in upload; codec e presenza stream restano visibili nello storico.
+- FFprobe usa un'analisi iniziale limitata e non tratta più il solo timeout della durata come corruzione del file.
+- Attesa esplicita della chiusura stabile dei segmenti e arresto parallelo dei recorder durante reboot/deploy.
+- Health check Docker reale sui worker e sullo spazio disco.
+- Corretto il pulsante Cloud: un URL vuoto non viene più trasformato nell'indirizzo della dashboard.
+- Dashboard con conteggi reali di file/sessioni/upload, dimensioni e durata per sorgente, ultimo live, cambio stato e link diretti.
+- Timestamp API normalizzati in UTC e riparazione automatica dei vecchi `started_at` incoerenti.
+- Log dei normali controlli offline reso silenzioso per lasciare visibili gli errori effettivi.
+
 ## 2.0.0 - 2026-08-31
 
 - Dashboard operativa v2 con controlli globali pausa REC, pausa upload e avvio immediato coda.

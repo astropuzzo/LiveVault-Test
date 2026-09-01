@@ -29,6 +29,31 @@ QUALITY_FORMATS = {
 }
 
 
+class _QuietLogger:
+    """Keep expected offline probes out of the container error log."""
+
+    def debug(self, _message: str) -> None:
+        pass
+
+    def warning(self, _message: str) -> None:
+        pass
+
+    def error(self, _message: str) -> None:
+        pass
+
+
+def classify_format(vcodec: str | None, acodec: str | None) -> str:
+    has_video = bool(vcodec and vcodec != "none")
+    has_audio = bool(acodec and acodec != "none")
+    if has_video and has_audio:
+        return "media"
+    if has_video:
+        return "video"
+    if has_audio:
+        return "audio"
+    return "unknown"
+
+
 def source_url(platform: str, slug: str) -> str:
     if platform == "chaturbate":
         return f"https://chaturbate.com/{slug.strip('/')}/"
@@ -45,6 +70,7 @@ def _extract(url: str, quality: str, *, quiet: bool = True) -> dict[str, Any]:
         "noplaylist": True,
         "socket_timeout": 20,
         "retries": 2,
+        "logger": _QuietLogger(),
     }
     with yt_dlp.YoutubeDL(params) as ydl:
         return ydl.extract_info(url, download=False)
@@ -70,14 +96,16 @@ async def resolve_inputs(platform: str, slug: str, quality: str = "best") -> lis
     info = await asyncio.to_thread(_extract, url, quality, quiet=False)
     formats = info.get("requested_formats") or []
     result: list[ResolvedInput] = []
+    seen: set[str] = set()
     if formats:
         for fmt in formats:
             media_url = fmt.get("url")
-            if not media_url:
+            if not media_url or media_url in seen:
                 continue
-            vcodec = fmt.get("vcodec") or "none"
-            acodec = fmt.get("acodec") or "none"
-            kind = "video" if vcodec != "none" else "audio" if acodec != "none" else "media"
+            seen.add(media_url)
+            kind = classify_format(fmt.get("vcodec"), fmt.get("acodec"))
+            if kind == "unknown":
+                continue
             result.append(ResolvedInput(media_url, dict(fmt.get("http_headers") or {}), kind))
     elif info.get("url"):
         result.append(ResolvedInput(str(info["url"]), dict(info.get("http_headers") or {}), "media"))

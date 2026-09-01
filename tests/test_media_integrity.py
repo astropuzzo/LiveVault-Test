@@ -14,7 +14,8 @@ def test_integrity_and_thumbnail_pipeline(tmp_path: Path):
         [
             "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
             "-f", "lavfi", "-i", "testsrc2=size=160x90:rate=10",
-            "-t", "1", "-c:v", "mpeg4", str(media),
+            "-f", "lavfi", "-i", "sine=frequency=1000:sample_rate=44100",
+            "-t", "1", "-shortest", "-c:v", "mpeg4", "-c:a", "aac", str(media),
         ],
         check=True,
         timeout=20,
@@ -33,3 +34,22 @@ def test_corrupt_media_is_rejected(tmp_path: Path):
     broken = tmp_path / "broken.mp4"
     broken.write_bytes(b"not a video")
     assert not verify_media(broken, "quick").ok
+
+
+@pytest.mark.skipif(not shutil.which("ffmpeg") or not shutil.which("ffprobe"), reason="ffmpeg/ffprobe missing")
+def test_video_without_audio_is_rejected(tmp_path: Path):
+    media = tmp_path / "silent.mp4"
+    subprocess.run(
+        [
+            "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+            "-f", "lavfi", "-i", "testsrc2=size=160x90:rate=10",
+            "-t", "1", "-c:v", "mpeg4", str(media),
+        ],
+        check=True,
+        timeout=20,
+    )
+    result = verify_media(media, "quick")
+    assert not result.ok
+    assert result.has_video
+    assert not result.has_audio
+    assert "audio" in result.error.lower()

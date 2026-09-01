@@ -1,5 +1,5 @@
 from app.utils import safe_name
-from app.source_providers import source_url
+from app.source_providers import classify_format, source_url
 
 
 def test_safe_name():
@@ -9,3 +9,10 @@ def test_safe_name():
 
 def test_source_url():
     assert source_url("chaturbate", "demo") == "https://chaturbate.com/demo/"
+
+
+def test_format_classification_preserves_combined_audio_video():
+    assert classify_format("h264", "aac") == "media"
+    assert classify_format("h264", "none") == "video"
+    assert classify_format("none", "aac") == "audio"
+    assert classify_format("none", "none") == "unknown"

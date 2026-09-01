@@ -5,13 +5,14 @@ import re
 import time
 from collections import defaultdict, deque
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request, Response
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
+from sqlalchemy import case, distinct, func, select
 
 from .auth import COOKIE_NAME, MAX_AGE, create_session_token, password_ok, require_auth
 from .config import settings
@@ -28,7 +29,7 @@ USERNAME_RE = re.compile(r"^[A-Za-z0-9_]{1,100}$")
 LOGIN_FAILURES: dict[str, deque[float]] = defaultdict(deque)
 LOGIN_WINDOW = 10 * 60
 LOGIN_MAX_FAILURES = 6
-VERSION = "2.0.0"
+VERSION = "2.1.0"
 
 
 class LoginBody(BaseModel):
@@ -105,6 +106,14 @@ def _login_blocked(ip: str) -> bool:
     while q and now - q[0] > LOGIN_WINDOW:
         q.popleft()
     return len(q) >= LOGIN_MAX_FAILURES
+
+
+def _iso_utc(value: datetime | None) -> str | None:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 @asynccontextmanager
@@ -187,6 +196,15 @@ def status(request: Request):
         failed = db.scalar(select(func.count()).select_from(Recording).where(Recording.upload_status == "failed")) or 0
         integrity_failed = db.scalar(select(func.count()).select_from(Recording).where(Recording.integrity_status == "failed")) or 0
         waiting_config = db.scalar(select(func.count()).select_from(Recording).where(Recording.upload_status == "waiting_config")) or 0
+        total_recordings = db.scalar(select(func.count()).select_from(Recording)) or 0
+        total_sessions = db.scalar(select(func.count(distinct(Recording.session_id)))) or 0
+        total_bytes = db.scalar(select(func.coalesce(func.sum(Recording.size_bytes), 0))) or 0
+        total_duration = db.scalar(select(func.coalesce(func.sum(Recording.duration_seconds), 0.0))) or 0.0
+        uploaded_bytes = db.scalar(select(func.coalesce(func.sum(Recording.size_bytes), 0)).where(Recording.upload_status == "uploaded")) or 0
+        audio_missing = db.scalar(select(func.count()).select_from(Recording).where(Recording.has_audio.is_(False))) or 0
+        today_start = utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+        today_recordings = db.scalar(select(func.count()).select_from(Recording).where(Recording.finalized_at >= today_start)) or 0
+        latest_recording = db.scalar(select(func.max(Recording.finalized_at)))
     snapshot = manager.snapshot()
     buffer_bytes = snapshot["buffer_bytes"]
     return {
@@ -203,6 +221,19 @@ def status(request: Request):
             "buffer_max_bytes": int(cfg.buffer_max_gb * 1024**3) if cfg.buffer_max_gb else 0,
             "buffer_max_human": human_bytes(cfg.buffer_max_gb * 1024**3) if cfg.buffer_max_gb else "Illimitato",
             "buffer_percent": round(buffer_bytes / (cfg.buffer_max_gb * 1024**3) * 100, 1) if cfg.buffer_max_gb else 0,
+        },
+        "history": {
+            "recordings": total_recordings,
+            "sessions": total_sessions,
+            "today": today_recordings,
+            "total_bytes": total_bytes,
+            "total_human": human_bytes(total_bytes),
+            "total_duration_seconds": total_duration,
+            "uploaded": uploaded,
+            "uploaded_bytes": uploaded_bytes,
+            "uploaded_human": human_bytes(uploaded_bytes),
+            "audio_missing": audio_missing,
+            "latest_recording_at": _iso_utc(latest_recording),
         },
         "config": {**public_settings(), "version": VERSION},
     }
@@ -302,14 +333,51 @@ def list_sources(request: Request):
     require_auth(request)
     with db_session() as db:
         rows = list(db.scalars(select(Source).order_by(Source.name.asc())).all())
+        aggregate_rows = db.execute(
+            select(
+                Recording.source_id.label("source_id"),
+                func.count(Recording.id).label("recording_count"),
+                func.count(distinct(Recording.session_id)).label("session_count"),
+                func.coalesce(func.sum(Recording.size_bytes), 0).label("total_bytes"),
+                func.coalesce(func.sum(Recording.duration_seconds), 0.0).label("total_duration"),
+                func.sum(case((Recording.upload_status == "uploaded", 1), else_=0)).label("uploaded_count"),
+                func.sum(case((Recording.upload_status.in_(["failed", "integrity_failed"]), 1), else_=0)).label("failed_count"),
+                func.max(Recording.finalized_at).label("last_recording_at"),
+            ).group_by(Recording.source_id)
+        ).all()
+        aggregates = {row.source_id: row for row in aggregate_rows}
+        latest_cloud: dict[int, str] = {}
+        for source_id, remote_url in db.execute(
+            select(Recording.source_id, Recording.remote_url)
+            .where(Recording.remote_url != "")
+            .order_by(Recording.finalized_at.desc())
+        ).all():
+            latest_cloud.setdefault(source_id, remote_url)
     active_ids = set(manager.active)
-    return [{
-        "id": s.id, "name": s.name, "platform": s.platform, "slug": s.slug, "enabled": s.enabled, "quality": s.quality,
-        "consent_confirmed": s.consent_confirmed,
-        "last_status": "recording" if s.id in active_ids else ("paused" if not s.enabled else s.last_status),
-        "last_checked_at": s.last_checked_at.isoformat() if s.last_checked_at else None,
-        "last_live_at": s.last_live_at.isoformat() if s.last_live_at else None,
-    } for s in rows]
+    now = utcnow()
+    result = []
+    for source in rows:
+        aggregate = aggregates.get(source.id)
+        active = source.id in active_ids
+        result.append({
+            "id": source.id, "name": source.name, "platform": source.platform, "slug": source.slug,
+            "source_url": f"https://chaturbate.com/{source.slug}/",
+            "enabled": source.enabled, "quality": source.quality, "consent_confirmed": source.consent_confirmed,
+            "last_status": "recording" if active else ("paused" if not source.enabled else source.last_status),
+            "last_checked_at": _iso_utc(source.last_checked_at),
+            "last_live_at": _iso_utc(now if active else source.last_live_at),
+            "status_changed_at": _iso_utc(source.status_changed_at),
+            "last_error": source.last_error,
+            "recording_count": int(aggregate.recording_count if aggregate else 0),
+            "session_count": int(aggregate.session_count if aggregate else 0),
+            "uploaded_count": int(aggregate.uploaded_count if aggregate else 0),
+            "failed_count": int(aggregate.failed_count if aggregate else 0),
+            "total_bytes": int(aggregate.total_bytes if aggregate else 0),
+            "total_duration_seconds": float(aggregate.total_duration if aggregate else 0),
+            "last_recording_at": _iso_utc(aggregate.last_recording_at if aggregate else None),
+            "latest_cloud_url": latest_cloud.get(source.id, ""),
+        })
+    return result
 
 
 @app.post("/api/sources")
@@ -396,13 +464,15 @@ def _recording_json(r: Recording) -> dict:
     return {
         "id": r.id, "source_id": r.source_id, "source_name": r.source_name, "session_id": r.session_id,
         "filename": r.filename, "container_format": r.container_format or Path(r.filename).suffix.lstrip("."),
-        "started_at": r.started_at.isoformat() if r.started_at else None,
-        "finalized_at": r.finalized_at.isoformat() if r.finalized_at else None,
+        "started_at": _iso_utc(r.started_at),
+        "finalized_at": _iso_utc(r.finalized_at),
         "duration_seconds": r.duration_seconds, "size_bytes": r.size_bytes, "size_human": human_bytes(r.size_bytes),
         "sha256": r.sha256, "integrity_status": r.integrity_status, "integrity_error": r.integrity_error,
-        "integrity_checked_at": r.integrity_checked_at.isoformat() if r.integrity_checked_at else None,
+        "integrity_checked_at": _iso_utc(r.integrity_checked_at),
         "upload_status": r.upload_status, "upload_provider": r.upload_provider, "remote_url": r.remote_url,
-        "upload_attempts": r.upload_attempts, "uploaded_at": r.uploaded_at.isoformat() if r.uploaded_at else None,
+        "upload_attempts": r.upload_attempts, "uploaded_at": _iso_utc(r.uploaded_at),
+        "has_video": r.has_video, "has_audio": r.has_audio,
+        "video_codec": r.video_codec, "audio_codec": r.audio_codec,
         "last_error": r.last_error, "local_available": local_available, "thumbnail_available": thumb_available,
         "thumbnail_url": f"/api/recordings/{r.id}/thumbnail" if thumb_available else "",
         "view_url": f"/api/recordings/{r.id}/view" if local_available else "",
@@ -518,6 +588,10 @@ async def recheck_integrity(recording_id: int, request: Request):
     with db_session() as db:
         rec = db.get(Recording, recording_id)
         if rec:
+            rec.has_video = result.has_video
+            rec.has_audio = result.has_audio
+            rec.video_codec = result.codec("video")
+            rec.audio_codec = result.codec("audio")
             rec.integrity_status = "passed" if result.ok else "failed"
             rec.integrity_error = result.error
             rec.integrity_checked_at = utcnow()
@@ -580,6 +654,10 @@ async def convert_mp4(recording_id: int, request: Request):
             rec.size_bytes = new_path.stat().st_size
             rec.sha256 = digest
             rec.duration_seconds = integrity.duration
+            rec.has_video = integrity.has_video
+            rec.has_audio = integrity.has_audio
+            rec.video_codec = integrity.codec("video")
+            rec.audio_codec = integrity.codec("audio")
             rec.integrity_status = "passed" if integrity.ok else "failed"
             rec.integrity_error = integrity.error
             rec.integrity_checked_at = utcnow()
@@ -650,5 +728,8 @@ def cleanup_uploaded_recordings(request: Request):
 def healthz():
     state = disk_state()
     cfg = runtime()
-    healthy = state.free_gb > cfg.emergency_free_gb
-    return {"ok": healthy, "disk_pressure": state.pressure, "free_gb": round(state.free_gb, 2), "worker": manager.health(), "version": VERSION}
+    worker = manager.health()
+    workers_ok = worker["started"] and all(worker["tasks"].values())
+    healthy = state.free_gb > cfg.emergency_free_gb and workers_ok
+    payload = {"ok": healthy, "disk_pressure": state.pressure, "free_gb": round(state.free_gb, 2), "worker": worker, "version": VERSION}
+    return JSONResponse(payload, status_code=200 if healthy else 503)

@@ -99,9 +99,9 @@ class WorkerManager:
                 await asyncio.wait_for(asyncio.shield(task), timeout=10)
 
     async def stop_all_recordings(self) -> None:
-        for source_id in list(self.active):
-            with contextlib.suppress(Exception):
-                await self.stop_source(source_id)
+        source_ids = list(self.active)
+        if source_ids:
+            await asyncio.gather(*(self.stop_source(source_id) for source_id in source_ids), return_exceptions=True)
 
     def local_buffer_bytes(self) -> int:
         total = 0
@@ -208,12 +208,34 @@ class WorkerManager:
                 started_at=None,
             )
 
+    async def _wait_until_stable(self, path: Path, timeout: float = 12.0) -> None:
+        """Do not probe a segment while FFmpeg is still flushing its trailer."""
+        deadline = time.monotonic() + timeout
+        previous: tuple[int, int] | None = None
+        while time.monotonic() < deadline:
+            try:
+                stat = path.stat()
+            except FileNotFoundError:
+                return
+            current = (stat.st_size, stat.st_mtime_ns)
+            if stat.st_size > 0 and current == previous and time.time() - stat.st_mtime >= 1.0:
+                return
+            previous = current
+            await asyncio.sleep(1)
+
     async def _index_file(self, *, source_id: int, source_name: str, session_id: str, path: Path, started_at: datetime | None) -> None:
         cfg = runtime()
+        await self._wait_until_stable(path)
         integrity = await asyncio.to_thread(verify_media, path, cfg.integrity_mode)
         digest = await asyncio.to_thread(sha256_file, path)
         finalized = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc)
-        start = started_at or (finalized - timedelta(seconds=integrity.duration or 0))
+        if integrity.duration:
+            start = finalized - timedelta(seconds=integrity.duration)
+        elif started_at:
+            start = started_at if started_at.tzinfo else started_at.replace(tzinfo=timezone.utc)
+            start = start.astimezone(timezone.utc)
+        else:
+            start = finalized
         thumb_path = ""
         if cfg.generate_thumbnails and integrity.ok:
             candidate = settings.data_dir / "thumbnails" / f"{digest[:24]}.jpg"
@@ -240,6 +262,10 @@ class WorkerManager:
                 integrity_error=integrity.error,
                 integrity_checked_at=utcnow(),
                 container_format=path.suffix.lower().lstrip("."),
+                has_video=integrity.has_video,
+                has_audio=integrity.has_audio,
+                video_codec=integrity.codec("video"),
+                audio_codec=integrity.codec("audio"),
             ))
 
     async def _check_source(self, source: Source, semaphore: asyncio.Semaphore) -> None:
@@ -255,13 +281,17 @@ class WorkerManager:
             return
         async with semaphore:
             result = await probe(source.platform, source.slug, source.quality)
+            checked_at = utcnow()
             with db_session() as db:
                 current = db.get(Source, source.id)
                 if current:
+                    if current.last_status != result.status or current.status_changed_at is None:
+                        current.status_changed_at = checked_at
                     current.last_status = result.status
-                    current.last_checked_at = utcnow()
+                    current.last_checked_at = checked_at
+                    current.last_error = result.error if result.status == "error" else ""
                     if result.live:
-                        current.last_live_at = utcnow()
+                        current.last_live_at = checked_at
             if not result.live or self._stopping or source.id in self.active or runtime().recording_paused:
                 return
             try:
@@ -273,6 +303,12 @@ class WorkerManager:
                 self.watch_tasks[source.id] = task
             except Exception as exc:
                 self.last_errors[f"source:{source.id}"] = f"Avvio recorder fallito: {exc}"
+                with db_session() as db:
+                    current = db.get(Source, source.id)
+                    if current:
+                        current.last_status = "error"
+                        current.status_changed_at = utcnow()
+                        current.last_error = str(exc)[-1000:]
 
     async def _poll_loop(self) -> None:
         while not self._stopping:
@@ -342,8 +378,12 @@ class WorkerManager:
             with db_session() as db:
                 source = db.get(Source, session.source_id)
                 if source:
+                    now = utcnow()
+                    if source.last_status != "offline" or source.status_changed_at is None:
+                        source.status_changed_at = now
                     source.last_status = "offline"
-                    source.last_checked_at = utcnow()
+                    source.last_checked_at = now
+                    source.last_live_at = now
             self.wake()
 
     async def _finalize_segment(self, session: RecorderSession, path: Path) -> None:
@@ -399,6 +439,10 @@ class WorkerManager:
             with db_session() as db:
                 current = db.get(Recording, rec.id)
                 if current:
+                    current.has_video = integrity.has_video
+                    current.has_audio = integrity.has_audio
+                    current.video_codec = integrity.codec("video")
+                    current.audio_codec = integrity.codec("audio")
                     current.integrity_status = "failed"
                     current.integrity_error = integrity.error
                     current.integrity_checked_at = utcnow()
@@ -419,6 +463,10 @@ class WorkerManager:
         with db_session() as db:
             current = db.get(Recording, rec.id)
             if current:
+                current.has_video = integrity.has_video
+                current.has_audio = integrity.has_audio
+                current.video_codec = integrity.codec("video")
+                current.audio_codec = integrity.codec("audio")
                 current.integrity_status = "passed"
                 current.integrity_error = ""
                 current.integrity_checked_at = utcnow()
