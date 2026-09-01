@@ -1,4 +1,4 @@
-# LiveVault v2.0.0
+# LiveVault v2.1.0
 
 LiveVault è un recorder remoto 24/7 con web dashboard/PWA. Monitora sorgenti autorizzate, registra in segmenti con FFmpeg stream-copy, verifica i media, crea miniature e gestisce un buffer locale con upload automatico Gofile/Pixeldrain.
 
@@ -89,7 +89,7 @@ Per una VPS gratuita compatibile con registrazione 24/7, storage persistente e D
 In breve:
 
 ```bash
-tar -xzf LiveVault-v2.0.0.tar.gz
+tar -xzf LiveVault-v2.1.0.tar.gz
 cd LiveVault
 chmod +x scripts/*.sh
 ./scripts/install.sh

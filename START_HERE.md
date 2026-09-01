@@ -10,14 +10,14 @@ Guida breve per avviare LiveVault su una normale VPS Linux. Non dipende da Azure
 - almeno 1 vCPU e 1 GB RAM; 2 GB consigliati se vuoi ospitare anche altri servizi;
 - 15–50 GB di disco a seconda del buffer;
 - accesso SSH/root o utente con `sudo`;
-- il file `LiveVault-v2.0.0.tar.gz`.
+- il file `LiveVault-v2.1.0.tar.gz`.
 
 ## 1. Copia il pacchetto sulla VPS
 
 Puoi usare SCP/SFTP oppure un link temporaneo. Una volta che il file è nella home della VPS:
 
 ```bash
-tar -xzf LiveVault-v2.0.0.tar.gz
+tar -xzf LiveVault-v2.1.0.tar.gz
 cd LiveVault
 chmod +x scripts/*.sh
 ```

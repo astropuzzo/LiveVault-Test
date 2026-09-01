@@ -27,6 +27,8 @@ export COOKIE_SECURE="false"
 export BUFFER_MAX_GB="0"
 export LIVEVAULT_PORT="${LIVEVAULT_PORT:-18080}"
 BASE_URL="http://127.0.0.1:${LIVEVAULT_PORT}"
+EXPECTED_VERSION="$(tr -d '\r\n' < VERSION)"
+export EXPECTED_VERSION
 export MIN_FREE_GB="0.25"
 export CRITICAL_FREE_GB="0.1"
 export EMERGENCY_FREE_GB="0.05"
@@ -45,7 +47,7 @@ for _ in $(seq 1 60); do
   sleep 1
 done
 
-curl -fsS "$BASE_URL/healthz" | .venv/bin/python -c 'import json,sys; d=json.load(sys.stdin); assert d["version"] == "2.0.0"; assert d["ok"] is True'
+curl -fsS "$BASE_URL/healthz" | .venv/bin/python -c 'import json,os,sys; d=json.load(sys.stdin); assert d["version"] == os.environ["EXPECTED_VERSION"]; assert d["ok"] is True'
 
 curl -fsS -c "$COOKIE_JAR" \
   -H 'Content-Type: application/json' \
@@ -57,7 +59,7 @@ curl -fsS -b "$COOKIE_JAR" "$BASE_URL/api/me" \
   | .venv/bin/python -c 'import json,sys; assert json.load(sys.stdin)["authenticated"] is True'
 
 curl -fsS -b "$COOKIE_JAR" "$BASE_URL/api/settings" \
-  | .venv/bin/python -c 'import json,sys; d=json.load(sys.stdin); assert d["version"] == "2.0.0"; assert d["settings"]["container_format"] == "mp4"'
+  | .venv/bin/python -c 'import json,os,sys; d=json.load(sys.stdin); assert d["version"] == os.environ["EXPECTED_VERSION"]; assert d["settings"]["container_format"] == "mp4"'
 
 curl -fsS -b "$COOKIE_JAR" \
   -X PATCH -H 'Content-Type: application/json' \
