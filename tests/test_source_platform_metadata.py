@@ -14,10 +14,8 @@ def test_parse_chaturbate_last_broadcast_iso_utc():
 
 
 def test_parse_chaturbate_naive_last_broadcast_as_pacific():
-    # Chaturbate biocontext currently emits naive local Pacific timestamps.
     parsed = providers._parse_last_broadcast("2026-09-01T17:20:31.123456")
     assert parsed is not None
-    # September is PDT (UTC-7).
     assert parsed.isoformat() == "2026-09-02T00:20:31.123456+00:00"
 
 
@@ -91,3 +89,22 @@ def test_biocontext_public_room_can_confirm_live(monkeypatch):
     assert result.live is True
     assert result.status == "live"
     assert result.last_broadcast is not None
+
+
+def test_probe_does_not_hide_biocontext_failure_as_never_live(monkeypatch):
+    monkeypatch.setattr(
+        providers,
+        "_extract",
+        lambda *_args, **_kwargs: {"is_live": False, "live_status": "offline", "title": ""},
+    )
+
+    def broken_context(_slug):
+        raise RuntimeError("HTTP 404 from biocontext")
+
+    monkeypatch.setattr(providers, "_fetch_biocontext", broken_context)
+    result = asyncio.run(providers.probe("chaturbate", "example", "best"))
+
+    assert result.live is False
+    assert result.status == "error"
+    assert "biocontext" in result.error.lower()
+    assert "404" in result.error
