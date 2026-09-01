@@ -29,6 +29,7 @@ class WorkerManager:
         self.started_at: datetime | None = None
         self.upload_current: dict | None = None
         self._retry_after: dict[int, float] = {}
+        self._source_check_locks: dict[int, asyncio.Lock] = {}
         self.backfill_task: asyncio.Task | None = None
 
     async def start(self) -> None:
@@ -64,6 +65,16 @@ class WorkerManager:
 
     def clear_retry_backoff(self) -> None:
         self._retry_after.clear()
+
+    async def check_source_now(self, source_id: int) -> bool:
+        """Probe one source immediately, even while automatic recording is paused."""
+        with db_session() as db:
+            source = db.get(Source, source_id)
+            if not source:
+                return False
+            db.expunge(source)
+        await self._check_source(source, asyncio.Semaphore(1))
+        return True
 
     def health(self) -> dict:
         return {
@@ -271,15 +282,12 @@ class WorkerManager:
             ))
 
     async def _check_source(self, source: Source, semaphore: asyncio.Semaphore) -> None:
-        cfg = runtime()
-        if self._stopping or cfg.recording_paused or source.id in self.active:
-            return
-        state = disk_state()
-        if state.free_gb <= cfg.critical_free_gb:
-            self.last_errors["storage"] = f"Spazio critico: {state.free_gb:.2f} GB; nuove registrazioni sospese"
-            return
-        if cfg.buffer_max_gb > 0 and self.local_buffer_bytes() >= cfg.buffer_max_gb * 1024**3:
-            self.last_errors["buffer"] = f"Buffer locale al limite ({human_bytes(self.local_buffer_bytes())} / {cfg.buffer_max_gb:.1f} GB)"
+        lock = self._source_check_locks.setdefault(source.id, asyncio.Lock())
+        async with lock:
+            await self._check_source_unlocked(source, semaphore)
+
+    async def _check_source_unlocked(self, source: Source, semaphore: asyncio.Semaphore) -> None:
+        if self._stopping or source.id in self.active:
             return
         async with semaphore:
             result = await probe(source.platform, source.slug, source.quality)
@@ -291,10 +299,23 @@ class WorkerManager:
                         current.status_changed_at = checked_at
                     current.last_status = result.status
                     current.last_checked_at = checked_at
-                    current.last_error = result.error if result.status == "error" else ""
+                    current.last_error = result.error
+                    current.metadata_status = result.metadata_status
+                    current.metadata_error = result.metadata_error
                     if result.last_broadcast is not None:
                         current.last_live_at = result.last_broadcast
-            if not result.live or self._stopping or source.id in self.active or runtime().recording_paused:
+                    if result.live:
+                        current.last_seen_live_at = checked_at
+            cfg = runtime()
+            if not result.live or self._stopping or source.id in self.active or cfg.recording_paused:
+                return
+            state = disk_state()
+            if state.free_gb <= cfg.critical_free_gb:
+                self.last_errors["storage"] = f"Spazio critico: {state.free_gb:.2f} GB; nuove registrazioni sospese"
+                return
+            local_buffer = self.local_buffer_bytes()
+            if cfg.buffer_max_gb > 0 and local_buffer >= cfg.buffer_max_gb * 1024**3:
+                self.last_errors["buffer"] = f"Buffer locale al limite ({human_bytes(local_buffer)} / {cfg.buffer_max_gb:.1f} GB)"
                 return
             try:
                 session = await start_recorder(source)
@@ -396,6 +417,7 @@ class WorkerManager:
                         source.status_changed_at = now
                     source.last_status = new_status
                     source.last_checked_at = now
+                    source.last_seen_live_at = now
                     if size_rollover:
                         source.last_error = ""
             self.wake()

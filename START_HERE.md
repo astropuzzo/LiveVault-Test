@@ -1,4 +1,4 @@
-# LiveVault v2.2.1 — START HERE
+# LiveVault v2.3.0 — START HERE
 
 Guida breve per avviare LiveVault su una normale VPS Linux. Non dipende da un provider cloud specifico.
 
@@ -106,6 +106,9 @@ La dashboard mostra quanti file sono stati realmente rimossi e quanto spazio è 
 - **Ricontrolla**: ripete integrità + SHA-256;
 - **→ MP4**: remux MKV → MP4 senza ricodifica;
 - **Vedi**: anteprima della copia locale.
+- **Controlla ora**: aggiorna subito una singola camera, anche se le registrazioni sono in pausa.
+
+Se Chaturbate limita una camera per paese o genere del VPS, `Ultima live CB` viene mostrata come **non disponibile**, non come `mai`. Il controllo online leggero resta attivo e LiveVault memorizza separatamente l'ultima live osservata direttamente.
 
 ## Diagnostica server
 

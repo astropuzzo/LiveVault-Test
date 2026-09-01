@@ -41,6 +41,8 @@ def test_biocontext_uses_required_profile_headers(monkeypatch):
     captured = {}
 
     class FakeResponse:
+        status_code = 200
+
         def raise_for_status(self):
             return None
 
@@ -85,6 +87,7 @@ def test_probe_keeps_platform_last_broadcast_while_offline(monkeypatch):
     assert result.status == "offline"
     assert result.last_broadcast is not None
     assert result.last_broadcast.isoformat() == "2026-09-01T17:20:31+00:00"
+    assert result.metadata_status == "available"
 
 
 def test_biocontext_public_room_can_confirm_live(monkeypatch):
@@ -107,6 +110,7 @@ def test_biocontext_public_room_can_confirm_live(monkeypatch):
     assert result.live is True
     assert result.status == "live"
     assert result.last_broadcast is not None
+    assert result.metadata_status == "available"
 
 
 def test_probe_falls_back_to_public_profile_when_biocontext_is_401(monkeypatch):
@@ -132,9 +136,10 @@ def test_probe_falls_back_to_public_profile_when_biocontext_is_401(monkeypatch):
     assert result.error == ""
     assert result.last_broadcast is not None
     assert result.last_broadcast.isoformat() == "2026-09-01T17:20:31+00:00"
+    assert result.metadata_status == "available"
 
 
-def test_probe_reports_error_only_when_both_metadata_sources_fail(monkeypatch):
+def test_probe_keeps_stream_status_separate_when_metadata_sources_fail(monkeypatch):
     monkeypatch.setattr(
         providers,
         "_extract",
@@ -152,8 +157,79 @@ def test_probe_reports_error_only_when_both_metadata_sources_fail(monkeypatch):
     result = asyncio.run(providers.probe("chaturbate", "example", "best"))
 
     assert result.live is False
-    assert result.status == "error"
-    assert "biocontext" in result.error.lower()
-    assert "401" in result.error
-    assert "public profile" in result.error.lower()
-    assert "403" in result.error
+    assert result.status == "offline"
+    assert result.error == ""
+    assert result.metadata_status == "unavailable"
+    assert "biocontext" in result.metadata_error.lower()
+    assert "401" in result.metadata_error
+    assert "public profile" in result.metadata_error.lower()
+    assert "403" in result.metadata_error
+
+
+def test_restricted_room_is_not_reported_as_never(monkeypatch):
+    monkeypatch.setattr(
+        providers,
+        "_extract",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("Room is currently offline")),
+    )
+    monkeypatch.setattr(
+        providers,
+        "_fetch_biocontext",
+        lambda _slug: (_ for _ in ()).throw(
+            providers.ChaturbateMetadataError(
+                401,
+                "access-denied",
+                "This room is not available to your region or gender.",
+            )
+        ),
+    )
+    monkeypatch.setattr(providers, "_fetch_online", lambda _slug: False)
+
+    result = asyncio.run(providers.probe("chaturbate", "restricted", "best"))
+
+    assert result.live is False
+    assert result.status == "offline"
+    assert result.last_broadcast is None
+    assert result.metadata_status == "restricted"
+    assert "paese o genere" in result.metadata_error
+
+
+def test_restricted_room_online_flag_still_detects_live(monkeypatch):
+    monkeypatch.setattr(
+        providers,
+        "_extract",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("Access denied")),
+    )
+    monkeypatch.setattr(
+        providers,
+        "_fetch_biocontext",
+        lambda _slug: (_ for _ in ()).throw(
+            providers.ChaturbateMetadataError(401, "access-denied", "Restricted")
+        ),
+    )
+    monkeypatch.setattr(providers, "_fetch_online", lambda _slug: True)
+
+    result = asyncio.run(providers.probe("chaturbate", "restricted", "best"))
+
+    assert result.live is True
+    assert result.status == "live"
+    assert result.metadata_status == "restricted"
+    assert "accesso video non riuscito" in result.error
+
+
+def test_public_profile_without_last_broadcast_is_not_success(monkeypatch):
+    class FakeResponse:
+        status_code = 200
+        text = "<html><body>Consent page</body></html>"
+
+        def raise_for_status(self):
+            return None
+
+    monkeypatch.setattr(providers, "_browser_get", lambda *_args, **_kwargs: FakeResponse())
+
+    try:
+        providers._fetch_profile_last_broadcast("example")
+    except ValueError as exc:
+        assert "non contiene" in str(exc)
+    else:
+        raise AssertionError("missing Last Broadcast must not be treated as success")

@@ -33,6 +33,13 @@
   margin: -3px 0 10px;
 }
 
+.source-note.warning {
+  color: #f0bc62;
+  border-left: 2px solid rgba(240, 188, 98, .55);
+  padding-left: 8px;
+  line-height: 1.45;
+}
+
 .source-actions a,
 .rec-actions a {
   text-decoration: none;

@@ -30,7 +30,7 @@ USERNAME_RE = re.compile(r"^[A-Za-z0-9_]{1,100}$")
 LOGIN_FAILURES: dict[str, deque[float]] = defaultdict(deque)
 LOGIN_WINDOW = 10 * 60
 LOGIN_MAX_FAILURES = 6
-VERSION = "2.2.2"
+VERSION = "2.3.0"
 
 
 class LoginBody(BaseModel):
@@ -398,6 +398,9 @@ def list_sources(request: Request):
             "last_checked_at": _iso_utc(source.last_checked_at),
             "last_live_at": _iso_utc(source.last_live_at),
             "last_live_source": "chaturbate",
+            "last_seen_live_at": _iso_utc(source.last_seen_live_at),
+            "metadata_status": source.metadata_status,
+            "metadata_error": source.metadata_error,
             "status_changed_at": _iso_utc(source.status_changed_at),
             "last_error": source.last_error,
             "organize_cloud": source.organize_cloud,
@@ -468,7 +471,16 @@ async def patch_source(source_id: int, body: SourcePatch, request: Request):
             new_slug = _normalize_slug(body.slug)
             if db.scalar(select(Source).where(Source.platform == source.platform, Source.slug == new_slug, Source.id != source_id)):
                 raise HTTPException(409, "Questa sorgente è già configurata")
-            source.slug = new_slug
+            if new_slug != source.slug:
+                source.slug = new_slug
+                source.last_status = "unknown"
+                source.last_checked_at = None
+                source.last_live_at = None
+                source.last_seen_live_at = None
+                source.status_changed_at = None
+                source.last_error = ""
+                source.metadata_status = "unknown"
+                source.metadata_error = ""
         if body.quality is not None:
             if body.quality not in {"best", "1080p", "720p", "480p"}:
                 raise HTTPException(400, "Qualità non supportata")
@@ -556,6 +568,14 @@ async def remove_source(source_id: int, request: Request):
 def check_now(request: Request):
     require_auth(request)
     manager.wake()
+    return {"ok": True}
+
+
+@app.post("/api/sources/{source_id}/check-now")
+async def check_source_now(source_id: int, request: Request):
+    require_auth(request)
+    if not await manager.check_source_now(source_id):
+        raise HTTPException(404, "Sorgente non trovata")
     return {"ok": True}
 
 

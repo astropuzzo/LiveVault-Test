@@ -1,4 +1,4 @@
-# LiveVault v2.2.1
+# LiveVault v2.3.0
 
 LiveVault è un recorder remoto 24/7 con dashboard web/PWA. Monitora sorgenti autorizzate, registra tramite FFmpeg in stream-copy, verifica i media, crea miniature, gestisce il buffer locale e carica automaticamente su Gofile/Pixeldrain.
 
@@ -25,6 +25,13 @@ LiveVault è un recorder remoto 24/7 con dashboard web/PWA. Monitora sorgenti au
 - `Upload ora` globale o sul singolo file;
 - verifica remota prima di considerare l'upload completato;
 - cancellazione automatica locale opzionale dopo upload verificato.
+
+### Monitor sorgenti
+
+- stato online/offline aggiornato anche quando le registrazioni sono in pausa;
+- data `Last Broadcast` di Chaturbate separata dall'ultima live vista direttamente da LiveVault;
+- indicazione esplicita quando Chaturbate nasconde i metadati per paese o genere, senza mostrare il falso valore `mai`;
+- controllo immediato per singola camera dalla dashboard.
 
 ### Gestione reale dello storage locale — v2.2.1
 
@@ -155,4 +162,4 @@ node --check app/static/app.js
 bash -n scripts/*.sh
 ```
 
-Il job **Core tests** installa anche FFmpeg e tutte le dipendenze di sviluppo. `main` va considerato pronto quando questo job è verde.
+Il job **Core tests** installa anche FFmpeg e tutte le dipendenze di sviluppo. Solo dopo il verde, il job **Deploy verified main** chiede a CapRover di pubblicare l'ultima versione. I push intermedi vengono annullati per evitare riavvii a raffica e `503` temporanei.

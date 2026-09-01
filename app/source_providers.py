@@ -6,7 +6,7 @@ import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any
-from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import requests
 
@@ -18,6 +18,8 @@ class ProbeResult:
     title: str = ""
     error: str = ""
     last_broadcast: datetime | None = None
+    metadata_status: str = "unknown"
+    metadata_error: str = ""
 
 
 @dataclass
@@ -43,7 +45,18 @@ CHATURBATE_HEADERS = {
         "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0 Safari/537.36"
     ),
 }
-CHATURBATE_PACIFIC = ZoneInfo("America/Los_Angeles")
+try:
+    CHATURBATE_PACIFIC = ZoneInfo("America/Los_Angeles")
+except ZoneInfoNotFoundError:  # pragma: no cover - tzdata is installed in production
+    CHATURBATE_PACIFIC = timezone(timedelta(hours=-8), name="PST")
+
+
+class ChaturbateMetadataError(RuntimeError):
+    def __init__(self, status_code: int, code: str, detail: str) -> None:
+        self.status_code = status_code
+        self.code = code
+        self.detail = detail
+        super().__init__(f"HTTP {status_code} {code}: {detail}".strip())
 
 
 class _QuietLogger:
@@ -226,7 +239,16 @@ def _fetch_biocontext(slug: str) -> dict[str, Any]:
         "Cookie": "cb_legacy=1; agreeterms=1",
     })
     response = _browser_get(url, headers=headers, timeout=15)
-    response.raise_for_status()
+    if response.status_code >= 400:
+        try:
+            error_payload = response.json()
+        except Exception:
+            error_payload = {}
+        raise ChaturbateMetadataError(
+            response.status_code,
+            str(error_payload.get("code") or "metadata-error"),
+            str(error_payload.get("detail") or "metadati non disponibili"),
+        )
     payload = response.json()
     if not isinstance(payload, dict):
         raise ValueError("Chaturbate biocontext response is not an object")
@@ -245,28 +267,55 @@ def _fetch_profile_last_broadcast(slug: str) -> datetime | None:
     })
     response = _browser_get(url, headers=headers, timeout=15)
     response.raise_for_status()
-    return _extract_last_broadcast_from_profile_html(response.text)
+    parsed = _extract_last_broadcast_from_profile_html(response.text)
+    if parsed is None:
+        raise ValueError("la pagina pubblica non contiene il dato Last Broadcast")
+    return parsed
 
 
-def _metadata_error(
+def _fetch_online(slug: str) -> bool:
+    """Read the lightweight public online flag, including for restricted rooms."""
+    username = slug.strip("/")
+    url = f"https://chaturbate.com/api/online/{username}/"
+    headers = dict(CHATURBATE_HEADERS)
+    headers.update({
+        "Referer": "https://chaturbate.com/",
+        "X-Requested-With": "XMLHttpRequest",
+        "Cookie": "cb_legacy=1; agreeterms=1",
+    })
+    response = _browser_get(url, headers=headers, timeout=15)
+    response.raise_for_status()
+    payload = response.json()
+    if not isinstance(payload, dict) or not isinstance(payload.get("online"), bool):
+        raise ValueError("Chaturbate online response is not valid")
+    return payload["online"]
+
+
+def _metadata_state(
     context: object,
     context_data: dict[str, Any],
     last_broadcast: datetime | None,
     *,
     profile_fallback_ok: bool = False,
     profile_error: str = "",
-) -> str:
+) -> tuple[str, str]:
     if last_broadcast is not None:
-        return ""
+        return "available", ""
     raw = context_data.get("last_broadcast")
+    if raw in (-1, "-1"):
+        return "never", ""
     if raw not in (None, "", -1, "-1"):
-        return f"Chaturbate last_broadcast non parsabile: {raw!r}"[-700:]
-    if isinstance(context, Exception) and not profile_fallback_ok:
+        return "unavailable", f"Chaturbate last_broadcast non parsabile: {raw!r}"[-700:]
+    if isinstance(context, ChaturbateMetadataError) and context.code == "access-denied":
+        return "restricted", "Chaturbate limita i dettagli di questa camera per paese o genere del VPS"
+    if isinstance(context, Exception):
         message = f"Chaturbate biocontext: {type(context).__name__}: {context}"
         if profile_error:
             message += f" | public profile: {profile_error}"
-        return message[-1000:]
-    return ""
+        elif profile_fallback_ok:
+            message += " | public profile: dato Last Broadcast assente"
+        return "unavailable", message[-1000:]
+    return "unavailable", "Chaturbate non ha restituito il dato Last Broadcast"
 
 
 async def probe(platform: str, slug: str, quality: str = "best") -> ProbeResult:
@@ -286,14 +335,21 @@ async def probe(platform: str, slug: str, quality: str = "best") -> ProbeResult:
 
     profile_fallback_ok = False
     profile_error = ""
-    if platform == "chaturbate" and last_broadcast is None:
+    restricted = isinstance(context, ChaturbateMetadataError) and context.code == "access-denied"
+    raw_last_broadcast = context_data.get("last_broadcast")
+    if (
+        platform == "chaturbate"
+        and last_broadcast is None
+        and raw_last_broadcast not in (-1, "-1")
+        and not restricted
+    ):
         try:
             last_broadcast = await asyncio.to_thread(_fetch_profile_last_broadcast, slug)
             profile_fallback_ok = True
         except Exception as exc:
             profile_error = f"{type(exc).__name__}: {exc}"[-700:]
 
-    meta_error = _metadata_error(
+    metadata_status, metadata_error = _metadata_state(
         context,
         context_data,
         last_broadcast,
@@ -301,22 +357,30 @@ async def probe(platform: str, slug: str, quality: str = "best") -> ProbeResult:
         profile_error=profile_error,
     )
 
+    online: bool | None = None
+    online_error = ""
+    if platform == "chaturbate" and restricted:
+        try:
+            online = await asyncio.to_thread(_fetch_online, slug)
+        except Exception as exc:
+            online_error = f"{type(exc).__name__}: {exc}"[-500:]
+
     if not isinstance(extracted, Exception):
         info = extracted
         live_status = str(info.get("live_status") or "")
-        is_live = bool(info.get("is_live")) or live_status == "is_live" or room_status == "public"
+        is_live = bool(info.get("is_live")) or live_status == "is_live" or room_status == "public" or online is True
         if is_live:
             status = "live"
-        elif meta_error:
-            status = "error"
         else:
             status = "offline" if room_status else (live_status or "offline")
         return ProbeResult(
             live=is_live,
             status=status,
             title=str(info.get("title") or context_data.get("room_title") or ""),
-            error=meta_error,
+            error="",
             last_broadcast=last_broadcast,
+            metadata_status=metadata_status,
+            metadata_error=metadata_error,
         )
 
     text = str(extracted)
@@ -329,18 +393,56 @@ async def probe(platform: str, slug: str, quality: str = "best") -> ProbeResult:
                 title=str(context_data.get("room_title") or ""),
                 error=text[-500:],
                 last_broadcast=last_broadcast,
+                metadata_status=metadata_status,
+                metadata_error=metadata_error,
             )
-        return ProbeResult(live=False, status="offline", last_broadcast=last_broadcast)
+        return ProbeResult(
+            live=False,
+            status="offline",
+            last_broadcast=last_broadcast,
+            metadata_status=metadata_status,
+            metadata_error=metadata_error,
+        )
 
-    if meta_error:
-        combined = meta_error
-        if text:
-            combined = f"{meta_error} | stream probe: {text[-350:]}"
-        return ProbeResult(live=False, status="error", error=combined[-1000:], last_broadcast=last_broadcast)
+    if online is True:
+        return ProbeResult(
+            live=True,
+            status="live",
+            error=f"Stream rilevato online ma accesso video non riuscito: {text[-500:]}",
+            last_broadcast=last_broadcast,
+            metadata_status=metadata_status,
+            metadata_error=metadata_error,
+        )
+
+    if online is False:
+        return ProbeResult(
+            live=False,
+            status="offline",
+            last_broadcast=last_broadcast,
+            metadata_status=metadata_status,
+            metadata_error=metadata_error,
+        )
 
     if any(k in lowered for k in ("offline", "not currently broadcasting", "private show", "room is not available", "not broadcasting")):
-        return ProbeResult(live=False, status="offline", error="", last_broadcast=last_broadcast)
-    return ProbeResult(live=False, status="error", error=text[-500:], last_broadcast=last_broadcast)
+        return ProbeResult(
+            live=False,
+            status="offline",
+            error="",
+            last_broadcast=last_broadcast,
+            metadata_status=metadata_status,
+            metadata_error=metadata_error,
+        )
+    error = text[-700:]
+    if online_error:
+        error = f"{error} | online check: {online_error}"[-1000:]
+    return ProbeResult(
+        live=False,
+        status="error",
+        error=error,
+        last_broadcast=last_broadcast,
+        metadata_status=metadata_status,
+        metadata_error=metadata_error,
+    )
 
 
 async def resolve_inputs(platform: str, slug: str, quality: str = "best") -> list[ResolvedInput]:

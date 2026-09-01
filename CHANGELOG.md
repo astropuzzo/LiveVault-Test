@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.3.0 — 2026-09-01
+
+- Corretto il falso `Ultima live CB mai`: i metadati bloccati per paese/genere sono ora indicati come non disponibili.
+- Aggiunto il controllo online leggero per continuare a rilevare le camere con profilo ristretto.
+- Separati l'orario ufficiale Chaturbate e l'ultima live osservata direttamente da LiveVault.
+- Aggiunto `Controlla ora` per ogni sorgente; il monitor continua ad aggiornarsi anche con le registrazioni in pausa.
+- Resi visibili gli errori dei metadati senza trasformare una camera offline in un errore generale.
+- Serializzato il deploy: viene pubblicato solo `main` dopo il superamento dei test, evitando riavvii a raffica e 503 temporanei.
+- Allineate le versioni applicative e aggiunto `tzdata` per test e installazioni portabili.
+
 ## 2.2.3 - 2026-09-01
 
 - Aggiunto fallback per `Ultima live CB` quando `api/biocontext/{username}/` risponde 401/403 per room gated: LiveVault legge la pagina pubblica della room invece di fermarsi su errore/`mai`.
