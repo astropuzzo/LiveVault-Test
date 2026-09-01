@@ -26,7 +26,6 @@ class ResolvedInput:
 
 
 QUALITY_FORMATS = {
-    # Prefer a single muxed A/V stream. Separate video+audio remains the fallback.
     "best": "b/bv*+ba",
     "1080p": "b[height<=1080]/bv*[height<=1080]+ba/b/bv*+ba",
     "720p": "b[height<=720]/bv*[height<=720]+ba/b/bv*+ba",
@@ -46,8 +45,6 @@ CHATURBATE_PACIFIC = ZoneInfo("America/Los_Angeles")
 
 
 class _QuietLogger:
-    """Keep expected offline probes out of the container error log."""
-
     def debug(self, _message: str) -> None:
         pass
 
@@ -67,8 +64,6 @@ def classify_format(
 ) -> str:
     has_video = bool(vcodec and vcodec != "none")
     has_audio = bool(acodec and acodec != "none")
-    # Some HLS manifests expose an audio rendition but leave acodec unset.
-    # yt-dlp still labels these entries as audio-only in the format metadata.
     audio_hint = "audio" in f"{format_id} {format_label}".lower()
     if not has_video and not has_audio and vcodec == "none" and audio_hint:
         has_audio = True
@@ -104,11 +99,7 @@ def _extract(url: str, quality: str, *, quiet: bool = True) -> dict[str, Any]:
 
 
 def _parse_last_broadcast(value: Any) -> datetime | None:
-    """Parse Chaturbate biocontext.last_broadcast as an aware UTC datetime.
-
-    Chaturbate currently returns timezone-naive last_broadcast strings in
-    America/Los_Angeles time. Explicit Z/offset timestamps keep their own zone.
-    """
+    """Parse CB last_broadcast to UTC. Naive values are Pacific time."""
     if value is None or value == -1:
         return None
     text = str(value).strip()
@@ -126,7 +117,6 @@ def _parse_last_broadcast(value: Any) -> datetime | None:
 
 
 def _browser_get(url: str, headers: dict[str, str], timeout: float = 15.0):
-    """Use curl_cffi browser impersonation when available; requests is fallback."""
     try:
         from curl_cffi import requests as curl_requests
     except Exception:
@@ -135,11 +125,6 @@ def _browser_get(url: str, headers: dict[str, str], timeout: float = 15.0):
 
 
 def _fetch_biocontext(slug: str) -> dict[str, Any]:
-    """Fetch public Chaturbate profile metadata, including last_broadcast.
-
-    biocontext is gated by browser-like request metadata. In particular, the
-    profile Referer (/p/<slug>/) and X-Requested-With are required on current CB.
-    """
     username = slug.strip("/")
     url = f"https://chaturbate.com/api/biocontext/{username}/"
     headers = dict(CHATURBATE_HEADERS)
@@ -156,12 +141,17 @@ def _fetch_biocontext(slug: str) -> dict[str, Any]:
     return payload
 
 
+def _metadata_error(context: object, context_data: dict[str, Any], last_broadcast: datetime | None) -> str:
+    if isinstance(context, Exception):
+        return f"Chaturbate biocontext: {type(context).__name__}: {context}"[-700:]
+    raw = context_data.get("last_broadcast")
+    if raw not in (None, "", -1, "-1") and last_broadcast is None:
+        return f"Chaturbate last_broadcast non parsabile: {raw!r}"[-700:]
+    return ""
+
+
 async def probe(platform: str, slug: str, quality: str = "best") -> ProbeResult:
     url = source_url(platform, slug)
-
-    # Fetch stream metadata and profile metadata concurrently. biocontext is important
-    # even while the room is offline because it exposes Chaturbate's own
-    # `last_broadcast` timestamp, which is different from "last seen by LiveVault".
     context_task = asyncio.to_thread(_fetch_biocontext, slug) if platform == "chaturbate" else None
     extract_task = asyncio.to_thread(_extract, url, quality)
     if context_task is not None:
@@ -174,21 +164,26 @@ async def probe(platform: str, slug: str, quality: str = "best") -> ProbeResult:
     context_data = context if isinstance(context, dict) else {}
     last_broadcast = _parse_last_broadcast(context_data.get("last_broadcast"))
     room_status = str(context_data.get("room_status") or "").strip().lower()
+    meta_error = _metadata_error(context, context_data, last_broadcast)
 
     if not isinstance(extracted, Exception):
         info = extracted
         live_status = str(info.get("live_status") or "")
         is_live = bool(info.get("is_live")) or live_status == "is_live" or room_status == "public"
-        status = "live" if is_live else ("offline" if room_status else (live_status or "offline"))
+        if is_live:
+            status = "live"
+        elif meta_error:
+            status = "error"
+        else:
+            status = "offline" if room_status else (live_status or "offline")
         return ProbeResult(
             live=is_live,
             status=status,
             title=str(info.get("title") or context_data.get("room_title") or ""),
+            error=meta_error,
             last_broadcast=last_broadcast,
         )
 
-    # yt-dlp may fail normally for an offline/private room. If biocontext succeeded,
-    # retain the platform last_broadcast timestamp instead of losing it with the error.
     text = str(extracted)
     lowered = text.lower()
     if room_status:
@@ -201,6 +196,13 @@ async def probe(platform: str, slug: str, quality: str = "best") -> ProbeResult:
                 last_broadcast=last_broadcast,
             )
         return ProbeResult(live=False, status="offline", last_broadcast=last_broadcast)
+
+    if meta_error:
+        combined = meta_error
+        if text:
+            combined = f"{meta_error} | stream probe: {text[-350:]}"
+        return ProbeResult(live=False, status="error", error=combined[-1000:], last_broadcast=last_broadcast)
+
     if any(k in lowered for k in ("offline", "not currently broadcasting", "private show", "room is not available", "not broadcasting")):
         return ProbeResult(live=False, status="offline", error=text[-500:], last_broadcast=last_broadcast)
     return ProbeResult(live=False, status="error", error=text[-500:], last_broadcast=last_broadcast)
