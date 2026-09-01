@@ -1,96 +1,60 @@
-# Hosting gratuito per LiveVault
+# Hosting di LiveVault su TierHive
 
-Verificato il 1 settembre 2026.
+Configurazione attiva dal 1 settembre 2026.
 
-LiveVault non e una normale web app stateless: registra 24/7 con FFmpeg, mantiene SQLite e un buffer video locale, quindi richiede un processo sempre attivo, Docker, storage persistente e molto traffico in uscita verso Gofile/Pixeldrain.
+## Indirizzi web
 
-## Scelta consigliata: Oracle Cloud Always Free
+- LiveVault: <https://livevault.streamingcam.duckdns.org>
+- Pannello hosting CapRover: <https://captain.streamingcam.duckdns.org>
 
-La VM `VM.Standard.A1.Flex` e l'unica offerta gratuita corrente che soddisfa bene questi requisiti:
+Entrambi gli indirizzi sono pubblici e funzionano da PC, Android e tablet. L'accesso alle funzioni resta protetto dalle rispettive password.
 
-- fino a 2 OCPU Arm e 12 GB RAM Always Free;
-- 200 GB totali di Block Volume Always Free (boot disk incluso);
-- 10 TB/mese di traffico dati in uscita;
-- Ubuntu e IP pubblico supportati;
-- Docker, Python e FFmpeg usati da LiveVault sono compatibili con `linux/arm64`.
+## Architettura
 
-Limiti importanti:
+- VPS Debian 12 su TierHive: 1 vCPU, 1 GB RAM, 20 GB NVMe;
+- CapRover gestisce applicazioni, log, variabili, riavvii e deploy;
+- TierHive HAProxy espone soltanto i domini web e termina HTTPS;
+- DuckDNS fornisce il dominio gratuito `streamingcam.duckdns.org`;
+- `/opt/livevault/data` è montato in `/data` nel container e conserva database e impostazioni tra deploy e riavvii;
+- uno swap file da 1 GB assorbe i picchi temporanei delle build.
 
-- la capacita A1 puo non essere subito disponibile nella home region;
-- Oracle puo recuperare istanze Always Free considerate inattive;
-- gratuito non significa SLA o disponibilita garantita: mantieni backup del database e conserva `APP_SECRET`.
+## Deploy automatico da GitHub
 
-Documentazione ufficiale: [Oracle Always Free Resources](https://docs.oracle.com/en-us/iaas/Content/FreeTier/freetier_topic-Always_Free_Resources.htm).
+L'app `livevault` segue il branch `main` di `astropuzzo/LiveVault-Test`.
 
-## Configurazione VM consigliata
+1. Un push su `main` avvia il webhook GitHub.
+2. CapRover scarica il repository e legge `captain-definition`.
+3. Costruisce una nuova immagine dal `Dockerfile`.
+4. Sostituisce il container soltanto dopo la build.
+5. In caso di problema, la versione precedente resta disponibile nella cronologia del pannello.
 
-Nel pannello Oracle Cloud crea una Compute Instance con:
+I log della build sono in **Apps > livevault > Deployment > View Build Logs**. I log dell'app sono in **Apps > livevault > Logs**.
 
-- image: Ubuntu 24.04 LTS;
-- shape: `VM.Standard.A1.Flex`, 2 OCPU, 12 GB RAM;
-- boot volume: 100 GB;
-- public IPv4: attivo;
-- chiave SSH: genera o carica la tua chiave pubblica;
-- regola ingress: solo TCP 22 inizialmente.
+## Aggiungere un altro progetto
 
-La configurazione lascia margine sufficiente per il buffer predefinito da 12 GB. Non aprire pubblicamente la porta 8080: dopo l'installazione usa Tailscale, oppure abilita HTTPS con Caddy e apri soltanto 80/443.
+1. Nel pannello CapRover apri **Apps** e premi **Create A New App**.
+2. In **Deployment**, inserisci repository e branch GitHub.
+3. Aggiungi al repository un `captain-definition` che punti al Dockerfile.
+4. In **App Configs**, inserisci variabili e segreti senza salvarli nel repository.
+5. Se il progetto scrive dati, crea un percorso persistente prima del primo deploy.
+6. In **HTTP Settings**, imposta la porta usata dal container.
+7. In TierHive **HAProxy**, aggiungi un dominio DuckDNS, convalidalo, collega `10.5.138.11` alla porta 80 e abilita SSL.
+8. Copia il webhook mostrato da CapRover nelle impostazioni GitHub del repository.
 
-## Installazione
+Il VPS può ospitare alcuni servizi piccoli, ma 1 GB di RAM non è sufficiente per tre build pesanti contemporanee o database grandi. Esegui i deploy uno alla volta; se le app crescono, aumenta prima la RAM.
 
-Collegati in SSH alla VM e avvia:
+## Dati e backup
 
-```bash
-sudo apt-get update
-sudo apt-get install -y git
-git clone https://github.com/astropuzzo/LiveVault-Test.git
-cd LiveVault-Test
-chmod +x scripts/*.sh
-./scripts/install.sh
-```
+Un timer di sistema crea ogni giorno alle 03:15 UTC un archivio in `/var/backups/live-platform/` e conserva gli ultimi sette giorni. Il backup include la configurazione CapRover e una copia coerente del database SQLite; il buffer video temporaneo resta escluso per non saturare il disco.
 
-Lo script chiede una password pannello di almeno 10 caratteri, genera `APP_SECRET`, costruisce il container e avvia LiveVault.
+Prima di modifiche importanti, conserva fuori dal VPS almeno un backup recente e i segreti dell'app. Il provider non sostituisce una copia esterna.
 
-Per accesso privato HTTPS consigliato:
+## Sicurezza operativa
 
-```bash
-./scripts/enable-tailscale.sh
-```
+- SSH accetta soltanto la chiave autorizzata; login con password disattivato.
+- Non pubblicare token, password o chiavi nel repository.
+- Mantieni aggiornati Debian, Docker, CapRover e le dipendenze dell'app.
+- Lascia attivo HTTPS e usa password diverse per pannello e LiveVault.
+- Conserva i dati soltanto su sorgenti che possiedi o sei autorizzato a registrare.
 
-Installa Tailscale anche sul telefono/PC e apri l'URL mostrato dallo script. In alternativa, per un endpoint pubblico:
-
-1. autorizza TCP 80 e 443 sia nella Security List/NSG Oracle sia nel firewall della VM;
-2. esegui `./scripts/enable-https.sh`;
-3. usa l'URL `sslip.io` mostrato dallo script.
-
-## Dopo il primo accesso
-
-1. Apri **Settings**.
-2. Inserisci il token Gofile e premi **Test connessione**.
-3. Inserisci anche una API key Pixeldrain come fallback e testala.
-4. Mantieni `Delete after upload` attivo solo dopo che entrambi i test sono verdi.
-5. Aggiungi esclusivamente sorgenti che possiedi o che sei autorizzato a registrare.
-
-Controlli server:
-
-```bash
-./scripts/status.sh
-./scripts/backup.sh
-```
-
-Aggiornamento dal repository:
-
-```bash
-./scripts/update.sh
-```
-
-## Perche non gli altri free tier
-
-| Provider | Motivo per cui non e adatto al servizio 24/7 |
-|---|---|
-| GitHub Codespaces | Quota personale limitata; ambiente di sviluppo, non host permanente. |
-| Google Compute Engine Free Tier | 1 e2-micro e 30 GB disco sono stretti; 1 GB/mese di egress gratuito non basta per upload video continui. |
-| Render Free | Va in sleep e perde filesystem/SQLite a ogni restart o deploy; persistent disk solo a pagamento. |
-| Koyeb Free | 0.1 vCPU, 512 MB RAM, 2 GB SSD, scale-to-zero e nessun volume persistente. |
-| Fly.io | Offre un trial breve, non un free tier permanente. |
-
-Fonti ufficiali: [GitHub Codespaces](https://github.com/features/codespaces), [Google Compute Engine](https://cloud.google.com/products/compute), [Render Free](https://render.com/docs/free), [Koyeb Instances](https://www.koyeb.com/docs/reference/instances), [Fly.io Free Trial](https://fly.io/docs/about/free-trial/).
+Documentazione: [CapRover](https://caprover.com/docs/get-started), [deploy da Git](https://caprover.com/docs/deployment-methods.html), [monitoraggio](https://caprover.com/docs/resource-monitoring.html), [DuckDNS](https://www.duckdns.org/spec.jsp).
