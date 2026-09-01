@@ -43,9 +43,20 @@ class _QuietLogger:
         pass
 
 
-def classify_format(vcodec: str | None, acodec: str | None) -> str:
+def classify_format(
+    vcodec: str | None,
+    acodec: str | None,
+    *,
+    format_id: str = "",
+    format_label: str = "",
+) -> str:
     has_video = bool(vcodec and vcodec != "none")
     has_audio = bool(acodec and acodec != "none")
+    # Some HLS manifests expose an audio rendition but leave acodec unset.
+    # yt-dlp still labels these entries as audio-only in the format metadata.
+    audio_hint = "audio" in f"{format_id} {format_label}".lower()
+    if not has_video and not has_audio and vcodec == "none" and audio_hint:
+        has_audio = True
     if has_video and has_audio:
         return "media"
     if has_video:
@@ -104,7 +115,12 @@ async def resolve_inputs(platform: str, slug: str, quality: str = "best") -> lis
             if not media_url or media_url in seen:
                 continue
             seen.add(media_url)
-            kind = classify_format(fmt.get("vcodec"), fmt.get("acodec"))
+            kind = classify_format(
+                fmt.get("vcodec"),
+                fmt.get("acodec"),
+                format_id=str(fmt.get("format_id") or ""),
+                format_label=str(fmt.get("format") or fmt.get("format_note") or ""),
+            )
             if kind == "unknown":
                 continue
             result.append(ResolvedInput(media_url, dict(fmt.get("http_headers") or {}), kind))

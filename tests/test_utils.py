@@ -16,3 +16,12 @@ def test_format_classification_preserves_combined_audio_video():
     assert classify_format("h264", "none") == "video"
     assert classify_format("none", "aac") == "audio"
     assert classify_format("none", "none") == "unknown"
+
+
+def test_hls_audio_rendition_without_codec_metadata_is_kept():
+    assert classify_format(
+        "none",
+        None,
+        format_id="audio_aac_128-Audio_200_1_5",
+        format_label="audio only (high)",
+    ) == "audio"

@@ -4,7 +4,7 @@
 
 - Segmenti impostati a 60 minuti con tetto rigido di 2 GB e rollover automatico alla prima soglia raggiunta.
 - Audio reso obbligatorio nel mapping FFmpeg: non vengono più accettati né caricati nuovi file solo-video.
-- Preferenza per stream combinati audio/video, mantenendo il fallback su tracce separate.
+- Preferenza per stream combinati audio/video e riconoscimento delle rendition HLS audio anche quando il manifest non dichiara esplicitamente il codec.
 - Cartella Gofile pubblica e stabile opzionale per ogni sorgente, con migrazione dei file Gofile precedenti quando l'API lo consente.
 - Archivio LiveVault stabile per camera, valido anche per i file caricati su Pixeldrain Free.
 - Filtri sorgente esatti, link cloud/archivio separati e impostazione del limite file dalla dashboard.
