@@ -4,6 +4,7 @@ import asyncio
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import requests
 
@@ -34,13 +35,14 @@ QUALITY_FORMATS = {
 
 CHATURBATE_HEADERS = {
     "Accept": "application/json",
+    "Accept-Language": "en-US,en;q=0.9",
     "Origin": "https://chaturbate.com",
-    "Referer": "https://chaturbate.com/",
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
         "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0 Safari/537.36"
     ),
 }
+CHATURBATE_PACIFIC = ZoneInfo("America/Los_Angeles")
 
 
 class _QuietLogger:
@@ -102,7 +104,11 @@ def _extract(url: str, quality: str, *, quiet: bool = True) -> dict[str, Any]:
 
 
 def _parse_last_broadcast(value: Any) -> datetime | None:
-    """Parse Chaturbate biocontext.last_broadcast as an aware UTC datetime."""
+    """Parse Chaturbate biocontext.last_broadcast as an aware UTC datetime.
+
+    Chaturbate currently returns timezone-naive last_broadcast strings in
+    America/Los_Angeles time. Explicit Z/offset timestamps keep their own zone.
+    """
     if value is None or value == -1:
         return None
     text = str(value).strip()
@@ -115,15 +121,34 @@ def _parse_last_broadcast(value: Any) -> datetime | None:
     except ValueError:
         return None
     if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=timezone.utc)
+        parsed = parsed.replace(tzinfo=CHATURBATE_PACIFIC)
     return parsed.astimezone(timezone.utc)
 
 
+def _browser_get(url: str, headers: dict[str, str], timeout: float = 15.0):
+    """Use curl_cffi browser impersonation when available; requests is fallback."""
+    try:
+        from curl_cffi import requests as curl_requests
+    except Exception:
+        return requests.get(url, headers=headers, timeout=timeout)
+    return curl_requests.get(url, headers=headers, timeout=timeout, impersonate="chrome")
+
+
 def _fetch_biocontext(slug: str) -> dict[str, Any]:
-    """Fetch public Chaturbate profile metadata, including last_broadcast."""
+    """Fetch public Chaturbate profile metadata, including last_broadcast.
+
+    biocontext is gated by browser-like request metadata. In particular, the
+    profile Referer (/p/<slug>/) and X-Requested-With are required on current CB.
+    """
     username = slug.strip("/")
     url = f"https://chaturbate.com/api/biocontext/{username}/"
-    response = requests.get(url, headers=CHATURBATE_HEADERS, timeout=15)
+    headers = dict(CHATURBATE_HEADERS)
+    headers.update({
+        "Referer": f"https://chaturbate.com/p/{username}/",
+        "X-Requested-With": "XMLHttpRequest",
+        "Cookie": "cb_legacy=1; agreeterms=1",
+    })
+    response = _browser_get(url, headers=headers, timeout=15)
     response.raise_for_status()
     payload = response.json()
     if not isinstance(payload, dict):
