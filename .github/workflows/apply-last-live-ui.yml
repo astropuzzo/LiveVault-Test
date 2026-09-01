@@ -1,0 +1,37 @@
+name: Apply visible Chaturbate last-live date
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/_apply_last_live_ui.py'
+      - '.github/workflows/apply-last-live-ui.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Apply patch
+        run: python3 scripts/_apply_last_live_ui.py
+      - name: Validate JavaScript
+        run: |
+          node --check app/static/app.js
+          grep -q 'Ultima live CB' app/static/app.js
+          grep -q 'livevault-shell-v2.2.2' app/static/sw.js
+      - name: Commit patch
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app/static/app.js app/static/sw.js CHANGELOG.md
+          git commit -m 'fix(ui): show Chaturbate last broadcast date'
+          git push origin HEAD:main
