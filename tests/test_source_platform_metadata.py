@@ -13,6 +13,43 @@ def test_parse_chaturbate_last_broadcast_iso_utc():
     assert providers._parse_last_broadcast("-1") is None
 
 
+def test_parse_chaturbate_naive_last_broadcast_as_pacific():
+    # Chaturbate biocontext currently emits naive local Pacific timestamps.
+    parsed = providers._parse_last_broadcast("2026-09-01T17:20:31.123456")
+    assert parsed is not None
+    # September is PDT (UTC-7).
+    assert parsed.isoformat() == "2026-09-02T00:20:31.123456+00:00"
+
+
+def test_biocontext_uses_required_profile_headers(monkeypatch):
+    captured = {}
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "room_status": "offline",
+                "last_broadcast": "2026-09-01T17:20:31",
+            }
+
+    def fake_get(url, headers, timeout=15):
+        captured["url"] = url
+        captured["headers"] = dict(headers)
+        captured["timeout"] = timeout
+        return FakeResponse()
+
+    monkeypatch.setattr(providers, "_browser_get", fake_get)
+    payload = providers._fetch_biocontext("example")
+
+    assert payload["last_broadcast"] == "2026-09-01T17:20:31"
+    assert captured["url"] == "https://chaturbate.com/api/biocontext/example/"
+    assert captured["headers"]["Referer"] == "https://chaturbate.com/p/example/"
+    assert captured["headers"]["X-Requested-With"] == "XMLHttpRequest"
+    assert "agreeterms=1" in captured["headers"]["Cookie"]
+
+
 def test_probe_keeps_platform_last_broadcast_while_offline(monkeypatch):
     def offline_extract(*_args, **_kwargs):
         raise RuntimeError("Room is currently offline")
