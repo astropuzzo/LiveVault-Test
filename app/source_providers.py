@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import html as html_lib
+import re
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -116,6 +118,96 @@ def _parse_last_broadcast(value: Any) -> datetime | None:
     return parsed.astimezone(timezone.utc)
 
 
+def _parse_relative_broadcast_age(value: str, *, now: datetime | None = None) -> datetime | None:
+    """Convert public-profile strings such as '20 hours ago' to UTC."""
+    text = html_lib.unescape(str(value or "")).strip().lower()
+    if not text:
+        return None
+    now_utc = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    if text in {"now", "just now", "a few seconds ago"}:
+        return now_utc
+    if text == "yesterday":
+        return now_utc - timedelta(days=1)
+
+    match = re.search(
+        r"\b(?P<count>\d+|a|an|one)\s*(?P<unit>seconds?|secs?|minutes?|mins?|hours?|hrs?|days?|weeks?|months?|years?)\s+ago\b",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if not match:
+        return None
+
+    raw_count = match.group("count").lower()
+    count = 1 if raw_count in {"a", "an", "one"} else int(raw_count)
+    unit = match.group("unit").lower()
+    if unit.startswith(("second", "sec")):
+        delta = timedelta(seconds=count)
+    elif unit.startswith(("minute", "min")):
+        delta = timedelta(minutes=count)
+    elif unit.startswith(("hour", "hr")):
+        delta = timedelta(hours=count)
+    elif unit.startswith("day"):
+        delta = timedelta(days=count)
+    elif unit.startswith("week"):
+        delta = timedelta(weeks=count)
+    elif unit.startswith("month"):
+        delta = timedelta(days=30 * count)
+    else:
+        delta = timedelta(days=365 * count)
+    return now_utc - delta
+
+
+def _extract_last_broadcast_from_profile_html(
+    body: str,
+    *,
+    now: datetime | None = None,
+) -> datetime | None:
+    """Extract exact or relative Last Broadcast data from the public room page."""
+    raw = html_lib.unescape(body or "")
+
+    # Prefer an exact ISO timestamp if Chaturbate embeds profile JSON in the page.
+    for pattern in (
+        r'"last_broadcast"\s*:\s*"([^"\\]+)"',
+        r"'last_broadcast'\s*:\s*'([^'\\]+)'",
+    ):
+        match = re.search(pattern, raw, flags=re.IGNORECASE)
+        if match:
+            parsed = _parse_last_broadcast(match.group(1))
+            if parsed is not None:
+                return parsed
+
+    # Some page variants expose only the human relative string in embedded JSON.
+    for pattern in (
+        r'"time_since_last_broadcast"\s*:\s*"([^"\\]+)"',
+        r"'time_since_last_broadcast'\s*:\s*'([^'\\]+)'",
+    ):
+        match = re.search(pattern, raw, flags=re.IGNORECASE)
+        if match:
+            parsed = _parse_relative_broadcast_age(match.group(1), now=now)
+            if parsed is not None:
+                return parsed
+
+    # Finally parse the visible Bio table: "Last Broadcast: 20 hours ago".
+    plain = re.sub(r"<[^>]+>", " ", raw)
+    plain = re.sub(r"\s+", " ", plain).strip()
+    match = re.search(
+        r"Last\s+Broadcast\s*:\s*(.{1,120}?)(?=\s+(?:Languages|Body Type|Smoke\s*/\s*Drink|Body Decorations|About Me|Wish List|I am|Interested In|Location|Real Name|Birth Date|Age)\s*:|$)",
+        plain,
+        flags=re.IGNORECASE,
+    )
+    if not match:
+        return None
+
+    value = match.group(1).strip()
+    parsed = _parse_last_broadcast(value)
+    if parsed is not None:
+        return parsed
+    parsed = _parse_relative_broadcast_age(value, now=now)
+    if parsed is not None:
+        return parsed
+    raise ValueError(f"Chaturbate public Last Broadcast non parsabile: {value!r}")
+
+
 def _browser_get(url: str, headers: dict[str, str], timeout: float = 15.0):
     try:
         from curl_cffi import requests as curl_requests
@@ -141,12 +233,39 @@ def _fetch_biocontext(slug: str) -> dict[str, Any]:
     return payload
 
 
-def _metadata_error(context: object, context_data: dict[str, Any], last_broadcast: datetime | None) -> str:
-    if isinstance(context, Exception):
-        return f"Chaturbate biocontext: {type(context).__name__}: {context}"[-700:]
+def _fetch_profile_last_broadcast(slug: str) -> datetime | None:
+    """Fallback for rooms whose biocontext endpoint is 401/403 gated."""
+    username = slug.strip("/")
+    url = f"https://chaturbate.com/{username}/"
+    headers = dict(CHATURBATE_HEADERS)
+    headers.update({
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Referer": "https://chaturbate.com/",
+        "Cookie": "cb_legacy=1; agreeterms=1",
+    })
+    response = _browser_get(url, headers=headers, timeout=15)
+    response.raise_for_status()
+    return _extract_last_broadcast_from_profile_html(response.text)
+
+
+def _metadata_error(
+    context: object,
+    context_data: dict[str, Any],
+    last_broadcast: datetime | None,
+    *,
+    profile_fallback_ok: bool = False,
+    profile_error: str = "",
+) -> str:
+    if last_broadcast is not None:
+        return ""
     raw = context_data.get("last_broadcast")
-    if raw not in (None, "", -1, "-1") and last_broadcast is None:
+    if raw not in (None, "", -1, "-1"):
         return f"Chaturbate last_broadcast non parsabile: {raw!r}"[-700:]
+    if isinstance(context, Exception) and not profile_fallback_ok:
+        message = f"Chaturbate biocontext: {type(context).__name__}: {context}"
+        if profile_error:
+            message += f" | public profile: {profile_error}"
+        return message[-1000:]
     return ""
 
 
@@ -164,7 +283,23 @@ async def probe(platform: str, slug: str, quality: str = "best") -> ProbeResult:
     context_data = context if isinstance(context, dict) else {}
     last_broadcast = _parse_last_broadcast(context_data.get("last_broadcast"))
     room_status = str(context_data.get("room_status") or "").strip().lower()
-    meta_error = _metadata_error(context, context_data, last_broadcast)
+
+    profile_fallback_ok = False
+    profile_error = ""
+    if platform == "chaturbate" and last_broadcast is None:
+        try:
+            last_broadcast = await asyncio.to_thread(_fetch_profile_last_broadcast, slug)
+            profile_fallback_ok = True
+        except Exception as exc:
+            profile_error = f"{type(exc).__name__}: {exc}"[-700:]
+
+    meta_error = _metadata_error(
+        context,
+        context_data,
+        last_broadcast,
+        profile_fallback_ok=profile_fallback_ok,
+        profile_error=profile_error,
+    )
 
     if not isinstance(extracted, Exception):
         info = extracted
@@ -204,7 +339,7 @@ async def probe(platform: str, slug: str, quality: str = "best") -> ProbeResult:
         return ProbeResult(live=False, status="error", error=combined[-1000:], last_broadcast=last_broadcast)
 
     if any(k in lowered for k in ("offline", "not currently broadcasting", "private show", "room is not available", "not broadcasting")):
-        return ProbeResult(live=False, status="offline", error=text[-500:], last_broadcast=last_broadcast)
+        return ProbeResult(live=False, status="offline", error="", last_broadcast=last_broadcast)
     return ProbeResult(live=False, status="error", error=text[-500:], last_broadcast=last_broadcast)
 
 
