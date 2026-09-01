@@ -22,10 +22,11 @@ class ResolvedInput:
 
 
 QUALITY_FORMATS = {
-    "best": "bv*+ba/b",
-    "1080p": "bv*[height<=1080]+ba/b[height<=1080]/bv*+ba/b",
-    "720p": "bv*[height<=720]+ba/b[height<=720]/bv*+ba/b",
-    "480p": "bv*[height<=480]+ba/b[height<=480]/bv*+ba/b",
+    # Prefer a single muxed A/V stream. Separate video+audio remains the fallback.
+    "best": "b/bv*+ba",
+    "1080p": "b[height<=1080]/bv*[height<=1080]+ba/b/bv*+ba",
+    "720p": "b[height<=720]/bv*[height<=720]+ba/b/bv*+ba",
+    "480p": "b[height<=480]/bv*[height<=480]+ba/b/bv*+ba",
 }
 
 

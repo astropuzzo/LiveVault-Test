@@ -14,7 +14,7 @@ from .recorder import RecorderSession, start_recorder, stop_recorder
 from .settings_store import runtime
 from .source_providers import probe
 from .storage import disk_state
-from .uploaders import provider_available, upload
+from .uploaders import create_gofile_folder, provider_available, upload
 from .utils import generate_thumbnail, human_bytes, safe_name, sha256_file, utcnow, verify_media
 
 
@@ -137,6 +137,8 @@ class WorkerManager:
                 "elapsed_seconds": max(0, (now - started.astimezone(timezone.utc)).total_seconds()),
                 "local_bytes": current_size,
                 "container": s.extension.lstrip("."),
+                "max_file_bytes": s.max_file_bytes,
+                "max_file_human": human_bytes(s.max_file_bytes),
             })
         uptime = max(0, (now - self.started_at).total_seconds()) if self.started_at else 0
         cfg = runtime()
@@ -352,8 +354,12 @@ class WorkerManager:
         stderr_task = asyncio.create_task(self._drain_stderr(session))
         try:
             while session.process.returncode is None:
-                await asyncio.sleep(4)
+                await asyncio.sleep(1)
                 files = sorted(session.directory.glob(f"*{session.extension}"), key=lambda p: p.stat().st_mtime)
+                if files and files[-1].stat().st_size >= session.safe_stop_bytes:
+                    session.rollover_requested = True
+                    await stop_recorder(session)
+                    continue
                 for path in files[:-1]:
                     if path not in processed and path.stat().st_size > 0:
                         await self._finalize_segment(session, path)
@@ -375,15 +381,24 @@ class WorkerManager:
                 await asyncio.wait_for(stderr_task, timeout=2)
             self.active.pop(session.source_id, None)
             self.watch_tasks.pop(session.source_id, None)
+            total_session_bytes = 0
+            with contextlib.suppress(Exception):
+                total_session_bytes = sum(
+                    path.stat().st_size for path in session.directory.glob(f"*{session.extension}") if path.is_file()
+                )
+            size_rollover = session.rollover_requested or total_session_bytes >= session.safe_stop_bytes
             with db_session() as db:
                 source = db.get(Source, session.source_id)
                 if source:
                     now = utcnow()
-                    if source.last_status != "offline" or source.status_changed_at is None:
+                    new_status = "live" if size_rollover else "offline"
+                    if source.last_status != new_status or source.status_changed_at is None:
                         source.status_changed_at = now
-                    source.last_status = "offline"
+                    source.last_status = new_status
                     source.last_checked_at = now
                     source.last_live_at = now
+                    if size_rollover:
+                        source.last_error = ""
             self.wake()
 
     async def _finalize_segment(self, session: RecorderSession, path: Path) -> None:
@@ -431,6 +446,30 @@ class WorkerManager:
                 db.flush()
                 db.expunge(rec)
             return rec
+
+    async def _gofile_folder_for(self, rec: Recording) -> tuple[str, str]:
+        """Resolve or lazily create the stable Gofile folder for one source."""
+        with db_session() as db:
+            source = db.get(Source, rec.source_id)
+            if not source or not source.organize_cloud:
+                return "", ""
+            existing_id = source.gofile_folder_id
+            existing_url = source.gofile_folder_url
+            source_name = source.name
+        if existing_id:
+            return existing_id, existing_url
+        parent_id = runtime().gofile_folder_id
+        folder_id, folder_url = await asyncio.to_thread(create_gofile_folder, source_name, parent_id)
+        with db_session() as db:
+            source = db.get(Source, rec.source_id)
+            if source:
+                if not source.gofile_folder_id:
+                    source.gofile_folder_id = folder_id
+                if folder_url and not source.gofile_folder_url:
+                    source.gofile_folder_url = folder_url
+                folder_id = source.gofile_folder_id
+                folder_url = source.gofile_folder_url
+        return folder_id, folder_url
 
     async def _verify_before_upload(self, rec: Recording, path: Path) -> bool:
         cfg = runtime()
@@ -537,7 +576,17 @@ class WorkerManager:
                                 self.upload_current["sent_bytes"] = sent
                                 self.upload_current["percent"] = round((sent / total * 100) if total else 0, 1)
 
-                        result = await asyncio.to_thread(upload, path, provider, progress)
+                        gofile_folder_id = ""
+                        gofile_folder_url = ""
+                        if provider == "gofile":
+                            gofile_folder_id, gofile_folder_url = await self._gofile_folder_for(rec)
+                        result = await asyncio.to_thread(
+                            upload,
+                            path,
+                            provider,
+                            progress,
+                            gofile_folder_id,
+                        )
                         if result.verified:
                             break
                         errors.append(f"{provider}: verifica remota non riuscita")
@@ -555,6 +604,11 @@ class WorkerManager:
                             current.remote_url = result.remote_url
                             current.uploaded_at = utcnow()
                             current.last_error = ""
+                    if result.provider == "gofile":
+                        with db_session() as db:
+                            source = db.get(Source, rec.source_id)
+                            if source and source.organize_cloud and gofile_folder_url and not source.gofile_folder_url:
+                                source.gofile_folder_url = gofile_folder_url
                     self._retry_after.pop(rec.id, None)
                     if runtime().delete_after_upload:
                         path.unlink(missing_ok=True)

@@ -1,4 +1,4 @@
-# LiveVault v2.1.0
+# LiveVault v2.2.0
 
 LiveVault è un recorder remoto 24/7 con web dashboard/PWA. Monitora sorgenti autorizzate, registra in segmenti con FFmpeg stream-copy, verifica i media, crea miniature e gestisce un buffer locale con upload automatico Gofile/Pixeldrain.
 
@@ -9,6 +9,8 @@ LiveVault è un recorder remoto 24/7 con web dashboard/PWA. Monitora sorgenti au
 ### Media e anteprime
 
 - **MP4 diretto come default**, segmentato con fragmented MP4 e `-c copy`: nessuna ricodifica.
+- Ogni file termina dopo 60 minuti oppure prima di 2 GB; la prima soglia raggiunta chiude ordinatamente il file e avvia il successivo.
+- Il mapping audio è obbligatorio: se la sorgente non restituisce audio, FFmpeg fallisce e LiveVault riprova invece di archiviare un MP4 muto.
 - MKV ancora disponibile come modalità alternativa.
 - Remux manuale **MKV → MP4** dalla dashboard, senza perdita/ricodifica.
 - Miniatura JPEG per ogni segmento, mantenuta anche dopo la cancellazione del video locale.
@@ -60,6 +62,7 @@ Non è più necessario modificare `.env` per l'uso normale. Dopo il login puoi c
 
 - Gofile API/account token;
 - Gofile Folder ID;
+- cartella Gofile stabile opzionale per ogni sorgente e archivio LiveVault stabile per camera;
 - regione/proxy upload;
 - Pixeldrain API key;
 - provider primario/fallback;
@@ -78,18 +81,18 @@ L'uploader non traduce più un 500 HTML/proxy in un generico `Invalid JSON respo
 
 ### Pixeldrain HTTP 401
 
-Pixeldrain richiede autenticazione API per creare file. Inserisci una API key valida in **Settings → Pixeldrain** e premi **Test connessione**. Il client usa HTTP Basic con API key come password.
+Pixeldrain richiede autenticazione API per creare file. Inserisci una API key valida in **Settings → Pixeldrain** e premi **Test connessione**. Il client usa HTTP Basic con API key come password. Il piano gratuito non espone un filesystem a cartelle: LiveVault mantiene quindi un unico link di archivio per camera che raccoglie sia Gofile sia Pixeldrain, mentre su Gofile crea anche una cartella condivisa persistente.
 
 ## Installazione
 
 Vedi **[START_HERE.md](START_HERE.md)**.
 
-Per una VPS gratuita compatibile con registrazione 24/7, storage persistente e Docker, vedi **[HOSTING.md](HOSTING.md)**. La scelta consigliata e documentata e Oracle Cloud Always Free (Ampere A1).
+Per la configurazione cloud attualmente in uso su TierHive, con CapRover, HTTPS e deploy automatico, vedi **[HOSTING.md](HOSTING.md)**.
 
 In breve:
 
 ```bash
-tar -xzf LiveVault-v2.1.0.tar.gz
+tar -xzf LiveVault-v2.2.0.tar.gz
 cd LiveVault
 chmod +x scripts/*.sh
 ./scripts/install.sh
@@ -162,7 +165,8 @@ verifica MD5/size     verifica size
 Le impostazioni iniziali arrivano da `.env`, poi possono essere sovrascritte e persistite dalla UI:
 
 ```env
-SEGMENT_MINUTES=15
+SEGMENT_MINUTES=60
+SEGMENT_MAX_GB=2
 CONTAINER_FORMAT=mp4
 INTEGRITY_MODE=packet
 GENERATE_THUMBNAILS=true

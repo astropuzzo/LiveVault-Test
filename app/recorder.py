@@ -25,6 +25,9 @@ class RecorderSession:
     process: asyncio.subprocess.Process
     started_at: datetime
     extension: str
+    max_file_bytes: int
+    safe_stop_bytes: int
+    rollover_requested: bool = False
 
 
 def _ffmpeg_headers(headers: dict[str, str]) -> str:
@@ -36,9 +39,28 @@ def _ffmpeg_headers(headers: dict[str, str]) -> str:
     return "\r\n".join(lines) + ("\r\n" if lines else "")
 
 
-def build_ffmpeg_command(inputs: list[ResolvedInput], output_pattern: Path, *, segment_minutes: int | None = None, container_format: str | None = None) -> list[str]:
+def max_output_bytes(segment_max_gb: float) -> int:
+    return max(1, int(float(segment_max_gb) * 1024**3))
+
+
+def safe_output_limit_bytes(segment_max_gb: float) -> int:
+    """Leave enough headroom for buffered packets and the container trailer."""
+    maximum = max_output_bytes(segment_max_gb)
+    reserve = max(64 * 1024**2, int(maximum * 0.05))
+    return max(1, maximum - reserve)
+
+
+def build_ffmpeg_command(
+    inputs: list[ResolvedInput],
+    output_pattern: Path,
+    *,
+    segment_minutes: int | None = None,
+    segment_max_gb: float | None = None,
+    container_format: str | None = None,
+) -> list[str]:
     cfg = runtime()
     segment_minutes = int(segment_minutes or cfg.segment_minutes)
+    segment_max_gb = float(segment_max_gb or cfg.segment_max_gb)
     container_format = (container_format or cfg.container_format).lower()
     cmd = ["ffmpeg", "-hide_banner", "-loglevel", "warning", "-nostdin"]
     for item in inputs:
@@ -55,10 +77,10 @@ def build_ffmpeg_command(inputs: list[ResolvedInput], output_pattern: Path, *, s
     if audio_idx is None:
         audio_idx = next((i for i, item in enumerate(inputs) if item.kind == "media"), None)
     if len(inputs) == 1:
-        cmd += ["-map", "0:v:0?", "-map", "0:a:0?"]
+        cmd += ["-map", "0:v:0", "-map", "0:a:0"]
     else:
-        cmd += ["-map", f"{video_idx}:v:0?" if video_idx is not None else "0:v:0?"]
-        cmd += ["-map", f"{audio_idx}:a:0?" if audio_idx is not None else "0:a:0?"]
+        cmd += ["-map", f"{video_idx}:v:0" if video_idx is not None else "0:v:0"]
+        cmd += ["-map", f"{audio_idx}:a:0" if audio_idx is not None else "0:a:0"]
 
     cmd += [
         "-c", "copy",
@@ -66,6 +88,7 @@ def build_ffmpeg_command(inputs: list[ResolvedInput], output_pattern: Path, *, s
         "-f", "segment",
         "-segment_time", str(max(60, segment_minutes * 60)),
         "-reset_timestamps", "1",
+        "-fs", str(safe_output_limit_bytes(segment_max_gb)),
     ]
     if container_format == "mp4":
         cmd += [
@@ -88,14 +111,30 @@ async def start_recorder(source: Source) -> RecorderSession:
     directory.mkdir(parents=True, exist_ok=True)
     extension = ".mp4" if cfg.container_format == "mp4" else ".mkv"
     output_pattern = directory / f"{session_id}_part%03d{extension}"
-    cmd = build_ffmpeg_command(inputs, output_pattern, segment_minutes=cfg.segment_minutes, container_format=cfg.container_format)
+    cmd = build_ffmpeg_command(
+        inputs,
+        output_pattern,
+        segment_minutes=cfg.segment_minutes,
+        segment_max_gb=cfg.segment_max_gb,
+        container_format=cfg.container_format,
+    )
     process = await asyncio.create_subprocess_exec(
         *cmd,
         stdout=asyncio.subprocess.DEVNULL,
         stderr=asyncio.subprocess.PIPE,
         start_new_session=True,
     )
-    return RecorderSession(source.id, source.name, session_id, directory, process, utcnow(), extension)
+    return RecorderSession(
+        source.id,
+        source.name,
+        session_id,
+        directory,
+        process,
+        utcnow(),
+        extension,
+        max_output_bytes(cfg.segment_max_gb),
+        safe_output_limit_bytes(cfg.segment_max_gb),
+    )
 
 
 async def stop_recorder(session: RecorderSession) -> None:

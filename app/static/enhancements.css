@@ -38,6 +38,23 @@
   text-decoration: none;
 }
 
+.filter-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  border: 1px solid rgba(92, 144, 255, .28);
+  border-radius: 12px;
+  color: #b9d1ff;
+  background: rgba(49, 91, 164, .09);
+}
+
+.filter-bar.hidden {
+  display: none;
+}
+
 .rec-date {
   margin-top: 3px;
   overflow: hidden;

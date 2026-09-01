@@ -10,14 +10,14 @@ Guida breve per avviare LiveVault su una normale VPS Linux. Non dipende da Azure
 - almeno 1 vCPU e 1 GB RAM; 2 GB consigliati se vuoi ospitare anche altri servizi;
 - 15–50 GB di disco a seconda del buffer;
 - accesso SSH/root o utente con `sudo`;
-- il file `LiveVault-v2.1.0.tar.gz`.
+- il file `LiveVault-v2.2.0.tar.gz`.
 
 ## 1. Copia il pacchetto sulla VPS
 
 Puoi usare SCP/SFTP oppure un link temporaneo. Una volta che il file è nella home della VPS:
 
 ```bash
-tar -xzf LiveVault-v2.1.0.tar.gz
+tar -xzf LiveVault-v2.2.0.tar.gz
 cd LiveVault
 chmod +x scripts/*.sh
 ```
@@ -43,6 +43,7 @@ Per uso permanente metti il servizio dietro HTTPS (Tailscale, Caddy o il reverse
 Accedi e premi **Settings**. Da qui puoi cambiare senza modificare `.env`:
 
 - durata segmenti;
+- dimensione massima di ogni file;
 - MP4/MKV;
 - polling e concorrenza;
 - controllo integrità;
@@ -66,7 +67,8 @@ Per una VPS con 20–30 GB di disco:
 
 ```text
 Container: MP4
-Segmento: 10–15 min
+Segmento: 60 min
+Dimensione massima file: 2 GB
 Integrità: Packet scan + SHA-256
 Miniature: ON
 Buffer massimo: 8–12 GB
@@ -79,6 +81,8 @@ Fallback: Pixeldrain
 ## 5. Aggiungi una sorgente
 
 **Aggiungi sorgente** → username/URL → qualità → conferma autorizzazione → **Salva**.
+
+L'opzione **Una raccolta cloud stabile per questa camera** crea una cartella Gofile dedicata e mostra un link unico all'archivio LiveVault della camera. L'archivio unico include anche gli upload Pixeldrain; Pixeldrain Free non offre cartelle persistenti modificabili.
 
 Quando diventa live, LiveVault registra automaticamente. Ogni segmento chiuso viene:
 

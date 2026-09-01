@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from app.recorder import build_ffmpeg_command
+from app.recorder import build_ffmpeg_command, max_output_bytes, safe_output_limit_bytes
 from app.source_providers import ResolvedInput
 
 
@@ -12,8 +12,9 @@ def test_ffmpeg_single_input_mapping_mkv():
         container_format="mkv",
     )
     joined = " ".join(cmd)
-    assert "-map 0:v:0?" in joined
-    assert "-map 0:a:0?" in joined
+    assert "-map 0:v:0" in joined
+    assert "-map 0:a:0" in joined
+    assert "0:a:0?" not in joined
     assert "-c copy" in joined
     assert "-f segment" in joined
     assert "-segment_format matroska" in joined
@@ -26,8 +27,8 @@ def test_ffmpeg_separate_audio_video_mapping():
     ]
     cmd = build_ffmpeg_command(inputs, Path("out_%03d.mp4"), segment_minutes=15, container_format="mp4")
     joined = " ".join(cmd)
-    assert "-map 0:v:0?" in joined
-    assert "-map 1:a:0?" in joined
+    assert "-map 0:v:0" in joined
+    assert "-map 1:a:0" in joined
 
 
 def test_ffmpeg_combined_input_keeps_audio_with_multiple_inputs():
@@ -37,8 +38,8 @@ def test_ffmpeg_combined_input_keeps_audio_with_multiple_inputs():
     ]
     cmd = build_ffmpeg_command(inputs, Path("out_%03d.mp4"), segment_minutes=15, container_format="mp4")
     joined = " ".join(cmd)
-    assert "-map 1:v:0?" in joined
-    assert "-map 0:a:0?" in joined
+    assert "-map 1:v:0" in joined
+    assert "-map 0:a:0" in joined
 
 
 def test_ffmpeg_direct_mp4_is_fragmented_stream_copy():
@@ -54,3 +55,18 @@ def test_ffmpeg_direct_mp4_is_fragmented_stream_copy():
     assert "frag_keyframe" in joined
     assert "empty_moov" in joined
     assert "-segment_time 600" in joined
+
+
+def test_default_requested_limits_are_60_minutes_and_below_two_gib():
+    cmd = build_ffmpeg_command(
+        [ResolvedInput("https://example.test/master.m3u8", {}, "media")],
+        Path("out_%03d.mp4"),
+        segment_minutes=60,
+        segment_max_gb=2,
+        container_format="mp4",
+    )
+    assert cmd[cmd.index("-segment_time") + 1] == "3600"
+    file_limit = int(cmd[cmd.index("-fs") + 1])
+    assert file_limit == safe_output_limit_bytes(2)
+    assert 1.8 * 1024**3 < file_limit < max_output_bytes(2)
+    assert "0:a:0?" not in cmd

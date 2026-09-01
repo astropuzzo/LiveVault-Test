@@ -11,7 +11,7 @@ Entrambi gli indirizzi sono pubblici e funzionano da PC, Android e tablet. L'acc
 
 ## Architettura
 
-- VPS Debian 12 su TierHive: 1 vCPU, 1 GB RAM, 20 GB NVMe;
+- VPS Debian 12 su TierHive: 2 vCPU, 2 GB RAM, 30 GB NVMe;
 - CapRover gestisce applicazioni, log, variabili, riavvii e deploy;
 - TierHive HAProxy espone soltanto i domini web e termina HTTPS;
 - DuckDNS fornisce il dominio gratuito `streamingcam.duckdns.org`;
@@ -41,7 +41,9 @@ I log della build sono in **Apps > livevault > Deployment > View Build Logs**. I
 7. In TierHive **HAProxy**, aggiungi un dominio DuckDNS, convalidalo, collega `10.5.138.11` alla porta 80 e abilita SSL.
 8. Copia il webhook mostrato da CapRover nelle impostazioni GitHub del repository.
 
-Il VPS può ospitare alcuni servizi piccoli, ma 1 GB di RAM non è sufficiente per tre build pesanti contemporanee o database grandi. Esegui i deploy uno alla volta; se le app crescono, aumenta prima la RAM.
+Il VPS aggiornato può ospitare LiveVault e alcuni servizi piccoli. I 2 GB di RAM permettono monitoraggio e due vCPU, ma è comunque prudente eseguire una build pesante alla volta e tenere i database grandi su servizi separati.
+
+Il disco del sistema è già stato esteso a 30 GB; la partizione ext4 vede l'intera capacità. Con il costo corrente di circa 1,95 token/mese il preventivo è circa 23,40 token/anno, esclusi eventuali consumi o variazioni del provider.
 
 ## Dati e backup
 

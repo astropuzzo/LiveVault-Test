@@ -152,7 +152,7 @@ def _gofile_headers(token: str) -> dict[str, str]:
     return {
         "Authorization": f"Bearer {token}",
         "Accept": "application/json",
-        "User-Agent": "LiveVault/2.0.1",
+        "User-Agent": "LiveVault/2.2.0",
     }
 
 
@@ -161,7 +161,64 @@ def _gofile_auth_error(value) -> bool:
     return any(x in text for x in ("error-wrongtoken", "error-notauthenticated", "http 401", "invalid token", "wrong token"))
 
 
-def upload_gofile(path: Path, progress: Callable[[int, int], None] | None = None) -> UploadResult:
+def _gofile_account_root(token: str) -> str:
+    headers = _gofile_headers(token)
+    identity = _json(requests.get("https://api.gofile.io/accounts/getid", headers=headers, timeout=20), "Gofile")
+    account_id = str((identity.get("data") or {}).get("id") or "")
+    if not account_id:
+        raise UploadError("Gofile: account id mancante")
+    account = _json(requests.get(f"https://api.gofile.io/accounts/{account_id}", headers=headers, timeout=20), "Gofile")
+    root_id = str((account.get("data") or {}).get("rootFolder") or "")
+    if not root_id:
+        raise UploadError("Gofile: cartella root non disponibile")
+    return root_id
+
+
+def create_gofile_folder(folder_name: str, parent_folder_id: str = "") -> tuple[str, str]:
+    """Create a persistent public folder and return (content id, share URL)."""
+    cfg = runtime()
+    if not cfg.gofile_token:
+        raise UploadError("Gofile API token non configurato")
+    parent_id = parent_folder_id.strip() or _gofile_account_root(cfg.gofile_token)
+    response = requests.post(
+        "https://api.gofile.io/contents/createFolder",
+        headers={**_gofile_headers(cfg.gofile_token), "Content-Type": "application/json"},
+        json={"parentFolderId": parent_id, "folderName": folder_name[:120], "public": True},
+        timeout=30,
+    )
+    payload = _json(response, "Gofile")
+    if str(payload.get("status", "ok")).lower() not in {"ok", "success", "true"}:
+        raise UploadError(f"Gofile: creazione cartella fallita ({payload.get('status')})")
+    data = payload.get("data") if isinstance(payload.get("data"), dict) else payload
+    folder_id = str(data.get("id") or data.get("contentId") or "")
+    code = str(data.get("code") or "")
+    folder_url = str(data.get("downloadPage") or data.get("url") or (f"https://gofile.io/d/{code}" if code else ""))
+    if not folder_id:
+        raise UploadError("Gofile: identificatore della cartella mancante")
+    return folder_id, folder_url
+
+
+def move_gofile_contents(content_ids: list[str], folder_id: str) -> None:
+    ids = [str(item).strip() for item in content_ids if str(item).strip()]
+    if not ids:
+        return
+    cfg = runtime()
+    response = requests.put(
+        "https://api.gofile.io/contents/move",
+        headers={**_gofile_headers(cfg.gofile_token), "Content-Type": "application/json"},
+        json={"contentsId": ",".join(ids), "folderId": folder_id},
+        timeout=60,
+    )
+    payload = _json(response, "Gofile")
+    if str(payload.get("status", "ok")).lower() not in {"ok", "success", "true"}:
+        raise UploadError(f"Gofile: spostamento non riuscito ({payload.get('status')})")
+
+
+def upload_gofile(
+    path: Path,
+    progress: Callable[[int, int], None] | None = None,
+    folder_id: str = "",
+) -> UploadResult:
     cfg = runtime()
     if not cfg.gofile_token:
         raise UploadError("Gofile API token non configurato")
@@ -173,7 +230,7 @@ def upload_gofile(path: Path, progress: Callable[[int, int], None] | None = None
                 total = path.stat().st_size
                 local_md5 = hashlib.md5()  # nosec B324 - compatibility checksum, not used for security
                 boundary, content_length, body = _multipart_stream(
-                    path, cfg.gofile_folder_id, progress, digest=local_md5, token=cfg.gofile_token
+                    path, folder_id.strip() or cfg.gofile_folder_id, progress, digest=local_md5, token=cfg.gofile_token
                 )
                 request_headers = {**headers, "Content-Type": f"multipart/form-data; boundary={boundary}"}
                 response = requests.post(
@@ -281,7 +338,7 @@ def test_provider(provider: str) -> dict:
             r = requests.get(
                 "https://api.gofile.io/accounts/getid",
                 params={"token": cfg.gofile_token},
-                headers={"Accept": "application/json", "User-Agent": "LiveVault/2.0.1"},
+                headers={"Accept": "application/json", "User-Agent": "LiveVault/2.2.0"},
                 timeout=20,
             )
         payload = _json(r, "Gofile")
@@ -308,10 +365,15 @@ def test_provider(provider: str) -> dict:
     raise UploadError(f"Provider sconosciuto: {provider}")
 
 
-def _upload_one(path: Path, provider: str, progress: Callable[[int, int], None] | None = None) -> UploadResult:
+def _upload_one(
+    path: Path,
+    provider: str,
+    progress: Callable[[int, int], None] | None = None,
+    gofile_folder_id: str = "",
+) -> UploadResult:
     provider = provider.lower().strip()
     if provider == "gofile":
-        return upload_gofile(path, progress)
+        return upload_gofile(path, progress, folder_id=gofile_folder_id)
     if provider == "pixeldrain":
         return upload_pixeldrain(path, progress)
     raise UploadError(f"Provider sconosciuto: {provider}")
@@ -323,6 +385,7 @@ def upload_with_fallback(
     progress: Callable[[int, int], None] | None = None,
     provider_started: Callable[[str], None] | None = None,
     uploader=None,
+    gofile_folder_id: str = "",
 ) -> tuple[UploadResult | None, list[str]]:
     uploader = uploader or _upload_one
     errors: list[str] = []
@@ -330,7 +393,10 @@ def upload_with_fallback(
         if provider_started:
             provider_started(provider)
         try:
-            result = uploader(path, provider, progress)
+            if gofile_folder_id and provider == "gofile":
+                result = uploader(path, provider, progress, gofile_folder_id=gofile_folder_id)
+            else:
+                result = uploader(path, provider, progress)
             if result.verified:
                 return result, errors
             errors.append(f"{provider}: verifica remota non riuscita")
@@ -339,13 +405,24 @@ def upload_with_fallback(
     return None, errors
 
 
-def upload(path: Path, provider: str, progress: Callable[[int, int], None] | None = None) -> UploadResult:
+def upload(
+    path: Path,
+    provider: str,
+    progress: Callable[[int, int], None] | None = None,
+    gofile_folder_id: str = "",
+) -> UploadResult:
     provider = provider.lower().strip()
     cfg = runtime()
     fallback = cfg.fallback_uploader.lower().strip()
     if provider == cfg.primary_uploader.lower().strip() and fallback not in {"", "none", provider} and provider_available(fallback):
-        result, errors = upload_with_fallback(path, [provider, fallback], progress, uploader=_upload_one)
+        result, errors = upload_with_fallback(
+            path,
+            [provider, fallback],
+            progress,
+            uploader=_upload_one,
+            gofile_folder_id=gofile_folder_id,
+        )
         if result and result.verified:
             return result
         raise UploadError(" | ".join(errors) or "Upload fallito su primario e fallback")
-    return _upload_one(path, provider, progress)
+    return _upload_one(path, provider, progress, gofile_folder_id=gofile_folder_id)

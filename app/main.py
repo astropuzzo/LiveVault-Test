@@ -20,7 +20,7 @@ from .db import Recording, Source, db_session, init_db
 from .recorder import remux_to_mp4
 from .settings_store import public_settings, reload_runtime, runtime, set_values
 from .storage import disk_state
-from .uploaders import UploadError, test_provider
+from .uploaders import UploadError, create_gofile_folder, move_gofile_contents, test_provider
 from .utils import generate_thumbnail, human_bytes, sha256_file, utcnow, verify_media
 from .workers import manager
 
@@ -29,7 +29,7 @@ USERNAME_RE = re.compile(r"^[A-Za-z0-9_]{1,100}$")
 LOGIN_FAILURES: dict[str, deque[float]] = defaultdict(deque)
 LOGIN_WINDOW = 10 * 60
 LOGIN_MAX_FAILURES = 6
-VERSION = "2.1.0"
+VERSION = "2.2.0"
 
 
 class LoginBody(BaseModel):
@@ -47,6 +47,9 @@ class SourceCreate(BaseModel):
     platform: str = "chaturbate"
     quality: str = "best"
     consent_confirmed: bool
+    organize_cloud: bool = True
+    gofile_folder_id: str = Field(default="", max_length=200)
+    gofile_folder_url: str = Field(default="", max_length=500)
 
 
 class SourcePatch(BaseModel):
@@ -55,12 +58,16 @@ class SourcePatch(BaseModel):
     quality: str | None = Field(default=None, max_length=20)
     enabled: bool | None = None
     consent_confirmed: bool | None = None
+    organize_cloud: bool | None = None
+    gofile_folder_id: str | None = Field(default=None, max_length=200)
+    gofile_folder_url: str | None = Field(default=None, max_length=500)
 
 
 class SettingsPatch(BaseModel):
     poll_seconds: int | None = Field(default=None, ge=15, le=600)
     max_probe_concurrency: int | None = Field(default=None, ge=1, le=12)
     segment_minutes: int | None = Field(default=None, ge=5, le=120)
+    segment_max_gb: float | None = Field(default=None, ge=0.25, le=2.0)
     container_format: str | None = None
     integrity_mode: str | None = None
     generate_thumbnails: bool | None = None
@@ -93,6 +100,20 @@ def _normalize_slug(slug: str) -> str:
         value = value.split("/", 1)[0]
     if not USERNAME_RE.fullmatch(value):
         raise HTTPException(400, "Username Chaturbate non valido")
+    return value
+
+
+def _normalize_gofile_folder_id(value: str) -> str:
+    value = value.strip()
+    if value and not re.fullmatch(r"[A-Za-z0-9_-]{4,200}", value):
+        raise HTTPException(400, "Folder ID Gofile non valido")
+    return value
+
+
+def _normalize_gofile_url(value: str) -> str:
+    value = value.strip()
+    if value and not re.fullmatch(r"https://gofile\.io/d/[A-Za-z0-9_-]+", value):
+        raise HTTPException(400, "Link cartella Gofile non valido")
     return value
 
 
@@ -264,6 +285,8 @@ def patch_settings(body: SettingsPatch, request: Request):
     for secret_key in ("gofile_token", "pixeldrain_api_key"):
         if secret_key in updates:
             updates[secret_key] = updates[secret_key].strip()
+    if "gofile_folder_id" in updates:
+        updates["gofile_folder_id"] = _normalize_gofile_folder_id(updates["gofile_folder_id"])
     if clear_gofile:
         updates["gofile_token"] = ""
     if clear_pixeldrain:
@@ -368,6 +391,10 @@ def list_sources(request: Request):
             "last_live_at": _iso_utc(now if active else source.last_live_at),
             "status_changed_at": _iso_utc(source.status_changed_at),
             "last_error": source.last_error,
+            "organize_cloud": source.organize_cloud,
+            "gofile_folder_id": source.gofile_folder_id,
+            "gofile_folder_url": source.gofile_folder_url,
+            "collection_url": f"/?source={source.id}#archive",
             "recording_count": int(aggregate.recording_count if aggregate else 0),
             "session_count": int(aggregate.session_count if aggregate else 0),
             "uploaded_count": int(aggregate.uploaded_count if aggregate else 0),
@@ -396,7 +423,17 @@ def add_source(body: SourceCreate, request: Request):
             raise HTTPException(409, "Esiste già una sorgente con questo nome")
         if db.scalar(select(Source).where(Source.platform == body.platform, Source.slug == slug)):
             raise HTTPException(409, "Questa sorgente è già configurata")
-        source = Source(name=name, platform=body.platform, slug=slug, quality=body.quality, consent_confirmed=True, enabled=True)
+        source = Source(
+            name=name,
+            platform=body.platform,
+            slug=slug,
+            quality=body.quality,
+            consent_confirmed=True,
+            enabled=True,
+            organize_cloud=body.organize_cloud,
+            gofile_folder_id=_normalize_gofile_folder_id(body.gofile_folder_id),
+            gofile_folder_url=_normalize_gofile_url(body.gofile_folder_url),
+        )
         db.add(source)
         db.flush()
         source_id = source.id
@@ -431,11 +468,66 @@ async def patch_source(source_id: int, body: SourcePatch, request: Request):
             source.enabled = body.enabled
         if body.consent_confirmed is not None:
             source.consent_confirmed = body.consent_confirmed
+        if body.organize_cloud is not None:
+            source.organize_cloud = body.organize_cloud
+        if body.gofile_folder_id is not None:
+            new_folder_id = _normalize_gofile_folder_id(body.gofile_folder_id)
+            if new_folder_id != source.gofile_folder_id and body.gofile_folder_url is None:
+                source.gofile_folder_url = ""
+            source.gofile_folder_id = new_folder_id
+        if body.gofile_folder_url is not None:
+            source.gofile_folder_url = _normalize_gofile_url(body.gofile_folder_url)
         should_stop = not source.enabled or not source.consent_confirmed
     if should_stop:
         await manager.stop_source(source_id)
     manager.wake()
     return {"ok": True}
+
+
+@app.post("/api/sources/{source_id}/cloud-folder")
+async def organize_source_cloud(source_id: int, request: Request):
+    require_auth(request)
+    with db_session() as db:
+        source = db.get(Source, source_id)
+        if not source:
+            raise HTTPException(404, "Sorgente non trovata")
+        source_name = source.name
+        folder_id = source.gofile_folder_id
+        folder_url = source.gofile_folder_url
+    try:
+        if not folder_id:
+            folder_id, folder_url = await asyncio.to_thread(
+                create_gofile_folder,
+                source_name,
+                runtime().gofile_folder_id,
+            )
+            with db_session() as db:
+                source = db.get(Source, source_id)
+                if source:
+                    source.organize_cloud = True
+                    source.gofile_folder_id = folder_id
+                    source.gofile_folder_url = folder_url
+        with db_session() as db:
+            remote_ids = list(db.scalars(
+                select(Recording.remote_id).where(
+                    Recording.source_id == source_id,
+                    Recording.upload_provider == "gofile",
+                    Recording.remote_id != "",
+                )
+            ).all())
+        moved = 0
+        warning = ""
+        if remote_ids:
+            try:
+                await asyncio.to_thread(move_gofile_contents, remote_ids, folder_id)
+                moved = len(remote_ids)
+            except Exception as exc:
+                warning = f"Cartella creata; i vecchi file restano ai link originali: {exc}"[-800:]
+        return {"ok": True, "folder_id": folder_id, "folder_url": folder_url, "moved": moved, "warning": warning}
+    except UploadError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(502, f"Organizzazione Gofile fallita: {exc}") from exc
 
 
 @app.delete("/api/sources/{source_id}")
@@ -470,6 +562,7 @@ def _recording_json(r: Recording) -> dict:
         "sha256": r.sha256, "integrity_status": r.integrity_status, "integrity_error": r.integrity_error,
         "integrity_checked_at": _iso_utc(r.integrity_checked_at),
         "upload_status": r.upload_status, "upload_provider": r.upload_provider, "remote_url": r.remote_url,
+        "collection_url": f"/?source={r.source_id}#archive",
         "upload_attempts": r.upload_attempts, "uploaded_at": _iso_utc(r.uploaded_at),
         "has_video": r.has_video, "has_audio": r.has_audio,
         "video_codec": r.video_codec, "audio_codec": r.audio_codec,

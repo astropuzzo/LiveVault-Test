@@ -29,6 +29,9 @@ class Source(Base):
     last_live_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     status_changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_error: Mapped[str] = mapped_column(Text, default="")
+    organize_cloud: Mapped[bool] = mapped_column(Boolean, default=True)
+    gofile_folder_id: Mapped[str] = mapped_column(String(200), default="")
+    gofile_folder_url: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
@@ -133,6 +136,9 @@ def _migrate_sources() -> None:
     additions = {
         "status_changed_at": "DATETIME",
         "last_error": "TEXT NOT NULL DEFAULT ''",
+        "organize_cloud": "BOOLEAN NOT NULL DEFAULT 1",
+        "gofile_folder_id": "VARCHAR(200) NOT NULL DEFAULT ''",
+        "gofile_folder_url": "TEXT NOT NULL DEFAULT ''",
     }
     with engine.begin() as conn:
         for name, ddl in additions.items():

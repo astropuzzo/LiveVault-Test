@@ -19,7 +19,8 @@ SECRET_KEYS = {"gofile_token", "pixeldrain_api_key"}
 class RuntimeSettings:
     poll_seconds: int = 60
     max_probe_concurrency: int = 4
-    segment_minutes: int = 15
+    segment_minutes: int = 60
+    segment_max_gb: float = 2.0
     container_format: str = "mp4"
     integrity_mode: str = "packet"
     generate_thumbnails: bool = True
@@ -45,6 +46,7 @@ _state = RuntimeSettings(
     poll_seconds=settings.poll_seconds,
     max_probe_concurrency=settings.max_probe_concurrency,
     segment_minutes=min(settings.segment_minutes, 120),
+    segment_max_gb=min(max(settings.segment_max_gb, 0.25), 2.0),
     container_format=settings.container_format if settings.container_format in {"mp4", "mkv"} else "mp4",
     integrity_mode=settings.integrity_mode if settings.integrity_mode in {"quick", "packet"} else "packet",
     generate_thumbnails=settings.generate_thumbnails,
@@ -145,6 +147,7 @@ def public_settings() -> dict:
         "poll_seconds": s.poll_seconds,
         "max_probe_concurrency": s.max_probe_concurrency,
         "segment_minutes": s.segment_minutes,
+        "segment_max_gb": s.segment_max_gb,
         "container_format": s.container_format,
         "integrity_mode": s.integrity_mode,
         "generate_thumbnails": s.generate_thumbnails,

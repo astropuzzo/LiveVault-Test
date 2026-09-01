@@ -41,6 +41,7 @@ def test_multipart_stream_has_exact_length_and_hashes_only_file(tmp_path: Path):
     assert b'name="token"' in wire
     assert b"guest-token" in wire
     assert b'name="folderId"' in wire
+    assert b"folder-1" in wire
     assert b'name="file"' in wire
     assert digest.hexdigest() == hashlib.md5(payload).hexdigest()  # nosec B324
 
@@ -115,3 +116,51 @@ def test_public_upload_function_wires_primary_to_fallback(monkeypatch, tmp_path:
     result = uploaders.upload(path, "gofile")
     assert result.provider == "pixeldrain"
     assert calls == ["gofile", "pixeldrain"]
+
+
+def test_gofile_folder_is_forwarded_only_to_gofile(tmp_path: Path):
+    path = tmp_path / "clip.mp4"
+    path.write_bytes(b"video")
+    calls = []
+
+    def fake_upload(_path, provider, _progress, **kwargs):
+        calls.append((provider, kwargs))
+        if provider == "gofile":
+            raise RuntimeError("primary unavailable")
+        return UploadResult("pixeldrain", "abc", "https://pixeldrain.com/u/abc", True, 5)
+
+    result, errors = upload_with_fallback(
+        path,
+        ["gofile", "pixeldrain"],
+        uploader=fake_upload,
+        gofile_folder_id="camera-folder",
+    )
+    assert result is not None and result.provider == "pixeldrain"
+    assert calls == [
+        ("gofile", {"gofile_folder_id": "camera-folder"}),
+        ("pixeldrain", {}),
+    ]
+    assert errors == ["gofile: primary unavailable"]
+
+
+def test_create_gofile_folder_uses_requested_parent(monkeypatch):
+    class Cfg:
+        gofile_token = "secret-token"
+
+    captured = {}
+
+    def fake_post(url, **kwargs):
+        captured.update({"url": url, **kwargs})
+        return FakeResponse(
+            status_code=200,
+            content_type="application/json",
+            payload={"status": "ok", "data": {"id": "folder-id", "code": "share-code"}},
+        )
+
+    monkeypatch.setattr(uploaders, "runtime", lambda: Cfg())
+    monkeypatch.setattr(uploaders.requests, "post", fake_post)
+    folder_id, folder_url = uploaders.create_gofile_folder("Camera", "parent-id")
+    assert folder_id == "folder-id"
+    assert folder_url == "https://gofile.io/d/share-code"
+    assert captured["url"].endswith("/contents/createFolder")
+    assert captured["json"] == {"parentFolderId": "parent-id", "folderName": "Camera", "public": True}
