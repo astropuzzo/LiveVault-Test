@@ -100,8 +100,10 @@
       <div class="modal-head"><div><div class="eyebrow">SORGENTE</div><h2 id="sourceModalTitle">Aggiungi sorgente</h2></div><button class="icon-btn" type="button" data-close-modal="source">×</button></div>
       <input id="sourceId" type="hidden">
       <label class="field"><span>Nome</span><input id="sourceName" maxlength="120" required></label>
-      <label class="field"><span>Username o URL</span><input id="sourceSlug" maxlength="180" required></label>
+      <label class="field"><span>Provider</span><select id="sourcePlatform"><option value="auto">Rileva automaticamente</option></select></label>
+      <label class="field"><span id="sourceInputLabel">Username Chaturbate o URL della live</span><input id="sourceSlug" maxlength="1000" placeholder="Username oppure https://..." required><small>Puoi incollare direttamente il link: LiveVault sceglie l'adapter disponibile.</small></label>
       <label class="field"><span>Qualità</span><select id="sourceQuality"><option value="best">Best</option><option value="1080p">1080p</option><option value="720p">720p</option><option value="480p">480p</option></select></label>
+      <div class="source-preflight"><button id="testSourceBtn" class="btn soft" type="button">Testa sorgente</button><span id="sourceTestResult" aria-live="polite"></span></div>
       <label class="check"><input id="sourceOrganizeCloud" type="checkbox"><span>Una raccolta cloud stabile per questa camera</span></label>
       <label class="field"><span>Gofile Folder ID esistente (opzionale)</span><input id="sourceGofileFolder" maxlength="200"><small>Vuoto = LiveVault crea automaticamente la cartella.</small></label>
       <label class="field"><span>Link cartella Gofile (opzionale)</span><input id="sourceGofileFolderUrl" type="url" maxlength="500" placeholder="https://gofile.io/d/..."></label>

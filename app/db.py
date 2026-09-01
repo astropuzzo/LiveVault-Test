@@ -20,7 +20,7 @@ class Source(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name: Mapped[str] = mapped_column(String(120), unique=True, index=True)
     platform: Mapped[str] = mapped_column(String(40), default="chaturbate")
-    slug: Mapped[str] = mapped_column(String(160), index=True)
+    slug: Mapped[str] = mapped_column(Text, index=True)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     quality: Mapped[str] = mapped_column(String(20), default="best")
     consent_confirmed: Mapped[bool] = mapped_column(Boolean, default=False)

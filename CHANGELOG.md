@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.4.0 — 2026-09-01
+
+- Aggiunto Provider AutoPilot con rilevamento URL e registry backend visibile automaticamente nella dashboard.
+- Aggiunti adapter beta per Stripchat, BongaCams, CamSoda, CAM4, Twitch, Kick e YouTube Live; gli extractor mancanti nella build non vengono proposti.
+- Aggiunto il preflight `Testa sorgente`: quando la live è online verifica davvero le tracce con FFprobe senza esporre gli URL media.
+- Aggiunto Audio Guard fail-closed prima di ogni REC: nessun recorder parte se non sono confermate entrambe le tracce video e audio.
+- Corretto il monitor globale: la pausa registrazioni non sospende più i controlli online né `Ultima live vista`.
+- Separato esplicitamente il dato storico ufficiale dall'ultima live osservata, senza aggirare restrizioni geografiche o di profilo.
+- Bloccati URL arbitrari e redirect non previsti: sono accettati solo host e forme URL dei provider abilitati.
+- Aggiunto Dependabot settimanale per aggiornamenti yt-dlp controllati da test e deploy verificato.
+
 ## 2.3.0 — 2026-09-01
 
 - Corretto il falso `Ultima live CB mai`: i metadati bloccati per paese/genere sono ora indicati come non disponibili.

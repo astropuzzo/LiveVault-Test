@@ -320,6 +320,11 @@ class WorkerManager:
             try:
                 session = await start_recorder(source)
                 self.active[source.id] = session
+                with db_session() as db:
+                    current = db.get(Source, source.id)
+                    if current:
+                        current.last_status = "recording"
+                        current.last_seen_live_at = utcnow()
                 for key in (f"source:{source.id}", f"ffmpeg:{source.id}", f"watch:{source.id}"):
                     self.last_errors.pop(key, None)
                 task = asyncio.create_task(self._watch_session(session), name=f"record-{source.id}")
@@ -337,9 +342,6 @@ class WorkerManager:
         while not self._stopping:
             try:
                 cfg = runtime()
-                if cfg.recording_paused:
-                    await self._sleep_or_wake(3)
-                    continue
                 with db_session() as db:
                     sources = list(db.scalars(select(Source).where(Source.enabled.is_(True), Source.consent_confirmed.is_(True))).all())
                 candidates = [s for s in sources if s.id not in self.active]

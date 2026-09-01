@@ -21,3 +21,6 @@ def test_generated_ui_uses_delegated_events():
 
 def test_pwa_service_worker_exists():
     assert (STATIC / "sw.js").is_file()
+    js = (STATIC / "app.js").read_text(encoding="utf-8")
+    assert "serviceWorker.register('/sw.js')" in js
+    assert "livevault-shell-v2.4.0" in (STATIC / "sw.js").read_text(encoding="utf-8")

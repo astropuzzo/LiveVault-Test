@@ -1,0 +1,18 @@
+version: 2
+updates:
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "05:00"
+      timezone: Europe/Rome
+    open-pull-requests-limit: 3
+    groups:
+      media-extractor:
+        patterns:
+          - yt-dlp
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly

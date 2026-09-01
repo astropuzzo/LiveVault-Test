@@ -12,7 +12,7 @@ from zoneinfo import ZoneInfo
 from .config import settings
 from .db import Source
 from .settings_store import runtime
-from .source_providers import ResolvedInput, resolve_inputs
+from .source_providers import ResolvedInput, audit_inputs, resolve_inputs
 from .utils import safe_name, utcnow
 
 
@@ -104,6 +104,10 @@ def build_ffmpeg_command(
 async def start_recorder(source: Source) -> RecorderSession:
     cfg = runtime()
     inputs = await resolve_inputs(source.platform, source.slug, source.quality)
+    audit = await audit_inputs(inputs)
+    if not audit.has_video or not audit.has_audio:
+        raise RuntimeError(f"Audio Guard ha bloccato l'avvio: {audit.error}")
+    inputs = [item for item in inputs if item.kind in {"media", "video", "audio"}]
     local_now = datetime.now(ZoneInfo(settings.timezone))
     source_name = safe_name(source.name)
     session_id = f"{source_name}_{local_now:%Y-%m-%d_%H-%M-%S}"

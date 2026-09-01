@@ -1,4 +1,4 @@
-# LiveVault v2.3.0
+# LiveVault v2.4.0
 
 LiveVault è un recorder remoto 24/7 con dashboard web/PWA. Monitora sorgenti autorizzate, registra tramite FFmpeg in stream-copy, verifica i media, crea miniature, gestisce il buffer locale e carica automaticamente su Gofile/Pixeldrain.
 
@@ -8,6 +8,7 @@ LiveVault è un recorder remoto 24/7 con dashboard web/PWA. Monitora sorgenti au
 
 ### Registrazione e media
 
+- Audio Guard pre-avvio: FFprobe controlla le tracce reali della live e blocca il recorder se manca audio o video;
 - MP4 diretto come default, senza ricodifica;
 - MKV opzionale e remux MKV → MP4;
 - segmenti fino a 60 minuti / 2 GB;
@@ -28,10 +29,15 @@ LiveVault è un recorder remoto 24/7 con dashboard web/PWA. Monitora sorgenti au
 
 ### Monitor sorgenti
 
+- Provider AutoPilot: incolla un URL e LiveVault seleziona l'adapter disponibile;
+- adapter inclusi per Chaturbate e, in beta con preflight, Stripchat, BongaCams, CamSoda, CAM4, Twitch, Kick e YouTube Live;
+- test sorgente dalla dashboard con stato e verifica reale audio/video quando la live è online;
 - stato online/offline aggiornato anche quando le registrazioni sono in pausa;
 - data `Last Broadcast` di Chaturbate separata dall'ultima live vista direttamente da LiveVault;
 - indicazione esplicita quando Chaturbate nasconde i metadati per paese o genere, senza mostrare il falso valore `mai`;
 - controllo immediato per singola camera dalla dashboard.
+
+I blocchi geografici o di profilo imposti dal provider non vengono aggirati. Se il dato storico ufficiale è nascosto, LiveVault mantiene separata la data ufficiale dall'ultima live vista direttamente dal monitor, che continua ad aggiornarsi automaticamente.
 
 ### Gestione reale dello storage locale — v2.2.1
 

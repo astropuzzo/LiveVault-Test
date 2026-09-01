@@ -20,17 +20,17 @@ from .db import Recording, Source, db_session, init_db
 from .file_cleanup import cleanup_empty_parents, cleanup_orphan_videos, safe_unlink
 from .recorder import remux_to_mp4
 from .settings_store import public_settings, reload_runtime, runtime, set_values
+from .source_providers import audit_inputs, normalize_source, probe, provider_catalog, provider_label, resolve_inputs, source_url
 from .storage import disk_state
 from .uploaders import UploadError, create_gofile_folder, move_gofile_contents, test_provider
 from .utils import generate_thumbnail, human_bytes, sha256_file, utcnow, verify_media
 from .workers import manager
 
 BASE = Path(__file__).parent
-USERNAME_RE = re.compile(r"^[A-Za-z0-9_]{1,100}$")
 LOGIN_FAILURES: dict[str, deque[float]] = defaultdict(deque)
 LOGIN_WINDOW = 10 * 60
 LOGIN_MAX_FAILURES = 6
-VERSION = "2.3.0"
+VERSION = "2.4.0"
 
 
 class LoginBody(BaseModel):
@@ -52,8 +52,8 @@ class CleanupLocalBody(BaseModel):
 
 class SourceCreate(BaseModel):
     name: str = Field(min_length=1, max_length=120)
-    slug: str = Field(min_length=1, max_length=180)
-    platform: str = "chaturbate"
+    slug: str = Field(min_length=1, max_length=1000)
+    platform: str = "auto"
     quality: str = "best"
     consent_confirmed: bool
     organize_cloud: bool = True
@@ -63,13 +63,20 @@ class SourceCreate(BaseModel):
 
 class SourcePatch(BaseModel):
     name: str | None = Field(default=None, max_length=120)
-    slug: str | None = Field(default=None, max_length=180)
+    slug: str | None = Field(default=None, max_length=1000)
+    platform: str | None = Field(default=None, max_length=40)
     quality: str | None = Field(default=None, max_length=20)
     enabled: bool | None = None
     consent_confirmed: bool | None = None
     organize_cloud: bool | None = None
     gofile_folder_id: str | None = Field(default=None, max_length=200)
     gofile_folder_url: str | None = Field(default=None, max_length=500)
+
+
+class SourceInspect(BaseModel):
+    slug: str = Field(min_length=1, max_length=1000)
+    platform: str = Field(default="auto", max_length=40)
+    quality: str = Field(default="best", max_length=20)
 
 
 class SettingsPatch(BaseModel):
@@ -98,18 +105,11 @@ class SettingsPatch(BaseModel):
     clear_pixeldrain_api_key: bool = False
 
 
-def _normalize_slug(slug: str) -> str:
-    value = slug.strip()
-    if "chaturbate.com/" in value.lower():
-        lower = value.lower()
-        idx = lower.index("chaturbate.com/") + len("chaturbate.com/")
-        value = value[idx:]
-    value = value.split("?", 1)[0].split("#", 1)[0].strip("/")
-    if "/" in value:
-        value = value.split("/", 1)[0]
-    if not USERNAME_RE.fullmatch(value):
-        raise HTTPException(400, "Username Chaturbate non valido")
-    return value
+def _normalize_source_or_400(platform: str, value: str) -> tuple[str, str]:
+    try:
+        return normalize_source(platform, value)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
 
 
 def _normalize_gofile_folder_id(value: str) -> str:
@@ -171,7 +171,10 @@ async def security_headers(request: Request, call_next):
         "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; "
         "media-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
     )
-    response.headers["Cache-Control"] = "no-store" if request.url.path.startswith("/api/") else response.headers.get("Cache-Control", "")
+    if request.url.path.startswith("/api/"):
+        response.headers["Cache-Control"] = "no-store"
+    elif request.url.path in {"/", "/sw.js"}:
+        response.headers["Cache-Control"] = "no-cache, must-revalidate"
     return response
 
 
@@ -187,7 +190,11 @@ def manifest():
 
 @app.get("/sw.js")
 def service_worker():
-    return FileResponse(BASE / "static" / "sw.js", media_type="application/javascript", headers={"Service-Worker-Allowed": "/"})
+    return FileResponse(
+        BASE / "static" / "sw.js",
+        media_type="application/javascript",
+        headers={"Service-Worker-Allowed": "/", "Cache-Control": "no-cache, must-revalidate"},
+    )
 
 
 @app.post("/api/login")
@@ -360,6 +367,48 @@ def uploads_run_now(request: Request):
     return {"ok": True, "changed": changed}
 
 
+@app.get("/api/providers")
+def list_source_providers(request: Request):
+    require_auth(request)
+    return provider_catalog()
+
+
+@app.post("/api/sources/inspect")
+async def inspect_source(body: SourceInspect, request: Request):
+    require_auth(request)
+    if body.quality not in {"best", "1080p", "720p", "480p"}:
+        raise HTTPException(400, "Qualità non supportata")
+    platform, slug = _normalize_source_or_400(body.platform, body.slug)
+    result = await probe(platform, slug, body.quality)
+    has_video: bool | None = None
+    has_audio: bool | None = None
+    input_error = ""
+    if result.live:
+        try:
+            inputs = await resolve_inputs(platform, slug, body.quality)
+            audit = await audit_inputs(inputs)
+            has_video = audit.has_video
+            has_audio = audit.has_audio
+            input_error = audit.error
+        except Exception as exc:
+            input_error = str(exc)[-700:]
+    return {
+        "ok": result.status != "error" and not input_error,
+        "platform": platform,
+        "provider_label": provider_label(platform),
+        "slug": slug,
+        "source_url": source_url(platform, slug),
+        "live": result.live,
+        "status": result.status,
+        "title": result.title,
+        "has_video": has_video,
+        "has_audio": has_audio,
+        "metadata_status": result.metadata_status,
+        "metadata_error": result.metadata_error,
+        "error": input_error or result.error,
+    }
+
+
 @app.get("/api/sources")
 def list_sources(request: Request):
     require_auth(request)
@@ -391,13 +440,13 @@ def list_sources(request: Request):
         aggregate = aggregates.get(source.id)
         active = source.id in active_ids
         result.append({
-            "id": source.id, "name": source.name, "platform": source.platform, "slug": source.slug,
-            "source_url": f"https://chaturbate.com/{source.slug}/",
+            "id": source.id, "name": source.name, "platform": source.platform,
+            "provider_label": provider_label(source.platform), "slug": source.slug,
+            "source_url": source_url(source.platform, source.slug),
             "enabled": source.enabled, "quality": source.quality, "consent_confirmed": source.consent_confirmed,
             "last_status": "recording" if active else ("paused" if not source.enabled else source.last_status),
             "last_checked_at": _iso_utc(source.last_checked_at),
             "last_live_at": _iso_utc(source.last_live_at),
-            "last_live_source": "chaturbate",
             "last_seen_live_at": _iso_utc(source.last_seen_live_at),
             "metadata_status": source.metadata_status,
             "metadata_error": source.metadata_error,
@@ -422,22 +471,20 @@ def list_sources(request: Request):
 @app.post("/api/sources")
 def add_source(body: SourceCreate, request: Request):
     require_auth(request)
-    if body.platform != "chaturbate":
-        raise HTTPException(400, "Solo l'adapter Chaturbate è abilitato")
     if not body.consent_confirmed:
         raise HTTPException(400, "È necessaria la conferma di autorizzazione")
     if body.quality not in {"best", "1080p", "720p", "480p"}:
         raise HTTPException(400, "Qualità non supportata")
-    slug = _normalize_slug(body.slug)
+    platform, slug = _normalize_source_or_400(body.platform, body.slug)
     name = body.name.strip()
     with db_session() as db:
         if db.scalar(select(Source).where(Source.name == name)):
             raise HTTPException(409, "Esiste già una sorgente con questo nome")
-        if db.scalar(select(Source).where(Source.platform == body.platform, Source.slug == slug)):
+        if db.scalar(select(Source).where(Source.platform == platform, Source.slug == slug)):
             raise HTTPException(409, "Questa sorgente è già configurata")
         source = Source(
             name=name,
-            platform=body.platform,
+            platform=platform,
             slug=slug,
             quality=body.quality,
             consent_confirmed=True,
@@ -456,6 +503,7 @@ def add_source(body: SourceCreate, request: Request):
 @app.patch("/api/sources/{source_id}")
 async def patch_source(source_id: int, body: SourcePatch, request: Request):
     require_auth(request)
+    reference_changed = False
     with db_session() as db:
         source = db.get(Source, source_id)
         if not source:
@@ -467,12 +515,18 @@ async def patch_source(source_id: int, body: SourcePatch, request: Request):
             if db.scalar(select(Source).where(Source.name == new_name, Source.id != source_id)):
                 raise HTTPException(409, "Esiste già una sorgente con questo nome")
             source.name = new_name
-        if body.slug is not None:
-            new_slug = _normalize_slug(body.slug)
-            if db.scalar(select(Source).where(Source.platform == source.platform, Source.slug == new_slug, Source.id != source_id)):
+        if body.slug is not None or body.platform is not None:
+            new_platform, new_slug = _normalize_source_or_400(
+                body.platform or source.platform,
+                body.slug if body.slug is not None else source.slug,
+            )
+            if new_platform != source.platform:
+                raise HTTPException(400, "Il provider non si cambia su una sorgente esistente: creane una nuova")
+            if db.scalar(select(Source).where(Source.platform == new_platform, Source.slug == new_slug, Source.id != source_id)):
                 raise HTTPException(409, "Questa sorgente è già configurata")
             if new_slug != source.slug:
                 source.slug = new_slug
+                reference_changed = True
                 source.last_status = "unknown"
                 source.last_checked_at = None
                 source.last_live_at = None
@@ -498,7 +552,7 @@ async def patch_source(source_id: int, body: SourcePatch, request: Request):
             source.gofile_folder_id = new_folder_id
         if body.gofile_folder_url is not None:
             source.gofile_folder_url = _normalize_gofile_url(body.gofile_folder_url)
-        should_stop = not source.enabled or not source.consent_confirmed
+        should_stop = reference_changed or not source.enabled or not source.consent_confirmed
     if should_stop:
         await manager.stop_source(source_id)
     manager.wake()

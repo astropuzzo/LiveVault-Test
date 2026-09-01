@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import asyncio
 import html as html_lib
+import json
 import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from functools import lru_cache
 from typing import Any
+from urllib.parse import parse_qs, urlparse
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import requests
@@ -27,6 +30,107 @@ class ResolvedInput:
     url: str
     http_headers: dict[str, str]
     kind: str
+
+
+@dataclass
+class InputAudit:
+    has_video: bool
+    has_audio: bool
+    error: str = ""
+
+
+@dataclass(frozen=True)
+class ProviderSpec:
+    id: str
+    label: str
+    hosts: tuple[str, ...]
+    input_label: str
+    placeholder: str
+    extractor: str
+    url_template: str = ""
+    username_based: bool = True
+    last_broadcast: bool = False
+    support_level: str = "beta"
+
+
+PROVIDERS = (
+    ProviderSpec(
+        "chaturbate",
+        "Chaturbate",
+        ("chaturbate.com", "www.chaturbate.com"),
+        "Username o URL Chaturbate",
+        "es. rich_roxy",
+        "Chaturbate",
+        url_template="https://chaturbate.com/{slug}/",
+        last_broadcast=True,
+        support_level="stable",
+    ),
+    ProviderSpec(
+        "stripchat",
+        "Stripchat",
+        ("stripchat.com", "www.stripchat.com"),
+        "Username o URL Stripchat",
+        "es. https://stripchat.com/nome",
+        "Stripchat",
+        url_template="https://stripchat.com/{slug}",
+    ),
+    ProviderSpec(
+        "bongacams",
+        "BongaCams",
+        ("bongacams.com", "www.bongacams.com"),
+        "Username o URL BongaCams",
+        "es. https://bongacams.com/nome",
+        "BongaCams",
+        url_template="https://bongacams.com/{slug}",
+    ),
+    ProviderSpec(
+        "camsoda",
+        "CamSoda",
+        ("camsoda.com", "www.camsoda.com"),
+        "Username o URL CamSoda",
+        "es. https://camsoda.com/nome",
+        "Camsoda",
+        url_template="https://www.camsoda.com/{slug}",
+    ),
+    ProviderSpec(
+        "cam4",
+        "CAM4",
+        ("cam4.com", "www.cam4.com"),
+        "Username o URL CAM4",
+        "es. https://cam4.com/nome",
+        "CAM4",
+        url_template="https://www.cam4.com/{slug}",
+    ),
+    ProviderSpec(
+        "twitch",
+        "Twitch",
+        ("twitch.tv", "www.twitch.tv"),
+        "Canale o URL Twitch",
+        "es. https://twitch.tv/canale",
+        "twitch:stream",
+        url_template="https://www.twitch.tv/{slug}",
+    ),
+    ProviderSpec(
+        "kick",
+        "Kick",
+        ("kick.com", "www.kick.com"),
+        "Canale o URL Kick",
+        "es. https://kick.com/canale",
+        "kick:live",
+        url_template="https://kick.com/{slug}",
+    ),
+    ProviderSpec(
+        "youtube",
+        "YouTube Live",
+        ("youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be"),
+        "URL live YouTube",
+        "es. https://youtube.com/watch?v=...",
+        "youtube",
+        username_based=False,
+    ),
+)
+PROVIDER_BY_ID = {provider.id: provider for provider in PROVIDERS}
+USERNAME_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.-]{0,99}$")
 
 
 QUALITY_FORMATS = {
@@ -91,10 +195,143 @@ def classify_format(
     return "unknown"
 
 
+@lru_cache(maxsize=1)
+def _available_extractors() -> set[str]:
+    try:
+        from yt_dlp.extractor import gen_extractor_classes
+
+        return {str(getattr(extractor, "IE_NAME", "")) for extractor in gen_extractor_classes()}
+    except Exception:
+        return set()
+
+
+def provider_catalog() -> list[dict[str, Any]]:
+    available = _available_extractors()
+    return [
+        {
+            "id": "auto",
+            "label": "Rileva automaticamente",
+            "input_label": "Username Chaturbate o URL della live",
+            "placeholder": "Username oppure https://...",
+            "last_broadcast": False,
+        },
+        *[
+            {
+                "id": item.id,
+                "label": item.label,
+                "input_label": item.input_label,
+                "placeholder": item.placeholder,
+                "last_broadcast": item.last_broadcast,
+                "support_level": item.support_level,
+                "extractor_available": item.extractor in available,
+                "audio_verified": item.id == "chaturbate",
+            }
+            for item in PROVIDERS
+            if item.extractor in available
+        ],
+    ]
+
+
+def provider_label(platform: str) -> str:
+    item = PROVIDER_BY_ID.get(platform)
+    return item.label if item else platform
+
+
+def _host_matches(hostname: str, allowed: tuple[str, ...]) -> bool:
+    host = hostname.lower().rstrip(".")
+    return any(host == candidate or host.endswith(f".{candidate}") for candidate in allowed)
+
+
+def _public_https_url(value: str, *, allowed_hosts: tuple[str, ...] = ()) -> str:
+    raw = value.strip()
+    parsed = urlparse(raw)
+    if (
+        parsed.scheme.lower() != "https"
+        or not parsed.hostname
+        or parsed.username
+        or parsed.password
+        or parsed.port not in {None, 443}
+    ):
+        raise ValueError("serve un URL HTTPS pubblico senza credenziali incorporate")
+    host = parsed.hostname.lower().rstrip(".")
+    if not allowed_hosts or not _host_matches(host, allowed_hosts):
+        raise ValueError("l'URL non appartiene a un provider abilitato")
+    return parsed._replace(fragment="").geturl()
+
+
+def _username_from_value(value: str, spec: ProviderSpec) -> str:
+    raw = value.strip()
+    if "://" in raw:
+        url = _public_https_url(raw, allowed_hosts=spec.hosts)
+        parts = [part for part in urlparse(url).path.split("/") if part]
+        if not parts:
+            raise ValueError("l'URL non contiene il nome del canale")
+        raw = parts[0]
+    raw = raw.strip().lstrip("@").strip("/")
+    if not USERNAME_RE.fullmatch(raw):
+        raise ValueError(f"nome canale {spec.label} non valido")
+    return raw.lower()
+
+
+def _youtube_url(value: str, spec: ProviderSpec) -> str:
+    safe = _public_https_url(value, allowed_hosts=spec.hosts)
+    parsed = urlparse(safe)
+    host = (parsed.hostname or "").lower().rstrip(".")
+    parts = [part for part in parsed.path.split("/") if part]
+    video_id = ""
+    if host == "youtu.be" and len(parts) == 1:
+        video_id = parts[0]
+    elif parsed.path.rstrip("/") == "/watch":
+        video_id = str(parse_qs(parsed.query).get("v", [""])[0])
+    elif len(parts) == 2 and parts[0] == "live":
+        video_id = parts[1]
+    if video_id and re.fullmatch(r"[A-Za-z0-9_-]{6,100}", video_id):
+        return f"https://www.youtube.com/watch?v={video_id}"
+    if len(parts) == 2 and parts[0].startswith("@") and parts[1] == "live":
+        handle = parts[0][1:]
+        if USERNAME_RE.fullmatch(handle):
+            return f"https://www.youtube.com/@{handle}/live"
+    raise ValueError("usa il link di una live YouTube o il link /@canale/live")
+
+
+def detect_provider(value: str) -> str:
+    raw = value.strip()
+    if "://" not in raw:
+        return "chaturbate"
+    parsed = urlparse(raw)
+    host = (parsed.hostname or "").lower().rstrip(".")
+    for item in PROVIDERS:
+        if item.hosts and _host_matches(host, item.hosts):
+            return item.id
+    raise ValueError("provider non riconosciuto: scegli un servizio abilitato")
+
+
+def normalize_source(platform: str, value: str) -> tuple[str, str]:
+    selected = (platform or "auto").strip().lower()
+    if selected == "auto":
+        selected = detect_provider(value)
+    spec = PROVIDER_BY_ID.get(selected)
+    if spec is None:
+        raise ValueError("provider non supportato")
+    if spec.extractor not in _available_extractors():
+        raise ValueError(f"adapter {spec.label} non disponibile in questa build")
+    if spec.username_based:
+        return selected, _username_from_value(value, spec)
+    if selected == "youtube":
+        return selected, _youtube_url(value, spec)
+    return selected, _public_https_url(value, allowed_hosts=spec.hosts)
+
+
 def source_url(platform: str, slug: str) -> str:
-    if platform == "chaturbate":
-        return f"https://chaturbate.com/{slug.strip('/')}/"
-    raise ValueError(f"Unsupported platform: {platform}")
+    value = slug.strip()
+    spec = PROVIDER_BY_ID.get(platform)
+    if spec is None:
+        raise ValueError(f"Unsupported platform: {platform}")
+    if not spec.username_based:
+        return value
+    if not spec.url_template:
+        raise ValueError(f"Provider URL builder missing: {platform}")
+    return spec.url_template.format(slug=value.strip("/"))
 
 
 def _extract(url: str, quality: str, *, quiet: bool = True) -> dict[str, Any]:
@@ -318,7 +555,53 @@ def _metadata_state(
     return "unavailable", "Chaturbate non ha restituito il dato Last Broadcast"
 
 
+def _yt_dlp_live_state(info: dict[str, Any]) -> tuple[bool, str]:
+    live_status = str(info.get("live_status") or "").strip().lower()
+    if bool(info.get("is_live")) or live_status == "is_live":
+        return True, "live"
+    if live_status in {"is_upcoming", "post_live", "was_live", "not_live"}:
+        return False, live_status
+    return False, "offline"
+
+
+async def _probe_ytdlp(platform: str, slug: str, quality: str) -> ProbeResult:
+    url = source_url(platform, slug)
+    try:
+        info = await asyncio.to_thread(_extract, url, quality)
+    except Exception as exc:
+        message = str(exc)
+        lowered = message.lower()
+        expected_offline = (
+            "offline",
+            "not currently broadcasting",
+            "not broadcasting",
+            "no live streams",
+            "channel is not live",
+            "livestream is offline",
+            "room is not available",
+            "private show",
+            "private chat",
+        )
+        if any(token in lowered for token in expected_offline):
+            return ProbeResult(False, "offline", metadata_status="unsupported")
+        return ProbeResult(
+            False,
+            "error",
+            error=message[-700:],
+            metadata_status="unsupported",
+        )
+    live, status = _yt_dlp_live_state(info)
+    return ProbeResult(
+        live=live,
+        status=status,
+        title=str(info.get("title") or info.get("channel") or info.get("uploader") or ""),
+        metadata_status="unsupported",
+    )
+
+
 async def probe(platform: str, slug: str, quality: str = "best") -> ProbeResult:
+    if platform != "chaturbate":
+        return await _probe_ytdlp(platform, slug, quality)
     url = source_url(platform, slug)
     context_task = asyncio.to_thread(_fetch_biocontext, slug) if platform == "chaturbate" else None
     extract_task = asyncio.to_thread(_extract, url, quality)
@@ -454,7 +737,15 @@ async def resolve_inputs(platform: str, slug: str, quality: str = "best") -> lis
     if formats:
         for fmt in formats:
             media_url = fmt.get("url")
-            if not media_url or media_url in seen:
+            parsed_media = urlparse(str(media_url or ""))
+            if (
+                not media_url
+                or media_url in seen
+                or parsed_media.scheme not in {"http", "https"}
+                or not parsed_media.hostname
+                or parsed_media.username
+                or parsed_media.password
+            ):
                 continue
             seen.add(media_url)
             kind = classify_format(
@@ -463,11 +754,91 @@ async def resolve_inputs(platform: str, slug: str, quality: str = "best") -> lis
                 format_id=str(fmt.get("format_id") or ""),
                 format_label=str(fmt.get("format") or fmt.get("format_note") or ""),
             )
-            if kind == "unknown":
-                continue
             result.append(ResolvedInput(media_url, dict(fmt.get("http_headers") or {}), kind))
     elif info.get("url"):
-        result.append(ResolvedInput(str(info["url"]), dict(info.get("http_headers") or {}), "media"))
+        parsed_media = urlparse(str(info["url"]))
+        if (
+            parsed_media.scheme not in {"http", "https"}
+            or not parsed_media.hostname
+            or parsed_media.username
+            or parsed_media.password
+        ):
+            raise RuntimeError("yt-dlp returned an unsafe media URL")
+        kind = classify_format(
+            info.get("vcodec"),
+            info.get("acodec"),
+            format_id=str(info.get("format_id") or ""),
+            format_label=str(info.get("format") or info.get("format_note") or ""),
+        )
+        result.append(ResolvedInput(str(info["url"]), dict(info.get("http_headers") or {}), kind))
     if not result:
         raise RuntimeError("No playable stream URL returned by yt-dlp")
     return result
+
+
+def _ffprobe_headers(headers: dict[str, str]) -> str:
+    allowed = {"user-agent", "referer", "origin", "cookie", "authorization"}
+    lines = [
+        f"{key}: {value}"
+        for key, value in headers.items()
+        if key.lower() in allowed and "\r" not in value and "\n" not in value
+    ]
+    return "\r\n".join(lines) + ("\r\n" if lines else "")
+
+
+async def _audit_input(item: ResolvedInput, timeout: float) -> InputAudit:
+    cmd = [
+        "ffprobe",
+        "-v", "error",
+        "-rw_timeout", str(int(timeout * 1_000_000)),
+        "-analyzeduration", "7000000",
+        "-probesize", "7000000",
+    ]
+    headers = _ffprobe_headers(item.http_headers)
+    if headers:
+        cmd += ["-headers", headers]
+    cmd += ["-show_entries", "stream=codec_type", "-of", "json", item.url]
+    proc = await asyncio.create_subprocess_exec(
+        *cmd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    try:
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout + 2)
+    except asyncio.CancelledError:
+        proc.kill()
+        await proc.wait()
+        raise
+    except asyncio.TimeoutError:
+        proc.kill()
+        await proc.wait()
+        item.kind = "unknown"
+        return InputAudit(False, False, "Audio Guard: analisi stream scaduta")
+    if proc.returncode != 0:
+        item.kind = "unknown"
+        error = stderr.decode(errors="replace").strip()[-500:] or "ffprobe non ha letto lo stream"
+        return InputAudit(False, False, f"Audio Guard: {error}")
+    try:
+        payload = json.loads(stdout.decode(errors="replace"))
+        kinds = {str(stream.get("codec_type") or "") for stream in payload.get("streams", [])}
+    except Exception as exc:
+        item.kind = "unknown"
+        return InputAudit(False, False, f"Audio Guard: risposta ffprobe non valida ({exc})")
+    has_video = "video" in kinds
+    has_audio = "audio" in kinds
+    item.kind = "media" if has_video and has_audio else "video" if has_video else "audio" if has_audio else "unknown"
+    return InputAudit(has_video, has_audio)
+
+
+async def audit_inputs(inputs: list[ResolvedInput], timeout: float = 18.0) -> InputAudit:
+    """Verify the actual live tracks before FFmpeg starts; resolved metadata is not trusted."""
+    results = await asyncio.gather(*(_audit_input(item, timeout) for item in inputs))
+    has_video = any(result.has_video for result in results)
+    has_audio = any(result.has_audio for result in results)
+    errors = [result.error for result in results if result.error]
+    if has_video and has_audio:
+        return InputAudit(True, True)
+    reason = "traccia video assente" if not has_video else "traccia audio assente"
+    if errors:
+        reason = f"{reason}; {' | '.join(errors)}"
+    return InputAudit(has_video, has_audio, reason[-1000:])
