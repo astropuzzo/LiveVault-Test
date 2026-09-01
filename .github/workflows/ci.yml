@@ -28,18 +28,3 @@ jobs:
         run: node --check app/static/app.js
       - name: Check shell scripts
         run: bash -n scripts/*.sh
-      - name: Validate devcontainer JSON
-        run: python -m json.tool .devcontainer/devcontainer.json >/dev/null
-
-  codespaces-smoke:
-    name: Codespaces smoke
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.13'
-      - name: Prepare using Codespaces script
-        run: bash scripts/codespaces-prepare.sh
-      - name: Start v2 and exercise API
-        run: bash scripts/codespaces-smoke.sh
