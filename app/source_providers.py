@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Any
 
+import requests
 
 
 @dataclass
@@ -12,6 +14,7 @@ class ProbeResult:
     status: str
     title: str = ""
     error: str = ""
+    last_broadcast: datetime | None = None
 
 
 @dataclass
@@ -27,6 +30,16 @@ QUALITY_FORMATS = {
     "1080p": "b[height<=1080]/bv*[height<=1080]+ba/b/bv*+ba",
     "720p": "b[height<=720]/bv*[height<=720]+ba/b/bv*+ba",
     "480p": "b[height<=480]/bv*[height<=480]+ba/b/bv*+ba",
+}
+
+CHaturbate_HEADERS = {
+    "Accept": "application/json",
+    "Origin": "https://chaturbate.com",
+    "Referer": "https://chaturbate.com/",
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0 Safari/537.36"
+    ),
 }
 
 
@@ -88,19 +101,84 @@ def _extract(url: str, quality: str, *, quiet: bool = True) -> dict[str, Any]:
         return ydl.extract_info(url, download=False)
 
 
+def _parse_last_broadcast(value: Any) -> datetime | None:
+    """Parse Chaturbate biocontext.last_broadcast as an aware UTC datetime."""
+    if value is None or value == -1:
+        return None
+    text = str(value).strip()
+    if not text or text == "-1":
+        return None
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _fetch_biocontext(slug: str) -> dict[str, Any]:
+    """Fetch public Chaturbate profile metadata, including last_broadcast."""
+    username = slug.strip("/")
+    url = f"https://chaturbate.com/api/biocontext/{username}/"
+    response = requests.get(url, headers=CHaturbate_HEADERS, timeout=15)
+    response.raise_for_status()
+    payload = response.json()
+    if not isinstance(payload, dict):
+        raise ValueError("Chaturbate biocontext response is not an object")
+    return payload
+
+
 async def probe(platform: str, slug: str, quality: str = "best") -> ProbeResult:
     url = source_url(platform, slug)
-    try:
-        info = await asyncio.to_thread(_extract, url, quality)
+
+    # Fetch stream metadata and profile metadata concurrently. biocontext is important
+    # even while the room is offline because it exposes Chaturbate's own
+    # `last_broadcast` timestamp, which is different from "last seen by LiveVault".
+    context_task = asyncio.to_thread(_fetch_biocontext, slug) if platform == "chaturbate" else None
+    extract_task = asyncio.to_thread(_extract, url, quality)
+    if context_task is not None:
+        extracted, context = await asyncio.gather(extract_task, context_task, return_exceptions=True)
+    else:
+        extracted = await asyncio.gather(extract_task, return_exceptions=True)
+        extracted = extracted[0]
+        context = {}
+
+    context_data = context if isinstance(context, dict) else {}
+    last_broadcast = _parse_last_broadcast(context_data.get("last_broadcast"))
+    room_status = str(context_data.get("room_status") or "").strip().lower()
+
+    if not isinstance(extracted, Exception):
+        info = extracted
         live_status = str(info.get("live_status") or "")
-        is_live = bool(info.get("is_live")) or live_status == "is_live"
-        return ProbeResult(live=is_live, status="live" if is_live else (live_status or "offline"), title=str(info.get("title") or ""))
-    except Exception as exc:
-        text = str(exc)
-        lowered = text.lower()
-        if any(k in lowered for k in ("offline", "not currently broadcasting", "private show", "room is not available", "not broadcasting")):
-            return ProbeResult(live=False, status="offline", error=text[-500:])
-        return ProbeResult(live=False, status="error", error=text[-500:])
+        is_live = bool(info.get("is_live")) or live_status == "is_live" or room_status == "public"
+        status = "live" if is_live else ("offline" if room_status else (live_status or "offline"))
+        return ProbeResult(
+            live=is_live,
+            status=status,
+            title=str(info.get("title") or context_data.get("room_title") or ""),
+            last_broadcast=last_broadcast,
+        )
+
+    # yt-dlp may fail normally for an offline/private room. If biocontext succeeded,
+    # retain the platform last_broadcast timestamp instead of losing it with the error.
+    text = str(extracted)
+    lowered = text.lower()
+    if room_status:
+        if room_status == "public":
+            return ProbeResult(
+                live=True,
+                status="live",
+                title=str(context_data.get("room_title") or ""),
+                error=text[-500:],
+                last_broadcast=last_broadcast,
+            )
+        return ProbeResult(live=False, status="offline", last_broadcast=last_broadcast)
+    if any(k in lowered for k in ("offline", "not currently broadcasting", "private show", "room is not available", "not broadcasting")):
+        return ProbeResult(live=False, status="offline", error=text[-500:], last_broadcast=last_broadcast)
+    return ProbeResult(live=False, status="error", error=text[-500:], last_broadcast=last_broadcast)
 
 
 async def resolve_inputs(platform: str, slug: str, quality: str = "best") -> list[ResolvedInput]:
