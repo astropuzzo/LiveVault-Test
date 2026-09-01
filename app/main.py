@@ -30,7 +30,7 @@ USERNAME_RE = re.compile(r"^[A-Za-z0-9_]{1,100}$")
 LOGIN_FAILURES: dict[str, deque[float]] = defaultdict(deque)
 LOGIN_WINDOW = 10 * 60
 LOGIN_MAX_FAILURES = 6
-VERSION = "2.2.1"
+VERSION = "2.2.2"
 
 
 class LoginBody(BaseModel):
@@ -386,7 +386,6 @@ def list_sources(request: Request):
         ).all():
             latest_cloud.setdefault(source_id, remote_url)
     active_ids = set(manager.active)
-    now = utcnow()
     result = []
     for source in rows:
         aggregate = aggregates.get(source.id)
@@ -397,7 +396,8 @@ def list_sources(request: Request):
             "enabled": source.enabled, "quality": source.quality, "consent_confirmed": source.consent_confirmed,
             "last_status": "recording" if active else ("paused" if not source.enabled else source.last_status),
             "last_checked_at": _iso_utc(source.last_checked_at),
-            "last_live_at": _iso_utc(now if active else source.last_live_at),
+            "last_live_at": _iso_utc(source.last_live_at),
+            "last_live_source": "chaturbate",
             "status_changed_at": _iso_utc(source.status_changed_at),
             "last_error": source.last_error,
             "organize_cloud": source.organize_cloud,

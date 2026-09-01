@@ -32,7 +32,7 @@ QUALITY_FORMATS = {
     "480p": "b[height<=480]/bv*[height<=480]+ba/b/bv*+ba",
 }
 
-CHaturbate_HEADERS = {
+CHATURBATE_HEADERS = {
     "Accept": "application/json",
     "Origin": "https://chaturbate.com",
     "Referer": "https://chaturbate.com/",
@@ -123,7 +123,7 @@ def _fetch_biocontext(slug: str) -> dict[str, Any]:
     """Fetch public Chaturbate profile metadata, including last_broadcast."""
     username = slug.strip("/")
     url = f"https://chaturbate.com/api/biocontext/{username}/"
-    response = requests.get(url, headers=CHaturbate_HEADERS, timeout=15)
+    response = requests.get(url, headers=CHATURBATE_HEADERS, timeout=15)
     response.raise_for_status()
     payload = response.json()
     if not isinstance(payload, dict):

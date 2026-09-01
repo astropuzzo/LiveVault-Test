@@ -292,8 +292,8 @@ class WorkerManager:
                     current.last_status = result.status
                     current.last_checked_at = checked_at
                     current.last_error = result.error if result.status == "error" else ""
-                    if result.live:
-                        current.last_live_at = checked_at
+                    if result.last_broadcast is not None:
+                        current.last_live_at = result.last_broadcast
             if not result.live or self._stopping or source.id in self.active or runtime().recording_paused:
                 return
             try:
@@ -396,7 +396,6 @@ class WorkerManager:
                         source.status_changed_at = now
                     source.last_status = new_status
                     source.last_checked_at = now
-                    source.last_live_at = now
                     if size_rollover:
                         source.last_error = ""
             self.wake()

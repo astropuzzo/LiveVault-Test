@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.2.2 - 2026-09-01
+
+- `Ultima live` ora usa il `last_broadcast` restituito direttamente dai metadata pubblici Chaturbate (`api/biocontext/{username}/`), non l'ultima live osservata localmente da LiveVault.
+- Il timestamp viene aggiornato anche quando la camera è offline, quindi LiveVault può mostrare una trasmissione precedente avvenuta mentre il server era spento.
+- Rimossi gli override locali che impostavano `Ultima live` a `adesso` solo perché il recorder era attivo o aveva appena terminato una sessione.
+- Aggiunti test offline/live sul parsing ISO UTC e sul metadata `last_broadcast`.
+
 ## 2.2.1 - 2026-09-01
 
 - Aggiunta cancellazione reale del file locale per ogni registrazione, anche se non caricata, con conferma esplicita e protezione da upload/conversioni in corso.
