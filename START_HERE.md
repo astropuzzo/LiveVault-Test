@@ -1,69 +1,68 @@
-# LiveVault v2 — START HERE
+# LiveVault v2.2.1 — START HERE
 
-Guida breve per avviare LiveVault su una normale VPS Linux. Non dipende da Azure, Google, Oracle o da un provider specifico.
+Guida breve per avviare LiveVault su una normale VPS Linux. Non dipende da un provider cloud specifico.
 
 > Usa esclusivamente sorgenti che possiedi o per cui hai autorizzazione esplicita alla registrazione.
 
-## Cosa serve
+## Requisiti
 
 - VPS Ubuntu 22.04/24.04 o Debian recente;
-- almeno 1 vCPU e 1 GB RAM; 2 GB consigliati se vuoi ospitare anche altri servizi;
+- almeno 1 vCPU e 1 GB RAM; 2 GB consigliati;
 - 15–50 GB di disco a seconda del buffer;
 - accesso SSH/root o utente con `sudo`;
-- il file `LiveVault-v2.2.0.tar.gz`.
+- Docker/Compose, installabili anche dallo script di setup.
 
-## 1. Copia il pacchetto sulla VPS
-
-Puoi usare SCP/SFTP oppure un link temporaneo. Una volta che il file è nella home della VPS:
+## Installazione da repository
 
 ```bash
-tar -xzf LiveVault-v2.2.0.tar.gz
+git clone https://github.com/astropuzzo/LiveVault-Test.git LiveVault
 cd LiveVault
 chmod +x scripts/*.sh
-```
-
-## 2. Installa
-
-```bash
 ./scripts/install.sh
 ```
 
-Lo script installa Docker se necessario, crea `.env`, genera una secret casuale, ti chiede la password del pannello e avvia il container.
+Lo script crea `.env`, genera `APP_SECRET`, configura la password del pannello e avvia LiveVault.
 
-Per la prima prova apri:
+Per la prima prova:
 
 ```text
-http://IP_DELLA_VPS:8080
+http://IP_SERVER:8080
 ```
 
-Per uso permanente metti il servizio dietro HTTPS (Tailscale, Caddy o il reverse proxy che preferisci).
+Per l'uso permanente usa HTTPS tramite il reverse proxy del server. Per il setup hosting documentato vedi **[HOSTING.md](HOSTING.md)**.
 
-## 3. Configura tutto dal pannello
+## Aggiornamento
 
-Accedi e premi **Settings**. Da qui puoi cambiare senza modificare `.env`:
+Se LiveVault è già installato dal repository:
 
-- durata segmenti;
-- dimensione massima di ogni file;
+```bash
+cd LiveVault
+git pull
+docker compose up -d --build
+```
+
+Non cancellare `.env` o `data/`.
+
+## Configurazione dal pannello
+
+Dopo il login apri **Settings**. Puoi configurare:
+
+- durata e dimensione massima segmenti;
 - MP4/MKV;
 - polling e concorrenza;
 - controllo integrità;
 - miniature;
-- buffer massimo in GB;
+- buffer massimo;
 - soglie disco;
-- pausa registrazioni/upload;
 - provider primario/fallback;
 - retry;
 - token Gofile;
 - API key Pixeldrain;
 - regione Gofile.
 
-Le credenziali inserite dalla UI vengono cifrate nel database usando una chiave derivata da `APP_SECRET`; al browser viene mostrato solo l'ultimo pezzo della credenziale.
+Le credenziali vengono cifrate nel database tramite una chiave derivata da `APP_SECRET`.
 
-Dopo aver incollato una credenziale premi **Test connessione**. Se hai scritto una nuova key/token, il pulsante la salva e la testa immediatamente.
-
-## 4. Impostazione consigliata per VPS piccola
-
-Per una VPS con 20–30 GB di disco:
+## Impostazione consigliata per VPS piccola
 
 ```text
 Container: MP4
@@ -78,37 +77,37 @@ Primary: Gofile
 Fallback: Pixeldrain
 ```
 
-## 5. Aggiungi una sorgente
+## Aggiungi una sorgente
 
 **Aggiungi sorgente** → username/URL → qualità → conferma autorizzazione → **Salva**.
 
-L'opzione **Una raccolta cloud stabile per questa camera** crea una cartella Gofile dedicata e mostra un link unico all'archivio LiveVault della camera. L'archivio unico include anche gli upload Pixeldrain; Pixeldrain Free non offre cartelle persistenti modificabili.
+Quando diventa live, LiveVault registra automaticamente. Ogni segmento chiuso viene verificato, hashato, corredato di miniatura, messo in coda, ricontrollato e infine caricato sul primary/fallback.
 
-Quando diventa live, LiveVault registra automaticamente. Ogni segmento chiuso viene:
+## Gestione file locali
 
-1. verificato con FFprobe/FFmpeg;
-2. hashato SHA-256;
-3. corredato di miniatura;
-4. messo in coda;
-5. ricontrollato prima dell'upload;
-6. caricato sul primary/fallback;
-7. verificato lato provider;
-8. eliminato localmente soltanto se `Delete after upload` è attivo e la verifica remota ha avuto successo.
+Da v2.2.1 la dashboard gestisce realmente i byte sul server:
 
-## 6. Controlli operativi
+- **Elimina locale**: rimuove il file MP4/MKV ma conserva la voce archivio e la miniatura;
+- per un file non ancora caricato viene richiesta una conferma esplicita;
+- **Elimina tutto**: rimuove file locale, miniatura e voce archivio; non cancella il cloud;
+- **Libera caricati**: elimina in blocco le copie locali già caricate/verificate;
+- **Pulisci locali**: elimina in blocco tutti i video locali, anche non caricati;
+- se non stai filtrando una singola camera, la pulizia cerca anche vecchi file MP4/MKV orfani non più presenti nel database;
+- i recorder attivi vengono esclusi automaticamente dalla pulizia degli orfani.
 
-Dal pannello puoi:
+La dashboard mostra quanti file sono stati realmente rimossi e quanto spazio è stato liberato.
 
-- **Pausa registrazioni**: ferma in modo controllato le REC attive e impedisce nuovi avvii;
-- **Pausa upload**: blocca l'avvio dei prossimi upload (non tronca una richiesta HTTP già in corso);
-- **Upload ora** globale: riattiva la coda e rimette subito in coda i falliti;
-- **Upload ora** su un file: porta quel file in testa alla coda;
-- **Ricontrolla**: ripete integrità + SHA;
-- **→ MP4**: remux di un MKV locale in MP4 senza ricodifica;
-- **Vedi**: anteprima video locale;
-- **Libera**: elimina solo la copia locale già caricata/verificata.
+## Controlli operativi
 
-## 7. Diagnostica server
+- **Pausa registrazioni**: chiude in modo controllato le REC attive e blocca nuovi avvii;
+- **Pausa upload**: blocca i prossimi upload;
+- **Upload ora** globale: riattiva la coda e riprova i falliti;
+- **Upload ora** sul singolo file: gli assegna priorità;
+- **Ricontrolla**: ripete integrità + SHA-256;
+- **→ MP4**: remux MKV → MP4 senza ricodifica;
+- **Vedi**: anteprima della copia locale.
+
+## Diagnostica server
 
 ```bash
 ./scripts/status.sh
@@ -120,41 +119,20 @@ Log live:
 docker compose logs -f livevault
 ```
 
-Backup DB:
+Backup consistente SQLite/WAL:
 
 ```bash
 ./scripts/backup.sh
 ```
 
-## Upgrade da v1.x
+## Controllo GitHub prima di aggiornare il server
 
-Conserva **`.env` e la cartella `data/`**. Sostituisci il codice con v2 e poi:
+GitHub Actions esegue il job **Core tests** su ogni push. Verifica che sia verde prima di fare `git pull` sul server.
 
-```bash
-docker compose up -d --build
-```
+La CI controlla:
 
-Al primo avvio v2 aggiorna automaticamente lo schema SQLite mantenendo sorgenti e storico. I vecchi file locali senza miniatura vengono progressivamente indicizzati per creare le preview. Prima di ogni nuovo upload viene comunque eseguito il controllo integrità v2.
-
-## Prima della VPS: prova gratuita su GitHub Codespaces
-
-Per testare esattamente il codice presente su `main`:
-
-1. GitHub → **Code** → **Codespaces** → **Create codespace on main**.
-2. Attendi `postCreateCommand`.
-3. Esegui:
-
-```bash
-./scripts/codespaces-run.sh
-```
-
-4. Apri la porta privata `8080` dalla scheda **PORTS**.
-5. Accedi e configura eventualmente Gofile/Pixeldrain da **Settings**.
-
-Per un test rapido automatico del backend:
-
-```bash
-./scripts/codespaces-smoke.sh
-```
-
-Prima di usare il pacchetto su una VPS, controlla inoltre che GitHub Actions mostri verdi entrambi i job **Core tests** e **Codespaces smoke**.
+- compilazione Python;
+- suite pytest;
+- FFmpeg/media tests;
+- sintassi JavaScript;
+- sintassi degli script shell.
