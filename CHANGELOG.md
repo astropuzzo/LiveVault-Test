@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.2.3 - 2026-09-01
+
+- Aggiunto fallback per `Ultima live CB` quando `api/biocontext/{username}/` risponde 401/403 per room gated: LiveVault legge la pagina pubblica della room invece di fermarsi su errore/`mai`.
+- Il fallback cerca prima un `last_broadcast` ISO embedded, poi `time_since_last_broadcast`, infine la voce visibile `Last Broadcast: ...` della pagina profilo.
+- I valori relativi come `20 hours ago`, `5 days ago` o `yesterday` vengono convertiti in un timestamp UTC approssimato; i timestamp ISO restano la fonte preferita e precisa.
+- Un 401 di `biocontext` non rende più la sorgente `Errore` se la pagina pubblica fornisce correttamente il dato; l'errore metadata viene mostrato solo quando falliscono entrambe le fonti.
+- Aggiunti test di regressione per biocontext 401 → fallback pagina pubblica, parsing ISO/relativo e fallimento di entrambe le fonti.
+
 ## 2.2.2 - 2026-09-01
 
 - `Ultima live` ora usa il `last_broadcast` restituito direttamente dai metadata pubblici Chaturbate (`api/biocontext/{username}/`), non l'ultima live osservata localmente da LiveVault.
@@ -73,7 +81,7 @@
 - Coda upload migliorata: i nuovi segmenti hanno priorità e un upload fallito usa backoff per-file senza bloccare tutta la coda.
 - Recupero automatico degli upload rimasti `uploading` dopo crash/reboot.
 - Poll delle sorgenti concorrente con `MAX_PROBE_CONCURRENCY` configurabile.
-- Snapshot worker esteso con uptime, dimensione della sessione attiva e upload corrente.
+- Snapshot worker esteso con uptime, dimensione della sessione attiva e upload corrente/task health.
 - Health check più informativo e statistiche coda/storage estese.
 - Corretto l'esempio di naming dei segmenti nel README.
 - Aggiunti test statici anti-regressione per CSP/PWA.
