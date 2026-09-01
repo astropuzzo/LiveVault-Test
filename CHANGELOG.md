@@ -6,6 +6,7 @@
 - Il timestamp viene aggiornato anche quando la camera è offline, quindi LiveVault può mostrare una trasmissione precedente avvenuta mentre il server era spento.
 - Rimossi gli override locali che impostavano `Ultima live` a `adesso` solo perché il recorder era attivo o aveva appena terminato una sessione.
 - Aggiunti test offline/live sul parsing ISO UTC e sul metadata `last_broadcast`.
+- La card sorgente mostra ora la data/ora Chaturbate completa direttamente a schermo, oltre al tempo relativo.
 
 ## 2.2.1 - 2026-09-01
 
