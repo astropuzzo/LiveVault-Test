@@ -17,6 +17,7 @@ from sqlalchemy import case, distinct, func, select
 from .auth import COOKIE_NAME, MAX_AGE, create_session_token, password_ok, require_auth
 from .config import settings
 from .db import Recording, Source, db_session, init_db
+from .file_cleanup import cleanup_empty_parents, cleanup_orphan_videos, safe_unlink
 from .recorder import remux_to_mp4
 from .settings_store import public_settings, reload_runtime, runtime, set_values
 from .storage import disk_state
@@ -29,7 +30,7 @@ USERNAME_RE = re.compile(r"^[A-Za-z0-9_]{1,100}$")
 LOGIN_FAILURES: dict[str, deque[float]] = defaultdict(deque)
 LOGIN_WINDOW = 10 * 60
 LOGIN_MAX_FAILURES = 6
-VERSION = "2.2.0"
+VERSION = "2.2.1"
 
 
 class LoginBody(BaseModel):
@@ -39,6 +40,14 @@ class LoginBody(BaseModel):
 class BoolBody(BaseModel):
     paused: bool
     stop_active: bool = True
+
+
+class CleanupLocalBody(BaseModel):
+    scope: str = "uploaded"
+    source_id: int | None = None
+    include_orphans: bool = False
+    delete_thumbnails: bool = False
+    confirm: bool = False
 
 
 class SourceCreate(BaseModel):
@@ -769,18 +778,113 @@ async def convert_mp4(recording_id: int, request: Request):
     return {"ok": True, "filename": new_path.name, "integrity": "passed" if integrity.ok else "failed"}
 
 
+def _remove_local_copy(recording_id: int, *, force: bool = False, delete_thumbnail: bool = False) -> dict:
+    """Remove the actual local bytes first, then update DB state.
+
+    Non-uploaded files require force=True. Files currently being uploaded/converted are
+    never removed. The path is confined to LiveVault storage so a corrupt DB row cannot
+    delete an arbitrary server file.
+    """
+    with db_session() as db:
+        rec = db.get(Recording, recording_id)
+        if not rec:
+            raise HTTPException(404, "Registrazione non trovata")
+        previous_status = rec.upload_status
+        local_path = Path(rec.local_path)
+        thumbnail_path = Path(rec.thumbnail_path) if rec.thumbnail_path else None
+        if previous_status in {"uploading", "converting", "deleting"}:
+            raise HTTPException(409, "File occupato: attendi la fine dell'operazione in corso")
+        if previous_status != "uploaded" and not force:
+            raise HTTPException(400, "File non caricato: usa la cancellazione forzata per eliminarlo definitivamente")
+        if previous_status != "uploaded":
+            rec.upload_status = "deleting"
+
+    try:
+        freed, removed = safe_unlink(local_path, settings.recordings_dir)
+        cleanup_empty_parents(local_path.parent, settings.recordings_dir)
+        thumbnail_removed = False
+        if delete_thumbnail and thumbnail_path:
+            _, thumbnail_removed = safe_unlink(thumbnail_path, settings.data_dir / "thumbnails")
+            cleanup_empty_parents(thumbnail_path.parent, settings.data_dir / "thumbnails")
+    except (OSError, ValueError) as exc:
+        with db_session() as db:
+            rec = db.get(Recording, recording_id)
+            if rec and rec.upload_status == "deleting":
+                rec.upload_status = previous_status
+        raise HTTPException(500, f"Impossibile eliminare il file locale: {exc}") from exc
+
+    with db_session() as db:
+        rec = db.get(Recording, recording_id)
+        if rec:
+            rec.local_deleted = True
+            if previous_status != "uploaded":
+                rec.upload_status = "discarded"
+                rec.last_error = "File locale eliminato manualmente prima dell'upload"
+            else:
+                rec.upload_status = "uploaded"
+                rec.last_error = ""
+            if delete_thumbnail and thumbnail_removed:
+                rec.thumbnail_path = ""
+
+    manager.clear_retry_backoff()
+    manager.wake()
+    return {
+        "ok": True,
+        "removed": removed,
+        "thumbnail_removed": thumbnail_removed,
+        "freed": freed,
+        "freed_human": human_bytes(freed),
+    }
+
+
 @app.delete("/api/recordings/{recording_id}/local")
-def delete_local_recording(recording_id: int, request: Request):
+def delete_local_recording(recording_id: int, request: Request, force: bool = False, delete_thumbnail: bool = False):
+    require_auth(request)
+    return _remove_local_copy(recording_id, force=force, delete_thumbnail=delete_thumbnail)
+
+
+@app.delete("/api/recordings/{recording_id}")
+def delete_recording(recording_id: int, request: Request, delete_file: bool = True, delete_thumbnail: bool = True):
+    """Delete an archive entry. By default the underlying local file is deleted too."""
     require_auth(request)
     with db_session() as db:
         rec = db.get(Recording, recording_id)
         if not rec:
             raise HTTPException(404, "Registrazione non trovata")
-        if rec.upload_status != "uploaded":
-            raise HTTPException(400, "La copia locale può essere eliminata solo dopo un upload verificato")
-        Path(rec.local_path).unlink(missing_ok=True)
-        rec.local_deleted = True
-    return {"ok": True}
+        if rec.upload_status in {"uploading", "converting", "deleting"}:
+            raise HTTPException(409, "File occupato: attendi la fine dell'operazione in corso")
+        thumbnail_path = Path(rec.thumbnail_path) if rec.thumbnail_path else None
+
+    freed = 0
+    file_removed = False
+    thumbnail_removed = False
+    if delete_file:
+        result = _remove_local_copy(recording_id, force=True, delete_thumbnail=delete_thumbnail)
+        freed = int(result["freed"])
+        file_removed = bool(result["removed"])
+        thumbnail_removed = bool(result["thumbnail_removed"])
+    elif delete_thumbnail and thumbnail_path:
+        try:
+            _, thumbnail_removed = safe_unlink(thumbnail_path, settings.data_dir / "thumbnails")
+            cleanup_empty_parents(thumbnail_path.parent, settings.data_dir / "thumbnails")
+        except (OSError, ValueError) as exc:
+            raise HTTPException(500, f"Impossibile eliminare la miniatura: {exc}") from exc
+
+    with db_session() as db:
+        rec = db.get(Recording, recording_id)
+        if rec:
+            db.delete(rec)
+
+    manager.clear_retry_backoff()
+    manager.wake()
+    return {
+        "ok": True,
+        "entry_deleted": True,
+        "file_removed": file_removed,
+        "thumbnail_removed": thumbnail_removed,
+        "freed": freed,
+        "freed_human": human_bytes(freed),
+    }
 
 
 @app.post("/api/recordings/retry-failed")
@@ -800,21 +904,91 @@ def retry_failed_recordings(request: Request):
     return {"ok": True, "changed": changed}
 
 
-@app.post("/api/recordings/cleanup-uploaded")
-def cleanup_uploaded_recordings(request: Request):
+def _cleanup_ids(scope: str, source_id: int | None) -> list[int]:
+    with db_session() as db:
+        query = select(Recording.id).where(~Recording.upload_status.in_(["uploading", "converting", "deleting"]))
+        if source_id is not None:
+            query = query.where(Recording.source_id == source_id)
+        if scope == "uploaded":
+            query = query.where(Recording.upload_status == "uploaded")
+        elif scope == "failed":
+            query = query.where(Recording.upload_status.in_(["failed", "waiting_config", "integrity_failed", "discarded"]))
+        elif scope != "all":
+            raise HTTPException(400, "Scope pulizia non valido: uploaded, failed o all")
+        return list(db.scalars(query).all())
+
+
+@app.post("/api/recordings/cleanup-local")
+def cleanup_local_recordings(body: CleanupLocalBody, request: Request):
     require_auth(request)
+    scope = body.scope.strip().lower()
+    if scope not in {"uploaded", "failed", "all"}:
+        raise HTTPException(400, "Scope pulizia non valido: uploaded, failed o all")
+    if scope != "uploaded" and not body.confirm:
+        raise HTTPException(400, "La pulizia di file non caricati richiede confirm=true")
+
+    ids = _cleanup_ids(scope, body.source_id)
     removed = 0
     freed = 0
-    with db_session() as db:
-        rows = list(db.scalars(select(Recording).where(Recording.upload_status == "uploaded", Recording.local_deleted.is_(False))).all())
-        for rec in rows:
-            path = Path(rec.local_path)
-            if path.exists():
-                freed += path.stat().st_size
-                path.unlink(missing_ok=True)
-                removed += 1
-            rec.local_deleted = True
-    return {"ok": True, "removed": removed, "freed": freed, "freed_human": human_bytes(freed)}
+    thumbnails_removed = 0
+    errors: list[str] = []
+    for recording_id in ids:
+        try:
+            result = _remove_local_copy(
+                recording_id,
+                force=scope != "uploaded",
+                delete_thumbnail=body.delete_thumbnails,
+            )
+            removed += int(bool(result["removed"]))
+            freed += int(result["freed"])
+            thumbnails_removed += int(bool(result["thumbnail_removed"]))
+        except HTTPException as exc:
+            errors.append(f"#{recording_id}: {exc.detail}")
+
+    orphan_result = {"removed": 0, "freed": 0, "skipped_active": 0, "errors": []}
+    if body.include_orphans and body.source_id is None:
+        with db_session() as db:
+            tracked_paths = [
+                Path(path)
+                for path in db.scalars(select(Recording.local_path).where(Recording.local_deleted.is_(False))).all()
+            ]
+        active_dirs = [session.directory for session in manager.active.values()]
+        orphan_result = cleanup_orphan_videos(settings.recordings_dir, tracked_paths, active_dirs)
+        removed += int(orphan_result["removed"])
+        freed += int(orphan_result["freed"])
+        errors.extend(orphan_result["errors"])
+
+    manager.clear_retry_backoff()
+    manager.wake()
+    return {
+        "ok": not errors,
+        "scope": scope,
+        "removed": removed,
+        "thumbnails_removed": thumbnails_removed,
+        "orphan_removed": orphan_result["removed"],
+        "skipped_active": orphan_result["skipped_active"],
+        "freed": freed,
+        "freed_human": human_bytes(freed),
+        "errors": errors[:50],
+    }
+
+
+@app.post("/api/recordings/cleanup-uploaded")
+def cleanup_uploaded_recordings(request: Request):
+    """Backward-compatible safe cleanup used by older UI versions."""
+    require_auth(request)
+    ids = _cleanup_ids("uploaded", None)
+    removed = 0
+    freed = 0
+    errors: list[str] = []
+    for recording_id in ids:
+        try:
+            result = _remove_local_copy(recording_id, force=False, delete_thumbnail=False)
+            removed += int(bool(result["removed"]))
+            freed += int(result["freed"])
+        except HTTPException as exc:
+            errors.append(f"#{recording_id}: {exc.detail}")
+    return {"ok": not errors, "removed": removed, "freed": freed, "freed_human": human_bytes(freed), "errors": errors[:50]}
 
 
 @app.get("/healthz")

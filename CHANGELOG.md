@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.2.1 - 2026-09-01
+
+- Aggiunta cancellazione reale del file locale per ogni registrazione, anche se non caricata, con conferma esplicita e protezione da upload/conversioni in corso.
+- `Elimina tutto` rimuove file locale, miniatura e voce DB in un'unica operazione; il file cloud non viene toccato.
+- Nuova pulizia bulk dei video locali, globale o limitata alla camera filtrata, con conteggio file e spazio liberato.
+- Pulizia automatica dei file MP4/MKV orfani lasciati da vecchie cancellazioni DB, senza toccare le cartelle dei recorder attivi.
+- Tutte le cancellazioni sono confinate alle directory LiveVault per impedire rimozioni accidentali fuori dallo storage applicativo.
+
 ## 2.2.0 - 2026-09-01
 
 - Segmenti impostati a 60 minuti con tetto rigido di 2 GB e rollover automatico alla prima soglia raggiunta.
