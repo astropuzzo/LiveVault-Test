@@ -98,7 +98,7 @@ function statNumber(value, suffix = '') {
 }
 
 function activityChartSvg(rows = []) {
-  if (!rows.length || !rows.some(row => Number(row.online_seconds) || Number(row.recorded_seconds))) return '<div class="empty compact">Nessuna attività nel periodo.</div>';
+  if (!rows.length || !rows.some(row => Number(row.online_seconds) || Number(row.recorded_seconds))) return '<div class="empty compact">Nessun dato.</div>';
   const width = 820, height = 230, top = 12, bottom = 34, chartHeight = height - top - bottom;
   const maxValue = Math.max(1, ...rows.flatMap(row => [Number(row.online_seconds) || 0, Number(row.recorded_seconds) || 0]));
   const groupWidth = width / rows.length;
@@ -120,7 +120,7 @@ function activityChartSvg(rows = []) {
 }
 
 function hourlyChartSvg(rows = []) {
-  if (!rows.length || !rows.some(row => Number(row.online_seconds))) return '<div class="empty compact">Nessun dato orario disponibile.</div>';
+  if (!rows.length || !rows.some(row => Number(row.online_seconds))) return '<div class="empty compact">Nessun dato.</div>';
   const width = 820, height = 220, top = 12, bottom = 30, chartHeight = height - top - bottom;
   const maxValue = Math.max(1, ...rows.map(row => Number(row.online_seconds) || 0));
   const groupWidth = width / 24;
@@ -139,22 +139,18 @@ function hourlyChartSvg(rows = []) {
 function statisticsSummaryMarkup(data, compact = false) {
   const summary = data?.summary || {};
   const metrics = [
-    ['Tempo online', duration(summary.online_seconds || 0), `${summary.days_online || 0} giorni con live`],
-    ['Tempo registrato', duration(summary.recorded_seconds || 0), `${summary.recording_sessions || 0} sessioni REC`],
-    ['Sessioni live', summary.live_sessions || 0, `più lunga ${duration(summary.longest_live_seconds || 0)}`],
-    ['Copertura', statNumber(summary.coverage_percent || 0, '%'), 'registrato / online'],
-    ['Live ora', summary.online_now || 0, compact ? 'stato corrente' : `${summary.creator_count || 0} creator monitorate`],
+    ['Tempo online', duration(summary.online_seconds || 0), `${summary.days_online || 0} gg`],
+    ['Tempo registrato', duration(summary.recorded_seconds || 0), `${summary.recording_sessions || 0} REC`],
+    ['Sessioni live', summary.live_sessions || 0, `max ${duration(summary.longest_live_seconds || 0)}`],
+    ['Copertura', statNumber(summary.coverage_percent || 0, '%'), ''],
+    ['Live ora', summary.online_now || 0, compact ? '' : `${summary.creator_count || 0} creator`],
   ];
   return metrics.map(([label, value, note]) => `<article class="stats-metric panel"><span>${esc(label)}</span><strong>${esc(value)}</strong><small>${esc(note)}</small></article>`).join('');
 }
 
 function statisticsHistoryNote(data) {
   const summary = data?.summary || {};
-  if (Number(summary.estimated_online_seconds) > 0) {
-    const exact = summary.exact_tracking_started_at ? ` Il tracciamento live completo è attivo dal ${dateFull(summary.exact_tracking_started_at)}.` : '';
-    return `Lo storico precedente è ricostruito dalle registrazioni e rappresenta una stima minima del tempo online.${exact}`;
-  }
-  return summary.exact_tracking_started_at ? `Tempo online misurato direttamente dalle rilevazioni LiveVault dal ${dateFull(summary.exact_tracking_started_at)}.` : 'Il tracciamento live inizierà alla prima rilevazione online.';
+  return Number(summary.estimated_online_seconds) > 0 ? 'Storico pre-2.6: stima.' : '';
 }
 
 function toast(message, type = 'good') {
@@ -371,7 +367,7 @@ function renderSources() {
   const root = $('#sources');
   $('#sourceCount').textContent = rows.length;
   if (!rows.length) {
-    root.innerHTML = '<div class="empty">Nessuna sorgente attiva. Quelle archiviate restano disponibili nella Libreria.</div>';
+    root.innerHTML = '<div class="empty">Nessuna sorgente.</div>';
     return;
   }
   root.innerHTML = rows.map(source => {
@@ -497,7 +493,7 @@ function renderLibrary() {
   $('#libraryListBtn').setAttribute('aria-pressed', String(libraryMode === 'list'));
   $('#libraryResultsMeta').textContent = `${visible.length} ${visible.length === 1 ? 'profilo' : 'profili'} · ${libraryProfiles.length} totali`;
   if (!visible.length) {
-    root.innerHTML = '<div class="empty">Nessun profilo corrisponde ai filtri.</div>';
+    root.innerHTML = '<div class="empty">Nessun risultato.</div>';
     updateSelectionUi(visible);
     return;
   }
@@ -512,8 +508,8 @@ function renderLibrary() {
         <div class="library-card-head"><div><h3>${creatorLinkMarkup(profile.representative_id, profile.display_name)}</h3><p>${accountLabels.map(esc).join(' · ')}</p></div><span class="source-status ${esc(profile.status)}">${esc(statusLabel(profile.status))}</span></div>
         <div class="library-tags">${tagMarkup(profile.categories)}${tagMarkup(profile.collections, 'library-tag collection')}</div>
         <div class="library-stats"><span><strong>${profile.recording_count}</strong> file</span><span><strong>${profile.session_count}</strong> sessioni</span><span><strong>${humanBytes(profile.total_bytes)}</strong></span><span><strong>${profile.uploaded_count}</strong> cloud</span></div>
-        <div class="library-recency">${profile.last_recording_at ? `Ultima registrazione ${esc(ago(profile.last_recording_at))}` : 'Nessuna registrazione'} · live ${esc(ago(profile.last_seen_live_at || profile.last_live_at))}</div>
-        <div class="library-actions"><button class="btn primary" data-lib-action="profile" data-id="${profile.representative_id}" type="button">Apri profilo</button><button class="btn soft" data-lib-action="archive" data-id="${profile.representative_id}" type="button">Archivio</button>${profile.archived ? `<button class="btn soft" data-lib-action="restore" data-id="${profile.representative_id}" type="button">Ripristina</button>` : ''}<button class="btn danger" data-lib-action="delete-profile" data-id="${profile.representative_id}" type="button">Elimina definitivamente</button></div>
+        <div class="library-recency">REC ${profile.last_recording_at ? esc(ago(profile.last_recording_at)) : '—'} · LIVE ${esc(ago(profile.last_seen_live_at || profile.last_live_at))}</div>
+        <div class="library-actions"><button class="btn primary" data-lib-action="profile" data-id="${profile.representative_id}" type="button">Profilo</button><button class="btn soft" data-lib-action="archive" data-id="${profile.representative_id}" type="button">Archivio</button>${profile.archived ? `<button class="btn soft" data-lib-action="restore" data-id="${profile.representative_id}" type="button">Ripristina</button>` : ''}<button class="btn danger" data-lib-action="delete-profile" data-id="${profile.representative_id}" type="button">Elimina definitivamente</button></div>
       </div>
     </article>`;
   }).join('');
@@ -562,9 +558,9 @@ async function loadLibraryMeta() {
 async function openProfile(sourceId) {
   const source = sources.find(item => item.id === Number(sourceId));
   $('#profileTitle').textContent = source?.display_name || source?.name || 'Profilo';
-  $('#profileProvider').textContent = 'PROFILO LIBRERIA';
+  $('#profileProvider').textContent = '';
   $('#profileReference').textContent = source ? `${source.provider_label} · ${source.name}` : '';
-  $('#profileContent').innerHTML = '<div class="empty">Caricamento profilo…</div>';
+  $('#profileContent').innerHTML = '<div class="empty">Caricamento…</div>';
   openModal('profileModal');
   try {
     profileData = await api(`/api/sources/${Number(sourceId)}/profile`);
@@ -587,13 +583,13 @@ function renderProfile() {
   const activity = profileData.activity_statistics;
   const cover = safeUrl(profile.cover_thumbnail_url);
   $('#profileTitle').textContent = profile.display_name;
-  $('#profileReference').textContent = `${profile.linked_sources.length} ${profile.linked_sources.length === 1 ? 'sorgente collegata' : 'sorgenti collegate'} · creato ${dateText(profile.created_at)}`;
+  $('#profileReference').textContent = `${profile.linked_sources.length} account · ${dateText(profile.created_at)}`;
   const categoryChecks = (libraryMeta.categories || []).map(item =>
     `<label class="choice-tag" style="--tag:${esc(item.color)}"><input type="checkbox" data-profile-category="${item.id}" ${profile.categories.some(row => row.id === item.id) ? 'checked' : ''}><span>${esc(item.name)}</span></label>`
-  ).join('') || '<span class="muted">Crea prima una categoria.</span>';
+  ).join('') || '<span class="muted">Nessuna categoria.</span>';
   const collectionChecks = (libraryMeta.collections || []).map(item =>
     `<label class="choice-tag collection" style="--tag:${esc(item.color)}"><input type="checkbox" data-profile-collection="${item.id}" ${profile.collections.some(row => row.id === item.id) ? 'checked' : ''}><span>${esc(item.name)}</span></label>`
-  ).join('') || '<span class="muted">Crea prima una raccolta.</span>';
+  ).join('') || '<span class="muted">Nessuna raccolta.</span>';
   const linked = profile.linked_sources.map(source => {
     const url = safeUrl(source.source_url);
     return `<article class="linked-source"><div><strong>${esc(source.name)}</strong><small>${esc(source.provider_label)} · ${esc(source.slug)} · ${esc(statusLabel(source.last_status))}</small></div>${url ? `<a class="btn quiet" href="${esc(url)}" target="_blank" rel="noopener">Apri ↗</a>` : ''}<button class="btn quiet" data-profile-action="edit-source" data-id="${source.id}" type="button">Modifica</button><button class="btn quiet" data-profile-action="toggle-source" data-id="${source.id}" type="button">${source.enabled ? 'Pausa' : 'Riattiva'}</button></article>`;
@@ -607,10 +603,10 @@ function renderProfile() {
   }).join('') || '<div class="empty compact">Nessuna registrazione.</div>';
   $('#profileContent').innerHTML = `<div class="profile-overview">
       <div class="profile-cover ${cover ? '' : 'empty'}">${cover ? `<img src="${esc(cover)}" alt="Copertina di ${esc(profile.display_name)}">` : `<span>${esc(profile.display_name.slice(0, 2).toUpperCase())}</span>`}</div>
-      <div class="profile-summary"><button class="favorite-toggle ${profile.favorite ? 'active' : ''}" data-profile-action="favorite" data-id="${profile.id}" type="button" aria-pressed="${profile.favorite}">★ ${profile.favorite ? 'Preferita' : 'Aggiungi ai preferiti'}</button><div class="profile-metrics"><span><strong>${stats.recording_count || 0}</strong> file</span><span><strong>${stats.session_count || 0}</strong> sessioni</span><span><strong>${humanBytes(stats.total_bytes || 0)}</strong> registrati</span><span><strong>${duration(stats.total_duration_seconds || 0)}</strong> durata</span><span><strong>${stats.uploaded_count || 0}</strong> cloud</span><span class="${stats.failed_count ? 'danger-text' : ''}"><strong>${stats.failed_count || 0}</strong> problemi</span></div></div>
+      <div class="profile-summary"><button class="favorite-toggle ${profile.favorite ? 'active' : ''}" data-profile-action="favorite" data-id="${profile.id}" type="button" aria-pressed="${profile.favorite}">★ ${profile.favorite ? 'Preferita' : 'Preferiti'}</button><div class="profile-metrics"><span><strong>${stats.recording_count || 0}</strong> file</span><span><strong>${stats.session_count || 0}</strong> sessioni</span><span><strong>${humanBytes(stats.total_bytes || 0)}</strong> registrati</span><span><strong>${duration(stats.total_duration_seconds || 0)}</strong> durata</span><span><strong>${stats.uploaded_count || 0}</strong> cloud</span><span class="${stats.failed_count ? 'danger-text' : ''}"><strong>${stats.failed_count || 0}</strong> problemi</span></div></div>
     </div>
-    <section class="profile-section profile-statistics"><div class="profile-section-head"><div><h3>Statistiche attività</h3><span>Online rilevato, registrazioni e copertura.</span></div><label class="stats-range compact"><span>Periodo</span><select id="profileStatisticsRange"><option value="7" ${profileStatisticsDays === 7 ? 'selected' : ''}>7g</option><option value="30" ${profileStatisticsDays === 30 ? 'selected' : ''}>30g</option><option value="90" ${profileStatisticsDays === 90 ? 'selected' : ''}>90g</option><option value="365" ${profileStatisticsDays === 365 ? 'selected' : ''}>365g</option></select></label></div>${activity ? `<div class="stats-summary-grid compact">${statisticsSummaryMarkup(activity, true)}</div><div class="stats-chart-grid profile"><div class="stats-mini-chart"><div class="chart-title">Online vs registrato</div>${activityChartSvg(activity.daily)}</div><div class="stats-mini-chart"><div class="chart-title">Orari più frequenti</div>${hourlyChartSvg(activity.hourly)}</div></div><p class="stats-note">${esc(statisticsHistoryNote(activity))}</p>` : '<div class="empty compact">Statistiche non disponibili.</div>'}</section>
-    <section class="profile-section"><div class="profile-section-head"><h3>Identità e note</h3><span>Non modifica nomi tecnici, cartelle o storico.</span></div><label class="field"><span>Nome profilo</span><input id="profileDisplayName" maxlength="120" value="${esc(profile.display_name)}"></label><label class="field"><span>Note private</span><textarea id="profileNotes" maxlength="20000" rows="4" placeholder="Note, preferenze, riferimenti…">${esc(profile.notes)}</textarea></label></section>
+    <section class="profile-section profile-statistics"><div class="profile-section-head"><div><h3>Statistiche</h3></div><label class="stats-range compact"><span>Periodo</span><select id="profileStatisticsRange"><option value="7" ${profileStatisticsDays === 7 ? 'selected' : ''}>7g</option><option value="30" ${profileStatisticsDays === 30 ? 'selected' : ''}>30g</option><option value="90" ${profileStatisticsDays === 90 ? 'selected' : ''}>90g</option><option value="365" ${profileStatisticsDays === 365 ? 'selected' : ''}>365g</option></select></label></div>${activity ? `<div class="stats-summary-grid compact">${statisticsSummaryMarkup(activity, true)}</div><div class="stats-chart-grid profile"><div class="stats-mini-chart"><div class="chart-title">Online vs registrato</div>${activityChartSvg(activity.daily)}</div><div class="stats-mini-chart"><div class="chart-title">Orari più frequenti</div>${hourlyChartSvg(activity.hourly)}</div></div>${statisticsHistoryNote(activity) ? `<p class="stats-note">${esc(statisticsHistoryNote(activity))}</p>` : ''}` : '<div class="empty compact">Statistiche non disponibili.</div>'}</section>
+    <section class="profile-section"><div class="profile-section-head"><h3>Identità e note</h3></div><label class="field"><span>Nome profilo</span><input id="profileDisplayName" maxlength="120" value="${esc(profile.display_name)}"></label><label class="field"><span>Note private</span><textarea id="profileNotes" maxlength="20000" rows="4" placeholder="Note, preferenze, riferimenti…">${esc(profile.notes)}</textarea></label></section>
     <section class="profile-section"><div class="profile-section-head"><h3>Categorie</h3><button class="btn quiet" data-profile-action="manage-taxonomy" type="button">Gestisci</button></div><div class="choice-grid">${categoryChecks}</div></section>
     <section class="profile-section"><div class="profile-section-head"><h3>Raccolte libreria</h3></div><div class="choice-grid">${collectionChecks}</div></section>
     <section class="profile-section"><div class="profile-section-head"><h3>Account e provider</h3><button class="btn soft" data-profile-action="add-source" data-id="${profile.profile_id}" type="button">Collega nuova sorgente</button></div><div class="linked-list">${linked}</div></section>
@@ -674,7 +670,7 @@ function renderRecordings() {
   const visible = recordings.filter(recordingMatches);
   const root = $('#recordings');
   if (!visible.length) {
-    root.innerHTML = '<div class="empty">Nessuna registrazione corrispondente.</div>';
+    root.innerHTML = '<div class="empty">Nessun risultato.</div>';
     $('#recordingFooter').textContent = recordings.length ? `${recordings.length} file totali` : '';
     return;
   }
@@ -713,7 +709,7 @@ function setSourceFilter(id) {
   const selected = sources.find(source => source.id === sourceFilterId);
   $('#recordingSearch').value = '';
   $('#sourceFilterBar').classList.toggle('hidden', !selected);
-  $('#sourceFilterNote').textContent = selected ? `Archivio: ${selected.display_name || selected.name} · sorgente ${selected.name}` : '';
+  $('#sourceFilterNote').textContent = selected ? `${selected.display_name || selected.name}` : '';
   const url = new URL(location.href);
   if (sourceFilterId) url.searchParams.set('source', String(sourceFilterId)); else url.searchParams.delete('source');
   url.hash = 'archive';
@@ -877,8 +873,8 @@ function renderLivePauseAlert() {
   root.classList.toggle('hidden', rows.length === 0);
   if (!rows.length) { root.innerHTML = ''; return; }
   const globallyPaused = !!statusData?.config?.recording_paused;
-  const title = rows.length === 1 ? 'Creator LIVE non registrata' : `${rows.length} creator LIVE non registrate`;
-  root.innerHTML = `<div class="live-pause-head"><span class="live-pause-pulse" aria-hidden="true"></span><div><strong>${esc(title)}</strong><small>${globallyPaused ? 'Registrazioni globali in pausa' : 'Registrazione in pausa per queste creator'}</small></div></div><div class="live-pause-creators">${rows.slice(0, 5).map(source => creatorLinkMarkup(source.id, source.display_name || source.name)).join('')}${rows.length > 5 ? `<span class="live-pause-more">+${rows.length - 5}</span>` : ''}</div>${globallyPaused ? '<button class="btn primary live-pause-resume" data-alert-resume type="button">Riprendi registrazioni</button>' : ''}`;
+  const title = rows.length === 1 ? 'LIVE · NON REC' : `${rows.length} LIVE · NON REC`;
+  root.innerHTML = `<div class="live-pause-head"><span class="live-pause-pulse" aria-hidden="true"></span><div><strong>${esc(title)}</strong><small>${globallyPaused ? 'PAUSA GLOBALE' : 'IN PAUSA'}</small></div></div><div class="live-pause-creators">${rows.slice(0, 5).map(source => creatorLinkMarkup(source.id, source.display_name || source.name)).join('')}${rows.length > 5 ? `<span class="live-pause-more">+${rows.length - 5}</span>` : ''}</div>${globallyPaused ? '<button class="btn primary live-pause-resume" data-alert-resume type="button">Riprendi REC</button>' : ''}`;
 }
 
 function renderStatistics() {
@@ -887,7 +883,7 @@ function renderStatistics() {
   $('#statisticsDailyChart').innerHTML = activityChartSvg(statisticsData.daily);
   $('#statisticsHourlyChart').innerHTML = hourlyChartSvg(statisticsData.hourly);
   const rows = statisticsData.top_creators || [];
-  $('#statisticsLeaderboard').innerHTML = rows.length ? rows.map((row, index) => `<article class="leader-row"><span class="leader-rank">${index + 1}</span><div class="leader-name">${creatorLinkMarkup(row.representative_source_id, row.display_name)}${row.online_now ? '<span class="leader-live">LIVE</span>' : ''}</div><div><strong>${esc(duration(row.online_seconds))}</strong><small>online · ${row.days_online} giorni</small></div><div><strong>${esc(duration(row.recorded_seconds))}</strong><small>registrato</small></div><div><strong>${esc(statNumber(row.coverage_percent, '%'))}</strong><small>copertura</small></div></article>`).join('') : '<div class="empty">Nessun dato creator nel periodo.</div>';
+  $('#statisticsLeaderboard').innerHTML = rows.length ? rows.map((row, index) => `<article class="leader-row"><span class="leader-rank">${index + 1}</span><div class="leader-name">${creatorLinkMarkup(row.representative_source_id, row.display_name)}${row.online_now ? '<span class="leader-live">LIVE</span>' : ''}</div><div><strong>${esc(duration(row.online_seconds))}</strong><small>online · ${row.days_online} giorni</small></div><div><strong>${esc(duration(row.recorded_seconds))}</strong><small>registrato</small></div><div><strong>${esc(statNumber(row.coverage_percent, '%'))}</strong><small>copertura</small></div></article>`).join('') : '<div class="empty">Nessun dato.</div>';
   $('#statisticsNote').textContent = statisticsHistoryNote(statisticsData);
   $('#statisticsRange').value = String(statisticsDays);
 }
@@ -1126,7 +1122,7 @@ $('#testSourceBtn').addEventListener('click', async event => {
   const output = $('#sourceTestResult');
   if (!value) { output.textContent = 'Inserisci username o URL'; output.className = 'bad'; return; }
   setBusy(event.currentTarget, true, 'Test…');
-  output.textContent = 'Controllo provider, stato, audio e video…';
+  output.textContent = 'Controllo…';
   output.className = '';
   try {
     const response = await api('/api/sources/inspect', {
@@ -1143,7 +1139,7 @@ $('#testSourceBtn').addEventListener('click', async event => {
       output.textContent = `${response.provider_label} · ${response.error || 'controllo fallito'}`;
       output.className = 'bad';
     } else {
-      output.textContent = `${response.provider_label} · ${statusLabel(response.status)} · tracce verificabili quando sarà online`;
+      output.textContent = `${response.provider_label} · ${statusLabel(response.status)}`;
       output.className = 'warn';
     }
   } catch (error) { output.textContent = error.message; output.className = 'bad'; }
@@ -1551,7 +1547,7 @@ document.addEventListener('visibilitychange', () => {
 if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
 
 
-/* LiveVault Control Room v2.7.0 */
+/* LiveVault Control Room v2.7.1 */
 let controlRoomOfflineOpen = localStorage.getItem('livevault-control-room-offline-open') === '1';
 let controlRoomWallOpen = false;
 
@@ -1614,27 +1610,27 @@ function controlRoomPreviewMarkup(profile, wall = false) {
   const cover = safeUrl(source?.cover_thumbnail_url || '');
   const recordingLabel = profile.recording ? 'REC' : profile.live ? 'LIVE' : 'OFFLINE';
   const alertLabel = profile.blocked ? 'NON REGISTRATA' : '';
-  const freshness = updated ? `Preview ${ago(updated)}` : profile.recording ? 'Preview in preparazione…' : 'Preview disponibile durante REC';
+  const freshness = updated ? ago(updated) : '';
   return `<div class="cr-preview ${profile.blocked ? 'attention' : ''} ${wall ? 'wall' : ''}">
     ${previewUrl ? `<img data-live-preview src="${esc(previewUrl)}" alt="Preview live di ${esc(profile.display_name)}">` : cover ? `<img class="cr-preview-cover" src="${esc(cover)}" alt="Copertina di ${esc(profile.display_name)}">` : `<div class="cr-preview-placeholder"><span>${esc(controlRoomInitials(profile.display_name))}</span></div>`}
     <div class="cr-preview-shade"></div>
     <div class="cr-preview-badges"><span class="cr-live-badge">● ${esc(recordingLabel)}</span>${alertLabel ? `<span class="cr-alert-badge">${esc(alertLabel)}</span>` : ''}${profile.focus ? '<span class="cr-focus-badge">★ FOCUS</span>' : ''}</div>
-    <span class="cr-preview-age">${esc(freshness)}</span>
+    ${freshness ? `<span class="cr-preview-age">${esc(freshness)}</span>` : ''}
   </div>`;
 }
 
 function controlRoomStatusText(profile) {
   if (profile.blocked) {
     const source = profile.source;
-    if (source.pause_reason === 'global') return 'LIVE · registrazioni globali in pausa';
-    if (source.pause_reason === 'source') return 'LIVE · creator in pausa';
-    return 'LIVE · REC non attiva';
+    if (source.pause_reason === 'global') return 'LIVE · PAUSA GLOBALE';
+    if (source.pause_reason === 'source') return 'LIVE · IN PAUSA';
+    return 'LIVE · NON REC';
   }
   if (profile.recording) {
     const active = profile.active;
-    return active ? `REC ${duration(active.elapsed_seconds)} · ${humanBytes(active.local_bytes || 0)}` : 'LIVE · REC attiva';
+    return active ? `REC ${duration(active.elapsed_seconds)} · ${humanBytes(active.local_bytes || 0)}` : 'REC';
   }
-  return profile.live ? 'LIVE rilevata' : `Offline · ultima live ${ago(profile.last_seen_live_at)}`;
+  return profile.live ? 'LIVE' : `Offline · ${ago(profile.last_seen_live_at)}`;
 }
 
 function controlRoomLiveCard(profile, wall = false) {
@@ -1642,7 +1638,7 @@ function controlRoomLiveCard(profile, wall = false) {
   const publicUrl = safeUrl(source.source_url);
   const multi = profile.rows.length > 1 ? `<span class="cr-account-count">${profile.rows.length} account</span>` : '';
   const controls = wall ? '' : `<div class="cr-card-actions">
-      <button class="btn ${profile.focus ? 'accent' : 'soft'}" data-focus-toggle="${source.id}" type="button" aria-pressed="${profile.focus}">★ ${profile.focus ? 'Focus' : 'Metti in Focus'}</button>
+      <button class="btn ${profile.focus ? 'accent' : 'soft'}" data-focus-toggle="${source.id}" type="button" aria-pressed="${profile.focus}">★ Focus</button>
       <button class="btn soft" data-action="profile" data-id="${source.id}" type="button">Profilo</button>
       ${profile.blocked && source.pause_reason === 'global' ? '<button class="btn primary" data-cr-resume-global type="button">Riprendi REC</button>' : profile.blocked && source.pause_reason === 'source' ? `<button class="btn primary" data-action="toggle" data-id="${source.id}" type="button">Avvia REC</button>` : ''}
       ${publicUrl ? `<a class="btn soft" href="${esc(publicUrl)}" target="_blank" rel="noopener">Sorgente ↗</a>` : ''}
@@ -1651,7 +1647,7 @@ function controlRoomLiveCard(profile, wall = false) {
     ${controlRoomPreviewMarkup(profile, wall)}
     <div class="cr-live-body">
       <div class="cr-live-head"><div>${creatorLinkMarkup(source.id, profile.display_name, 'cr-live-name')}<div class="cr-live-provider">${esc(profile.providers.join(' · '))} ${multi}</div></div><strong class="cr-live-state">${esc(controlRoomStatusText(profile))}</strong></div>
-      ${profile.blocked ? `<div class="cr-blocked-note">⚠ Questa creator è LIVE ma al momento non viene registrata.${profile.last_error ? ` · ${esc(profile.last_error)}` : ''}</div>` : profile.last_error ? `<div class="cr-card-warning">${esc(profile.last_error)}</div>` : ''}
+      ${profile.last_error ? `<div class="cr-card-warning">${esc(profile.last_error)}</div>` : ''}
       ${controls}
     </div>
   </article>`;
@@ -1662,7 +1658,7 @@ function controlRoomCompactRow(profile, focus = false) {
   return `<article class="cr-compact-row ${focus ? 'focus' : ''}">
     <button class="cr-compact-focus ${profile.focus ? 'active' : ''}" data-focus-toggle="${source.id}" type="button" aria-label="${profile.focus ? 'Togli dal Focus' : 'Metti in Focus'}" aria-pressed="${profile.focus}">★</button>
     <div class="cr-compact-main">${creatorLinkMarkup(source.id, profile.display_name, 'cr-compact-name')}<span>${esc(profile.providers.join(' · '))}</span></div>
-    <span class="cr-compact-status">${profile.last_error ? '⚠ Da controllare' : profile.source.enabled ? `Offline · ${ago(profile.last_seen_live_at)}` : 'In pausa'}</span>
+    <span class="cr-compact-status">${profile.last_error ? '⚠ Errore' : profile.source.enabled ? `Offline · ${ago(profile.last_seen_live_at)}` : 'In pausa'}</span>
     <button class="btn quiet" data-action="check" data-id="${source.id}" type="button">Controlla</button>
   </article>`;
 }
@@ -1674,7 +1670,7 @@ function ensureControlRoomWall() {
   wall.id = 'controlRoomWall';
   wall.className = 'cr-wall hidden';
   wall.setAttribute('aria-label', 'Live Wall');
-  wall.innerHTML = `<header class="cr-wall-header"><div><div class="eyebrow">CONTROL ROOM</div><h2>Live Wall</h2><span id="crWallCount">0 live</span></div><button class="btn soft" data-live-wall-close type="button">Chiudi</button></header><div id="crWallGrid" class="cr-wall-grid"></div>`;
+  wall.innerHTML = `<header class="cr-wall-header"><div><h2>Live Wall</h2><span id="crWallCount">0 live</span></div><button class="btn soft" data-live-wall-close type="button">Chiudi</button></header><div id="crWallGrid" class="cr-wall-grid"></div>`;
   document.body.append(wall);
   return wall;
 }
@@ -1688,7 +1684,7 @@ function renderControlRoomWall(profiles = controlRoomProfileRows()) {
   $('#crWallCount').textContent = `${live.length} ${live.length === 1 ? 'live' : 'live'}`;
   const grid = $('#crWallGrid');
   grid.className = `cr-wall-grid ${live.length >= 7 ? 'dense' : ''}`;
-  grid.innerHTML = live.length ? live.map(profile => controlRoomLiveCard(profile, true)).join('') : '<div class="cr-wall-empty">Nessuna creator live in questo momento.</div>';
+  grid.innerHTML = live.length ? live.map(profile => controlRoomLiveCard(profile, true)).join('') : '<div class="cr-wall-empty">Nessuna live.</div>';
 }
 
 const baseRenderSourcesV26 = renderSources;
@@ -1707,7 +1703,7 @@ renderSources = function renderSourcesControlRoom() {
     const title = panelHead.querySelector('h2');
     const note = panelHead.querySelector('p');
     if (title) title.textContent = 'Control Room';
-    if (note) note.textContent = 'Le creator LIVE salgono automaticamente in primo piano.';
+    if (note) note.remove();
   }
   if (!profiles.length) {
     root.innerHTML = '<div class="empty">Nessuna sorgente attiva. Quelle archiviate restano disponibili nella Libreria.</div>';
@@ -1719,13 +1715,13 @@ renderSources = function renderSourcesControlRoom() {
       <button class="btn accent" data-live-wall type="button" ${live.length ? '' : 'disabled'}>▦ Live Wall</button>
     </div>
     <section class="cr-live-section">
-      <div class="cr-section-head"><div><div class="eyebrow">LIVE ADESSO</div><h3>${live.length ? `${live.length} ${live.length === 1 ? 'creator online' : 'creator online'}` : 'Nessuna creator live'}</h3></div>${blockedCount ? `<span class="cr-attention-count">⚠ ${blockedCount} non registrata${blockedCount === 1 ? '' : 'e'}</span>` : ''}</div>
-      ${live.length ? `<div class="cr-live-grid">${live.map(profile => controlRoomLiveCard(profile)).join('')}</div>` : '<div class="cr-live-empty">Quando una creator diventa LIVE comparirà automaticamente qui, sopra a tutte le offline.</div>'}
+      <div class="cr-section-head"><div><h3>Live</h3></div>${blockedCount ? `<span class="cr-attention-count">⚠ ${blockedCount} non registrata${blockedCount === 1 ? '' : 'e'}</span>` : ''}</div>
+      ${live.length ? `<div class="cr-live-grid">${live.map(profile => controlRoomLiveCard(profile)).join('')}</div>` : '<div class="cr-live-empty">Nessuna live.</div>'}
     </section>
-    ${offlineFocus.length ? `<section class="cr-focus-section"><div class="cr-section-head"><div><div class="eyebrow">FOCUS</div><h3>Creator fissate</h3></div><span class="count">${offlineFocus.length}</span></div><div class="cr-compact-list">${offlineFocus.map(profile => controlRoomCompactRow(profile, true)).join('')}</div></section>` : ''}
+    ${offlineFocus.length ? `<section class="cr-focus-section"><div class="cr-section-head"><div><h3>Focus</h3></div><span class="count">${offlineFocus.length}</span></div><div class="cr-compact-list">${offlineFocus.map(profile => controlRoomCompactRow(profile, true)).join('')}</div></section>` : ''}
     <details id="controlRoomOffline" class="cr-offline" ${controlRoomOfflineOpen ? 'open' : ''}>
-      <summary><span><strong>Altre creator</strong><small>Offline, in pausa o senza attività corrente</small></span><span class="count">${offline.length}</span></summary>
-      <div class="cr-compact-list">${offline.length ? offline.map(profile => controlRoomCompactRow(profile)).join('') : '<div class="empty compact">Nessun’altra creator.</div>'}</div>
+      <summary><span><strong>Altre creator</strong></span><span class="count">${offline.length}</span></summary>
+      <div class="cr-compact-list">${offline.length ? offline.map(profile => controlRoomCompactRow(profile)).join('') : '<div class="empty compact">Vuoto.</div>'}</div>
     </details>`;
   renderControlRoomWall(profiles);
 };

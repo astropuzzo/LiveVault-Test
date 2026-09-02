@@ -15,9 +15,7 @@
   <section id="login" class="login-shell hidden">
     <form id="loginForm" class="login-card panel">
       <div class="logo">LV</div>
-      <div class="eyebrow">PRIVATE REMOTE RECORDER</div>
       <h1>LiveVault</h1>
-      <p>Registrazione, archivio e distribuzione cloud in un unico spazio privato.</p>
       <label class="field"><span>Password</span><input id="password" type="password" autocomplete="current-password" required autofocus></label>
       <button class="btn primary wide" type="submit">Accedi</button>
       <div id="loginError" class="error-text" aria-live="polite"></div>
@@ -48,7 +46,7 @@
     <main class="shell">
       <div id="dashboardView" class="view-section" data-page="dashboard">
         <section class="page-head">
-          <div><div class="eyebrow">CONTROLLO</div><h1>Dashboard</h1><p id="lastRefresh">Caricamento…</p></div>
+          <div><h1>Dashboard</h1><p id="lastRefresh">Caricamento…</p></div>
           <button id="showAddBtn" class="btn primary" type="button">Aggiungi sorgente</button>
         </section>
 
@@ -77,19 +75,19 @@
         </section>
 
         <section class="panel section">
-          <div class="section-head"><div><div class="eyebrow">MONITOR</div><h2>Sorgenti</h2><p>Stato operativo e controlli rapidi.</p></div><span id="sourceCount" class="count">0</span></div>
+          <div class="section-head"><div><h2>Sorgenti</h2></div><span id="sourceCount" class="count">0</span></div>
           <div id="sources" class="source-list"></div>
         </section>
 
         <section id="errorsPanel" class="panel section hidden">
-          <div class="section-head"><div><div class="eyebrow danger-text">DIAGNOSTICA</div><h2>Errori recenti</h2></div><span id="diagnosticCount" class="count danger">0</span></div>
+          <div class="section-head"><div><h2>Errori recenti</h2></div><span id="diagnosticCount" class="count danger">0</span></div>
           <pre id="errors"></pre>
         </section>
       </div>
 
       <div id="libraryView" class="view-section hidden" data-page="library">
         <section class="page-head">
-          <div><div class="eyebrow">ORGANIZZAZIONE</div><h1>Libreria</h1><p>Un profilo per persona, anche quando usa più provider.</p></div>
+          <div><h1>Libreria</h1></div>
           <div class="page-actions"><button id="manageLibraryBtn" class="btn soft" type="button">Categorie e raccolte</button><button id="libraryAddBtn" class="btn primary" type="button">Aggiungi sorgente</button></div>
         </section>
 
@@ -135,7 +133,7 @@
         </section>
 
         <section id="libraryTaxonomy" class="taxonomy panel hidden">
-          <div class="section-head"><div><div class="eyebrow">STRUTTURA</div><h2>Categorie e raccolte libreria</h2><p>Organizzazione editoriale. Le cartelle Gofile restano separate nelle impostazioni sorgente.</p></div><button id="closeLibraryManager" class="btn quiet" type="button">Chiudi</button></div>
+          <div class="section-head"><div><h2>Categorie e raccolte</h2></div><button id="closeLibraryManager" class="btn quiet" type="button">Chiudi</button></div>
           <div class="taxonomy-columns">
             <div>
               <h3>Categorie</h3>
@@ -163,23 +161,23 @@
 
       <div id="statisticsView" class="view-section hidden" data-page="statistics">
         <section class="page-head">
-          <div><div class="eyebrow">ANALISI</div><h1>Statistiche</h1><p>Tempo online, copertura registrazioni e andamento delle creator.</p></div>
+          <div><h1>Statistiche</h1></div>
           <label class="stats-range"><span>Periodo</span><select id="statisticsRange"><option value="7">7 giorni</option><option value="30" selected>30 giorni</option><option value="90">90 giorni</option><option value="365">365 giorni</option></select></label>
         </section>
         <section id="statisticsSummary" class="stats-summary-grid"></section>
         <section class="stats-chart-grid">
-          <article class="panel stats-chart-card"><div class="section-head"><div><div class="eyebrow">ANDAMENTO</div><h2>Online vs registrato</h2><p>Tempo rilevato online e tempo effettivamente acquisito.</p></div><div class="chart-legend"><span class="online">Online</span><span class="recorded">Registrato</span></div></div><div id="statisticsDailyChart" class="chart-host"></div></article>
-          <article class="panel stats-chart-card"><div class="section-head"><div><div class="eyebrow">ORARI</div><h2>Distribuzione giornaliera</h2><p>In quali ore le creator risultano più spesso online.</p></div></div><div id="statisticsHourlyChart" class="chart-host"></div></article>
+          <article class="panel stats-chart-card"><div class="section-head"><div><h2>Online vs registrato</h2></div><div class="chart-legend"><span class="online">Online</span><span class="recorded">Registrato</span></div></div><div id="statisticsDailyChart" class="chart-host"></div></article>
+          <article class="panel stats-chart-card"><div class="section-head"><div><h2>Distribuzione giornaliera</h2></div></div><div id="statisticsHourlyChart" class="chart-host"></div></article>
         </section>
-        <section class="panel section"><div class="section-head"><div><div class="eyebrow">CREATOR</div><h2>Confronto</h2><p>Ordinate per tempo online nel periodo selezionato.</p></div></div><div id="statisticsLeaderboard" class="stats-leaderboard"></div><p id="statisticsNote" class="stats-note"></p></section>
+        <section class="panel section"><div class="section-head"><div><h2>Creator</h2></div></div><div id="statisticsLeaderboard" class="stats-leaderboard"></div><p id="statisticsNote" class="stats-note"></p></section>
       </div>
 
       <div id="archiveView" class="view-section hidden" data-page="archive">
         <section class="page-head">
-          <div><div class="eyebrow">CONSERVAZIONE</div><h1>Archivio</h1><p>File locali, integrità e copie cloud.</p></div>
+          <div><h1>Archivio</h1></div>
         </section>
         <section id="archive" class="panel section">
-          <div class="section-head"><div><h2>Registrazioni</h2><p>Miniature, anteprima locale, conversione e gestione upload.</p></div><span id="providerRoute" class="route">—</span></div>
+          <div class="section-head"><div><h2>Registrazioni</h2></div><span id="providerRoute" class="route">—</span></div>
           <div class="toolbar">
             <input id="recordingSearch" type="search" placeholder="Cerca sorgente, sessione o file…">
             <select id="recordingStatus">
@@ -200,16 +198,16 @@
   <div id="sourceModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="sourceModalTitle">
     <div class="backdrop" data-close-modal="source"></div>
     <form id="sourceForm" class="modal-card panel">
-      <div class="modal-head"><div><div class="eyebrow">SORGENTE</div><h2 id="sourceModalTitle">Aggiungi sorgente</h2></div><button class="icon-btn" type="button" data-close-modal="source" aria-label="Chiudi">×</button></div>
+      <div class="modal-head"><div><h2 id="sourceModalTitle">Aggiungi sorgente</h2></div><button class="icon-btn" type="button" data-close-modal="source" aria-label="Chiudi">×</button></div>
       <input id="sourceId" type="hidden">
       <label class="field"><span>Nome</span><input id="sourceName" maxlength="120" required></label>
-      <label id="sourceProfileField" class="field"><span>Collega a profilo esistente (opzionale)</span><select id="sourceProfile"><option value="">Crea un nuovo profilo</option></select><small>Più account della stessa persona resteranno uniti nella Libreria.</small></label>
+      <label id="sourceProfileField" class="field"><span>Profilo (opzionale)</span><select id="sourceProfile"><option value="">Nuovo profilo</option></select></label>
       <label class="field"><span>Provider</span><select id="sourcePlatform"><option value="auto">Rileva automaticamente</option></select></label>
-      <label class="field"><span id="sourceInputLabel">Username Chaturbate o URL della live</span><input id="sourceSlug" maxlength="1000" placeholder="Username oppure https://..." required><small>Incolla il link: LiveVault sceglie l'adapter disponibile.</small></label>
+      <label class="field"><span id="sourceInputLabel">Username Chaturbate o URL della live</span><input id="sourceSlug" maxlength="1000" placeholder="Username oppure https://..." required></label>
       <label class="field"><span>Qualità</span><select id="sourceQuality"><option value="best">Best</option><option value="1080p">1080p</option><option value="720p">720p</option><option value="480p">480p</option></select></label>
       <div class="source-preflight"><button id="testSourceBtn" class="btn soft" type="button">Testa sorgente</button><span id="sourceTestResult" aria-live="polite"></span></div>
       <label class="check"><input id="sourceOrganizeCloud" type="checkbox"><span>Una cartella Gofile stabile per questa sorgente</span></label>
-      <label class="field"><span>Gofile Folder ID esistente (opzionale)</span><input id="sourceGofileFolder" maxlength="200"><small>Vuoto = LiveVault crea automaticamente la cartella.</small></label>
+      <label class="field"><span>Gofile Folder ID (opzionale)</span><input id="sourceGofileFolder" maxlength="200"></label>
       <label class="field"><span>Link cartella Gofile (opzionale)</span><input id="sourceGofileFolderUrl" type="url" maxlength="500" placeholder="https://gofile.io/d/..."></label>
       <label class="check"><input id="sourceConsent" type="checkbox"><span>Confermo di avere l'autorizzazione alla registrazione.</span></label>
       <div id="sourceError" class="error-text" aria-live="polite"></div>
@@ -228,7 +226,7 @@
   <div id="settingsModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
     <div class="backdrop" data-close-modal="settings"></div>
     <form id="settingsForm" class="modal-card settings-card panel">
-      <div class="modal-head sticky"><div><div class="eyebrow">CONFIGURAZIONE</div><h2 id="settingsTitle">Impostazioni</h2><p>Le modifiche sono applicate in tempo reale.</p></div><button class="icon-btn" type="button" data-close-modal="settings" aria-label="Chiudi">×</button></div>
+      <div class="modal-head sticky"><div><h2 id="settingsTitle">Impostazioni</h2></div><button class="icon-btn" type="button" data-close-modal="settings" aria-label="Chiudi">×</button></div>
       <div class="settings-section"><h3>Registrazione</h3><div class="form-grid">
         <label class="field"><span>Segmento (minuti)</span><input id="setSegment" type="number" min="5" max="120"></label><label class="field"><span>Dimensione massima file (GB)</span><input id="setSegmentMax" type="number" min="0.25" max="2" step="0.05"><small>Limite rigido massimo: 2 GB.</small></label><label class="field"><span>Container</span><select id="setContainer"><option value="mp4">MP4 diretto (consigliato)</option><option value="mkv">MKV</option></select></label><label class="field"><span>Polling sorgenti (sec)</span><input id="setPoll" type="number" min="15" max="600"></label><label class="field"><span>Controlli contemporanei</span><input id="setProbe" type="number" min="1" max="12"></label><label class="field"><span>Integrità</span><select id="setIntegrity"><option value="packet">Packet scan + SHA-256</option><option value="quick">FFprobe + SHA-256</option></select></label><label class="check span2"><input id="setThumbs" type="checkbox"><span>Genera miniature e mantienile dopo la rimozione del video locale</span></label>
       </div></div>
@@ -244,7 +242,7 @@
     </form>
   </div>
 
-  <div id="videoModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="videoTitle"><div class="backdrop" data-close-modal="video"></div><div class="modal-card video-card panel"><div class="modal-head"><div><div class="eyebrow">ANTEPRIMA</div><h2 id="videoTitle">Video</h2></div><button class="icon-btn" type="button" data-close-modal="video" aria-label="Chiudi">×</button></div><video id="videoPlayer" controls preload="metadata"></video></div></div>
+  <div id="videoModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="videoTitle"><div class="backdrop" data-close-modal="video"></div><div class="modal-card video-card panel"><div class="modal-head"><div><h2 id="videoTitle">Video</h2></div><button class="icon-btn" type="button" data-close-modal="video" aria-label="Chiudi">×</button></div><video id="videoPlayer" controls preload="metadata"></video></div></div>
   <aside id="livePauseAlert" class="live-pause-alert hidden" aria-live="assertive" aria-label="Creator live non registrate"></aside>
   <div id="toastRegion" class="toasts" aria-live="polite"></div>
   <script src="/static/app.js" defer></script>

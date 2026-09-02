@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.7.1 — 2026-09-02
+
+- Ripulita l'interfaccia dal copy descrittivo e ridondante: titoli, stati, numeri e azioni restano; spiegazioni ovvie e sottotitoli duplicati vengono rimossi.
+- Compattati Control Room, Live Wall, profili, statistiche, Libreria, Archivio, modali e avviso LIVE non REC.
+- Mantenuti soltanto avvisi operativi, conferme distruttive e note tecniche necessarie all'uso sicuro delle funzioni.
+
 ## 2.7.0 — 2026-09-02
 
 - Dashboard trasformata in **Control Room**: le creator LIVE salgono automaticamente in una zona dedicata sopra alle offline.

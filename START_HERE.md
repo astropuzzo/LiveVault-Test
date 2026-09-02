@@ -1,4 +1,4 @@
-# LiveVault v2.7.0 — START HERE
+# LiveVault v2.7.1 — START HERE
 
 Guida breve per avviare LiveVault su una normale VPS Linux. Non dipende da un provider cloud specifico.
 
