@@ -4,9 +4,6 @@ on:
   push:
   pull_request:
 
-permissions:
-  contents: write
-
 concurrency:
   group: livevault-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -27,8 +24,6 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y ffmpeg
       - name: Install dependencies
         run: pip install -r requirements-dev.txt
-      - name: Apply v2.8.0 Live Intelligence
-        run: python scripts/apply_v280_live_intelligence.py
       - name: Compile Python
         run: python -m compileall -q app tests
       - name: Run tests
@@ -37,18 +32,6 @@ jobs:
         run: node --check app/static/app.js
       - name: Check shell scripts
         run: bash -n scripts/*.sh
-      - name: Publish verified v2.8.0 branch
-        if: github.event_name == 'push' && github.ref == 'refs/heads/feature/v2.8-live-intelligence'
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          cp .github/ci.v280.normal.yml .github/workflows/ci.yml
-          rm .github/ci.v280.normal.yml
-          rm scripts/apply_v280_live_intelligence.py
-          git add -A
-          git diff --cached --quiet && exit 0
-          git commit -m "feat(ui): add live pulse DNA and grouped archive"
-          git push origin HEAD:feature/v2.8-live-intelligence
 
   deploy:
     name: Deploy verified main

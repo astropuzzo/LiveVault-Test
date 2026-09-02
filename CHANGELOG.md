@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.8.0 — 2026-09-02
+
+- **Live Pulse**: timeline operativa delle ultime 12 ore con live correnti, sessioni concluse, copertura REC e sessioni perse.
+- Le card della Control Room seguono ora il ciclo della sessione: LIVE/REC durante l'acquisizione, poi terminata, upload e salvata per le sessioni appena concluse.
+- **Live DNA** nei profili: impronta settimanale e oraria, durata media, ora di picco e copertura.
+- Archivio ridisegnato a gruppi collassabili per **giorno, creator o sessione**, con filtri per periodo, creator, provider, locale/cloud, stato e ordinamento.
+- L'Archivio mostra un numero limitato di gruppi alla volta con caricamento progressivo, evitando una lista visivamente infinita.
+
 ## 2.7.1 — 2026-09-02
 
 - Ripulita l'interfaccia dal copy descrittivo e ridondante: titoli, stati, numeri e azioni restano; spiegazioni ovvie e sottotitoli duplicati vengono rimossi.
