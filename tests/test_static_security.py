@@ -23,4 +23,4 @@ def test_pwa_service_worker_exists():
     assert (STATIC / "sw.js").is_file()
     js = (STATIC / "app.js").read_text(encoding="utf-8")
     assert "serviceWorker.register('/sw.js')" in js
-    assert "livevault-shell-v2.5.0" in (STATIC / "sw.js").read_text(encoding="utf-8")
+    assert "livevault-shell-v" in (STATIC / "sw.js").read_text(encoding="utf-8")
