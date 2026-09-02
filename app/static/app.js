@@ -437,7 +437,7 @@ function renderLibrary() {
         <div class="library-tags">${tagMarkup(profile.categories)}${tagMarkup(profile.collections, 'library-tag collection')}</div>
         <div class="library-stats"><span><strong>${profile.recording_count}</strong> file</span><span><strong>${profile.session_count}</strong> sessioni</span><span><strong>${humanBytes(profile.total_bytes)}</strong></span><span><strong>${profile.uploaded_count}</strong> cloud</span></div>
         <div class="library-recency">${profile.last_recording_at ? `Ultima registrazione ${esc(ago(profile.last_recording_at))}` : 'Nessuna registrazione'} · live ${esc(ago(profile.last_seen_live_at || profile.last_live_at))}</div>
-        <div class="library-actions"><button class="btn primary" data-lib-action="profile" data-id="${profile.representative_id}" type="button">Apri profilo</button><button class="btn soft" data-lib-action="archive" data-id="${profile.representative_id}" type="button">Archivio</button>${profile.archived ? `<button class="btn soft" data-lib-action="restore" data-id="${profile.representative_id}" type="button">Ripristina</button>` : ''}</div>
+        <div class="library-actions"><button class="btn primary" data-lib-action="profile" data-id="${profile.representative_id}" type="button">Apri profilo</button><button class="btn soft" data-lib-action="archive" data-id="${profile.representative_id}" type="button">Archivio</button>${profile.archived ? `<button class="btn soft" data-lib-action="restore" data-id="${profile.representative_id}" type="button">Ripristina</button>` : ''}<button class="btn danger" data-lib-action="delete-profile" data-id="${profile.representative_id}" type="button">Elimina definitivamente</button></div>
       </div>
     </article>`;
   }).join('');
@@ -532,7 +532,7 @@ function renderProfile() {
     <section class="profile-section"><div class="profile-section-head"><h3>Account e provider</h3><button class="btn soft" data-profile-action="add-source" data-id="${profile.profile_id}" type="button">Collega nuova sorgente</button></div><div class="linked-list">${linked}</div></section>
     <section class="profile-section"><div class="profile-section-head"><h3>Registrazioni recenti</h3><button class="btn quiet" data-profile-action="archive" data-id="${profile.id}" type="button">Apri archivio</button></div><div class="profile-recordings">${recent}</div></section>
     <section class="profile-section"><div class="profile-section-head"><h3>Timeline</h3></div><ol class="timeline">${timeline}</ol></section>
-    <div class="profile-save"><span id="profileSaveError" class="error-text"></span><button class="btn primary" data-profile-action="save" data-id="${profile.id}" type="button">Salva profilo</button></div>`;
+    <div class="profile-save"><button class="btn danger" data-profile-action="delete-profile" data-id="${profile.profile_id}" type="button">Elimina creator definitivamente</button><span id="profileSaveError" class="error-text"></span><button class="btn primary" data-profile-action="save" data-id="${profile.id}" type="button">Salva profilo</button></div>`;
 }
 
 async function saveProfile(button) {
@@ -1103,6 +1103,13 @@ $('#librarySources').addEventListener('click', async event => {
     } else if (action === 'restore') {
       await api(`/api/sources/${sourceId}`, {method: 'PATCH', body: JSON.stringify({enabled: true})});
       toast('Sorgente ripristinata');
+    } else if (action === 'delete-profile') {
+      const profile = profileForId(source.profile_id);
+      const name = profile?.display_name || source.display_name || source.name;
+      if (!confirm(`Eliminare definitivamente la creator ${name}? Verranno rimossi il profilo e tutte le sorgenti collegate. Le registrazioni già salvate e i file locali/cloud RESTANO nell'Archivio. Questa operazione non può essere annullata.`)) return;
+      const response = await api(`/api/library/profiles/${source.profile_id}`, {method: 'DELETE'});
+      selectedProfiles.delete(Number(source.profile_id));
+      toast(`Creator eliminata definitivamente${response.preserved_recordings ? ` · ${response.preserved_recordings} registrazioni conservate` : ''}`);
     }
     await refresh({includeRecordings: false});
   } catch (error) { toast(error.message, 'bad'); }
@@ -1207,6 +1214,23 @@ $('#profileContent').addEventListener('click', async event => {
     const sourceId = profileData.source.id;
     closeModal('profileModal');
     return setSourceFilter(sourceId);
+  }
+  if (action === 'delete-profile') {
+    const profile = profileData.source;
+    if (!confirm(`Eliminare definitivamente la creator ${profile.display_name}? Verranno rimossi il profilo e tutte le sorgenti collegate. Le registrazioni già salvate e i file locali/cloud RESTANO nell'Archivio. Questa operazione non può essere annullata.`)) return;
+    setBusy(button, true, 'Eliminazione…');
+    try {
+      const response = await api(`/api/library/profiles/${profile.profile_id}`, {method: 'DELETE'});
+      selectedProfiles.delete(Number(profile.profile_id));
+      closeModal('profileModal');
+      profileData = null;
+      toast(`Creator eliminata definitivamente${response.preserved_recordings ? ` · ${response.preserved_recordings} registrazioni conservate` : ''}`);
+      await refresh({includeRecordings: false});
+    } catch (error) {
+      toast(error.message, 'bad');
+      setBusy(button, false);
+    }
+    return;
   }
   if (action === 'edit-source') {
     const source = sources.find(item => item.id === Number(button.dataset.id));

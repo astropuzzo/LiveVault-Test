@@ -42,7 +42,7 @@ BASE = Path(__file__).parent
 LOGIN_FAILURES: dict[str, deque[float]] = defaultdict(deque)
 LOGIN_WINDOW = 10 * 60
 LOGIN_MAX_FAILURES = 6
-VERSION = "2.5.1"
+VERSION = "2.5.2"
 
 
 class LoginBody(BaseModel):
@@ -1048,6 +1048,56 @@ async def bulk_sources(body: SourceBulkAction, request: Request):
         "updated": len(profile_ids),
         "profile_ids": profile_ids,
         "source_ids": affected_source_ids or requested_source_ids,
+    }
+
+
+@app.delete("/api/library/profiles/{profile_id}")
+async def delete_profile(profile_id: int, request: Request):
+    """Permanently remove a creator profile and its source configuration.
+
+    Recording rows and their local/cloud files are intentionally preserved so
+    deleting a creator from the library cannot destroy captured media.
+    """
+    require_auth(request)
+    with db_session() as db:
+        profile = db.get(Profile, profile_id)
+        if not profile:
+            raise HTTPException(404, "Profilo non trovato")
+        linked_sources = list(db.scalars(
+            select(Source).where(Source.profile_id == profile_id).order_by(Source.id)
+        ).all())
+        source_ids = [source.id for source in linked_sources]
+        preserved_recordings = int(db.scalar(
+            select(func.count()).select_from(Recording).where(Recording.source_id.in_(source_ids))
+        ) or 0) if source_ids else 0
+        now = utcnow()
+        for source in linked_sources:
+            source.enabled = False
+            source.archived = True
+            source.last_status = "archived"
+            source.status_changed_at = now
+
+    if source_ids:
+        await asyncio.gather(*(manager.stop_source(source_id) for source_id in source_ids))
+
+    with db_session() as db:
+        profile = db.get(Profile, profile_id)
+        if not profile:
+            raise HTTPException(404, "Profilo non trovato")
+        # sources.profile_id is a real FK, so source configuration goes first.
+        # Recording rows deliberately remain as immutable archive history.
+        db.execute(delete(Source).where(Source.profile_id == profile_id))
+        db.execute(delete(ProfileCategory).where(ProfileCategory.profile_id == profile_id))
+        db.execute(delete(CollectionProfile).where(CollectionProfile.profile_id == profile_id))
+        db.delete(profile)
+
+    manager.wake()
+    return {
+        "ok": True,
+        "deleted": True,
+        "profile_id": profile_id,
+        "source_ids": source_ids,
+        "preserved_recordings": preserved_recordings,
     }
 
 

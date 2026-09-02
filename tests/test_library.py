@@ -266,6 +266,58 @@ def test_source_with_history_is_archived_instead_of_orphaning_recordings(library
     assert removed == {"ok": True, "archived": True}
 
 
+def test_permanent_profile_delete_removes_creator_config_but_preserves_recordings(library_db, monkeypatch):
+    profile_id, first_id, second_id = _seed_shared_profile(library_db)
+    with library_db.begin() as session:
+        category = Category(name="Delete category", color="#112233")
+        collection = Collection(name="Delete collection", description="", color="#445566", pinned=False)
+        session.add_all([category, collection])
+        session.flush()
+        session.add(ProfileCategory(profile_id=profile_id, category_id=category.id))
+        session.add(CollectionProfile(profile_id=profile_id, collection_id=collection.id))
+        recording = Recording(
+            source_id=first_id,
+            source_name="performer_cb",
+            session_id="session-preserved",
+            local_path="/data/recordings/preserved.mp4",
+            filename="preserved.mp4",
+            started_at=datetime(2026, 9, 2, tzinfo=timezone.utc),
+        )
+        session.add(recording)
+        session.flush()
+        recording_id = recording.id
+
+    stopped = []
+
+    async def stop_source(source_id):
+        stopped.append(source_id)
+
+    monkeypatch.setattr(main.manager, "stop_source", stop_source)
+    monkeypatch.setattr(main.manager, "wake", lambda: None)
+
+    result = asyncio.run(main.delete_profile(profile_id, object()))
+
+    with library_db() as session:
+        assert session.get(Profile, profile_id) is None
+        assert session.get(Source, first_id) is None
+        assert session.get(Source, second_id) is None
+        assert session.scalar(select(func.count()).select_from(ProfileCategory).where(ProfileCategory.profile_id == profile_id)) == 0
+        assert session.scalar(select(func.count()).select_from(CollectionProfile).where(CollectionProfile.profile_id == profile_id)) == 0
+        preserved = session.get(Recording, recording_id)
+        assert preserved is not None
+        assert preserved.source_id == first_id
+        assert preserved.filename == "preserved.mp4"
+
+    assert stopped == [first_id, second_id]
+    assert result == {
+        "ok": True,
+        "deleted": True,
+        "profile_id": profile_id,
+        "source_ids": [first_id, second_id],
+        "preserved_recordings": 1,
+    }
+
+
 def test_library_validation_and_thumbnail_containment(tmp_path, monkeypatch):
     assert main._unique_positive_ids([3, 1, 3], "ids") == [1, 3]
     assert main._clean_color("#A0b1C2") == "#a0b1c2"

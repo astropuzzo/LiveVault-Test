@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.5.2 — 2026-09-02
+
+- Aggiunto **Elimina definitivamente** per le creator nella Libreria e nel profilo.
+- La cancellazione permanente rimuove profilo, categorie/raccolte collegate e tutte le configurazioni sorgente associate, fermando prima eventuali recorder attivi.
+- Le registrazioni già acquisite, i file locali e le copie cloud vengono deliberatamente conservati nell'Archivio per evitare perdita accidentale di media.
+- La conferma UI distingue chiaramente l'archiviazione reversibile dalla cancellazione definitiva della creator.
+
 ## 2.5.1 — 2026-09-02
 
 - Finalizza atomicamente gli MP4 frammentati prima dell'upload, con durata completa e indice `faststart` per lo streaming.
