@@ -50,7 +50,7 @@ BASE = Path(__file__).parent
 LOGIN_FAILURES: dict[str, deque[float]] = defaultdict(deque)
 LOGIN_WINDOW = 10 * 60
 LOGIN_MAX_FAILURES = 6
-VERSION = "2.7.1"
+VERSION = "2.8.0"
 
 
 class LoginBody(BaseModel):
@@ -1380,6 +1380,141 @@ def list_sources(request: Request):
                 "latest_cloud_url": latest_cloud.get(source.id, ""),
             })
         return result
+
+
+
+def _pulse_aware(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
+@app.get("/api/control-room/pulse")
+def control_room_pulse(request: Request, hours: int = 12):
+    require_auth(request)
+    hours = max(1, min(int(hours), 48))
+    now = utcnow()
+    window_start = now - timedelta(hours=hours)
+    with db_session() as db:
+        source_rows = list(db.scalars(
+            select(Source).where(Source.archived.is_(False)).order_by(Source.id)
+        ).all())
+        source_map = {int(row.id): row for row in source_rows}
+        source_ids = list(source_map)
+        profile_ids = sorted({int(row.profile_id) for row in source_rows if row.profile_id is not None})
+        profiles = {
+            int(row.id): row
+            for row in db.scalars(select(Profile).where(Profile.id.in_(profile_ids))).all()
+        } if profile_ids else {}
+        live_rows = list(db.scalars(
+            select(LiveSession).where(
+                LiveSession.source_id.in_(source_ids),
+                LiveSession.started_at <= now,
+                or_(LiveSession.ended_at.is_(None), LiveSession.ended_at >= window_start),
+            ).order_by(LiveSession.started_at.asc())
+        ).all()) if source_ids else []
+        recording_rows = list(db.scalars(
+            select(Recording).where(
+                Recording.source_id.in_(source_ids),
+                Recording.finalized_at >= window_start - timedelta(hours=2),
+            ).order_by(Recording.started_at.asc())
+        ).all()) if source_ids else []
+
+        by_profile: dict[int, list[dict]] = defaultdict(list)
+        sources_by_profile: dict[int, list[Source]] = defaultdict(list)
+        for source in source_rows:
+            if source.profile_id is not None:
+                sources_by_profile[int(source.profile_id)].append(source)
+
+        for session in live_rows:
+            source = source_map.get(int(session.source_id))
+            if not source or source.profile_id is None:
+                continue
+            started = _pulse_aware(session.started_at)
+            ended_real = _pulse_aware(session.ended_at)
+            ended = ended_real or now
+            if started is None or ended <= window_start or started > now:
+                continue
+            by_profile[int(source.profile_id)].append({
+                "started": max(started, window_start),
+                "ended": min(ended, now),
+                "open": ended_real is None,
+                "origin": str(session.origin or "probe"),
+            })
+
+        merged_by_profile: dict[int, list[dict]] = defaultdict(list)
+        for profile_id, intervals in by_profile.items():
+            for interval in sorted(intervals, key=lambda row: row["started"]):
+                merged = merged_by_profile[profile_id]
+                if merged and interval["started"] <= merged[-1]["ended"] + timedelta(seconds=75):
+                    merged[-1]["ended"] = max(merged[-1]["ended"], interval["ended"])
+                    merged[-1]["open"] = bool(merged[-1]["open"] or interval["open"])
+                    if interval["origin"] != "recording_backfill":
+                        merged[-1]["origin"] = interval["origin"]
+                else:
+                    merged.append(dict(interval))
+
+        sessions: list[dict] = []
+        for profile_id, intervals in merged_by_profile.items():
+            profile = profiles.get(profile_id)
+            linked = sources_by_profile.get(profile_id, [])
+            linked_ids = {int(row.id) for row in linked}
+            representative = next((row for row in linked if row.enabled), linked[0] if linked else None)
+            for interval in intervals:
+                started = interval["started"]
+                ended = interval["ended"]
+                overlapping = []
+                for recording in recording_rows:
+                    if int(recording.source_id) not in linked_ids:
+                        continue
+                    rec_start = _pulse_aware(recording.started_at)
+                    rec_end = _pulse_aware(recording.finalized_at)
+                    if rec_start is None or rec_end is None:
+                        continue
+                    if rec_start < ended and rec_end > started:
+                        overlapping.append(recording)
+                live_seconds = max(0.0, (ended - started).total_seconds())
+                recorded_seconds = sum(float(row.duration_seconds or 0.0) for row in overlapping)
+                file_count = len(overlapping)
+                uploaded_count = sum(1 for row in overlapping if row.upload_status == "uploaded")
+                failed_count = sum(1 for row in overlapping if row.upload_status in {"failed", "integrity_failed"})
+                total_bytes = sum(int(row.size_bytes or 0) for row in overlapping)
+                coverage = min(100.0, recorded_seconds / live_seconds * 100.0) if live_seconds > 0 else 0.0
+                if interval["open"]:
+                    state = "live"
+                elif file_count == 0:
+                    state = "missed"
+                elif uploaded_count == file_count:
+                    state = "saved"
+                else:
+                    state = "ended"
+                sessions.append({
+                    "id": f"p{profile_id}-{int(started.timestamp())}",
+                    "profile_id": profile_id,
+                    "representative_source_id": int(representative.id) if representative else None,
+                    "display_name": str(profile.display_name) if profile else (representative.name if representative else f"Profilo {profile_id}"),
+                    "started_at": _iso_utc(started),
+                    "ended_at": None if interval["open"] else _iso_utc(ended),
+                    "duration_seconds": round(live_seconds, 2),
+                    "recorded_seconds": round(recorded_seconds, 2),
+                    "coverage_percent": round(coverage, 1),
+                    "file_count": file_count,
+                    "uploaded_count": uploaded_count,
+                    "failed_count": failed_count,
+                    "total_bytes": total_bytes,
+                    "state": state,
+                    "origin": interval["origin"],
+                })
+
+    sessions.sort(key=lambda row: str(row["started_at"]), reverse=True)
+    return {
+        "hours": hours,
+        "window_start": _iso_utc(window_start),
+        "generated_at": _iso_utc(now),
+        "sessions": sessions[:120],
+    }
 
 
 @app.get("/api/sources/{source_id}/preview")
