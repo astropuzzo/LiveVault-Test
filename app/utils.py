@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import re
 import subprocess
+import tempfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -94,6 +96,8 @@ def probe_media(path: Path, *, require_audio: bool = True) -> IntegrityResult:
             return IntegrityResult(False, duration, "Nessuno stream audio/video valido trovato", streams)
         if require_audio and not has_audio:
             return IntegrityResult(False, duration, "Traccia audio assente: il file non verrà caricato come video muto", streams)
+        if path.suffix.lower() == ".mp4" and (duration is None or not math.isfinite(duration) or duration <= 0):
+            return IntegrityResult(False, duration, "Durata MP4 finale assente: file non pronto per lo streaming", streams)
         if path.stat().st_size <= 0:
             return IntegrityResult(False, duration, "File vuoto", streams)
         return IntegrityResult(True, duration, "", streams)
@@ -127,30 +131,79 @@ def media_duration(path: Path) -> float | None:
 
 
 def generate_thumbnail(path: Path, output: Path, duration: float | None = None) -> bool:
+    """Create a 2x2 storyboard from four evenly spaced moments.
+
+    Input-side seeks keep this inexpensive for hour-long recordings. The
+    previous single-frame extraction remains as a fallback for unusual media.
+    Writing to a temporary file makes regeneration atomic.
+    """
     output.parent.mkdir(parents=True, exist_ok=True)
+    if duration is None or not math.isfinite(duration) or duration <= 0:
+        duration = _probe_duration(path)
+
     seek = 0.5
-    if duration:
-        # Stay well inside short clips instead of seeking exactly to EOF.
+    seeks: list[float] = []
+    if duration and math.isfinite(duration) and duration > 0:
+        # Stay clear of the trailer while covering the complete recording.
+        safe_end = max(0.0, duration - min(1.0, duration * 0.05))
+        seeks = [safe_end * fraction for fraction in (0.10, 0.35, 0.60, 0.85)]
         seek = min(30.0, max(0.05, duration * 0.2))
+
+    with tempfile.NamedTemporaryFile(
+        dir=output.parent,
+        prefix=f".{output.stem}-",
+        suffix=output.suffix or ".jpg",
+        delete=False,
+    ) as temporary:
+        candidate = Path(temporary.name)
+
     try:
-        p = subprocess.run(
+        if seeks:
+            command = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y"]
+            for position in seeks:
+                command.extend(["-ss", f"{position:.3f}", "-i", str(path)])
+            cells = [
+                f"[{index}:v:0]scale=320:180:force_original_aspect_ratio=decrease,"
+                f"pad=320:180:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1[v{index}]"
+                for index in range(4)
+            ]
+            filters = ";".join(cells + [
+                "[v0][v1]hstack=inputs=2[top]",
+                "[v2][v3]hstack=inputs=2[bottom]",
+                "[top][bottom]vstack=inputs=2[sheet]",
+            ])
+            command.extend([
+                "-filter_complex", filters, "-map", "[sheet]", "-an",
+                "-frames:v", "1", "-update", "1", "-pix_fmt", "yuvj420p",
+                "-q:v", "4", str(candidate),
+            ])
+            result = subprocess.run(
+                command, capture_output=True, text=True, timeout=75, check=False,
+            )
+            if result.returncode == 0 and candidate.exists() and candidate.stat().st_size > 0:
+                candidate.replace(output)
+                return True
+
+        result = subprocess.run(
             [
                 "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
                 "-ss", f"{seek:.2f}", "-i", str(path), "-frames:v", "1",
-                "-vf", "scale=480:-2:force_original_aspect_ratio=decrease",
-                "-pix_fmt", "yuvj420p", "-strict", "unofficial",
-                "-q:v", "4", str(output),
+                "-vf", "scale=640:360:force_original_aspect_ratio=decrease,"
+                "pad=640:360:(ow-iw)/2:(oh-ih)/2:color=black",
+                "-an", "-update", "1", "-pix_fmt", "yuvj420p",
+                "-q:v", "4", str(candidate),
             ],
             capture_output=True,
             text=True,
             timeout=60,
             check=False,
         )
-        if p.returncode == 0 and output.exists() and output.stat().st_size > 0:
+        if result.returncode == 0 and candidate.exists() and candidate.stat().st_size > 0:
+            candidate.replace(output)
             return True
     except Exception:
         pass
-    output.unlink(missing_ok=True)
+    candidate.unlink(missing_ok=True)
     return False
 
 

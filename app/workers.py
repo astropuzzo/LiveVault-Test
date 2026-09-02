@@ -10,12 +10,25 @@ from sqlalchemy import func, select
 
 from .config import settings
 from .db import Recording, Source, db_session
-from .recorder import RecorderSession, start_recorder, stop_recorder
+from .recorder import (
+    RecorderSession,
+    finalize_mp4_for_streaming,
+    mp4_is_streaming_ready,
+    start_recorder,
+    stop_recorder,
+)
 from .settings_store import runtime
 from .source_providers import probe
 from .storage import disk_state
-from .uploaders import create_gofile_folder, provider_available, upload
+from .uploaders import UploadCancelled, create_gofile_folder, provider_available, upload
 from .utils import generate_thumbnail, human_bytes, safe_name, sha256_file, utcnow, verify_media
+
+try:
+    import fcntl as _fcntl
+except ImportError:  # pragma: no cover - production containers are Linux
+    _fcntl = None
+
+RETRYABLE_MEDIA_ERRORS = ("scadut", "timeout", "timed out", "tempor")
 
 
 class WorkerManager:
@@ -23,6 +36,8 @@ class WorkerManager:
         self.active: dict[int, RecorderSession] = {}
         self.watch_tasks: dict[int, asyncio.Task] = {}
         self.tasks: list[asyncio.Task] = []
+        self._leader_task: asyncio.Task | None = None
+        self._leader_file = None
         self._stopping = False
         self._wake_event = asyncio.Event()
         self.last_errors: dict[str, str] = {}
@@ -30,24 +45,74 @@ class WorkerManager:
         self.upload_current: dict | None = None
         self._retry_after: dict[int, float] = {}
         self._source_check_locks: dict[int, asyncio.Lock] = {}
+        self._mp4_finalize_lock = asyncio.Lock()
         self.backfill_task: asyncio.Task | None = None
 
     async def start(self) -> None:
         self._stopping = False
         self.started_at = utcnow()
-        self._recover_interrupted_uploads()
-        await self._recover_orphans()
-        self.tasks = [
-            asyncio.create_task(self._poll_loop(), name="source-poller"),
-            asyncio.create_task(self._upload_loop(), name="uploader"),
-            asyncio.create_task(self._cleanup_loop(), name="storage-guard"),
-        ]
-        self.backfill_task = asyncio.create_task(self._backfill_thumbnails(), name="thumbnail-backfill")
+        self.tasks = []
+        self._leader_task = asyncio.create_task(self._leader_loop(), name="worker-leader")
+        await asyncio.sleep(0)
+
+    def _try_worker_leadership(self) -> bool:
+        lock_path = settings.data_dir / ".livevault-worker.lock"
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        handle = lock_path.open("a+")
+        if _fcntl is not None:
+            try:
+                _fcntl.flock(handle.fileno(), _fcntl.LOCK_EX | _fcntl.LOCK_NB)
+            except BlockingIOError:
+                handle.close()
+                return False
+        self._leader_file = handle
+        return True
+
+    def _release_worker_leadership(self) -> None:
+        handle = self._leader_file
+        self._leader_file = None
+        if not handle:
+            return
+        if _fcntl is not None:
+            with contextlib.suppress(OSError):
+                _fcntl.flock(handle.fileno(), _fcntl.LOCK_UN)
+        with contextlib.suppress(OSError):
+            handle.close()
+
+    async def _leader_loop(self) -> None:
+        try:
+            while not self._stopping:
+                if self._leader_file is None and not self._try_worker_leadership():
+                    await asyncio.sleep(1)
+                    continue
+                self._recover_interrupted_uploads()
+                await self._recover_orphans()
+                if self._stopping:
+                    return
+                self.tasks = [
+                    asyncio.create_task(self._poll_loop(), name="source-poller"),
+                    asyncio.create_task(self._upload_loop(), name="uploader"),
+                    asyncio.create_task(self._cleanup_loop(), name="storage-guard"),
+                ]
+                self.backfill_task = asyncio.create_task(self._maintenance_backfill(), name="maintenance-backfill")
+                await asyncio.gather(*self.tasks)
+                return
+        finally:
+            # During shutdown, blocking upload threads may still be winding down.
+            # Keep the flock until process exit so a replacement cannot duplicate work.
+            if not self._stopping:
+                self._release_worker_leadership()
 
     async def stop(self) -> None:
         self._stopping = True
         self._wake_event.set()
         await self.stop_all_recordings()
+        uploader_task = next((task for task in self.tasks if task.get_name() == "uploader"), None)
+        if uploader_task and not uploader_task.done():
+            with contextlib.suppress(Exception):
+                await asyncio.wait_for(asyncio.shield(uploader_task), timeout=5)
+        if self._leader_task and not self._leader_task.done():
+            self._leader_task.cancel()
         for task in self.tasks:
             task.cancel()
         for task in list(self.watch_tasks.values()):
@@ -59,6 +124,10 @@ class WorkerManager:
         if self.backfill_task:
             with contextlib.suppress(Exception):
                 await asyncio.gather(self.backfill_task, return_exceptions=True)
+        if self._leader_task:
+            with contextlib.suppress(Exception):
+                await asyncio.gather(self._leader_task, return_exceptions=True)
+        self.started_at = None
 
     def wake(self) -> None:
         self._wake_event.set()
@@ -73,23 +142,30 @@ class WorkerManager:
             if not source:
                 return False
             db.expunge(source)
+        if self._leader_task is not None and self._leader_file is None:
+            return True
         await self._check_source(source, asyncio.Semaphore(1))
         return True
 
     def health(self) -> dict:
+        live_tasks = ([self._leader_task] if self._leader_task else []) + self.tasks
         return {
             "started": self.started_at is not None,
-            "tasks": {task.get_name(): not task.done() for task in self.tasks},
+            "tasks": {task.get_name(): not task.done() for task in live_tasks},
+            "leader": self._leader_file is not None,
+            "mode": "leader" if self._leader_file is not None else "standby",
             "active_recorders": len(self.active),
             "thumbnail_backfill": "done" if self.backfill_task and self.backfill_task.done() else "running" if self.backfill_task else "idle",
         }
 
     def _recover_interrupted_uploads(self) -> None:
         with db_session() as db:
-            rows = list(db.scalars(select(Recording).where(Recording.upload_status == "uploading")).all())
+            rows = list(db.scalars(
+                select(Recording).where(Recording.upload_status.in_(["uploading", "converting"]))
+            ).all())
             for rec in rows:
-                rec.upload_status = "pending"
-                rec.last_error = "Upload interrotto da un riavvio; rimesso in coda"
+                rec.upload_status = "pending" if rec.integrity_status == "passed" else "integrity_failed"
+                rec.last_error = "Elaborazione interrotta da un riavvio; rimessa in coda"
 
     async def _sleep_or_wake(self, seconds: float) -> None:
         try:
@@ -166,6 +242,89 @@ class WorkerManager:
             "buffer_bytes": self.local_buffer_bytes(),
         }
 
+    async def _maintenance_backfill(self) -> None:
+        while not self._stopping:
+            await self._repair_local_mp4s()
+            await self._backfill_thumbnails()
+            await asyncio.sleep(60)
+
+    async def _repair_local_mp4s(self) -> None:
+        """Normalize older local fMP4 files that never reached a reliable upload."""
+        with db_session() as db:
+            rows = list(db.scalars(
+                select(Recording)
+                .where(
+                    Recording.local_deleted.is_(False),
+                    Recording.upload_status.in_(["pending", "failed", "waiting_config", "integrity_failed"]),
+                )
+                .order_by(Recording.finalized_at.asc())
+            ).all())
+            for rec in rows:
+                db.expunge(rec)
+        for rec in rows:
+            if self._stopping:
+                return
+            path = Path(rec.local_path)
+            if path.suffix.lower() != ".mp4" or not path.is_file():
+                continue
+            error_text = f"{rec.integrity_error} {rec.last_error}".lower()
+            retryable_probe = rec.upload_status == "integrity_failed" and any(
+                marker in error_text for marker in RETRYABLE_MEDIA_ERRORS
+            )
+            if mp4_is_streaming_ready(path) and not retryable_probe:
+                continue
+            if self._retry_after.get(rec.id, 0) > time.monotonic():
+                continue
+            claimed = False
+            with db_session() as db:
+                current = db.get(Recording, rec.id)
+                if current and current.upload_status in {"pending", "failed", "waiting_config", "integrity_failed"}:
+                    current.upload_status = "converting"
+                    claimed = True
+            if not claimed:
+                continue
+            try:
+                await self._prepare_mp4(path)
+                integrity = await asyncio.to_thread(verify_media, path, runtime().integrity_mode)
+                digest = await asyncio.to_thread(sha256_file, path) if integrity.ok else ""
+                with db_session() as db:
+                    current = db.get(Recording, rec.id)
+                    if not current:
+                        continue
+                    current.duration_seconds = integrity.duration
+                    current.size_bytes = path.stat().st_size
+                    current.sha256 = digest
+                    current.has_video = integrity.has_video
+                    current.has_audio = integrity.has_audio
+                    current.video_codec = integrity.codec("video")
+                    current.audio_codec = integrity.codec("audio")
+                    current.integrity_status = "passed" if integrity.ok else "failed"
+                    current.integrity_error = integrity.error
+                    current.integrity_checked_at = utcnow()
+                    current.upload_status = "pending" if integrity.ok else "integrity_failed"
+                    current.upload_attempts = 0
+                    current.last_error = "" if integrity.ok else f"Integrità fallita: {integrity.error}"[-1600:]
+                    if integrity.ok:
+                        current.thumbnail_path = ""
+                if integrity.ok:
+                    self._retry_after.pop(rec.id, None)
+                elif any(marker in (integrity.error or "").lower() for marker in RETRYABLE_MEDIA_ERRORS):
+                    self._retry_after[rec.id] = time.monotonic() + 300
+                self.wake()
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                detail = f"Finalizzazione MP4 fallita: {exc}"[-1200:]
+                self.last_errors[f"mp4-repair:{rec.id}"] = detail
+                self._retry_after[rec.id] = time.monotonic() + 300
+                with db_session() as db:
+                    current = db.get(Recording, rec.id)
+                    if current and current.upload_status == "converting":
+                        current.upload_status = "integrity_failed"
+                        current.integrity_status = "failed"
+                        current.integrity_error = detail
+                        current.last_error = detail
+
     async def _backfill_thumbnails(self) -> None:
         """Generate persistent previews for local recordings created by older releases."""
         try:
@@ -174,9 +333,8 @@ class WorkerManager:
             with db_session() as db:
                 rows = list(db.scalars(
                     select(Recording)
-                    .where(Recording.local_deleted.is_(False), Recording.thumbnail_path == "")
+                    .where(Recording.local_deleted.is_(False))
                     .order_by(Recording.finalized_at.desc())
-                    .limit(1000)
                 ).all())
                 for rec in rows:
                     db.expunge(rec)
@@ -187,12 +345,14 @@ class WorkerManager:
                 if not path.exists() or not path.is_file():
                     continue
                 digest = rec.sha256 or await asyncio.to_thread(sha256_file, path)
-                candidate = settings.data_dir / "thumbnails" / f"{digest[:24]}.jpg"
+                candidate = settings.data_dir / "thumbnails" / f"{digest[:24]}-sheet-v1.jpg"
+                if rec.thumbnail_path == str(candidate) and candidate.is_file():
+                    continue
                 ok = await asyncio.to_thread(generate_thumbnail, path, candidate, rec.duration_seconds)
                 if ok:
                     with db_session() as db:
                         current = db.get(Recording, rec.id)
-                        if current and not current.thumbnail_path:
+                        if current:
                             current.thumbnail_path = str(candidate)
                             if not current.sha256:
                                 current.sha256 = digest
@@ -205,6 +365,8 @@ class WorkerManager:
     async def _recover_orphans(self) -> None:
         candidates = sorted(settings.recordings_dir.rglob("*.mkv")) + sorted(settings.recordings_dir.rglob("*.mp4"))
         for path in candidates:
+            if path.name.startswith(".") or path.name.endswith(".tmp.mp4"):
+                continue
             if not path.is_file() or path.stat().st_size <= 0:
                 continue
             with db_session() as db:
@@ -223,28 +385,47 @@ class WorkerManager:
                 started_at=None,
             )
 
-    async def _wait_until_stable(self, path: Path, timeout: float = 12.0) -> None:
+    async def _wait_until_stable(self, path: Path, timeout: float = 12.0) -> bool:
         """Do not probe a segment while FFmpeg is still flushing its trailer."""
         deadline = time.monotonic() + timeout
         previous: tuple[int, int] | None = None
+        stable_samples = 0
         while time.monotonic() < deadline:
             try:
                 stat = path.stat()
             except FileNotFoundError:
-                return
+                return False
             current = (stat.st_size, stat.st_mtime_ns)
             if stat.st_size > 0 and current == previous and time.time() - stat.st_mtime >= 1.0:
-                return
+                stable_samples += 1
+                if stable_samples >= 2:
+                    return True
+            else:
+                stable_samples = 0
             previous = current
             await asyncio.sleep(1)
+        return False
 
-    async def _index_file(self, *, source_id: int, source_name: str, session_id: str, path: Path, started_at: datetime | None) -> None:
+    async def _prepare_mp4(self, path: Path) -> bool:
+        if path.suffix.lower() != ".mp4":
+            return False
+        async with self._mp4_finalize_lock:
+            return await finalize_mp4_for_streaming(path)
+
+    async def _index_file(self, *, source_id: int, source_name: str, session_id: str, path: Path, started_at: datetime | None) -> bool:
         cfg = runtime()
-        await self._wait_until_stable(path)
-        integrity = await asyncio.to_thread(verify_media, path, cfg.integrity_mode)
-        digest = await asyncio.to_thread(sha256_file, path)
+        if not await self._wait_until_stable(path):
+            self.last_errors[f"finalize:{source_id}"] = f"Segmento ancora in scrittura: {path.name}"
+            return False
+        normalization_error = ""
+        try:
+            await self._prepare_mp4(path)
+        except Exception as exc:
+            normalization_error = f"Finalizzazione MP4 fallita: {exc}"[-1500:]
+        integrity = None if normalization_error else await asyncio.to_thread(verify_media, path, cfg.integrity_mode)
+        digest = "" if normalization_error else await asyncio.to_thread(sha256_file, path)
         finalized = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc)
-        if integrity.duration:
+        if integrity and integrity.duration:
             start = finalized - timedelta(seconds=integrity.duration)
         elif started_at:
             start = started_at if started_at.tzinfo else started_at.replace(tzinfo=timezone.utc)
@@ -252,14 +433,14 @@ class WorkerManager:
         else:
             start = finalized
         thumb_path = ""
-        if cfg.generate_thumbnails and integrity.ok:
-            candidate = settings.data_dir / "thumbnails" / f"{digest[:24]}.jpg"
+        if cfg.generate_thumbnails and integrity and integrity.ok:
+            candidate = settings.data_dir / "thumbnails" / f"{digest[:24]}-sheet-v1.jpg"
             ok = await asyncio.to_thread(generate_thumbnail, path, candidate, integrity.duration)
             if ok:
                 thumb_path = str(candidate)
         with db_session() as db:
             if db.scalar(select(Recording).where(Recording.local_path == str(path))):
-                return
+                return True
             db.add(Recording(
                 source_id=source_id,
                 source_name=source_name,
@@ -268,20 +449,22 @@ class WorkerManager:
                 filename=path.name,
                 started_at=start,
                 finalized_at=finalized,
-                duration_seconds=integrity.duration,
+                duration_seconds=integrity.duration if integrity else None,
                 size_bytes=path.stat().st_size,
                 sha256=digest,
-                upload_status="pending" if integrity.ok else "integrity_failed",
+                upload_status="pending" if integrity and integrity.ok else "integrity_failed",
                 thumbnail_path=thumb_path,
-                integrity_status="passed" if integrity.ok else "failed",
-                integrity_error=integrity.error,
+                integrity_status="passed" if integrity and integrity.ok else "failed",
+                integrity_error=normalization_error or (integrity.error if integrity else "Finalizzazione MP4 fallita"),
                 integrity_checked_at=utcnow(),
                 container_format=path.suffix.lower().lstrip("."),
-                has_video=integrity.has_video,
-                has_audio=integrity.has_audio,
-                video_codec=integrity.codec("video"),
-                audio_codec=integrity.codec("audio"),
+                has_video=integrity.has_video if integrity else None,
+                has_audio=integrity.has_audio if integrity else None,
+                video_codec=integrity.codec("video") if integrity else "",
+                audio_codec=integrity.codec("audio") if integrity else "",
             ))
+        self.last_errors.pop(f"finalize:{source_id}", None)
+        return True
 
     async def _check_source(self, source: Source, semaphore: asyncio.Semaphore) -> None:
         lock = self._source_check_locks.setdefault(source.id, asyncio.Lock())
@@ -289,7 +472,7 @@ class WorkerManager:
             await self._check_source_unlocked(source, semaphore)
 
     async def _check_source_unlocked(self, source: Source, semaphore: asyncio.Semaphore) -> None:
-        if self._stopping or source.id in self.active:
+        if self._stopping or (self._leader_task is not None and self._leader_file is None) or source.id in self.active:
             return
         async with semaphore:
             result = await probe(source.platform, source.slug, source.quality)
@@ -407,14 +590,14 @@ class WorkerManager:
                     continue
                 for path in files[:-1]:
                     if path not in processed and path.stat().st_size > 0:
-                        await self._finalize_segment(session, path)
-                        processed.add(path)
+                        if await self._finalize_segment(session, path):
+                            processed.add(path)
             await session.process.wait()
             files = sorted(session.directory.glob(f"*{session.extension}"), key=lambda p: p.stat().st_mtime)
             for path in files:
                 if path not in processed and path.exists() and path.stat().st_size > 0:
-                    await self._finalize_segment(session, path)
-                    processed.add(path)
+                    if await self._finalize_segment(session, path):
+                        processed.add(path)
         except asyncio.CancelledError:
             raise
         except Exception as exc:
@@ -451,20 +634,22 @@ class WorkerManager:
                         source.last_error = ""
             self.wake()
 
-    async def _finalize_segment(self, session: RecorderSession, path: Path) -> None:
+    async def _finalize_segment(self, session: RecorderSession, path: Path) -> bool:
         try:
             part_index = int(path.stem.rsplit("part", 1)[1])
         except Exception:
             part_index = 0
         started = session.started_at + timedelta(seconds=part_index * runtime().segment_minutes * 60)
-        await self._index_file(
+        indexed = await self._index_file(
             source_id=session.source_id,
             source_name=session.source_name,
             session_id=session.session_id,
             path=path,
             started_at=started,
         )
-        self.wake()
+        if indexed:
+            self.wake()
+        return indexed
 
     def _pending_recording(self) -> Recording | None:
         now = time.monotonic()
@@ -523,6 +708,28 @@ class WorkerManager:
 
     async def _verify_before_upload(self, rec: Recording, path: Path) -> bool:
         cfg = runtime()
+        if not await self._wait_until_stable(path):
+            with db_session() as db:
+                current = db.get(Recording, rec.id)
+                if current:
+                    current.upload_status = "failed"
+                    current.last_error = "Upload rinviato: il file è ancora in scrittura"
+            self._retry_after[rec.id] = time.monotonic() + 30
+            return False
+        try:
+            normalized = await self._prepare_mp4(path)
+        except Exception as exc:
+            detail = f"Finalizzazione MP4 fallita: {exc}"[-1500:]
+            with db_session() as db:
+                current = db.get(Recording, rec.id)
+                if current:
+                    current.integrity_status = "failed"
+                    current.integrity_error = detail
+                    current.integrity_checked_at = utcnow()
+                    current.upload_status = "integrity_failed"
+                    current.last_error = detail
+            return False
+        baseline = path.stat()
         integrity = await asyncio.to_thread(verify_media, path, cfg.integrity_mode)
         if not integrity.ok:
             with db_session() as db:
@@ -538,8 +745,17 @@ class WorkerManager:
                     current.upload_status = "integrity_failed"
                     current.last_error = f"Controllo integrità fallito: {integrity.error}"[-1600:]
             return False
+        current_stat = path.stat()
+        if (current_stat.st_size, current_stat.st_mtime_ns) != (baseline.st_size, baseline.st_mtime_ns):
+            with db_session() as db:
+                current = db.get(Recording, rec.id)
+                if current:
+                    current.upload_status = "failed"
+                    current.last_error = "Upload rinviato: il file è cambiato durante la verifica"
+            self._retry_after[rec.id] = time.monotonic() + 30
+            return False
         digest = await asyncio.to_thread(sha256_file, path)
-        if rec.sha256 and digest != rec.sha256:
+        if rec.sha256 and digest != rec.sha256 and not normalized:
             with db_session() as db:
                 current = db.get(Recording, rec.id)
                 if current:
@@ -556,6 +772,9 @@ class WorkerManager:
                 current.has_audio = integrity.has_audio
                 current.video_codec = integrity.codec("video")
                 current.audio_codec = integrity.codec("audio")
+                current.duration_seconds = integrity.duration
+                current.size_bytes = path.stat().st_size
+                current.sha256 = digest
                 current.integrity_status = "passed"
                 current.integrity_error = ""
                 current.integrity_checked_at = utcnow()
@@ -622,6 +841,8 @@ class WorkerManager:
                         self.upload_current["percent"] = 0.0
 
                         def progress(sent: int, total: int) -> None:
+                            if self._stopping:
+                                raise UploadCancelled("Upload interrotto in sicurezza per riavvio")
                             if self.upload_current and self.upload_current.get("recording_id") == rec.id:
                                 self.upload_current["sent_bytes"] = sent
                                 self.upload_current["percent"] = round((sent / total * 100) if total else 0, 1)
@@ -641,6 +862,8 @@ class WorkerManager:
                             break
                         errors.append(f"{provider}: verifica remota non riuscita")
                         result = None
+                    except UploadCancelled:
+                        raise
                     except Exception as exc:
                         errors.append(f"{provider}: {exc}")
                         result = None
@@ -677,6 +900,15 @@ class WorkerManager:
                 await asyncio.sleep(0.5)
             except asyncio.CancelledError:
                 raise
+            except UploadCancelled:
+                if rec:
+                    with contextlib.suppress(Exception):
+                        with db_session() as db:
+                            current = db.get(Recording, rec.id)
+                            if current and current.upload_status == "uploading":
+                                current.upload_status = "pending"
+                                current.last_error = "Upload interrotto in sicurezza per riavvio; rimesso in coda"
+                continue
             except Exception as exc:
                 self.last_errors["uploader"] = str(exc)[-1400:]
                 if rec:

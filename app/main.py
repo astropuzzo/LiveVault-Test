@@ -30,7 +30,7 @@ from .db import (
     init_db,
 )
 from .file_cleanup import cleanup_empty_parents, cleanup_orphan_videos, safe_unlink
-from .recorder import remux_to_mp4
+from .recorder import finalize_mp4_for_streaming, mp4_is_streaming_ready, remux_to_mp4
 from .settings_store import public_settings, reload_runtime, runtime, set_values
 from .source_providers import audit_inputs, normalize_source, probe, provider_catalog, provider_label, resolve_inputs, source_url
 from .storage import disk_state
@@ -42,7 +42,7 @@ BASE = Path(__file__).parent
 LOGIN_FAILURES: dict[str, deque[float]] = defaultdict(deque)
 LOGIN_WINDOW = 10 * 60
 LOGIN_MAX_FAILURES = 6
-VERSION = "2.5.0"
+VERSION = "2.5.1"
 
 
 class LoginBody(BaseModel):
@@ -1573,11 +1573,12 @@ async def convert_mp4(recording_id: int, request: Request):
         rec = db.get(Recording, recording_id)
         if not rec:
             raise HTTPException(404, "Registrazione non trovata")
-        if rec.upload_status == "uploading":
-            raise HTTPException(409, "Attendi la fine dell'upload prima di convertire")
+        if rec.upload_status in {"uploading", "converting"}:
+            raise HTTPException(409, "Attendi la fine dell'elaborazione prima di convertire")
         path = Path(rec.local_path)
         previous_upload_status = rec.upload_status
-        if path.suffix.lower() != ".mp4":
+        already_ready = path.suffix.lower() == ".mp4" and mp4_is_streaming_ready(path)
+        if not already_ready:
             # Remove this record from the uploader selection while the file path changes.
             rec.upload_status = "converting"
     if not path.exists():
@@ -1586,10 +1587,14 @@ async def convert_mp4(recording_id: int, request: Request):
             if rec and rec.upload_status == "converting":
                 rec.upload_status = previous_upload_status
         raise HTTPException(404, "File locale non disponibile")
-    if path.suffix.lower() == ".mp4":
+    if already_ready:
         return {"ok": True, "already_mp4": True}
     try:
-        new_path = await remux_to_mp4(path)
+        if path.suffix.lower() == ".mp4":
+            await finalize_mp4_for_streaming(path)
+            new_path = path
+        else:
+            new_path = await remux_to_mp4(path)
     except Exception as exc:
         with db_session() as db:
             rec = db.get(Recording, recording_id)
@@ -1600,7 +1605,7 @@ async def convert_mp4(recording_id: int, request: Request):
     digest = await asyncio.to_thread(sha256_file, new_path)
     thumb_path = ""
     if runtime().generate_thumbnails and integrity.ok:
-        candidate = settings.data_dir / "thumbnails" / f"{digest[:24]}.jpg"
+        candidate = settings.data_dir / "thumbnails" / f"{digest[:24]}-sheet-v1.jpg"
         if await asyncio.to_thread(generate_thumbnail, new_path, candidate, integrity.duration):
             thumb_path = str(candidate)
     with db_session() as db:

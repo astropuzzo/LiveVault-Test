@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.5.1 — 2026-09-02
+
+- Finalizza atomicamente gli MP4 frammentati prima dell'upload, con durata completa e indice `faststart` per lo streaming.
+- Blocca file ancora in scrittura o MP4 senza durata valida prima che raggiungano Gofile/Pixeldrain.
+- Genera anteprime storyboard 2×2 da quattro momenti diversi della registrazione.
+- Impedisce a due container di registrare o caricare contemporaneamente durante i deploy `start-first`.
+- Recupera automaticamente gli MP4 locali delle versioni precedenti che non erano ancora stati caricati correttamente.
+
 ## 2.5.0 — 2026-09-02
 
 - Aggiunta la Libreria profili: un profilo editoriale può collegare più sorgenti/account/provider senza cambiare l'identità operativa usata da recorder e upload.

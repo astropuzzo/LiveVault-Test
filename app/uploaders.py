@@ -26,6 +26,10 @@ class UploadError(RuntimeError):
     pass
 
 
+class UploadCancelled(UploadError):
+    pass
+
+
 def _file_chunks(path: Path, callback: Callable[[int, int], None] | None = None, chunk_size: int = 1024 * 1024, digest=None):
     total = path.stat().st_size
     sent = 0
@@ -269,6 +273,8 @@ def upload_gofile(
                         raise UploadError("Gofile: dimensione remota diversa dal file locale")
                     raise UploadError("Gofile: upload ricevuto ma risposta senza checksum/dimensione verificabile")
                 return UploadResult("gofile", remote_id, remote_url, True, remote_size)
+            except UploadCancelled:
+                raise
             except Exception as exc:
                 last_error = exc
                 if _gofile_auth_error(exc):
@@ -400,6 +406,8 @@ def upload_with_fallback(
             if result.verified:
                 return result, errors
             errors.append(f"{provider}: verifica remota non riuscita")
+        except UploadCancelled:
+            raise
         except Exception as exc:
             errors.append(f"{provider}: {exc}")
     return None, errors
