@@ -635,6 +635,8 @@ class WorkerManager:
                 await asyncio.wait_for(stderr_task, timeout=2)
             self.active.pop(session.source_id, None)
             self.watch_tasks.pop(session.source_id, None)
+            with contextlib.suppress(OSError):
+                session.preview_path.unlink(missing_ok=True)
             total_session_bytes = 0
             with contextlib.suppress(Exception):
                 total_session_bytes = sum(

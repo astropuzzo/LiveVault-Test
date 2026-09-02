@@ -15,6 +15,13 @@ from .settings_store import runtime
 from .source_providers import ResolvedInput, audit_inputs, resolve_inputs
 from .utils import probe_media, safe_name, utcnow
 
+LIVE_PREVIEW_INTERVAL_SECONDS = 20
+LIVE_PREVIEW_MAX_AGE_SECONDS = 90
+
+
+def live_preview_path(source_id: int) -> Path:
+    return settings.data_dir / "live_previews" / f"{int(source_id)}.jpg"
+
 
 @dataclass
 class RecorderSession:
@@ -27,6 +34,7 @@ class RecorderSession:
     extension: str
     max_file_bytes: int
     safe_stop_bytes: int
+    preview_path: Path
     rollover_requested: bool = False
 
 
@@ -57,12 +65,14 @@ def build_ffmpeg_command(
     segment_minutes: int | None = None,
     segment_max_gb: float | None = None,
     container_format: str | None = None,
+    preview_path: Path | None = None,
+    preview_interval_seconds: int = LIVE_PREVIEW_INTERVAL_SECONDS,
 ) -> list[str]:
     cfg = runtime()
     segment_minutes = int(segment_minutes or cfg.segment_minutes)
     segment_max_gb = float(segment_max_gb or cfg.segment_max_gb)
     container_format = (container_format or cfg.container_format).lower()
-    cmd = ["ffmpeg", "-hide_banner", "-loglevel", "warning", "-nostdin"]
+    cmd = ["ffmpeg", "-hide_banner", "-loglevel", "warning", "-nostdin", "-y"]
     for item in inputs:
         cmd += ["-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "5"]
         headers = _ffmpeg_headers(item.http_headers)
@@ -77,10 +87,12 @@ def build_ffmpeg_command(
     if audio_idx is None:
         audio_idx = next((i for i, item in enumerate(inputs) if item.kind == "media"), None)
     if len(inputs) == 1:
-        cmd += ["-map", "0:v:0", "-map", "0:a:0"]
+        video_map = "0:v:0"
+        audio_map = "0:a:0"
     else:
-        cmd += ["-map", f"{video_idx}:v:0" if video_idx is not None else "0:v:0"]
-        cmd += ["-map", f"{audio_idx}:a:0" if audio_idx is not None else "0:a:0"]
+        video_map = f"{video_idx}:v:0" if video_idx is not None else "0:v:0"
+        audio_map = f"{audio_idx}:a:0" if audio_idx is not None else "0:a:0"
+    cmd += ["-map", video_map, "-map", audio_map]
 
     cmd += [
         "-c", "copy",
@@ -98,6 +110,19 @@ def build_ffmpeg_command(
     else:
         cmd += ["-segment_format", "matroska"]
     cmd += [str(output_pattern)]
+    if preview_path is not None:
+        interval = max(5, int(preview_interval_seconds))
+        cmd += [
+            "-map", video_map,
+            "-an",
+            "-vf", f"fps=1/{interval},scale=640:-2:force_original_aspect_ratio=decrease",
+            "-c:v", "mjpeg",
+            "-q:v", "6",
+            "-f", "image2",
+            "-update", "1",
+            "-atomic_writing", "1",
+            str(preview_path),
+        ]
     return cmd
 
 
@@ -115,12 +140,17 @@ async def start_recorder(source: Source) -> RecorderSession:
     directory.mkdir(parents=True, exist_ok=True)
     extension = ".mp4" if cfg.container_format == "mp4" else ".mkv"
     output_pattern = directory / f"{session_id}_part%03d{extension}"
+    preview_path = live_preview_path(source.id)
+    preview_path.parent.mkdir(parents=True, exist_ok=True)
+    preview_path.unlink(missing_ok=True)
     cmd = build_ffmpeg_command(
         inputs,
         output_pattern,
         segment_minutes=cfg.segment_minutes,
         segment_max_gb=cfg.segment_max_gb,
         container_format=cfg.container_format,
+        preview_path=preview_path,
+        preview_interval_seconds=LIVE_PREVIEW_INTERVAL_SECONDS,
     )
     process = await asyncio.create_subprocess_exec(
         *cmd,
@@ -138,6 +168,7 @@ async def start_recorder(source: Source) -> RecorderSession:
         extension,
         max_output_bytes(cfg.segment_max_gb),
         safe_output_limit_bytes(cfg.segment_max_gb),
+        preview_path,
     )
 
 

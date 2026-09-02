@@ -8,9 +8,6 @@ concurrency:
   group: livevault-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-permissions:
-  contents: write
-
 jobs:
   test:
     name: Core tests
@@ -27,8 +24,6 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y ffmpeg
       - name: Install dependencies
         run: pip install -r requirements-dev.txt
-      - name: Apply staged v2.7.0 patch
-        run: python scripts/apply_v270.py
       - name: Compile Python
         run: python -m compileall -q app tests
       - name: Run tests
@@ -37,17 +32,6 @@ jobs:
         run: node --check app/static/app.js
       - name: Check shell scripts
         run: bash -n scripts/*.sh
-      - name: Publish verified v2.7.0 commit
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          cp scripts/ci.normal.yml .github/workflows/ci.yml
-          rm scripts/apply_v270.py scripts/ci.normal.yml scripts/v270_*.b64
-          git add -A
-          git diff --cached --quiet && exit 0
-          git commit -m "feat(dashboard): add control room live wall and previews"
-          git push origin HEAD:main
 
   deploy:
     name: Deploy verified main

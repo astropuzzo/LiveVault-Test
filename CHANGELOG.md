@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.7.0 — 2026-09-02
+
+- Dashboard trasformata in **Control Room**: le creator LIVE salgono automaticamente in una zona dedicata sopra alle offline.
+- Aggiunte card LIVE con **preview JPEG 16:9 aggiornata ogni 20 secondi**, prodotta dallo stesso processo FFmpeg della registrazione senza aprire una seconda connessione alla live.
+- Le LIVE non registrate sono evidenziate come priorità massima, con motivo della pausa e azione rapida per riprendere la REC.
+- Aggiunta **Live Wall** full-screen e responsive per monitorare contemporaneamente tutte le creator online.
+- Le creator offline sono ora compatte e collassabili; il loro stato non compete più visivamente con le live.
+- Aggiunto **Focus** persistente per fissare creator importanti: le Focus live hanno priorità e le Focus offline restano visibili sopra alla lista collassata.
+- I nomi creator continuano ad aprire direttamente il profilo da Control Room, Focus e Live Wall.
+- Le preview sono protette dall'autenticazione, scadono rapidamente e vengono rimosse alla fine della sessione di registrazione.
+
 ## 2.6.0 — 2026-09-02
 
 - Aggiunto avviso **floating** che compare esclusivamente quando una creator è LIVE ma la registrazione è ferma per pausa globale o della singola creator; i nomi nell'avviso aprono subito il profilo e, con pausa globale, è disponibile anche il ripristino rapido delle REC.

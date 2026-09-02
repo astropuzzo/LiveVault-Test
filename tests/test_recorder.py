@@ -70,3 +70,21 @@ def test_default_requested_limits_are_60_minutes_and_below_two_gib():
     assert file_limit == safe_output_limit_bytes(2)
     assert 1.8 * 1024**3 < file_limit < max_output_bytes(2)
     assert "0:a:0?" not in cmd
+
+
+def test_ffmpeg_live_preview_uses_same_process():
+    cmd = build_ffmpeg_command(
+        [ResolvedInput("https://example.test/master.m3u8", {}, "media")],
+        Path("out_%03d.mp4"),
+        segment_minutes=10,
+        container_format="mp4",
+        preview_path=Path("preview.jpg"),
+        preview_interval_seconds=20,
+    )
+    joined = " ".join(cmd)
+    assert joined.count("-map 0:v:0") == 2
+    assert "-c copy" in joined
+    assert "-vf fps=1/20,scale=640:-2:force_original_aspect_ratio=decrease" in joined
+    assert "-c:v mjpeg" in joined
+    assert "-update 1" in joined
+    assert joined.index("out_%03d.mp4") < joined.index("preview.jpg")

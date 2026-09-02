@@ -31,7 +31,13 @@ from .db import (
     init_db,
 )
 from .file_cleanup import cleanup_empty_parents, cleanup_orphan_videos, safe_unlink
-from .recorder import finalize_mp4_for_streaming, mp4_is_streaming_ready, remux_to_mp4
+from .recorder import (
+    LIVE_PREVIEW_MAX_AGE_SECONDS,
+    finalize_mp4_for_streaming,
+    live_preview_path,
+    mp4_is_streaming_ready,
+    remux_to_mp4,
+)
 from .settings_store import public_settings, reload_runtime, runtime, set_values
 from .source_providers import audit_inputs, normalize_source, probe, provider_catalog, provider_label, resolve_inputs, source_url
 from .statistics import build_activity_statistics
@@ -44,7 +50,7 @@ BASE = Path(__file__).parent
 LOGIN_FAILURES: dict[str, deque[float]] = defaultdict(deque)
 LOGIN_WINDOW = 10 * 60
 LOGIN_MAX_FAILURES = 6
-VERSION = "2.6.0"
+VERSION = "2.7.0"
 
 
 class LoginBody(BaseModel):
@@ -122,6 +128,7 @@ class CollectionPatch(BaseModel):
 class SourceLibraryPatch(BaseModel):
     display_name: str | None = Field(default=None, min_length=1, max_length=120)
     favorite: bool | None = None
+    focus: bool | None = None
     notes: str | None = Field(default=None, max_length=20_000)
     category_ids: list[int] | None = Field(default=None, max_length=200)
     collection_ids: list[int] | None = Field(default=None, max_length=200)
@@ -343,6 +350,7 @@ def _profile_json(
         "profile_id": profile.id,
         "display_name": profile.display_name,
         "favorite": profile.favorite,
+        "focus": profile.focus,
         "notes": profile.notes,
         "created_at": _iso_utc(profile.created_at),
         "categories": categories.get(profile.id, []),
@@ -520,7 +528,9 @@ async def security_headers(request: Request, call_next):
         "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; "
         "media-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
     )
-    if request.url.path.startswith("/api/"):
+    if request.url.path.startswith("/api/sources/") and request.url.path.endswith("/preview"):
+        response.headers["Cache-Control"] = "private, max-age=12"
+    elif request.url.path.startswith("/api/"):
         response.headers["Cache-Control"] = "no-store"
     elif request.url.path in {"/", "/sw.js"}:
         response.headers["Cache-Control"] = "no-cache, must-revalidate"
@@ -946,6 +956,8 @@ def patch_source_library(source_id: int, body: SourceLibraryPatch, request: Requ
             profile.display_name = _clean_library_name(body.display_name, "Nome profilo")
         if body.favorite is not None:
             profile.favorite = body.favorite
+        if body.focus is not None:
+            profile.focus = body.focus
         if body.notes is not None:
             profile.notes = body.notes.strip()
         if body.category_ids is not None:
@@ -1313,6 +1325,17 @@ def list_sources(request: Request):
                 detected_live and not active and source.consent_confirmed and not source.archived
                 and (cfg.recording_paused or not source.enabled)
             )
+            preview_url = ""
+            preview_updated_at = None
+            preview = live_preview_path(source.id)
+            try:
+                preview_stat = preview.stat()
+                preview_time = datetime.fromtimestamp(preview_stat.st_mtime, tz=timezone.utc)
+                if preview_stat.st_size > 0 and (now - preview_time).total_seconds() <= LIVE_PREVIEW_MAX_AGE_SECONDS:
+                    preview_url = f"/api/sources/{source.id}/preview"
+                    preview_updated_at = preview_time
+            except OSError:
+                pass
             result.append({
                 "id": source.id, "name": source.name, "platform": source.platform,
                 "provider_label": provider_label(source.platform), "slug": source.slug,
@@ -1320,6 +1343,7 @@ def list_sources(request: Request):
                 "profile_id": profile.id if profile else None,
                 "display_name": profile.display_name if profile else source.name,
                 "favorite": profile.favorite if profile else False,
+                "focus": profile.focus if profile else False,
                 "notes": profile.notes if profile else "",
                 "categories": categories.get(profile.id, []) if profile else [],
                 "collections": collections.get(profile.id, []) if profile else [],
@@ -1330,6 +1354,8 @@ def list_sources(request: Request):
                 "detected_live": detected_live,
                 "recording_blocked_by_pause": blocked_by_pause,
                 "pause_reason": "global" if blocked_by_pause and cfg.recording_paused else ("source" if blocked_by_pause else ""),
+                "preview_url": preview_url,
+                "preview_updated_at": _iso_utc(preview_updated_at),
                 "last_status": "recording" if active else (
                     "archived" if source.archived else ("paused" if not source.enabled else source.last_status)
                 ),
@@ -1356,6 +1382,24 @@ def list_sources(request: Request):
         return result
 
 
+@app.get("/api/sources/{source_id}/preview")
+def source_live_preview(source_id: int, request: Request):
+    require_auth(request)
+    with db_session() as db:
+        source = db.get(Source, source_id)
+        if not source or source.archived:
+            raise HTTPException(404, "Preview non disponibile")
+    path = live_preview_path(source_id)
+    try:
+        stat = path.stat()
+        updated = datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc)
+    except OSError as exc:
+        raise HTTPException(404, "Preview non ancora disponibile") from exc
+    if stat.st_size <= 0 or (utcnow() - updated).total_seconds() > LIVE_PREVIEW_MAX_AGE_SECONDS:
+        raise HTTPException(404, "Preview non aggiornata")
+    return FileResponse(path, media_type="image/jpeg", headers={"Cache-Control": "private, max-age=12"})
+
+
 @app.post("/api/sources")
 def add_source(body: SourceCreate, request: Request):
     require_auth(request)
@@ -1375,7 +1419,7 @@ def add_source(body: SourceCreate, request: Request):
             if not profile:
                 raise HTTPException(404, "Profilo non trovato")
         else:
-            profile = Profile(display_name=name, favorite=False, notes="")
+            profile = Profile(display_name=name, favorite=False, focus=False, notes="")
             db.add(profile)
             db.flush()
         source = Source(

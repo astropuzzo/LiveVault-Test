@@ -20,6 +20,7 @@ class Profile(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     display_name: Mapped[str] = mapped_column(String(120), index=True)
     favorite: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    focus: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     notes: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
@@ -221,7 +222,10 @@ def _migrate_sources() -> None:
 
 def _migrate_library() -> None:
     """Additive, idempotent profile backfill plus library indexes."""
+    profile_columns = _columns("profiles")
     with engine.begin() as conn:
+        if "focus" not in profile_columns:
+            conn.execute(text("ALTER TABLE profiles ADD COLUMN focus BOOLEAN NOT NULL DEFAULT 0"))
         orphaned_sources = conn.execute(text("""
             SELECT s.id, s.name
             FROM sources AS s
@@ -232,8 +236,8 @@ def _migrate_library() -> None:
         for source_id, source_name in orphaned_sources:
             result = conn.execute(
                 text("""
-                    INSERT INTO profiles (display_name, favorite, notes, created_at)
-                    VALUES (:display_name, 0, '', CURRENT_TIMESTAMP)
+                    INSERT INTO profiles (display_name, favorite, focus, notes, created_at)
+                    VALUES (:display_name, 0, 0, '', CURRENT_TIMESTAMP)
                 """),
                 {"display_name": source_name},
             )
@@ -245,6 +249,7 @@ def _migrate_library() -> None:
         conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ux_collections_name_nocase ON collections (name COLLATE NOCASE)"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS ix_profiles_display_name ON profiles (display_name)"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS ix_profiles_favorite ON profiles (favorite)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_profiles_focus ON profiles (focus)"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS ix_categories_color ON categories (color)"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS ix_collections_pinned_name ON collections (pinned, name)"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS ix_profile_categories_category_id ON profile_categories (category_id)"))

@@ -1549,3 +1549,276 @@ document.addEventListener('visibilitychange', () => {
   if (!document.hidden && !app.classList.contains('hidden')) refresh({includeRecordings: activeView === 'archive'});
 });
 if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
+
+
+/* LiveVault Control Room v2.7.0 */
+let controlRoomOfflineOpen = localStorage.getItem('livevault-control-room-offline-open') === '1';
+let controlRoomWallOpen = false;
+
+function controlRoomProfileRows() {
+  const grouped = new Map();
+  for (const source of sources.filter(row => !row.archived)) {
+    const profileId = Number(source.profile_id || source.id);
+    if (!grouped.has(profileId)) grouped.set(profileId, []);
+    grouped.get(profileId).push(source);
+  }
+  const activeMap = new Map((statusData?.worker?.active || []).map(item => [Number(item.source_id), item]));
+  return [...grouped.entries()].map(([profileId, rows]) => {
+    const recordingRows = rows.filter(row => row.last_status === 'recording');
+    const liveRows = rows.filter(row => row.detected_live || ['recording', 'live'].includes(row.last_status));
+    const blockedRows = liveRows.filter(row => row.recording_blocked_by_pause || row.last_status !== 'recording');
+    const previewSource = recordingRows.find(row => row.preview_url) || recordingRows[0] || liveRows[0] || rows[0];
+    const actionSource = blockedRows[0] || recordingRows[0] || liveRows[0] || rows.find(row => row.enabled) || rows[0];
+    const newest = field => rows.reduce((best, row) => timestamp(row[field]) > timestamp(best) ? row[field] : best, null);
+    return {
+      profile_id: profileId,
+      source: actionSource,
+      preview_source: previewSource,
+      rows,
+      display_name: actionSource.display_name || actionSource.name,
+      focus: rows.some(row => !!row.focus),
+      favorite: rows.some(row => !!row.favorite),
+      live: liveRows.length > 0,
+      recording: recordingRows.length > 0,
+      blocked: blockedRows.length > 0,
+      blocked_count: blockedRows.length,
+      live_count: liveRows.length,
+      recording_count: recordingRows.length,
+      active: recordingRows.map(row => activeMap.get(Number(row.id))).find(Boolean) || null,
+      last_seen_live_at: newest('last_seen_live_at'),
+      last_checked_at: newest('last_checked_at'),
+      last_error: rows.map(row => String(row.last_error || '').trim()).find(Boolean) || '',
+      providers: [...new Set(rows.map(row => row.provider_label || row.platform))],
+    };
+  });
+}
+
+function controlRoomPriority(profile) {
+  if (profile.blocked) return 500;
+  if (profile.live && profile.focus) return 440;
+  if (profile.recording) return 420;
+  if (profile.live) return 400;
+  if (profile.focus) return 250;
+  if (profile.last_error) return 200;
+  return 100;
+}
+
+function controlRoomInitials(name) {
+  return String(name || 'LV').split(/\s+/).slice(0, 2).map(part => part[0] || '').join('').toUpperCase() || 'LV';
+}
+
+function controlRoomPreviewMarkup(profile, wall = false) {
+  const source = profile.preview_source || profile.source;
+  const updated = source?.preview_updated_at;
+  const previewUrl = source?.preview_url ? `${source.preview_url}?v=${timestamp(updated) || 0}` : '';
+  const cover = safeUrl(source?.cover_thumbnail_url || '');
+  const recordingLabel = profile.recording ? 'REC' : profile.live ? 'LIVE' : 'OFFLINE';
+  const alertLabel = profile.blocked ? 'NON REGISTRATA' : '';
+  const freshness = updated ? `Preview ${ago(updated)}` : profile.recording ? 'Preview in preparazione…' : 'Preview disponibile durante REC';
+  return `<div class="cr-preview ${profile.blocked ? 'attention' : ''} ${wall ? 'wall' : ''}">
+    ${previewUrl ? `<img data-live-preview src="${esc(previewUrl)}" alt="Preview live di ${esc(profile.display_name)}">` : cover ? `<img class="cr-preview-cover" src="${esc(cover)}" alt="Copertina di ${esc(profile.display_name)}">` : `<div class="cr-preview-placeholder"><span>${esc(controlRoomInitials(profile.display_name))}</span></div>`}
+    <div class="cr-preview-shade"></div>
+    <div class="cr-preview-badges"><span class="cr-live-badge">● ${esc(recordingLabel)}</span>${alertLabel ? `<span class="cr-alert-badge">${esc(alertLabel)}</span>` : ''}${profile.focus ? '<span class="cr-focus-badge">★ FOCUS</span>' : ''}</div>
+    <span class="cr-preview-age">${esc(freshness)}</span>
+  </div>`;
+}
+
+function controlRoomStatusText(profile) {
+  if (profile.blocked) {
+    const source = profile.source;
+    if (source.pause_reason === 'global') return 'LIVE · registrazioni globali in pausa';
+    if (source.pause_reason === 'source') return 'LIVE · creator in pausa';
+    return 'LIVE · REC non attiva';
+  }
+  if (profile.recording) {
+    const active = profile.active;
+    return active ? `REC ${duration(active.elapsed_seconds)} · ${humanBytes(active.local_bytes || 0)}` : 'LIVE · REC attiva';
+  }
+  return profile.live ? 'LIVE rilevata' : `Offline · ultima live ${ago(profile.last_seen_live_at)}`;
+}
+
+function controlRoomLiveCard(profile, wall = false) {
+  const source = profile.source;
+  const publicUrl = safeUrl(source.source_url);
+  const multi = profile.rows.length > 1 ? `<span class="cr-account-count">${profile.rows.length} account</span>` : '';
+  const controls = wall ? '' : `<div class="cr-card-actions">
+      <button class="btn ${profile.focus ? 'accent' : 'soft'}" data-focus-toggle="${source.id}" type="button" aria-pressed="${profile.focus}">★ ${profile.focus ? 'Focus' : 'Metti in Focus'}</button>
+      <button class="btn soft" data-action="profile" data-id="${source.id}" type="button">Profilo</button>
+      ${profile.blocked && source.pause_reason === 'global' ? '<button class="btn primary" data-cr-resume-global type="button">Riprendi REC</button>' : profile.blocked && source.pause_reason === 'source' ? `<button class="btn primary" data-action="toggle" data-id="${source.id}" type="button">Avvia REC</button>` : ''}
+      ${publicUrl ? `<a class="btn soft" href="${esc(publicUrl)}" target="_blank" rel="noopener">Sorgente ↗</a>` : ''}
+    </div>`;
+  return `<article class="cr-live-card ${profile.blocked ? 'blocked' : ''} ${profile.focus ? 'focus' : ''}">
+    ${controlRoomPreviewMarkup(profile, wall)}
+    <div class="cr-live-body">
+      <div class="cr-live-head"><div>${creatorLinkMarkup(source.id, profile.display_name, 'cr-live-name')}<div class="cr-live-provider">${esc(profile.providers.join(' · '))} ${multi}</div></div><strong class="cr-live-state">${esc(controlRoomStatusText(profile))}</strong></div>
+      ${profile.blocked ? `<div class="cr-blocked-note">⚠ Questa creator è LIVE ma al momento non viene registrata.${profile.last_error ? ` · ${esc(profile.last_error)}` : ''}</div>` : profile.last_error ? `<div class="cr-card-warning">${esc(profile.last_error)}</div>` : ''}
+      ${controls}
+    </div>
+  </article>`;
+}
+
+function controlRoomCompactRow(profile, focus = false) {
+  const source = profile.source;
+  return `<article class="cr-compact-row ${focus ? 'focus' : ''}">
+    <button class="cr-compact-focus ${profile.focus ? 'active' : ''}" data-focus-toggle="${source.id}" type="button" aria-label="${profile.focus ? 'Togli dal Focus' : 'Metti in Focus'}" aria-pressed="${profile.focus}">★</button>
+    <div class="cr-compact-main">${creatorLinkMarkup(source.id, profile.display_name, 'cr-compact-name')}<span>${esc(profile.providers.join(' · '))}</span></div>
+    <span class="cr-compact-status">${profile.last_error ? '⚠ Da controllare' : profile.source.enabled ? `Offline · ${ago(profile.last_seen_live_at)}` : 'In pausa'}</span>
+    <button class="btn quiet" data-action="check" data-id="${source.id}" type="button">Controlla</button>
+  </article>`;
+}
+
+function ensureControlRoomWall() {
+  let wall = $('#controlRoomWall');
+  if (wall) return wall;
+  wall = document.createElement('section');
+  wall.id = 'controlRoomWall';
+  wall.className = 'cr-wall hidden';
+  wall.setAttribute('aria-label', 'Live Wall');
+  wall.innerHTML = `<header class="cr-wall-header"><div><div class="eyebrow">CONTROL ROOM</div><h2>Live Wall</h2><span id="crWallCount">0 live</span></div><button class="btn soft" data-live-wall-close type="button">Chiudi</button></header><div id="crWallGrid" class="cr-wall-grid"></div>`;
+  document.body.append(wall);
+  return wall;
+}
+
+function renderControlRoomWall(profiles = controlRoomProfileRows()) {
+  const wall = ensureControlRoomWall();
+  wall.classList.toggle('hidden', !controlRoomWallOpen);
+  document.body.classList.toggle('cr-wall-open', controlRoomWallOpen);
+  if (!controlRoomWallOpen) return;
+  const live = profiles.filter(profile => profile.live).sort((a, b) => controlRoomPriority(b) - controlRoomPriority(a) || a.display_name.localeCompare(b.display_name, 'it'));
+  $('#crWallCount').textContent = `${live.length} ${live.length === 1 ? 'live' : 'live'}`;
+  const grid = $('#crWallGrid');
+  grid.className = `cr-wall-grid ${live.length >= 7 ? 'dense' : ''}`;
+  grid.innerHTML = live.length ? live.map(profile => controlRoomLiveCard(profile, true)).join('') : '<div class="cr-wall-empty">Nessuna creator live in questo momento.</div>';
+}
+
+const baseRenderSourcesV26 = renderSources;
+renderSources = function renderSourcesControlRoom() {
+  const root = $('#sources');
+  if (!root) return baseRenderSourcesV26();
+  const profiles = controlRoomProfileRows();
+  const live = profiles.filter(profile => profile.live).sort((a, b) => controlRoomPriority(b) - controlRoomPriority(a) || timestamp(b.last_seen_live_at) - timestamp(a.last_seen_live_at) || a.display_name.localeCompare(b.display_name, 'it'));
+  const offlineFocus = profiles.filter(profile => !profile.live && profile.focus).sort((a, b) => timestamp(b.last_seen_live_at) - timestamp(a.last_seen_live_at) || a.display_name.localeCompare(b.display_name, 'it'));
+  const offline = profiles.filter(profile => !profile.live && !profile.focus).sort((a, b) => Number(!!b.last_error) - Number(!!a.last_error) || timestamp(b.last_seen_live_at) - timestamp(a.last_seen_live_at) || a.display_name.localeCompare(b.display_name, 'it'));
+  const recCount = live.filter(profile => profile.recording).length;
+  const blockedCount = live.filter(profile => profile.blocked).length;
+  $('#sourceCount').textContent = profiles.length;
+  const panelHead = root.closest('.section')?.querySelector('.section-head');
+  if (panelHead) {
+    const title = panelHead.querySelector('h2');
+    const note = panelHead.querySelector('p');
+    if (title) title.textContent = 'Control Room';
+    if (note) note.textContent = 'Le creator LIVE salgono automaticamente in primo piano.';
+  }
+  if (!profiles.length) {
+    root.innerHTML = '<div class="empty">Nessuna sorgente attiva. Quelle archiviate restano disponibili nella Libreria.</div>';
+    renderControlRoomWall([]);
+    return;
+  }
+  root.innerHTML = `<div class="cr-toolbar">
+      <div class="cr-now-summary"><strong>${live.length} LIVE</strong><span>${recCount} REC</span><span class="${blockedCount ? 'danger-text' : ''}">${blockedCount} NON REC</span></div>
+      <button class="btn accent" data-live-wall type="button" ${live.length ? '' : 'disabled'}>▦ Live Wall</button>
+    </div>
+    <section class="cr-live-section">
+      <div class="cr-section-head"><div><div class="eyebrow">LIVE ADESSO</div><h3>${live.length ? `${live.length} ${live.length === 1 ? 'creator online' : 'creator online'}` : 'Nessuna creator live'}</h3></div>${blockedCount ? `<span class="cr-attention-count">⚠ ${blockedCount} non registrata${blockedCount === 1 ? '' : 'e'}</span>` : ''}</div>
+      ${live.length ? `<div class="cr-live-grid">${live.map(profile => controlRoomLiveCard(profile)).join('')}</div>` : '<div class="cr-live-empty">Quando una creator diventa LIVE comparirà automaticamente qui, sopra a tutte le offline.</div>'}
+    </section>
+    ${offlineFocus.length ? `<section class="cr-focus-section"><div class="cr-section-head"><div><div class="eyebrow">FOCUS</div><h3>Creator fissate</h3></div><span class="count">${offlineFocus.length}</span></div><div class="cr-compact-list">${offlineFocus.map(profile => controlRoomCompactRow(profile, true)).join('')}</div></section>` : ''}
+    <details id="controlRoomOffline" class="cr-offline" ${controlRoomOfflineOpen ? 'open' : ''}>
+      <summary><span><strong>Altre creator</strong><small>Offline, in pausa o senza attività corrente</small></span><span class="count">${offline.length}</span></summary>
+      <div class="cr-compact-list">${offline.length ? offline.map(profile => controlRoomCompactRow(profile)).join('') : '<div class="empty compact">Nessun’altra creator.</div>'}</div>
+    </details>`;
+  renderControlRoomWall(profiles);
+};
+
+const baseRenderProfileV26 = renderProfile;
+renderProfile = function renderProfileControlRoom() {
+  baseRenderProfileV26();
+  if (!profileData) return;
+  const profile = profileData.source;
+  const summary = $('#profileContent .profile-summary');
+  if (!summary || summary.querySelector('[data-profile-focus]')) return;
+  const button = document.createElement('button');
+  button.className = `favorite-toggle ${profile.focus ? 'active' : ''}`;
+  button.type = 'button';
+  button.dataset.profileFocus = String(profile.id);
+  button.setAttribute('aria-pressed', String(!!profile.focus));
+  button.textContent = `★ ${profile.focus ? 'In Focus' : 'Metti in Focus'}`;
+  summary.prepend(button);
+};
+
+document.addEventListener('click', async event => {
+  const focusButton = event.target.closest('[data-focus-toggle]');
+  if (focusButton) {
+    event.preventDefault();
+    const sourceId = Number(focusButton.dataset.focusToggle);
+    const source = sources.find(row => row.id === sourceId);
+    if (!source) return;
+    setBusy(focusButton, true, '…');
+    try {
+      await api(`/api/sources/${sourceId}/library`, {method: 'PATCH', body: JSON.stringify({focus: !source.focus})});
+      toast(source.focus ? 'Rimossa dal Focus' : 'Creator fissata nel Focus');
+      await refresh({includeRecordings: false});
+    } catch (error) { toast(error.message, 'bad'); }
+    finally { setBusy(focusButton, false); }
+    return;
+  }
+  const profileFocus = event.target.closest('[data-profile-focus]');
+  if (profileFocus && profileData) {
+    event.preventDefault();
+    setBusy(profileFocus, true, '…');
+    try {
+      const sourceId = profileData.source.id;
+      const next = !profileData.source.focus;
+      await api(`/api/sources/${sourceId}/library`, {method: 'PATCH', body: JSON.stringify({focus: next})});
+      profileData.source.focus = next;
+      for (const source of sources.filter(row => Number(row.profile_id) === Number(profileData.source.profile_id))) source.focus = next;
+      renderProfile();
+      renderSources();
+      toast(next ? 'Creator fissata nel Focus' : 'Rimossa dal Focus');
+    } catch (error) { toast(error.message, 'bad'); }
+    return;
+  }
+  if (event.target.closest('[data-live-wall]')) {
+    event.preventDefault();
+    controlRoomWallOpen = true;
+    renderControlRoomWall();
+    return;
+  }
+  if (event.target.closest('[data-live-wall-close]')) {
+    event.preventDefault();
+    controlRoomWallOpen = false;
+    renderControlRoomWall();
+    return;
+  }
+  const resume = event.target.closest('[data-cr-resume-global]');
+  if (resume) {
+    event.preventDefault();
+    setBusy(resume, true, 'Riprendo…');
+    try {
+      await api('/api/control/recordings', {method: 'POST', body: JSON.stringify({paused: false, stop_active: false})});
+      toast('Registrazioni riattivate');
+      await refresh({includeRecordings: false});
+    } catch (error) { toast(error.message, 'bad'); }
+    finally { setBusy(resume, false); }
+  }
+}, true);
+
+document.addEventListener('toggle', event => {
+  if (event.target?.id !== 'controlRoomOffline') return;
+  controlRoomOfflineOpen = !!event.target.open;
+  localStorage.setItem('livevault-control-room-offline-open', controlRoomOfflineOpen ? '1' : '0');
+}, true);
+
+document.addEventListener('error', event => {
+  const image = event.target;
+  if (!(image instanceof HTMLImageElement) || !image.matches('[data-live-preview]')) return;
+  image.classList.add('hidden');
+  image.closest('.cr-preview')?.classList.add('preview-missing');
+}, true);
+
+document.addEventListener('keydown', event => {
+  if (event.key === 'Escape' && controlRoomWallOpen) {
+    controlRoomWallOpen = false;
+    renderControlRoomWall();
+  }
+});
