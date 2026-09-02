@@ -42,8 +42,8 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          cp .github/workflows/ci.v280.normal.yml .github/workflows/ci.yml
-          rm .github/workflows/ci.v280.normal.yml
+          cp .github/ci.v280.normal.yml .github/workflows/ci.yml
+          rm .github/ci.v280.normal.yml
           rm scripts/apply_v280_live_intelligence.py
           git add -A
           git diff --cached --quiet && exit 0
