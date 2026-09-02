@@ -11,6 +11,11 @@ let settingsData = null;
 let libraryMeta = {categories: [], collections: [], smart_counts: {}};
 let libraryProfiles = [];
 let profileData = null;
+let statisticsData = null;
+let statisticsDays = 30;
+let profileStatisticsDays = 30;
+let statisticsBusy = false;
+let lastStatisticsLoad = 0;
 let refreshBusy = false;
 let lastRecordingLoad = 0;
 let activeView = 'dashboard';
@@ -80,6 +85,76 @@ function dateFull(value) {
   return new Intl.DateTimeFormat('it-IT', {
     day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit'
   }).format(new Date(value));
+}
+
+function creatorLinkMarkup(sourceId, name, extraClass = '') {
+  if (!sourceId) return `<span class="${esc(extraClass)}">${esc(name)}</span>`;
+  return `<button class="creator-link ${esc(extraClass)}" data-profile-link="${Number(sourceId)}" type="button">${esc(name)}</button>`;
+}
+
+function statNumber(value, suffix = '') {
+  const number = Number(value) || 0;
+  return `${new Intl.NumberFormat('it-IT', {maximumFractionDigits: 1}).format(number)}${suffix}`;
+}
+
+function activityChartSvg(rows = []) {
+  if (!rows.length || !rows.some(row => Number(row.online_seconds) || Number(row.recorded_seconds))) return '<div class="empty compact">Nessuna attività nel periodo.</div>';
+  const width = 820, height = 230, top = 12, bottom = 34, chartHeight = height - top - bottom;
+  const maxValue = Math.max(1, ...rows.flatMap(row => [Number(row.online_seconds) || 0, Number(row.recorded_seconds) || 0]));
+  const groupWidth = width / rows.length;
+  const barWidth = Math.max(.5, Math.min(9, groupWidth * .30));
+  const skip = rows.length > 120 ? 30 : rows.length > 60 ? 14 : rows.length > 31 ? 7 : rows.length > 14 ? 4 : 1;
+  let bars = '';
+  let labels = '';
+  rows.forEach((row, index) => {
+    const online = Number(row.online_seconds) || 0;
+    const recorded = Number(row.recorded_seconds) || 0;
+    const center = index * groupWidth + groupWidth / 2;
+    const onlineHeight = online / maxValue * chartHeight;
+    const recordedHeight = recorded / maxValue * chartHeight;
+    bars += `<rect class="chart-bar online" x="${(center - barWidth - .5).toFixed(2)}" y="${(top + chartHeight - onlineHeight).toFixed(2)}" width="${barWidth.toFixed(2)}" height="${onlineHeight.toFixed(2)}"><title>${esc(row.date)} · online ${esc(duration(online))}</title></rect>`;
+    bars += `<rect class="chart-bar recorded" x="${(center + .5).toFixed(2)}" y="${(top + chartHeight - recordedHeight).toFixed(2)}" width="${barWidth.toFixed(2)}" height="${recordedHeight.toFixed(2)}"><title>${esc(row.date)} · registrato ${esc(duration(recorded))}</title></rect>`;
+    if (index % skip === 0 || index === rows.length - 1) labels += `<text class="chart-label" x="${center.toFixed(2)}" y="${height - 9}" text-anchor="middle">${esc(row.date.slice(5))}</text>`;
+  });
+  return `<svg class="activity-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="Grafico tempo online e registrato"><line class="chart-axis" x1="0" y1="${top + chartHeight}" x2="${width}" y2="${top + chartHeight}"></line>${bars}${labels}</svg>`;
+}
+
+function hourlyChartSvg(rows = []) {
+  if (!rows.length || !rows.some(row => Number(row.online_seconds))) return '<div class="empty compact">Nessun dato orario disponibile.</div>';
+  const width = 820, height = 220, top = 12, bottom = 30, chartHeight = height - top - bottom;
+  const maxValue = Math.max(1, ...rows.map(row => Number(row.online_seconds) || 0));
+  const groupWidth = width / 24;
+  const barWidth = Math.max(5, groupWidth * .56);
+  let bars = '';
+  rows.forEach((row, index) => {
+    const value = Number(row.online_seconds) || 0;
+    const barHeight = value / maxValue * chartHeight;
+    const x = index * groupWidth + (groupWidth - barWidth) / 2;
+    bars += `<rect class="chart-bar online" x="${x.toFixed(2)}" y="${(top + chartHeight - barHeight).toFixed(2)}" width="${barWidth.toFixed(2)}" height="${barHeight.toFixed(2)}"><title>${String(index).padStart(2, '0')}:00 · ${esc(duration(value))}</title></rect>`;
+    if (index % 3 === 0) bars += `<text class="chart-label" x="${(index * groupWidth + groupWidth / 2).toFixed(2)}" y="${height - 8}" text-anchor="middle">${String(index).padStart(2, '0')}</text>`;
+  });
+  return `<svg class="activity-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="Grafico distribuzione oraria"><line class="chart-axis" x1="0" y1="${top + chartHeight}" x2="${width}" y2="${top + chartHeight}"></line>${bars}</svg>`;
+}
+
+function statisticsSummaryMarkup(data, compact = false) {
+  const summary = data?.summary || {};
+  const metrics = [
+    ['Tempo online', duration(summary.online_seconds || 0), `${summary.days_online || 0} giorni con live`],
+    ['Tempo registrato', duration(summary.recorded_seconds || 0), `${summary.recording_sessions || 0} sessioni REC`],
+    ['Sessioni live', summary.live_sessions || 0, `più lunga ${duration(summary.longest_live_seconds || 0)}`],
+    ['Copertura', statNumber(summary.coverage_percent || 0, '%'), 'registrato / online'],
+    ['Live ora', summary.online_now || 0, compact ? 'stato corrente' : `${summary.creator_count || 0} creator monitorate`],
+  ];
+  return metrics.map(([label, value, note]) => `<article class="stats-metric panel"><span>${esc(label)}</span><strong>${esc(value)}</strong><small>${esc(note)}</small></article>`).join('');
+}
+
+function statisticsHistoryNote(data) {
+  const summary = data?.summary || {};
+  if (Number(summary.estimated_online_seconds) > 0) {
+    const exact = summary.exact_tracking_started_at ? ` Il tracciamento live completo è attivo dal ${dateFull(summary.exact_tracking_started_at)}.` : '';
+    return `Lo storico precedente è ricostruito dalle registrazioni e rappresenta una stima minima del tempo online.${exact}`;
+  }
+  return summary.exact_tracking_started_at ? `Tempo online misurato direttamente dalle rilevazioni LiveVault dal ${dateFull(summary.exact_tracking_started_at)}.` : 'Il tracciamento live inizierà alla prima rilevazione online.';
 }
 
 function toast(message, type = 'good') {
@@ -255,7 +330,7 @@ function populateProfileOptions(selectedProfileId = 0, editing = false) {
 }
 
 function showView(name, updateHash = true) {
-  const known = ['dashboard', 'library', 'archive'];
+  const known = ['dashboard', 'library', 'archive', 'statistics'];
   activeView = known.includes(name) ? name : 'dashboard';
   $$('.view-section').forEach(view => view.classList.toggle('hidden', view.dataset.page !== activeView));
   $$('.nav-link').forEach(link => {
@@ -269,6 +344,7 @@ function showView(name, updateHash = true) {
     history.replaceState({}, '', url);
   }
   if (activeView === 'library') renderLibrary();
+  if (activeView === 'statistics') loadStatistics(statisticsDays).catch(error => toast(error.message, 'bad'));
   if (activeView === 'archive') {
     renderRecordings();
     if (Date.now() - lastRecordingLoad > 5000) refresh({includeRecordings: true});
@@ -308,7 +384,7 @@ function renderSources() {
       ? `<span class="chip">Rilevata live ${esc(ago(source.last_seen_live_at))}</span>` : '';
     return `<article class="source-card ${live ? 'live' : ''}">
       <div class="source-top">
-        <div><div class="source-name">${esc(source.name)}</div><div class="source-slug">${esc(source.provider_label)} · ${esc(reference)}</div></div>
+        <div>${creatorLinkMarkup(source.id, source.display_name || source.name, 'source-name')}<div class="source-slug">${esc(source.provider_label)} · ${esc(reference)}</div></div>
         <span class="source-status ${esc(source.last_status)}">${esc(statusLabel(source.last_status))}</span>
       </div>
       <div class="source-meta"><span class="chip">${esc(source.quality)}</span><span class="chip">Controllata ${esc(ago(source.last_checked_at))}</span>${lastBroadcastChip(source)}${seen}</div>
@@ -433,7 +509,7 @@ function renderLibrary() {
       <button class="favorite-btn ${profile.favorite ? 'active' : ''}" data-lib-action="favorite" data-id="${profile.representative_id}" type="button" aria-label="${profile.favorite ? 'Rimuovi dai preferiti' : 'Aggiungi ai preferiti'}" aria-pressed="${profile.favorite}">★</button>
       <button class="library-cover" data-lib-action="profile" data-id="${profile.representative_id}" type="button">${libraryCover(profile)}</button>
       <div class="library-card-body">
-        <div class="library-card-head"><div><h3>${esc(profile.display_name)}</h3><p>${accountLabels.map(esc).join(' · ')}</p></div><span class="source-status ${esc(profile.status)}">${esc(statusLabel(profile.status))}</span></div>
+        <div class="library-card-head"><div><h3>${creatorLinkMarkup(profile.representative_id, profile.display_name)}</h3><p>${accountLabels.map(esc).join(' · ')}</p></div><span class="source-status ${esc(profile.status)}">${esc(statusLabel(profile.status))}</span></div>
         <div class="library-tags">${tagMarkup(profile.categories)}${tagMarkup(profile.collections, 'library-tag collection')}</div>
         <div class="library-stats"><span><strong>${profile.recording_count}</strong> file</span><span><strong>${profile.session_count}</strong> sessioni</span><span><strong>${humanBytes(profile.total_bytes)}</strong></span><span><strong>${profile.uploaded_count}</strong> cloud</span></div>
         <div class="library-recency">${profile.last_recording_at ? `Ultima registrazione ${esc(ago(profile.last_recording_at))}` : 'Nessuna registrazione'} · live ${esc(ago(profile.last_seen_live_at || profile.last_live_at))}</div>
@@ -492,6 +568,12 @@ async function openProfile(sourceId) {
   openModal('profileModal');
   try {
     profileData = await api(`/api/sources/${Number(sourceId)}/profile`);
+    try {
+      profileData.activity_statistics = await api(`/api/library/profiles/${profileData.source.profile_id}/statistics?days=${profileStatisticsDays}`);
+    } catch (error) {
+      profileData.activity_statistics = null;
+      toast(`Statistiche profilo: ${error.message}`, 'bad');
+    }
     renderProfile();
   } catch (error) {
     $('#profileContent').innerHTML = `<div class="error-text">${esc(error.message)}</div>`;
@@ -502,6 +584,7 @@ function renderProfile() {
   if (!profileData) return;
   const profile = profileData.source;
   const stats = profile.statistics || {};
+  const activity = profileData.activity_statistics;
   const cover = safeUrl(profile.cover_thumbnail_url);
   $('#profileTitle').textContent = profile.display_name;
   $('#profileReference').textContent = `${profile.linked_sources.length} ${profile.linked_sources.length === 1 ? 'sorgente collegata' : 'sorgenti collegate'} · creato ${dateText(profile.created_at)}`;
@@ -526,6 +609,7 @@ function renderProfile() {
       <div class="profile-cover ${cover ? '' : 'empty'}">${cover ? `<img src="${esc(cover)}" alt="Copertina di ${esc(profile.display_name)}">` : `<span>${esc(profile.display_name.slice(0, 2).toUpperCase())}</span>`}</div>
       <div class="profile-summary"><button class="favorite-toggle ${profile.favorite ? 'active' : ''}" data-profile-action="favorite" data-id="${profile.id}" type="button" aria-pressed="${profile.favorite}">★ ${profile.favorite ? 'Preferita' : 'Aggiungi ai preferiti'}</button><div class="profile-metrics"><span><strong>${stats.recording_count || 0}</strong> file</span><span><strong>${stats.session_count || 0}</strong> sessioni</span><span><strong>${humanBytes(stats.total_bytes || 0)}</strong> registrati</span><span><strong>${duration(stats.total_duration_seconds || 0)}</strong> durata</span><span><strong>${stats.uploaded_count || 0}</strong> cloud</span><span class="${stats.failed_count ? 'danger-text' : ''}"><strong>${stats.failed_count || 0}</strong> problemi</span></div></div>
     </div>
+    <section class="profile-section profile-statistics"><div class="profile-section-head"><div><h3>Statistiche attività</h3><span>Online rilevato, registrazioni e copertura.</span></div><label class="stats-range compact"><span>Periodo</span><select id="profileStatisticsRange"><option value="7" ${profileStatisticsDays === 7 ? 'selected' : ''}>7g</option><option value="30" ${profileStatisticsDays === 30 ? 'selected' : ''}>30g</option><option value="90" ${profileStatisticsDays === 90 ? 'selected' : ''}>90g</option><option value="365" ${profileStatisticsDays === 365 ? 'selected' : ''}>365g</option></select></label></div>${activity ? `<div class="stats-summary-grid compact">${statisticsSummaryMarkup(activity, true)}</div><div class="stats-chart-grid profile"><div class="stats-mini-chart"><div class="chart-title">Online vs registrato</div>${activityChartSvg(activity.daily)}</div><div class="stats-mini-chart"><div class="chart-title">Orari più frequenti</div>${hourlyChartSvg(activity.hourly)}</div></div><p class="stats-note">${esc(statisticsHistoryNote(activity))}</p>` : '<div class="empty compact">Statistiche non disponibili.</div>'}</section>
     <section class="profile-section"><div class="profile-section-head"><h3>Identità e note</h3><span>Non modifica nomi tecnici, cartelle o storico.</span></div><label class="field"><span>Nome profilo</span><input id="profileDisplayName" maxlength="120" value="${esc(profile.display_name)}"></label><label class="field"><span>Note private</span><textarea id="profileNotes" maxlength="20000" rows="4" placeholder="Note, preferenze, riferimenti…">${esc(profile.notes)}</textarea></label></section>
     <section class="profile-section"><div class="profile-section-head"><h3>Categorie</h3><button class="btn quiet" data-profile-action="manage-taxonomy" type="button">Gestisci</button></div><div class="choice-grid">${categoryChecks}</div></section>
     <section class="profile-section"><div class="profile-section-head"><h3>Raccolte libreria</h3></div><div class="choice-grid">${collectionChecks}</div></section>
@@ -550,6 +634,7 @@ async function saveProfile(button) {
     toast('Profilo aggiornato');
     await refresh({includeRecordings: false});
     profileData = await api(`/api/sources/${sourceId}/profile`);
+    profileData.activity_statistics = await api(`/api/library/profiles/${profileData.source.profile_id}/statistics?days=${profileStatisticsDays}`);
     renderProfile();
   } catch (error) {
     const target = $('#profileSaveError');
@@ -599,10 +684,12 @@ function renderRecordings() {
     const thumbnail = recording.thumbnail_available && safeUrl(recording.thumbnail_url)
       ? `<img src="${esc(safeUrl(recording.thumbnail_url))}" loading="lazy" alt="Miniatura ${esc(recording.filename)}">` : '';
     const error = recording.integrity_error || recording.last_error || '';
+    const recordingSource = sources.find(source => source.id === recording.source_id);
+    const creatorName = recordingSource?.display_name || recording.source_name;
     return `<article class="rec-card">
       <button class="thumb ${thumbnail ? '' : 'empty'}" data-rec-action="preview" data-id="${recording.id}" type="button" aria-label="Anteprima ${esc(recording.filename)}">${thumbnail || '<span>LV</span>'}${recording.local_available ? '<span class="play-badge">▶ Anteprima</span>' : ''}</button>
       <div class="rec-body">
-        <div class="rec-title">${esc(recording.source_name)}</div><div class="rec-file">${esc(recording.filename)}</div><div class="rec-date">${esc(dateText(recording.started_at))} · ${esc(recording.session_id)}</div>
+        <div class="rec-title">${creatorLinkMarkup(recordingSource?.id || 0, creatorName)}</div><div class="rec-file">${esc(recording.filename)}</div><div class="rec-date">${esc(dateText(recording.started_at))} · ${esc(recording.session_id)}</div>
         <div class="rec-meta"><span class="chip">${esc(recording.size_human)}</span><span class="chip">${esc(duration(recording.duration_seconds))}</span><span class="chip">${esc((recording.container_format || '').toUpperCase())}</span>${recordingStreamMarkup(recording)}<span class="integrity ${esc(recording.integrity_status)}">${recording.integrity_status === 'passed' ? '✓ Integro' : recording.integrity_status === 'failed' || recording.integrity_status === 'integrity_failed' ? '✕ Fallita' : `… ${esc(recording.integrity_status)}`}</span><span class="upload-status ${esc(recording.upload_status)}">${esc(uploadLabel(recording.upload_status))}${recording.upload_provider ? ` · ${esc(recording.upload_provider)}` : ''}</span></div>
         ${error ? `<div class="rec-error" title="${esc(error)}">${esc(error)}</div>` : ''}
         <div class="rec-actions">
@@ -729,7 +816,10 @@ function renderStatus(status) {
   const active = status.worker.active || [];
   const history = status.history || {};
   $('#activeCount').textContent = active.length;
-  $('#activeNames').textContent = active.length ? active.map(item => item.source_name).join(', ') : 'Nessuna';
+  $('#activeNames').innerHTML = active.length ? active.map(item => {
+    const source = sources.find(row => row.id === Number(item.source_id));
+    return creatorLinkMarkup(item.source_id, source?.display_name || item.source_name);
+  }).join(' · ') : 'Nessuna';
   $('#queueCount').textContent = status.queue.pending;
   $('#queueNote').textContent = status.queue.integrity_failed ? `${status.queue.integrity_failed} integrità fallita` : status.queue.failed ? `${status.queue.failed} falliti` : status.queue.pending ? 'file in attesa' : 'Coda vuota';
   $('#historyCount').textContent = history.recordings || 0;
@@ -775,6 +865,53 @@ function renderStatus(status) {
   }
 }
 
+function renderLivePauseAlert() {
+  const root = $('#livePauseAlert');
+  if (!root) return;
+  const grouped = new Map();
+  for (const source of sources.filter(row => row.recording_blocked_by_pause && !row.archived)) {
+    const profileId = Number(source.profile_id || source.id);
+    if (!grouped.has(profileId)) grouped.set(profileId, source);
+  }
+  const rows = [...grouped.values()];
+  root.classList.toggle('hidden', rows.length === 0);
+  if (!rows.length) { root.innerHTML = ''; return; }
+  const globallyPaused = !!statusData?.config?.recording_paused;
+  const title = rows.length === 1 ? 'Creator LIVE non registrata' : `${rows.length} creator LIVE non registrate`;
+  root.innerHTML = `<div class="live-pause-head"><span class="live-pause-pulse" aria-hidden="true"></span><div><strong>${esc(title)}</strong><small>${globallyPaused ? 'Registrazioni globali in pausa' : 'Registrazione in pausa per queste creator'}</small></div></div><div class="live-pause-creators">${rows.slice(0, 5).map(source => creatorLinkMarkup(source.id, source.display_name || source.name)).join('')}${rows.length > 5 ? `<span class="live-pause-more">+${rows.length - 5}</span>` : ''}</div>${globallyPaused ? '<button class="btn primary live-pause-resume" data-alert-resume type="button">Riprendi registrazioni</button>' : ''}`;
+}
+
+function renderStatistics() {
+  if (!statisticsData) return;
+  $('#statisticsSummary').innerHTML = statisticsSummaryMarkup(statisticsData);
+  $('#statisticsDailyChart').innerHTML = activityChartSvg(statisticsData.daily);
+  $('#statisticsHourlyChart').innerHTML = hourlyChartSvg(statisticsData.hourly);
+  const rows = statisticsData.top_creators || [];
+  $('#statisticsLeaderboard').innerHTML = rows.length ? rows.map((row, index) => `<article class="leader-row"><span class="leader-rank">${index + 1}</span><div class="leader-name">${creatorLinkMarkup(row.representative_source_id, row.display_name)}${row.online_now ? '<span class="leader-live">LIVE</span>' : ''}</div><div><strong>${esc(duration(row.online_seconds))}</strong><small>online · ${row.days_online} giorni</small></div><div><strong>${esc(duration(row.recorded_seconds))}</strong><small>registrato</small></div><div><strong>${esc(statNumber(row.coverage_percent, '%'))}</strong><small>copertura</small></div></article>`).join('') : '<div class="empty">Nessun dato creator nel periodo.</div>';
+  $('#statisticsNote').textContent = statisticsHistoryNote(statisticsData);
+  $('#statisticsRange').value = String(statisticsDays);
+}
+
+async function loadStatistics(days = statisticsDays) {
+  if (statisticsBusy) return;
+  statisticsBusy = true;
+  statisticsDays = Math.max(1, Math.min(365, Number(days) || 30));
+  try {
+    statisticsData = await api(`/api/statistics?days=${statisticsDays}`);
+    lastStatisticsLoad = Date.now();
+    renderStatistics();
+  } finally {
+    statisticsBusy = false;
+  }
+}
+
+async function loadProfileStatistics(days) {
+  if (!profileData) return;
+  profileStatisticsDays = Math.max(1, Math.min(365, Number(days) || 30));
+  profileData.activity_statistics = await api(`/api/library/profiles/${profileData.source.profile_id}/statistics?days=${profileStatisticsDays}`);
+  renderProfile();
+}
+
 async function refresh({includeRecordings = false} = {}) {
   if (refreshBusy) return;
   refreshBusy = true;
@@ -796,6 +933,8 @@ async function refresh({includeRecordings = false} = {}) {
     renderSources();
     renderLibrary();
     renderRecordings();
+    renderLivePauseAlert();
+    if (activeView === 'statistics' && Date.now() - lastStatisticsLoad > 30000) loadStatistics(statisticsDays).catch(() => {});
     $('#lastRefresh').textContent = `Aggiornato ${new Intl.DateTimeFormat('it-IT', {hour: '2-digit', minute: '2-digit', second: '2-digit'}).format(new Date())}`;
   } catch (error) {
     if (error.message !== 'auth') {
@@ -833,6 +972,22 @@ async function bulkAction(action, button) {
 }
 
 document.addEventListener('click', event => {
+  const profileLink = event.target.closest('[data-profile-link]');
+  if (profileLink) {
+    event.preventDefault();
+    openProfile(Number(profileLink.dataset.profileLink));
+    return;
+  }
+  const resumeAlert = event.target.closest('[data-alert-resume]');
+  if (resumeAlert) {
+    event.preventDefault();
+    setBusy(resumeAlert, true, 'Riprendo…');
+    api('/api/control/recordings', {method: 'POST', body: JSON.stringify({paused: false, stop_active: false})})
+      .then(() => { toast('Registrazioni riattivate'); return refresh({includeRecordings: false}); })
+      .catch(error => toast(error.message, 'bad'))
+      .finally(() => setBusy(resumeAlert, false));
+    return;
+  }
   const close = event.target.closest('[data-close-modal]');
   if (close) closeModal(`${close.dataset.closeModal}Modal`);
   const navigation = event.target.closest('[data-view]');
@@ -874,6 +1029,8 @@ $('#logoutBtn').addEventListener('click', async () => {
 
 $('#showAddBtn').addEventListener('click', () => showSource());
 $('#libraryAddBtn').addEventListener('click', () => showSource());
+$('#statisticsRange').addEventListener('change', event => loadStatistics(Number(event.target.value)).catch(error => toast(error.message, 'bad')));
+
 $('#settingsBtn').addEventListener('click', async () => {
   try { await loadSettings(); openModal('settingsModal'); } catch (error) { toast(error.message, 'bad'); }
 });
@@ -1193,6 +1350,12 @@ $('#libraryTaxonomy').addEventListener('click', async event => {
   finally { setBusy(button, false); }
 });
 
+$('#profileContent').addEventListener('change', event => {
+  if (event.target.id === 'profileStatisticsRange') {
+    loadProfileStatistics(Number(event.target.value)).catch(error => toast(error.message, 'bad'));
+  }
+});
+
 $('#profileContent').addEventListener('click', async event => {
   const button = event.target.closest('[data-profile-action]');
   if (!button || !profileData) return;
@@ -1258,6 +1421,7 @@ $('#profileContent').addEventListener('click', async event => {
     const sourceId = profileData.source.id;
     await refresh({includeRecordings: false});
     profileData = await api(`/api/sources/${sourceId}/profile`);
+    profileData.activity_statistics = await api(`/api/library/profiles/${profileData.source.profile_id}/statistics?days=${profileStatisticsDays}`);
     renderProfile();
   } catch (error) { toast(error.message, 'bad'); }
   finally { setBusy(button, false); }

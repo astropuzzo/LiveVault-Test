@@ -35,6 +35,7 @@
           <button class="nav-link active" type="button" data-view="dashboard" aria-current="page">Dashboard</button>
           <button class="nav-link" type="button" data-view="library">Libreria</button>
           <button class="nav-link" type="button" data-view="archive">Archivio</button>
+          <button class="nav-link" type="button" data-view="statistics">Statistiche</button>
         </nav>
         <div class="top-actions">
           <span id="healthPill" class="pill good">Online</span>
@@ -160,6 +161,19 @@
         </section>
       </div>
 
+      <div id="statisticsView" class="view-section hidden" data-page="statistics">
+        <section class="page-head">
+          <div><div class="eyebrow">ANALISI</div><h1>Statistiche</h1><p>Tempo online, copertura registrazioni e andamento delle creator.</p></div>
+          <label class="stats-range"><span>Periodo</span><select id="statisticsRange"><option value="7">7 giorni</option><option value="30" selected>30 giorni</option><option value="90">90 giorni</option><option value="365">365 giorni</option></select></label>
+        </section>
+        <section id="statisticsSummary" class="stats-summary-grid"></section>
+        <section class="stats-chart-grid">
+          <article class="panel stats-chart-card"><div class="section-head"><div><div class="eyebrow">ANDAMENTO</div><h2>Online vs registrato</h2><p>Tempo rilevato online e tempo effettivamente acquisito.</p></div><div class="chart-legend"><span class="online">Online</span><span class="recorded">Registrato</span></div></div><div id="statisticsDailyChart" class="chart-host"></div></article>
+          <article class="panel stats-chart-card"><div class="section-head"><div><div class="eyebrow">ORARI</div><h2>Distribuzione giornaliera</h2><p>In quali ore le creator risultano più spesso online.</p></div></div><div id="statisticsHourlyChart" class="chart-host"></div></article>
+        </section>
+        <section class="panel section"><div class="section-head"><div><div class="eyebrow">CREATOR</div><h2>Confronto</h2><p>Ordinate per tempo online nel periodo selezionato.</p></div></div><div id="statisticsLeaderboard" class="stats-leaderboard"></div><p id="statisticsNote" class="stats-note"></p></section>
+      </div>
+
       <div id="archiveView" class="view-section hidden" data-page="archive">
         <section class="page-head">
           <div><div class="eyebrow">CONSERVAZIONE</div><h1>Archivio</h1><p>File locali, integrità e copie cloud.</p></div>
@@ -231,6 +245,7 @@
   </div>
 
   <div id="videoModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="videoTitle"><div class="backdrop" data-close-modal="video"></div><div class="modal-card video-card panel"><div class="modal-head"><div><div class="eyebrow">ANTEPRIMA</div><h2 id="videoTitle">Video</h2></div><button class="icon-btn" type="button" data-close-modal="video" aria-label="Chiudi">×</button></div><video id="videoPlayer" controls preload="metadata"></video></div></div>
+  <aside id="livePauseAlert" class="live-pause-alert hidden" aria-live="assertive" aria-label="Creator live non registrate"></aside>
   <div id="toastRegion" class="toasts" aria-live="polite"></div>
   <script src="/static/app.js" defer></script>
 </body>

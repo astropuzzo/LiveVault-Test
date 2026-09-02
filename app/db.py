@@ -118,6 +118,22 @@ class Recording(Base):
     audio_codec: Mapped[str] = mapped_column(String(40), default="")
 
 
+class LiveSession(Base):
+    __tablename__ = "live_sessions"
+    __table_args__ = (
+        Index("ix_live_sessions_source_started", "source_id", "started_at"),
+        Index("ix_live_sessions_source_open", "source_id", "ended_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    source_id: Mapped[int] = mapped_column(Integer, index=True)
+    source_name: Mapped[str] = mapped_column(String(120), index=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    origin: Mapped[str] = mapped_column(String(32), default="probe", index=True)
+
+
 class AppSetting(Base):
     __tablename__ = "app_settings"
 
@@ -235,11 +251,37 @@ def _migrate_library() -> None:
         conn.execute(text("CREATE INDEX IF NOT EXISTS ix_collection_profiles_profile_id ON collection_profiles (profile_id)"))
 
 
+def _migrate_live_sessions() -> None:
+    """Backfill a minimum historical online timeline from existing recordings once.
+
+    From v2.6.0 onward workers write probe-derived sessions, including periods where
+    recording is paused. Older history can only be estimated from captured sessions.
+    """
+    with engine.begin() as conn:
+        count = int(conn.execute(text("SELECT COUNT(*) FROM live_sessions")).scalar_one() or 0)
+        if count:
+            return
+        conn.execute(text("""
+            INSERT INTO live_sessions (source_id, source_name, started_at, ended_at, last_seen_at, origin)
+            SELECT
+                source_id,
+                MAX(source_name),
+                MIN(started_at),
+                MAX(finalized_at),
+                MAX(finalized_at),
+                'recording_backfill'
+            FROM recordings
+            WHERE started_at IS NOT NULL AND finalized_at IS NOT NULL
+            GROUP BY source_id, session_id
+        """))
+
+
 def init_db() -> None:
     Base.metadata.create_all(engine)
     _migrate_recordings()
     _migrate_sources()
     _migrate_library()
+    _migrate_live_sessions()
 
 
 @contextmanager

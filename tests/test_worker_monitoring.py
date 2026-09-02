@@ -7,7 +7,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from app import workers
-from app.db import Base, Profile, Source
+from app.db import Base, LiveSession, Profile, Source
 from app.workers import WorkerManager
 
 
@@ -16,7 +16,9 @@ def test_global_recording_pause_does_not_pause_source_monitoring():
     source_check = inspect.getsource(WorkerManager._check_source_unlocked)
 
     assert "recording_paused" not in poll_loop
+    assert "Source.enabled.is_(True)" not in poll_loop
     assert "cfg.recording_paused" in source_check
+    assert "_observe_live_state" in source_check
 
 
 def test_inflight_probe_cannot_start_after_source_is_paused(tmp_path, monkeypatch):
@@ -80,5 +82,7 @@ def test_inflight_probe_cannot_start_after_source_is_paused(tmp_path, monkeypatc
     assert started == []
     with factory() as session:
         assert session.get(Source, source_id).enabled is False
+        live = session.query(LiveSession).filter(LiveSession.source_id == source_id, LiveSession.ended_at.is_(None)).one()
+        assert live.origin == "probe"
 
     engine.dispose()

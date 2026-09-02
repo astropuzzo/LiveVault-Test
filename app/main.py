@@ -5,7 +5,7 @@ import re
 import time
 from collections import defaultdict, deque
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Literal
 
@@ -22,6 +22,7 @@ from .db import (
     Category,
     Collection,
     CollectionProfile,
+    LiveSession,
     Profile,
     ProfileCategory,
     Recording,
@@ -33,6 +34,7 @@ from .file_cleanup import cleanup_empty_parents, cleanup_orphan_videos, safe_unl
 from .recorder import finalize_mp4_for_streaming, mp4_is_streaming_ready, remux_to_mp4
 from .settings_store import public_settings, reload_runtime, runtime, set_values
 from .source_providers import audit_inputs, normalize_source, probe, provider_catalog, provider_label, resolve_inputs, source_url
+from .statistics import build_activity_statistics
 from .storage import disk_state
 from .uploaders import UploadError, create_gofile_folder, move_gofile_contents, test_provider
 from .utils import generate_thumbnail, human_bytes, sha256_file, utcnow, verify_media
@@ -42,7 +44,7 @@ BASE = Path(__file__).parent
 LOGIN_FAILURES: dict[str, deque[float]] = defaultdict(deque)
 LOGIN_WINDOW = 10 * 60
 LOGIN_MAX_FAILURES = 6
-VERSION = "2.5.2"
+VERSION = "2.6.0"
 
 
 class LoginBody(BaseModel):
@@ -1086,6 +1088,8 @@ async def delete_profile(profile_id: int, request: Request):
             raise HTTPException(404, "Profilo non trovato")
         # sources.profile_id is a real FK, so source configuration goes first.
         # Recording rows deliberately remain as immutable archive history.
+        if source_ids:
+            db.execute(delete(LiveSession).where(LiveSession.source_id.in_(source_ids)))
         db.execute(delete(Source).where(Source.profile_id == profile_id))
         db.execute(delete(ProfileCategory).where(ProfileCategory.profile_id == profile_id))
         db.execute(delete(CollectionProfile).where(CollectionProfile.profile_id == profile_id))
@@ -1099,6 +1103,60 @@ async def delete_profile(profile_id: int, request: Request):
         "source_ids": source_ids,
         "preserved_recordings": preserved_recordings,
     }
+
+
+def _activity_statistics(db, days: int, profile_id: int | None = None) -> dict:
+    days = max(1, min(int(days), 365))
+    now = utcnow()
+    window_start = (now - timedelta(days=days - 1)).replace(hour=0, minute=0, second=0, microsecond=0)
+    source_query = select(Source).order_by(Source.id)
+    if profile_id is not None:
+        if not db.get(Profile, profile_id):
+            raise HTTPException(404, "Profilo non trovato")
+        source_query = source_query.where(Source.profile_id == profile_id)
+    source_rows = list(db.scalars(source_query).all())
+    source_ids = [row.id for row in source_rows]
+    profile_ids = sorted({int(row.profile_id) for row in source_rows if row.profile_id is not None})
+    profile_rows = list(db.scalars(select(Profile).where(Profile.id.in_(profile_ids))).all()) if profile_ids else []
+    if source_ids:
+        live_rows = list(db.scalars(
+            select(LiveSession).where(
+                LiveSession.source_id.in_(source_ids),
+                LiveSession.started_at <= now,
+                or_(LiveSession.ended_at.is_(None), LiveSession.ended_at >= window_start),
+            ).order_by(LiveSession.started_at.asc())
+        ).all())
+        recording_rows = list(db.scalars(
+            select(Recording).where(
+                Recording.source_id.in_(source_ids),
+                Recording.finalized_at >= window_start,
+            ).order_by(Recording.started_at.asc())
+        ).all())
+    else:
+        live_rows = []
+        recording_rows = []
+    return build_activity_statistics(
+        sources=source_rows,
+        profiles=profile_rows,
+        live_sessions=live_rows,
+        recordings=recording_rows,
+        days=days,
+        now=now,
+    )
+
+
+@app.get("/api/statistics")
+def global_statistics(request: Request, days: int = 30):
+    require_auth(request)
+    with db_session() as db:
+        return _activity_statistics(db, days)
+
+
+@app.get("/api/library/profiles/{profile_id}/statistics")
+def profile_statistics(profile_id: int, request: Request, days: int = 30):
+    require_auth(request)
+    with db_session() as db:
+        return _activity_statistics(db, days, profile_id=profile_id)
 
 
 @app.get("/api/sources/{source_id}/profile")
@@ -1202,6 +1260,9 @@ def source_profile(source_id: int, request: Request):
 def list_sources(request: Request):
     require_auth(request)
     active_ids = set(manager.active)
+    cfg = runtime()
+    now = utcnow()
+    live_fresh_seconds = max(180, int(cfg.poll_seconds) * 3)
     with db_session() as db:
         rows = list(db.scalars(select(Source).order_by(Source.name.asc())).all())
         aggregate_rows = db.execute(
@@ -1237,6 +1298,21 @@ def list_sources(request: Request):
             aggregate = aggregates.get(source.id)
             active = source.id in active_ids
             profile = profiles.get(source.profile_id)
+            last_seen = source.last_seen_live_at
+            if last_seen is not None and last_seen.tzinfo is None:
+                last_seen = last_seen.replace(tzinfo=timezone.utc)
+            fresh_live = bool(
+                last_seen is not None
+                and (now - last_seen.astimezone(timezone.utc)).total_seconds() <= live_fresh_seconds
+            )
+            detected_live = bool(
+                not source.archived
+                and (active or (source.last_status in {"live", "recording"} and fresh_live))
+            )
+            blocked_by_pause = bool(
+                detected_live and not active and source.consent_confirmed and not source.archived
+                and (cfg.recording_paused or not source.enabled)
+            )
             result.append({
                 "id": source.id, "name": source.name, "platform": source.platform,
                 "provider_label": provider_label(source.platform), "slug": source.slug,
@@ -1251,6 +1327,9 @@ def list_sources(request: Request):
                 "cover_thumbnail_url": covers.get(profile.id, "") if profile else "",
                 "enabled": source.enabled, "archived": source.archived,
                 "quality": source.quality, "consent_confirmed": source.consent_confirmed,
+                "detected_live": detected_live,
+                "recording_blocked_by_pause": blocked_by_pause,
+                "pause_reason": "global" if blocked_by_pause and cfg.recording_paused else ("source" if blocked_by_pause else ""),
                 "last_status": "recording" if active else (
                     "archived" if source.archived else ("paused" if not source.enabled else source.last_status)
                 ),

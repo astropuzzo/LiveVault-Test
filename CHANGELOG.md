@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.6.0 — 2026-09-02
+
+- Aggiunto avviso **floating** che compare esclusivamente quando una creator è LIVE ma la registrazione è ferma per pausa globale o della singola creator; i nomi nell'avviso aprono subito il profilo e, con pausa globale, è disponibile anche il ripristino rapido delle REC.
+- Le creator messe in pausa continuano a essere monitorate (senza registrarle), così una live non passa inosservata.
+- I nomi creator sono ora cliccabili da Dashboard, Libreria, Archivio, REC attive e classifiche statistiche.
+- Nuovo registro persistente delle **sessioni live**, inclusi i periodi online mentre le registrazioni sono in pausa.
+- Nuova sezione **Statistiche** globale con range 7/30/90/365 giorni, tempo online, giorni online, sessioni live, tempo registrato, copertura, grafici giornalieri/orari e confronto creator.
+- Ogni profilo creator include le stesse statistiche e grafici dedicati. Lo storico antecedente alla 2.6.0 viene ricostruito dalle registrazioni come stima minima, senza inventare tempo online non osservato.
+
 ## 2.5.2 — 2026-09-02
 
 - Aggiunto **Elimina definitivamente** per le creator nella Libreria e nel profilo.

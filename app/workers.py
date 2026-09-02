@@ -9,7 +9,7 @@ from pathlib import Path
 from sqlalchemy import func, select
 
 from .config import settings
-from .db import Recording, Source, db_session
+from .db import LiveSession, Recording, Source, db_session
 from .recorder import (
     RecorderSession,
     finalize_mp4_for_streaming,
@@ -466,6 +466,32 @@ class WorkerManager:
         self.last_errors.pop(f"finalize:{source_id}", None)
         return True
 
+    def _observe_live_state(self, db, source: Source, live: bool, observed_at: datetime) -> None:
+        open_session = db.scalar(
+            select(LiveSession)
+            .where(LiveSession.source_id == source.id, LiveSession.ended_at.is_(None))
+            .order_by(LiveSession.started_at.desc(), LiveSession.id.desc())
+        )
+        if live:
+            if open_session:
+                open_session.last_seen_at = observed_at
+            else:
+                db.add(LiveSession(
+                    source_id=source.id,
+                    source_name=source.name,
+                    started_at=observed_at,
+                    ended_at=None,
+                    last_seen_at=observed_at,
+                    origin="probe",
+                ))
+            source.last_seen_live_at = observed_at
+        elif open_session:
+            started_at = open_session.started_at
+            if started_at.tzinfo is None:
+                started_at = started_at.replace(tzinfo=timezone.utc)
+            open_session.ended_at = max(observed_at, started_at.astimezone(timezone.utc))
+            open_session.last_seen_at = observed_at
+
     async def _check_source(self, source: Source, semaphore: asyncio.Semaphore) -> None:
         lock = self._source_check_locks.setdefault(source.id, asyncio.Lock())
         async with lock:
@@ -490,8 +516,7 @@ class WorkerManager:
                     current.metadata_error = result.metadata_error
                     if result.last_broadcast is not None:
                         current.last_live_at = result.last_broadcast
-                    if result.live:
-                        current.last_seen_live_at = checked_at
+                    self._observe_live_state(db, current, bool(result.live), checked_at)
                     recording_allowed = bool(current.enabled and current.consent_confirmed and not current.archived)
             cfg = runtime()
             if not result.live or self._stopping or source.id in self.active or cfg.recording_paused or not recording_allowed:
@@ -544,8 +569,9 @@ class WorkerManager:
             try:
                 cfg = runtime()
                 with db_session() as db:
+                    # Paused creators are still probed so the UI can warn when they are
+                    # live but intentionally not being recorded. Archived creators are ignored.
                     sources = list(db.scalars(select(Source).where(
-                        Source.enabled.is_(True),
                         Source.consent_confirmed.is_(True),
                         Source.archived.is_(False),
                     )).all())
@@ -621,15 +647,20 @@ class WorkerManager:
                     now = utcnow()
                     if source.archived:
                         new_status = "archived"
-                    elif not source.enabled or not source.consent_confirmed:
+                    elif not source.consent_confirmed:
                         new_status = "paused"
+                    elif not source.enabled or self._stopping or runtime().recording_paused or size_rollover:
+                        # A controlled stop (deploy/global pause/rollover) is not evidence
+                        # that the creator went offline. The next probe closes the session
+                        # if the stream actually ended.
+                        new_status = "live"
                     else:
-                        new_status = "live" if size_rollover else "offline"
+                        new_status = "offline"
                     if source.last_status != new_status or source.status_changed_at is None:
                         source.status_changed_at = now
                     source.last_status = new_status
                     source.last_checked_at = now
-                    source.last_seen_live_at = now
+                    self._observe_live_state(db, source, new_status == "live", now)
                     if size_rollover:
                         source.last_error = ""
             self.wake()
