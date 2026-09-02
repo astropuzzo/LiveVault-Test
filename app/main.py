@@ -7,16 +7,28 @@ from collections import defaultdict, deque
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Literal
 
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
-from sqlalchemy import case, distinct, func, select
+from sqlalchemy import case, delete, distinct, func, or_, select
+from sqlalchemy.exc import IntegrityError
 
 from .auth import COOKIE_NAME, MAX_AGE, create_session_token, password_ok, require_auth
 from .config import settings
-from .db import Recording, Source, db_session, init_db
+from .db import (
+    Category,
+    Collection,
+    CollectionProfile,
+    Profile,
+    ProfileCategory,
+    Recording,
+    Source,
+    db_session,
+    init_db,
+)
 from .file_cleanup import cleanup_empty_parents, cleanup_orphan_videos, safe_unlink
 from .recorder import remux_to_mp4
 from .settings_store import public_settings, reload_runtime, runtime, set_values
@@ -30,7 +42,7 @@ BASE = Path(__file__).parent
 LOGIN_FAILURES: dict[str, deque[float]] = defaultdict(deque)
 LOGIN_WINDOW = 10 * 60
 LOGIN_MAX_FAILURES = 6
-VERSION = "2.4.0"
+VERSION = "2.5.0"
 
 
 class LoginBody(BaseModel):
@@ -54,6 +66,7 @@ class SourceCreate(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     slug: str = Field(min_length=1, max_length=1000)
     platform: str = "auto"
+    profile_id: int | None = Field(default=None, gt=0)
     quality: str = "best"
     consent_confirmed: bool
     organize_cloud: bool = True
@@ -65,6 +78,7 @@ class SourcePatch(BaseModel):
     name: str | None = Field(default=None, max_length=120)
     slug: str | None = Field(default=None, max_length=1000)
     platform: str | None = Field(default=None, max_length=40)
+    profile_id: int | None = Field(default=None, gt=0)
     quality: str | None = Field(default=None, max_length=20)
     enabled: bool | None = None
     consent_confirmed: bool | None = None
@@ -77,6 +91,54 @@ class SourceInspect(BaseModel):
     slug: str = Field(min_length=1, max_length=1000)
     platform: str = Field(default="auto", max_length=40)
     quality: str = Field(default="best", max_length=20)
+
+
+class CategoryCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+    color: str = Field(default="#7aa5ff", pattern=r"^#[0-9A-Fa-f]{6}$")
+
+
+class CategoryPatch(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=80)
+    color: str | None = Field(default=None, pattern=r"^#[0-9A-Fa-f]{6}$")
+
+
+class CollectionCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    description: str = Field(default="", max_length=4000)
+    color: str = Field(default="#8c78ff", pattern=r"^#[0-9A-Fa-f]{6}$")
+    pinned: bool = False
+
+
+class CollectionPatch(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=120)
+    description: str | None = Field(default=None, max_length=4000)
+    color: str | None = Field(default=None, pattern=r"^#[0-9A-Fa-f]{6}$")
+    pinned: bool | None = None
+
+
+class SourceLibraryPatch(BaseModel):
+    display_name: str | None = Field(default=None, min_length=1, max_length=120)
+    favorite: bool | None = None
+    notes: str | None = Field(default=None, max_length=20_000)
+    category_ids: list[int] | None = Field(default=None, max_length=200)
+    collection_ids: list[int] | None = Field(default=None, max_length=200)
+
+
+class SourceBulkAction(BaseModel):
+    source_ids: list[int] = Field(min_length=1, max_length=500)
+    action: Literal[
+        "favorite",
+        "unfavorite",
+        "enable",
+        "pause",
+        "add_category",
+        "remove_category",
+        "add_collection",
+        "remove_collection",
+    ]
+    category_id: int | None = Field(default=None, gt=0)
+    collection_id: int | None = Field(default=None, gt=0)
 
 
 class SettingsPatch(BaseModel):
@@ -144,6 +206,291 @@ def _iso_utc(value: datetime | None) -> str | None:
     if value.tzinfo is None:
         value = value.replace(tzinfo=timezone.utc)
     return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _clean_library_name(value: str, label: str) -> str:
+    cleaned = value.strip()
+    if not cleaned or any(ord(char) < 32 for char in cleaned):
+        raise HTTPException(400, f"{label} non valido")
+    return cleaned
+
+
+def _clean_color(value: str) -> str:
+    if not re.fullmatch(r"#[0-9A-Fa-f]{6}", value or ""):
+        raise HTTPException(400, "Colore non valido: usa #RRGGBB")
+    return value.lower()
+
+
+def _unique_positive_ids(values: list[int] | None, label: str) -> list[int]:
+    if values is None:
+        return []
+    if any(isinstance(value, bool) or value <= 0 for value in values):
+        raise HTTPException(400, f"{label} contiene ID non validi")
+    return sorted(set(values))
+
+
+def _source_public_url(source: Source) -> str:
+    try:
+        return source_url(source.platform, source.slug)
+    except ValueError:
+        return ""
+
+
+def _category_json(category: Category, profile_count: int = 0) -> dict:
+    return {
+        "id": category.id,
+        "name": category.name,
+        "color": category.color,
+        "profile_count": int(profile_count),
+        "source_count": int(profile_count),
+    }
+
+
+def _collection_json(collection: Collection, profile_count: int = 0) -> dict:
+    return {
+        "id": collection.id,
+        "name": collection.name,
+        "description": collection.description,
+        "color": collection.color,
+        "pinned": collection.pinned,
+        "profile_count": int(profile_count),
+        "source_count": int(profile_count),
+    }
+
+
+def _category_rows(db) -> list[dict]:
+    counts = dict(db.execute(
+        select(ProfileCategory.category_id, func.count(ProfileCategory.profile_id))
+        .group_by(ProfileCategory.category_id)
+    ).all())
+    rows = list(db.scalars(select(Category).order_by(func.lower(Category.name), Category.id)).all())
+    return [_category_json(row, counts.get(row.id, 0)) for row in rows]
+
+
+def _collection_rows(db) -> list[dict]:
+    counts = dict(db.execute(
+        select(CollectionProfile.collection_id, func.count(CollectionProfile.profile_id))
+        .group_by(CollectionProfile.collection_id)
+    ).all())
+    rows = list(db.scalars(
+        select(Collection).order_by(Collection.pinned.desc(), func.lower(Collection.name), Collection.id)
+    ).all())
+    return [_collection_json(row, counts.get(row.id, 0)) for row in rows]
+
+
+def _library_maps(db, profile_ids: set[int] | None = None) -> tuple[dict[int, list[dict]], dict[int, list[dict]]]:
+    categories: dict[int, list[dict]] = defaultdict(list)
+    collections: dict[int, list[dict]] = defaultdict(list)
+    category_query = (
+        select(ProfileCategory.profile_id, Category)
+        .join(Category, Category.id == ProfileCategory.category_id)
+        .order_by(func.lower(Category.name), Category.id)
+    )
+    collection_query = (
+        select(CollectionProfile.profile_id, Collection)
+        .join(Collection, Collection.id == CollectionProfile.collection_id)
+        .order_by(Collection.pinned.desc(), func.lower(Collection.name), Collection.id)
+    )
+    if profile_ids is not None:
+        if not profile_ids:
+            return {}, {}
+        category_query = category_query.where(ProfileCategory.profile_id.in_(profile_ids))
+        collection_query = collection_query.where(CollectionProfile.profile_id.in_(profile_ids))
+    for profile_id, category in db.execute(category_query).all():
+        categories[int(profile_id)].append(_category_json(category))
+    for profile_id, collection in db.execute(collection_query).all():
+        collections[int(profile_id)].append(_collection_json(collection))
+    return dict(categories), dict(collections)
+
+
+def _linked_sources_map(db, profile_ids: set[int] | None = None) -> dict[int, list[dict]]:
+    linked: dict[int, list[dict]] = defaultdict(list)
+    query = select(Source).order_by(Source.name, Source.id)
+    if profile_ids is not None:
+        if not profile_ids:
+            return {}
+        query = query.where(Source.profile_id.in_(profile_ids))
+    for source in db.scalars(query).all():
+        if source.profile_id is None:
+            continue
+        linked[int(source.profile_id)].append({
+            "id": source.id,
+            "name": source.name,
+            "platform": source.platform,
+            "provider_label": provider_label(source.platform),
+            "slug": source.slug,
+            "source_url": _source_public_url(source),
+            "enabled": source.enabled,
+            "archived": source.archived,
+            "quality": source.quality,
+            "last_status": "archived" if source.archived else ("paused" if not source.enabled else source.last_status),
+            "last_checked_at": _iso_utc(source.last_checked_at),
+            "last_seen_live_at": _iso_utc(source.last_seen_live_at),
+        })
+    return dict(linked)
+
+
+def _profile_json(
+    profile: Profile,
+    categories: dict[int, list[dict]],
+    collections: dict[int, list[dict]],
+    linked_sources: dict[int, list[dict]],
+) -> dict:
+    return {
+        "id": profile.id,
+        "profile_id": profile.id,
+        "display_name": profile.display_name,
+        "favorite": profile.favorite,
+        "notes": profile.notes,
+        "created_at": _iso_utc(profile.created_at),
+        "categories": categories.get(profile.id, []),
+        "collections": collections.get(profile.id, []),
+        "linked_sources": linked_sources.get(profile.id, []),
+    }
+
+
+def _safe_thumbnail_url(recording_id: int, thumbnail_path: str) -> str:
+    if not thumbnail_path:
+        return ""
+    try:
+        root = (settings.data_dir / "thumbnails").resolve()
+        candidate = Path(thumbnail_path).resolve()
+        if not candidate.is_file() or not candidate.is_relative_to(root):
+            return ""
+    except (OSError, RuntimeError, ValueError):
+        return ""
+    return f"/api/recordings/{recording_id}/thumbnail"
+
+
+def _profile_cover_map(db, profile_ids: set[int]) -> dict[int, str]:
+    covers: dict[int, str] = {}
+    if not profile_ids:
+        return covers
+    ranked = (
+        select(
+            Recording.id.label("recording_id"),
+            Recording.thumbnail_path.label("thumbnail_path"),
+            Source.profile_id.label("profile_id"),
+            func.row_number().over(
+                partition_by=Source.profile_id,
+                order_by=(Recording.finalized_at.desc(), Recording.id.desc()),
+            ).label("cover_rank"),
+        )
+        .join(Source, Source.id == Recording.source_id)
+        .where(Source.profile_id.in_(profile_ids), Recording.thumbnail_path != "")
+        .subquery()
+    )
+    rows = db.execute(
+        select(ranked.c.recording_id, ranked.c.thumbnail_path, ranked.c.profile_id)
+        .where(ranked.c.cover_rank <= 5)
+        .order_by(ranked.c.cover_rank)
+    ).all()
+    for recording_id, thumbnail_path, profile_id in rows:
+        if profile_id in covers:
+            continue
+        url = _safe_thumbnail_url(int(recording_id), str(thumbnail_path or ""))
+        if url:
+            covers[int(profile_id)] = url
+    return covers
+
+
+def _require_categories(db, category_ids: list[int]) -> None:
+    if not category_ids:
+        return
+    found = set(db.scalars(select(Category.id).where(Category.id.in_(category_ids))).all())
+    missing = sorted(set(category_ids) - found)
+    if missing:
+        raise HTTPException(404, f"Categorie non trovate: {', '.join(map(str, missing))}")
+
+
+def _require_collections(db, collection_ids: list[int]) -> None:
+    if not collection_ids:
+        return
+    found = set(db.scalars(select(Collection.id).where(Collection.id.in_(collection_ids))).all())
+    missing = sorted(set(collection_ids) - found)
+    if missing:
+        raise HTTPException(404, f"Raccolte non trovate: {', '.join(map(str, missing))}")
+
+
+def _profile_for_source(db, source_id: int) -> tuple[Source, Profile]:
+    source = db.get(Source, source_id)
+    if not source:
+        raise HTTPException(404, "Sorgente non trovata")
+    profile = db.get(Profile, source.profile_id) if source.profile_id is not None else None
+    if not profile:
+        raise HTTPException(409, "Profilo libreria non inizializzato")
+    return source, profile
+
+
+def _replace_profile_categories(db, profile_id: int, category_ids: list[int]) -> None:
+    _require_categories(db, category_ids)
+    db.execute(delete(ProfileCategory).where(ProfileCategory.profile_id == profile_id))
+    db.add_all(ProfileCategory(profile_id=profile_id, category_id=item_id) for item_id in category_ids)
+
+
+def _replace_profile_collections(db, profile_id: int, collection_ids: list[int]) -> None:
+    _require_collections(db, collection_ids)
+    db.execute(delete(CollectionProfile).where(CollectionProfile.profile_id == profile_id))
+    db.add_all(CollectionProfile(profile_id=profile_id, collection_id=item_id) for item_id in collection_ids)
+
+
+def _delete_orphan_profile(db, profile_id: int | None) -> None:
+    if profile_id is None:
+        return
+    db.flush()
+    if db.scalar(select(func.count()).select_from(Source).where(Source.profile_id == profile_id)):
+        return
+    db.execute(delete(ProfileCategory).where(ProfileCategory.profile_id == profile_id))
+    db.execute(delete(CollectionProfile).where(CollectionProfile.profile_id == profile_id))
+    profile = db.get(Profile, profile_id)
+    if profile:
+        db.delete(profile)
+
+
+def _smart_library_counts(db) -> dict[str, int]:
+    profiles = list(db.scalars(select(Profile)).all())
+    source_rows = list(db.scalars(select(Source)).all())
+    by_profile: dict[int, list[Source]] = defaultdict(list)
+    attention: set[int] = set()
+    for source in source_rows:
+        if source.profile_id is None:
+            continue
+        by_profile[int(source.profile_id)].append(source)
+        if (
+            source.enabled and not source.archived
+            and (source.last_status == "error" or bool((source.last_error or "").strip()))
+        ):
+            attention.add(int(source.profile_id))
+    failed_profile_ids = db.scalars(
+        select(distinct(Source.profile_id))
+        .join(Recording, Recording.source_id == Source.id)
+        .where(
+            Source.profile_id.is_not(None),
+            or_(
+                Recording.upload_status.in_(["failed", "integrity_failed"]),
+                Recording.integrity_status.in_(["failed", "integrity_failed"]),
+            ),
+        )
+    ).all()
+    attention.update(int(item) for item in failed_profile_ids if item is not None)
+    categorized = set(db.scalars(select(distinct(ProfileCategory.profile_id))).all())
+    return {
+        "all": len(profiles),
+        "favorites": sum(1 for profile in profiles if profile.favorite),
+        "live": sum(
+            1 for profile in profiles
+            if any(
+                source.enabled and not source.archived and source.last_status in {"live", "recording"}
+                for source in by_profile.get(profile.id, [])
+            )
+        ),
+        "paused": sum(
+            1 for profile in profiles
+            if by_profile.get(profile.id) and not any(source.enabled for source in by_profile[profile.id])
+        ),
+        "uncategorized": sum(1 for profile in profiles if profile.id not in categorized),
+        "needs_attention": len(attention),
+    }
 
 
 @asynccontextmanager
@@ -409,9 +756,402 @@ async def inspect_source(body: SourceInspect, request: Request):
     }
 
 
+@app.get("/api/library/meta")
+def library_meta(request: Request):
+    require_auth(request)
+    with db_session() as db:
+        return {
+            "categories": _category_rows(db),
+            "collections": _collection_rows(db),
+            "smart_counts": _smart_library_counts(db),
+        }
+
+
+@app.get("/api/library/categories")
+def list_categories(request: Request):
+    require_auth(request)
+    with db_session() as db:
+        return _category_rows(db)
+
+
+@app.get("/api/library/categories/{category_id}")
+def get_category(category_id: int, request: Request):
+    require_auth(request)
+    with db_session() as db:
+        category = db.get(Category, category_id)
+        if not category:
+            raise HTTPException(404, "Categoria non trovata")
+        count = db.scalar(
+            select(func.count()).select_from(ProfileCategory).where(ProfileCategory.category_id == category_id)
+        ) or 0
+        return _category_json(category, count)
+
+
+@app.post("/api/library/categories", status_code=201)
+def create_category(body: CategoryCreate, request: Request):
+    require_auth(request)
+    name = _clean_library_name(body.name, "Nome categoria")
+    try:
+        with db_session() as db:
+            if db.scalar(select(Category.id).where(func.lower(Category.name) == name.lower())):
+                raise HTTPException(409, "Esiste già una categoria con questo nome")
+            category = Category(name=name, color=_clean_color(body.color))
+            db.add(category)
+            db.flush()
+            return _category_json(category)
+    except IntegrityError as exc:
+        raise HTTPException(409, "Esiste già una categoria con questo nome") from exc
+
+
+@app.patch("/api/library/categories/{category_id}")
+def patch_category(category_id: int, body: CategoryPatch, request: Request):
+    require_auth(request)
+    try:
+        with db_session() as db:
+            category = db.get(Category, category_id)
+            if not category:
+                raise HTTPException(404, "Categoria non trovata")
+            if body.name is not None:
+                name = _clean_library_name(body.name, "Nome categoria")
+                duplicate = db.scalar(select(Category.id).where(
+                    func.lower(Category.name) == name.lower(),
+                    Category.id != category_id,
+                ))
+                if duplicate:
+                    raise HTTPException(409, "Esiste già una categoria con questo nome")
+                category.name = name
+            if body.color is not None:
+                category.color = _clean_color(body.color)
+            db.flush()
+            count = db.scalar(
+                select(func.count()).select_from(ProfileCategory).where(ProfileCategory.category_id == category_id)
+            ) or 0
+            return _category_json(category, count)
+    except IntegrityError as exc:
+        raise HTTPException(409, "Esiste già una categoria con questo nome") from exc
+
+
+@app.delete("/api/library/categories/{category_id}")
+def delete_category(category_id: int, request: Request):
+    require_auth(request)
+    with db_session() as db:
+        category = db.get(Category, category_id)
+        if not category:
+            raise HTTPException(404, "Categoria non trovata")
+        db.execute(delete(ProfileCategory).where(ProfileCategory.category_id == category_id))
+        db.delete(category)
+    return {"ok": True, "id": category_id}
+
+
+@app.get("/api/library/collections")
+def list_collections(request: Request):
+    require_auth(request)
+    with db_session() as db:
+        return _collection_rows(db)
+
+
+@app.get("/api/library/collections/{collection_id}")
+def get_collection(collection_id: int, request: Request):
+    require_auth(request)
+    with db_session() as db:
+        collection = db.get(Collection, collection_id)
+        if not collection:
+            raise HTTPException(404, "Raccolta non trovata")
+        count = db.scalar(
+            select(func.count()).select_from(CollectionProfile).where(CollectionProfile.collection_id == collection_id)
+        ) or 0
+        return _collection_json(collection, count)
+
+
+@app.post("/api/library/collections", status_code=201)
+def create_collection(body: CollectionCreate, request: Request):
+    require_auth(request)
+    name = _clean_library_name(body.name, "Nome raccolta")
+    try:
+        with db_session() as db:
+            if db.scalar(select(Collection.id).where(func.lower(Collection.name) == name.lower())):
+                raise HTTPException(409, "Esiste già una raccolta con questo nome")
+            collection = Collection(
+                name=name,
+                description=body.description.strip(),
+                color=_clean_color(body.color),
+                pinned=body.pinned,
+            )
+            db.add(collection)
+            db.flush()
+            return _collection_json(collection)
+    except IntegrityError as exc:
+        raise HTTPException(409, "Esiste già una raccolta con questo nome") from exc
+
+
+@app.patch("/api/library/collections/{collection_id}")
+def patch_collection(collection_id: int, body: CollectionPatch, request: Request):
+    require_auth(request)
+    try:
+        with db_session() as db:
+            collection = db.get(Collection, collection_id)
+            if not collection:
+                raise HTTPException(404, "Raccolta non trovata")
+            if body.name is not None:
+                name = _clean_library_name(body.name, "Nome raccolta")
+                duplicate = db.scalar(select(Collection.id).where(
+                    func.lower(Collection.name) == name.lower(),
+                    Collection.id != collection_id,
+                ))
+                if duplicate:
+                    raise HTTPException(409, "Esiste già una raccolta con questo nome")
+                collection.name = name
+            if body.description is not None:
+                collection.description = body.description.strip()
+            if body.color is not None:
+                collection.color = _clean_color(body.color)
+            if body.pinned is not None:
+                collection.pinned = body.pinned
+            db.flush()
+            count = db.scalar(
+                select(func.count()).select_from(CollectionProfile)
+                .where(CollectionProfile.collection_id == collection_id)
+            ) or 0
+            return _collection_json(collection, count)
+    except IntegrityError as exc:
+        raise HTTPException(409, "Esiste già una raccolta con questo nome") from exc
+
+
+@app.delete("/api/library/collections/{collection_id}")
+def delete_collection(collection_id: int, request: Request):
+    require_auth(request)
+    with db_session() as db:
+        collection = db.get(Collection, collection_id)
+        if not collection:
+            raise HTTPException(404, "Raccolta non trovata")
+        db.execute(delete(CollectionProfile).where(CollectionProfile.collection_id == collection_id))
+        db.delete(collection)
+    return {"ok": True, "id": collection_id}
+
+
+@app.patch("/api/sources/{source_id}/library")
+def patch_source_library(source_id: int, body: SourceLibraryPatch, request: Request):
+    require_auth(request)
+    category_ids = _unique_positive_ids(body.category_ids, "category_ids")
+    collection_ids = _unique_positive_ids(body.collection_ids, "collection_ids")
+    with db_session() as db:
+        _source, profile = _profile_for_source(db, source_id)
+        if body.category_ids is not None:
+            _require_categories(db, category_ids)
+        if body.collection_ids is not None:
+            _require_collections(db, collection_ids)
+        if body.display_name is not None:
+            profile.display_name = _clean_library_name(body.display_name, "Nome profilo")
+        if body.favorite is not None:
+            profile.favorite = body.favorite
+        if body.notes is not None:
+            profile.notes = body.notes.strip()
+        if body.category_ids is not None:
+            _replace_profile_categories(db, profile.id, category_ids)
+        if body.collection_ids is not None:
+            _replace_profile_collections(db, profile.id, collection_ids)
+        db.flush()
+        categories, collections = _library_maps(db, {profile.id})
+        linked_sources = _linked_sources_map(db, {profile.id})
+        payload = _profile_json(profile, categories, collections, linked_sources)
+    return {"ok": True, "profile": payload}
+
+
+@app.post("/api/sources/bulk")
+async def bulk_sources(body: SourceBulkAction, request: Request):
+    require_auth(request)
+    requested_source_ids = _unique_positive_ids(body.source_ids, "source_ids")
+    category_actions = {"add_category", "remove_category"}
+    collection_actions = {"add_collection", "remove_collection"}
+    if body.action in category_actions and body.category_id is None:
+        raise HTTPException(400, "category_id richiesto per questa azione")
+    if body.action not in category_actions and body.category_id is not None:
+        raise HTTPException(400, "category_id non previsto per questa azione")
+    if body.action in collection_actions and body.collection_id is None:
+        raise HTTPException(400, "collection_id richiesto per questa azione")
+    if body.action not in collection_actions and body.collection_id is not None:
+        raise HTTPException(400, "collection_id non previsto per questa azione")
+
+    affected_source_ids: list[int] = []
+    profile_ids: list[int] = []
+    with db_session() as db:
+        selected = list(db.scalars(select(Source).where(Source.id.in_(requested_source_ids))).all())
+        found_source_ids = {source.id for source in selected}
+        missing = sorted(set(requested_source_ids) - found_source_ids)
+        if missing:
+            raise HTTPException(404, f"Sorgenti non trovate: {', '.join(map(str, missing))}")
+        profile_ids = sorted({int(source.profile_id) for source in selected if source.profile_id is not None})
+        if len(profile_ids) != len({source.profile_id for source in selected}):
+            raise HTTPException(409, "Una sorgente non ha un profilo libreria valido")
+        profiles = list(db.scalars(select(Profile).where(Profile.id.in_(profile_ids))).all())
+        if len(profiles) != len(profile_ids):
+            raise HTTPException(409, "Un profilo libreria collegato non esiste")
+
+        if body.action in category_actions:
+            _require_categories(db, [int(body.category_id)])
+        if body.action in collection_actions:
+            _require_collections(db, [int(body.collection_id)])
+
+        if body.action == "favorite":
+            for profile in profiles:
+                profile.favorite = True
+        elif body.action == "unfavorite":
+            for profile in profiles:
+                profile.favorite = False
+        elif body.action in {"enable", "pause"}:
+            linked = list(db.scalars(select(Source).where(
+                Source.profile_id.in_(profile_ids),
+                Source.archived.is_(False),
+            )).all())
+            enabled = body.action == "enable"
+            for source in linked:
+                source.enabled = enabled
+                if enabled:
+                    source.archived = False
+            affected_source_ids = sorted(source.id for source in linked)
+        elif body.action == "add_category":
+            existing = set(db.scalars(select(ProfileCategory.profile_id).where(
+                ProfileCategory.profile_id.in_(profile_ids),
+                ProfileCategory.category_id == body.category_id,
+            )).all())
+            db.add_all(
+                ProfileCategory(profile_id=profile_id, category_id=int(body.category_id))
+                for profile_id in profile_ids if profile_id not in existing
+            )
+        elif body.action == "remove_category":
+            db.execute(delete(ProfileCategory).where(
+                ProfileCategory.profile_id.in_(profile_ids),
+                ProfileCategory.category_id == body.category_id,
+            ))
+        elif body.action == "add_collection":
+            existing = set(db.scalars(select(CollectionProfile.profile_id).where(
+                CollectionProfile.profile_id.in_(profile_ids),
+                CollectionProfile.collection_id == body.collection_id,
+            )).all())
+            db.add_all(
+                CollectionProfile(profile_id=profile_id, collection_id=int(body.collection_id))
+                for profile_id in profile_ids if profile_id not in existing
+            )
+        elif body.action == "remove_collection":
+            db.execute(delete(CollectionProfile).where(
+                CollectionProfile.profile_id.in_(profile_ids),
+                CollectionProfile.collection_id == body.collection_id,
+            ))
+
+    if body.action == "pause":
+        await asyncio.gather(*(manager.stop_source(source_id) for source_id in affected_source_ids))
+    elif body.action == "enable":
+        manager.wake()
+    return {
+        "ok": True,
+        "action": body.action,
+        "updated": len(profile_ids),
+        "profile_ids": profile_ids,
+        "source_ids": affected_source_ids or requested_source_ids,
+    }
+
+
+@app.get("/api/sources/{source_id}/profile")
+def source_profile(source_id: int, request: Request):
+    require_auth(request)
+    with db_session() as db:
+        source, profile = _profile_for_source(db, source_id)
+        linked_rows = list(db.scalars(
+            select(Source).where(Source.profile_id == profile.id).order_by(Source.name, Source.id)
+        ).all())
+        linked_source_ids = [row.id for row in linked_rows]
+        categories, collections = _library_maps(db, {profile.id})
+        linked_sources = _linked_sources_map(db, {profile.id})
+        profile_payload = _profile_json(profile, categories, collections, linked_sources)
+        cover_url = _profile_cover_map(db, {profile.id}).get(profile.id, "")
+        stats = db.execute(select(
+            func.count(Recording.id),
+            func.count(distinct(Recording.session_id)),
+            func.coalesce(func.sum(Recording.size_bytes), 0),
+            func.coalesce(func.sum(Recording.duration_seconds), 0.0),
+            func.sum(case((Recording.upload_status == "uploaded", 1), else_=0)),
+            func.sum(case((Recording.upload_status.in_(["failed", "integrity_failed"]), 1), else_=0)),
+            func.sum(case((Recording.has_audio.is_(False), 1), else_=0)),
+            func.min(Recording.finalized_at),
+            func.max(Recording.finalized_at),
+        ).where(Recording.source_id.in_(linked_source_ids))).one()
+        recent = list(db.scalars(
+            select(Recording)
+            .where(Recording.source_id.in_(linked_source_ids))
+            .order_by(Recording.finalized_at.desc(), Recording.id.desc())
+            .limit(20)
+        ).all())
+        recent_payload = [_recording_json(recording) for recording in recent]
+        source_payload = {
+            **profile_payload,
+            "id": source.id,
+            "name": source.name,
+            "platform": source.platform,
+            "provider_label": provider_label(source.platform),
+            "slug": source.slug,
+            "source_url": _source_public_url(source),
+            "enabled": source.enabled,
+            "archived": source.archived,
+            "quality": source.quality,
+            "last_status": "archived" if source.archived else ("paused" if not source.enabled else source.last_status),
+            "last_checked_at": _iso_utc(source.last_checked_at),
+            "last_live_at": _iso_utc(source.last_live_at),
+            "last_seen_live_at": _iso_utc(source.last_seen_live_at),
+            "status_changed_at": _iso_utc(source.status_changed_at),
+            "last_error": source.last_error,
+            "cover_thumbnail_url": cover_url,
+            "statistics": {
+                "recording_count": int(stats[0] or 0),
+                "session_count": int(stats[1] or 0),
+                "total_bytes": int(stats[2] or 0),
+                "total_duration_seconds": float(stats[3] or 0),
+                "uploaded_count": int(stats[4] or 0),
+                "failed_count": int(stats[5] or 0),
+                "audio_missing_count": int(stats[6] or 0),
+                "first_recording_at": _iso_utc(stats[7]),
+                "last_recording_at": _iso_utc(stats[8]),
+            },
+        }
+        timeline: list[dict] = [{
+            "type": "profile_created",
+            "at": _iso_utc(profile.created_at),
+            "title": "Profilo creato",
+        }]
+        for linked_source in linked_rows:
+            timeline.append({
+                "type": "source_added",
+                "at": _iso_utc(linked_source.created_at),
+                "title": f"Sorgente aggiunta: {linked_source.name}",
+                "source_id": linked_source.id,
+            })
+            if linked_source.last_seen_live_at:
+                timeline.append({
+                    "type": "live_seen",
+                    "at": _iso_utc(linked_source.last_seen_live_at),
+                    "title": f"Live rilevata: {linked_source.name}",
+                    "source_id": linked_source.id,
+                })
+        for recording in recent:
+            timeline.append({
+                "type": "recording",
+                "at": _iso_utc(recording.finalized_at),
+                "title": f"Registrazione completata: {recording.filename}",
+                "source_id": recording.source_id,
+                "recording_id": recording.id,
+                "upload_status": recording.upload_status,
+            })
+        timeline = sorted(
+            (event for event in timeline if event.get("at")),
+            key=lambda event: str(event["at"]),
+            reverse=True,
+        )[:30]
+        return {"source": source_payload, "recent_recordings": recent_payload, "timeline": timeline}
+
+
 @app.get("/api/sources")
 def list_sources(request: Request):
     require_auth(request)
+    active_ids = set(manager.active)
     with db_session() as db:
         rows = list(db.scalars(select(Source).order_by(Source.name.asc())).all())
         aggregate_rows = db.execute(
@@ -434,38 +1174,57 @@ def list_sources(request: Request):
             .order_by(Recording.finalized_at.desc())
         ).all():
             latest_cloud.setdefault(source_id, remote_url)
-    active_ids = set(manager.active)
-    result = []
-    for source in rows:
-        aggregate = aggregates.get(source.id)
-        active = source.id in active_ids
-        result.append({
-            "id": source.id, "name": source.name, "platform": source.platform,
-            "provider_label": provider_label(source.platform), "slug": source.slug,
-            "source_url": source_url(source.platform, source.slug),
-            "enabled": source.enabled, "quality": source.quality, "consent_confirmed": source.consent_confirmed,
-            "last_status": "recording" if active else ("paused" if not source.enabled else source.last_status),
-            "last_checked_at": _iso_utc(source.last_checked_at),
-            "last_live_at": _iso_utc(source.last_live_at),
-            "last_seen_live_at": _iso_utc(source.last_seen_live_at),
-            "metadata_status": source.metadata_status,
-            "metadata_error": source.metadata_error,
-            "status_changed_at": _iso_utc(source.status_changed_at),
-            "last_error": source.last_error,
-            "organize_cloud": source.organize_cloud,
-            "gofile_folder_id": source.gofile_folder_id,
-            "gofile_folder_url": source.gofile_folder_url,
-            "collection_url": f"/?source={source.id}#archive",
-            "recording_count": int(aggregate.recording_count if aggregate else 0),
-            "session_count": int(aggregate.session_count if aggregate else 0),
-            "uploaded_count": int(aggregate.uploaded_count if aggregate else 0),
-            "failed_count": int(aggregate.failed_count if aggregate else 0),
-            "total_bytes": int(aggregate.total_bytes if aggregate else 0),
-            "total_duration_seconds": float(aggregate.total_duration if aggregate else 0),
-            "last_recording_at": _iso_utc(aggregate.last_recording_at if aggregate else None),
-            "latest_cloud_url": latest_cloud.get(source.id, ""),
-        })
-    return result
+        profile_ids = {int(source.profile_id) for source in rows if source.profile_id is not None}
+        profiles = {
+            profile.id: profile
+            for profile in db.scalars(select(Profile).where(Profile.id.in_(profile_ids))).all()
+        } if profile_ids else {}
+        categories, collections = _library_maps(db, profile_ids)
+        linked_sources = _linked_sources_map(db, profile_ids)
+        covers = _profile_cover_map(db, profile_ids)
+        result = []
+        for source in rows:
+            aggregate = aggregates.get(source.id)
+            active = source.id in active_ids
+            profile = profiles.get(source.profile_id)
+            result.append({
+                "id": source.id, "name": source.name, "platform": source.platform,
+                "provider_label": provider_label(source.platform), "slug": source.slug,
+                "source_url": _source_public_url(source),
+                "profile_id": profile.id if profile else None,
+                "display_name": profile.display_name if profile else source.name,
+                "favorite": profile.favorite if profile else False,
+                "notes": profile.notes if profile else "",
+                "categories": categories.get(profile.id, []) if profile else [],
+                "collections": collections.get(profile.id, []) if profile else [],
+                "linked_sources": linked_sources.get(profile.id, []) if profile else [],
+                "cover_thumbnail_url": covers.get(profile.id, "") if profile else "",
+                "enabled": source.enabled, "archived": source.archived,
+                "quality": source.quality, "consent_confirmed": source.consent_confirmed,
+                "last_status": "recording" if active else (
+                    "archived" if source.archived else ("paused" if not source.enabled else source.last_status)
+                ),
+                "last_checked_at": _iso_utc(source.last_checked_at),
+                "last_live_at": _iso_utc(source.last_live_at),
+                "last_seen_live_at": _iso_utc(source.last_seen_live_at),
+                "metadata_status": source.metadata_status,
+                "metadata_error": source.metadata_error,
+                "status_changed_at": _iso_utc(source.status_changed_at),
+                "last_error": source.last_error,
+                "organize_cloud": source.organize_cloud,
+                "gofile_folder_id": source.gofile_folder_id,
+                "gofile_folder_url": source.gofile_folder_url,
+                "collection_url": f"/?source={source.id}#archive",
+                "recording_count": int(aggregate.recording_count if aggregate else 0),
+                "session_count": int(aggregate.session_count if aggregate else 0),
+                "uploaded_count": int(aggregate.uploaded_count if aggregate else 0),
+                "failed_count": int(aggregate.failed_count if aggregate else 0),
+                "total_bytes": int(aggregate.total_bytes if aggregate else 0),
+                "total_duration_seconds": float(aggregate.total_duration if aggregate else 0),
+                "last_recording_at": _iso_utc(aggregate.last_recording_at if aggregate else None),
+                "latest_cloud_url": latest_cloud.get(source.id, ""),
+            })
+        return result
 
 
 @app.post("/api/sources")
@@ -476,13 +1235,22 @@ def add_source(body: SourceCreate, request: Request):
     if body.quality not in {"best", "1080p", "720p", "480p"}:
         raise HTTPException(400, "Qualità non supportata")
     platform, slug = _normalize_source_or_400(body.platform, body.slug)
-    name = body.name.strip()
+    name = _clean_library_name(body.name, "Nome sorgente")
     with db_session() as db:
         if db.scalar(select(Source).where(Source.name == name)):
             raise HTTPException(409, "Esiste già una sorgente con questo nome")
         if db.scalar(select(Source).where(Source.platform == platform, Source.slug == slug)):
             raise HTTPException(409, "Questa sorgente è già configurata")
+        if body.profile_id is not None:
+            profile = db.get(Profile, body.profile_id)
+            if not profile:
+                raise HTTPException(404, "Profilo non trovato")
+        else:
+            profile = Profile(display_name=name, favorite=False, notes="")
+            db.add(profile)
+            db.flush()
         source = Source(
+            profile_id=profile.id,
             name=name,
             platform=platform,
             slug=slug,
@@ -497,7 +1265,7 @@ def add_source(body: SourceCreate, request: Request):
         db.flush()
         source_id = source.id
     manager.wake()
-    return {"ok": True, "id": source_id}
+    return {"ok": True, "id": source_id, "profile_id": profile.id}
 
 
 @app.patch("/api/sources/{source_id}")
@@ -508,10 +1276,13 @@ async def patch_source(source_id: int, body: SourcePatch, request: Request):
         source = db.get(Source, source_id)
         if not source:
             raise HTTPException(404, "Sorgente non trovata")
+        old_profile_id = source.profile_id
+        if body.profile_id is not None and body.profile_id != source.profile_id:
+            if not db.get(Profile, body.profile_id):
+                raise HTTPException(404, "Profilo non trovato")
+            source.profile_id = body.profile_id
         if body.name is not None:
-            new_name = body.name.strip()
-            if not new_name:
-                raise HTTPException(400, "Il nome non può essere vuoto")
+            new_name = _clean_library_name(body.name, "Nome sorgente")
             if db.scalar(select(Source).where(Source.name == new_name, Source.id != source_id)):
                 raise HTTPException(409, "Esiste già una sorgente con questo nome")
             source.name = new_name
@@ -541,6 +1312,8 @@ async def patch_source(source_id: int, body: SourcePatch, request: Request):
             source.quality = body.quality
         if body.enabled is not None:
             source.enabled = body.enabled
+            if body.enabled:
+                source.archived = False
         if body.consent_confirmed is not None:
             source.consent_confirmed = body.consent_confirmed
         if body.organize_cloud is not None:
@@ -552,11 +1325,14 @@ async def patch_source(source_id: int, body: SourcePatch, request: Request):
             source.gofile_folder_id = new_folder_id
         if body.gofile_folder_url is not None:
             source.gofile_folder_url = _normalize_gofile_url(body.gofile_folder_url)
+        if source.profile_id != old_profile_id:
+            _delete_orphan_profile(db, old_profile_id)
         should_stop = reference_changed or not source.enabled or not source.consent_confirmed
+        resulting_profile_id = source.profile_id
     if should_stop:
         await manager.stop_source(source_id)
     manager.wake()
-    return {"ok": True}
+    return {"ok": True, "profile_id": resulting_profile_id}
 
 
 @app.post("/api/sources/{source_id}/cloud-folder")
@@ -608,14 +1384,19 @@ async def organize_source_cloud(source_id: int, request: Request):
 @app.delete("/api/sources/{source_id}")
 async def remove_source(source_id: int, request: Request):
     require_auth(request)
-    await manager.stop_source(source_id)
     with db_session() as db:
         source = db.get(Source, source_id)
         if not source:
             raise HTTPException(404, "Sorgente non trovata")
-        db.delete(source)
+        # Archiving is deliberately non-destructive: it preserves the profile,
+        # recordings, filesystem path and cloud folder for an explicit restore.
+        source.enabled = False
+        source.archived = True
+        source.last_status = "archived"
+        source.status_changed_at = utcnow()
+    await manager.stop_source(source_id)
     manager.wake()
-    return {"ok": True}
+    return {"ok": True, "archived": True}
 
 
 @app.post("/api/sources/check-now")
@@ -635,7 +1416,8 @@ async def check_source_now(source_id: int, request: Request):
 
 def _recording_json(r: Recording) -> dict:
     local_available = (not r.local_deleted) and Path(r.local_path).exists()
-    thumb_available = bool(r.thumbnail_path and Path(r.thumbnail_path).exists())
+    thumbnail_url = _safe_thumbnail_url(r.id, r.thumbnail_path)
+    thumb_available = bool(thumbnail_url)
     return {
         "id": r.id, "source_id": r.source_id, "source_name": r.source_name, "session_id": r.session_id,
         "filename": r.filename, "container_format": r.container_format or Path(r.filename).suffix.lstrip("."),
@@ -650,7 +1432,7 @@ def _recording_json(r: Recording) -> dict:
         "has_video": r.has_video, "has_audio": r.has_audio,
         "video_codec": r.video_codec, "audio_codec": r.audio_codec,
         "last_error": r.last_error, "local_available": local_available, "thumbnail_available": thumb_available,
-        "thumbnail_url": f"/api/recordings/{r.id}/thumbnail" if thumb_available else "",
+        "thumbnail_url": thumbnail_url,
         "view_url": f"/api/recordings/{r.id}/view" if local_available else "",
     }
 
@@ -671,8 +1453,9 @@ def recording_thumbnail(recording_id: int, request: Request):
         rec = db.get(Recording, recording_id)
         if not rec or not rec.thumbnail_path:
             raise HTTPException(404, "Miniatura non disponibile")
-        path = Path(rec.thumbnail_path)
-    if not path.exists():
+        path = Path(rec.thumbnail_path).resolve()
+        safe_url = _safe_thumbnail_url(rec.id, rec.thumbnail_path)
+    if not safe_url:
         raise HTTPException(404, "Miniatura non disponibile")
     return FileResponse(path, media_type="image/jpeg")
 

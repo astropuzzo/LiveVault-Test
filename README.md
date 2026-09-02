@@ -1,10 +1,25 @@
-# LiveVault v2.4.0
+# LiveVault v2.5.0
 
 LiveVault è un recorder remoto 24/7 con dashboard web/PWA. Monitora sorgenti autorizzate, registra tramite FFmpeg in stream-copy, verifica i media, crea miniature, gestisce il buffer locale e carica automaticamente su Gofile/Pixeldrain.
 
 > **Uso autorizzato soltanto.** Aggiungi esclusivamente trasmissioni che possiedi o per cui hai autorizzazione esplicita alla registrazione.
 
 ## Funzioni principali
+
+### Libreria profili — v2.5.0
+
+La Libreria separa l'identità editoriale della modella dalle sorgenti tecniche usate dal recorder. Un profilo può quindi collegare uno o più account/provider senza modificare l'identità operativa delle sorgenti esistenti.
+
+- profilo con account collegati, timeline delle registrazioni e statistiche aggregate;
+- categorie, preferiti e note per organizzare i profili;
+- raccolte editoriali distinte dalle cartelle cloud Gofile;
+- viste intelligenti e filtri per ritrovare rapidamente profili e registrazioni;
+- selezione multipla con azioni editoriali reversibili;
+- interfaccia più sobria e responsive, pensata anche per schermi piccoli.
+
+Le copertine della Libreria vengono ricavate esclusivamente dalle miniature locali servite tramite endpoint autenticati. LiveVault non usa immagini profilo esterne e non le inserisce nella cache offline.
+
+Categorie, preferiti, note e raccolte modificano soltanto i metadati della Libreria: **non spostano e non cancellano file locali, miniature, registrazioni o contenuti cloud**. Le cartelle cloud per sorgente continuano a essere gestite separatamente dalla pipeline di upload.
 
 ### Registrazione e media
 
@@ -100,6 +115,8 @@ docker compose up -d --build
 ```
 
 Mantieni sempre `.env` e `data/`.
+
+Al primo avvio della v2.5.0, il database 2.4 viene aggiornato automaticamente e in modo idempotente: ogni sorgente esistente riceve il proprio profilo iniziale, mentre ID sorgente, storico, recorder e stato degli upload restano separati dalla nuova organizzazione editoriale. È comunque consigliato eseguire un backup prima di ogni aggiornamento importante.
 
 ## Pipeline
 

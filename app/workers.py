@@ -100,14 +100,16 @@ class WorkerManager:
             self._wake_event.clear()
 
     async def stop_source(self, source_id: int) -> None:
-        session = self.active.get(source_id)
-        if not session:
-            return
-        await stop_recorder(session)
-        task = self.watch_tasks.get(source_id)
-        if task and task is not asyncio.current_task():
-            with contextlib.suppress(Exception):
-                await asyncio.wait_for(asyncio.shield(task), timeout=10)
+        lock = self._source_check_locks.setdefault(source_id, asyncio.Lock())
+        async with lock:
+            session = self.active.get(source_id)
+            if not session:
+                return
+            await stop_recorder(session)
+            task = self.watch_tasks.get(source_id)
+            if task and task is not asyncio.current_task():
+                with contextlib.suppress(Exception):
+                    await asyncio.wait_for(asyncio.shield(task), timeout=10)
 
     async def stop_all_recordings(self) -> None:
         source_ids = list(self.active)
@@ -292,6 +294,7 @@ class WorkerManager:
         async with semaphore:
             result = await probe(source.platform, source.slug, source.quality)
             checked_at = utcnow()
+            recording_allowed = False
             with db_session() as db:
                 current = db.get(Source, source.id)
                 if current:
@@ -306,8 +309,9 @@ class WorkerManager:
                         current.last_live_at = result.last_broadcast
                     if result.live:
                         current.last_seen_live_at = checked_at
+                    recording_allowed = bool(current.enabled and current.consent_confirmed and not current.archived)
             cfg = runtime()
-            if not result.live or self._stopping or source.id in self.active or cfg.recording_paused:
+            if not result.live or self._stopping or source.id in self.active or cfg.recording_paused or not recording_allowed:
                 return
             state = disk_state()
             if state.free_gb <= cfg.critical_free_gb:
@@ -318,7 +322,21 @@ class WorkerManager:
                 self.last_errors["buffer"] = f"Buffer locale al limite ({human_bytes(local_buffer)} / {cfg.buffer_max_gb:.1f} GB)"
                 return
             try:
-                session = await start_recorder(source)
+                with db_session() as db:
+                    current = db.get(Source, source.id)
+                    if not current or not current.enabled or not current.consent_confirmed or current.archived:
+                        return
+                    db.expunge(current)
+                session = await start_recorder(current)
+                with db_session() as db:
+                    latest = db.get(Source, source.id)
+                    still_allowed = bool(
+                        latest and latest.enabled and latest.consent_confirmed and not latest.archived
+                        and not runtime().recording_paused
+                    )
+                if not still_allowed:
+                    await stop_recorder(session)
+                    return
                 self.active[source.id] = session
                 with db_session() as db:
                     current = db.get(Source, source.id)
@@ -343,7 +361,11 @@ class WorkerManager:
             try:
                 cfg = runtime()
                 with db_session() as db:
-                    sources = list(db.scalars(select(Source).where(Source.enabled.is_(True), Source.consent_confirmed.is_(True))).all())
+                    sources = list(db.scalars(select(Source).where(
+                        Source.enabled.is_(True),
+                        Source.consent_confirmed.is_(True),
+                        Source.archived.is_(False),
+                    )).all())
                 candidates = [s for s in sources if s.id not in self.active]
                 semaphore = asyncio.Semaphore(max(1, cfg.max_probe_concurrency))
                 if candidates:
@@ -414,7 +436,12 @@ class WorkerManager:
                 source = db.get(Source, session.source_id)
                 if source:
                     now = utcnow()
-                    new_status = "live" if size_rollover else "offline"
+                    if source.archived:
+                        new_status = "archived"
+                    elif not source.enabled or not source.consent_confirmed:
+                        new_status = "paused"
+                    else:
+                        new_status = "live" if size_rollover else "offline"
                     if source.last_status != new_status or source.status_changed_at is None:
                         source.status_changed_at = now
                     source.last_status = new_status

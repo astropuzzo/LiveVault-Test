@@ -4,7 +4,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from typing import Iterator
 
-from sqlalchemy import Boolean, DateTime, Float, Integer, String, Text, create_engine, event, text
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text, create_engine, event, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 
 from .config import settings
@@ -14,16 +14,28 @@ class Base(DeclarativeBase):
     pass
 
 
+class Profile(Base):
+    __tablename__ = "profiles"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    display_name: Mapped[str] = mapped_column(String(120), index=True)
+    favorite: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    notes: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
 class Source(Base):
     __tablename__ = "sources"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    profile_id: Mapped[int | None] = mapped_column(ForeignKey("profiles.id"), nullable=True, index=True)
     name: Mapped[str] = mapped_column(String(120), unique=True, index=True)
     platform: Mapped[str] = mapped_column(String(40), default="chaturbate")
     slug: Mapped[str] = mapped_column(Text, index=True)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     quality: Mapped[str] = mapped_column(String(20), default="best")
     consent_confirmed: Mapped[bool] = mapped_column(Boolean, default=False)
+    archived: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     last_status: Mapped[str] = mapped_column(String(40), default="unknown")
     last_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_live_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -36,6 +48,40 @@ class Source(Base):
     gofile_folder_id: Mapped[str] = mapped_column(String(200), default="")
     gofile_folder_url: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
+class Category(Base):
+    __tablename__ = "categories"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(80), unique=True, index=True)
+    color: Mapped[str] = mapped_column(String(7), default="#7aa5ff")
+
+
+class Collection(Base):
+    __tablename__ = "collections"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(120), unique=True, index=True)
+    description: Mapped[str] = mapped_column(Text, default="")
+    color: Mapped[str] = mapped_column(String(7), default="#8c78ff")
+    pinned: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+
+
+class ProfileCategory(Base):
+    __tablename__ = "profile_categories"
+    __table_args__ = (Index("ix_profile_categories_category_id", "category_id"),)
+
+    profile_id: Mapped[int] = mapped_column(ForeignKey("profiles.id", ondelete="CASCADE"), primary_key=True)
+    category_id: Mapped[int] = mapped_column(ForeignKey("categories.id", ondelete="CASCADE"), primary_key=True)
+
+
+class CollectionProfile(Base):
+    __tablename__ = "collection_profiles"
+    __table_args__ = (Index("ix_collection_profiles_profile_id", "profile_id"),)
+
+    collection_id: Mapped[int] = mapped_column(ForeignKey("collections.id", ondelete="CASCADE"), primary_key=True)
+    profile_id: Mapped[int] = mapped_column(ForeignKey("profiles.id", ondelete="CASCADE"), primary_key=True)
 
 
 class Recording(Base):
@@ -91,6 +137,7 @@ def _sqlite_pragmas(dbapi_connection, _connection_record):
     cursor.execute("PRAGMA journal_mode=WAL")
     cursor.execute("PRAGMA synchronous=NORMAL")
     cursor.execute("PRAGMA busy_timeout=5000")
+    cursor.execute("PRAGMA foreign_keys=ON")
     cursor.close()
 
 
@@ -145,17 +192,54 @@ def _migrate_sources() -> None:
         "last_seen_live_at": "DATETIME",
         "metadata_status": "VARCHAR(40) NOT NULL DEFAULT 'unknown'",
         "metadata_error": "TEXT NOT NULL DEFAULT ''",
+        "profile_id": "INTEGER REFERENCES profiles(id)",
+        "archived": "BOOLEAN NOT NULL DEFAULT 0",
     }
     with engine.begin() as conn:
         for name, ddl in additions.items():
             if name not in existing:
                 conn.execute(text(f"ALTER TABLE sources ADD COLUMN {name} {ddl}"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_sources_profile_id ON sources (profile_id)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_sources_archived ON sources (archived)"))
+
+
+def _migrate_library() -> None:
+    """Additive, idempotent profile backfill plus library indexes."""
+    with engine.begin() as conn:
+        orphaned_sources = conn.execute(text("""
+            SELECT s.id, s.name
+            FROM sources AS s
+            LEFT JOIN profiles AS p ON p.id = s.profile_id
+            WHERE s.profile_id IS NULL OR p.id IS NULL
+            ORDER BY s.id
+        """)).fetchall()
+        for source_id, source_name in orphaned_sources:
+            result = conn.execute(
+                text("""
+                    INSERT INTO profiles (display_name, favorite, notes, created_at)
+                    VALUES (:display_name, 0, '', CURRENT_TIMESTAMP)
+                """),
+                {"display_name": source_name},
+            )
+            conn.execute(
+                text("UPDATE sources SET profile_id = :profile_id WHERE id = :source_id"),
+                {"profile_id": int(result.lastrowid), "source_id": int(source_id)},
+            )
+        conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ux_categories_name_nocase ON categories (name COLLATE NOCASE)"))
+        conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ux_collections_name_nocase ON collections (name COLLATE NOCASE)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_profiles_display_name ON profiles (display_name)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_profiles_favorite ON profiles (favorite)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_categories_color ON categories (color)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_collections_pinned_name ON collections (pinned, name)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_profile_categories_category_id ON profile_categories (category_id)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_collection_profiles_profile_id ON collection_profiles (profile_id)"))
 
 
 def init_db() -> None:
     Base.metadata.create_all(engine)
     _migrate_recordings()
     _migrate_sources()
+    _migrate_library()
 
 
 @contextmanager

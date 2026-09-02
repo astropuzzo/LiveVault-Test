@@ -1,5 +1,18 @@
 # Changelog
 
+## 2.5.0 — 2026-09-02
+
+- Aggiunta la Libreria profili: un profilo editoriale può collegare più sorgenti/account/provider senza cambiare l'identità operativa usata da recorder e upload.
+- Aggiunta la migrazione automatica e idempotente dal database 2.4, con creazione del profilo iniziale per le sorgenti già presenti.
+- Aggiunti categorie, preferiti, note e raccolte editoriali per organizzare i profili.
+- Tenute separate le raccolte editoriali dalle cartelle cloud per sorgente: categorie e raccolte non spostano né cancellano file locali, miniature, registrazioni o contenuti cloud.
+- Aggiunti profilo dettagliato, account collegati, timeline delle registrazioni e statistiche aggregate.
+- Aggiunte viste intelligenti, filtri e azioni multiple limitate a modifiche editoriali reversibili.
+- La rimozione di una sorgente ora la archivia senza spezzare profilo, registrazioni o cartelle cloud; il ripristino resta esplicito.
+- Chiuso il race condition tra controllo sorgente e pausa: un controllo già in corso non può riavviare il recorder dopo la disattivazione.
+- Le copertine della Libreria derivano esclusivamente da miniature locali disponibili tramite endpoint autenticati; nessuna immagine profilo esterna viene caricata o memorizzata offline.
+- Ridisegnata la dashboard con un aspetto più sobrio, gerarchia visiva più chiara e comportamento responsive su desktop e mobile.
+
 ## 2.4.0 — 2026-09-01
 
 - Aggiunto Provider AutoPilot con rilevamento URL e registry backend visibile automaticamente nella dashboard.

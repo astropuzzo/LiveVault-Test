@@ -1,4 +1,4 @@
-# LiveVault v2.4.0 — START HERE
+# LiveVault v2.5.0 — START HERE
 
 Guida breve per avviare LiveVault su una normale VPS Linux. Non dipende da un provider cloud specifico.
 
@@ -43,6 +43,16 @@ docker compose up -d --build
 
 Non cancellare `.env` o `data/`.
 
+### Aggiornamento dalla v2.4
+
+Al primo avvio, LiveVault aggiorna automaticamente il database in modo idempotente e crea un profilo Libreria iniziale per ogni sorgente già configurata. Le sorgenti, le registrazioni, i file locali e gli stati upload esistenti restano separati dalla nuova organizzazione editoriale.
+
+Prima dell'aggiornamento è comunque consigliato creare un backup consistente:
+
+```bash
+./scripts/backup.sh
+```
+
 ## Configurazione dal pannello
 
 Dopo il login apri **Settings**. Puoi configurare:
@@ -82,6 +92,23 @@ Fallback: Pixeldrain
 **Aggiungi sorgente** → username/URL → qualità → conferma autorizzazione → **Salva**.
 
 Quando diventa live, LiveVault registra automaticamente. Ogni segmento chiuso viene verificato, hashato, corredato di miniatura, messo in coda, ricontrollato e infine caricato sul primary/fallback.
+
+## Organizza la Libreria
+
+La Libreria raccoglie le sorgenti in profili editoriali. Ogni profilo può avere più account/provider collegati e mostra timeline delle registrazioni e statistiche aggregate.
+
+Puoi usare:
+
+- **Preferiti** per tenere in evidenza i profili;
+- **Categorie** per classificare le modelle;
+- **Raccolte** per creare selezioni editoriali;
+- **Note** per aggiungere contesto privato;
+- viste intelligenti, ricerca e filtri per ritrovare più rapidamente i contenuti;
+- selezione multipla per applicare azioni editoriali reversibili.
+
+Le raccolte della Libreria non sono cartelle Gofile. Aggiungere o rimuovere un profilo da categorie o raccolte **non sposta e non cancella file, miniature, registrazioni o contenuti cloud**.
+
+Le copertine sono ricavate soltanto dalle miniature locali già disponibili e vengono servite tramite endpoint autenticati. Se non è disponibile una miniatura locale, la Libreria non recupera immagini esterne.
 
 ## Gestione file locali
 
