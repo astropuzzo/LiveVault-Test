@@ -143,17 +143,19 @@
 
     clearArchiveNarrowing();
     ensureAttentionFilters();
-    showView('archive');
 
-    // Dashboard normally does not keep the Archive payload loaded. Fetch it before
-    // selecting the synthetic attention filter, otherwise the click appears to open
-    // an unfiltered list for a moment (the original bug).
-    await refresh({includeRecordings: true});
+    // Dashboard normally does not keep the Archive payload loaded. Fetch the latest
+    // recordings explicitly before switching view so the very first Archive render
+    // is already filtered to the actual problem rows (no unfiltered-list flash).
+    recordings = await api('/api/recordings?limit=2000');
+    recordingsLoaded = true;
+    lastRecordingLoad = Date.now();
     ensureAttentionFilters();
 
     const attentionCount = attentionRecordingCount();
     if (attentionCount) {
       $('#recordingStatus').value = 'attention';
+      showView('archive');
       renderRecordings();
       flashFirstAttention();
       toast(`${attentionCount} ${attentionCount === 1 ? 'elemento da controllare' : 'elementi da controllare'} evidenziati`, 'bad');
@@ -167,6 +169,7 @@
     else if (Number(statusData?.queue?.failed || 0)) $('#recordingStatus').value = 'failed';
     else if (Number(statusData?.queue?.waiting_config || 0)) $('#recordingStatus').value = 'waiting_config';
     else $('#recordingStatus').value = 'all';
+    showView('archive');
     renderRecordings();
     $('#archive')?.scrollIntoView({behavior: 'smooth', block: 'start'});
   };
