@@ -1821,7 +1821,7 @@ document.addEventListener('keydown', event => {
 
 
 
-/* LiveVault Live Intelligence v2.8.0 */
+/* LiveVault Live Intelligence v2.8.1 */
 let controlRoomPulseData = {hours: 12, window_start: null, generated_at: null, sessions: []};
 let archiveGroupLimit = 10;
 
@@ -1894,8 +1894,16 @@ function pulseTimeLabel(value) {
 
 function controlRoomPulseMarkup() {
   const sessions = pulseSessions();
-  const windowStart = timestamp(controlRoomPulseData.window_start) || (Date.now() - 12 * 3600000);
+  const compact = window.matchMedia('(max-width: 620px)').matches;
+  const hours = Math.max(1, Number(controlRoomPulseData.hours) || 12);
   const generatedAt = timestamp(controlRoomPulseData.generated_at) || Date.now();
+  const expectedWindowStart = generatedAt - hours * 3600000;
+  const apiWindowStart = timestamp(controlRoomPulseData.window_start);
+  const expectedSpan = hours * 3600000;
+  const apiSpan = apiWindowStart ? generatedAt - apiWindowStart : 0;
+  const windowStart = apiWindowStart && Math.abs(apiSpan - expectedSpan) <= 15 * 60000
+    ? apiWindowStart
+    : expectedWindowStart;
   const span = Math.max(1, generatedAt - windowStart);
   const profileOrder = [];
   const byProfile = new Map();
@@ -1904,8 +1912,10 @@ function controlRoomPulseMarkup() {
     if (!byProfile.has(profileId)) { byProfile.set(profileId, []); profileOrder.push(profileId); }
     byProfile.get(profileId).push(session);
   }
-  const recentProfiles = profileOrder.slice(-8).reverse();
-  const labels = [0, .25, .5, .75, 1].map(ratio => {
+  const maxProfiles = compact ? 5 : 8;
+  const recentProfiles = profileOrder.slice(-maxProfiles).reverse();
+  const labelRatios = compact ? [0, .5, 1] : [0, .25, .5, .75, 1];
+  const labels = labelRatios.map(ratio => {
     const value = new Date(windowStart + span * ratio);
     return `<span style="left:${ratio * 100}%">${esc(new Intl.DateTimeFormat('it-IT', {hour:'2-digit', minute:'2-digit'}).format(value))}</span>`;
   }).join('');

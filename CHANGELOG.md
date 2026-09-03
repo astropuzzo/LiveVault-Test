@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.8.1 — 2026-09-03
+
+- Hotfix **Live Pulse mobile**: asse temporale leggibile, tre tick su schermi stretti e massimo cinque creator visibili.
+- Righe più alte, nomi separati dalla timeline e segmenti brevi con larghezza minima maggiore.
+- Finestra temporale resa robusta rispetto a timestamp incoerenti e cache PWA invalidata.
+
 ## 2.8.0 — 2026-09-02
 
 - **Live Pulse**: timeline operativa delle ultime 12 ore con live correnti, sessioni concluse, copertura REC e sessioni perse.
