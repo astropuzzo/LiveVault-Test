@@ -33,6 +33,7 @@ from .db import (
     init_db,
 )
 from .file_cleanup import cleanup_empty_parents, cleanup_orphan_videos, safe_unlink
+from .egress import RegionalEgressError, manager as egress_manager, sanitize_wireguard_config
 from .recorder import (
     LIVE_PREVIEW_MAX_AGE_SECONDS,
     finalize_mp4_for_streaming,
@@ -52,7 +53,7 @@ BASE = Path(__file__).parent
 LOGIN_FAILURES: dict[str, deque[float]] = defaultdict(deque)
 LOGIN_WINDOW = 10 * 60
 LOGIN_MAX_FAILURES = 6
-VERSION = "2.8.9"
+VERSION = "2.9.0"
 
 
 class LoginBody(BaseModel):
@@ -176,6 +177,10 @@ class SettingsPatch(BaseModel):
     gofile_region: str | None = None
     pixeldrain_api_key: str | None = Field(default=None, max_length=500)
     clear_pixeldrain_api_key: bool = False
+    regional_egress_enabled: bool | None = None
+    regional_egress_name: str | None = Field(default=None, max_length=80)
+    regional_egress_wireguard_config: str | None = Field(default=None, max_length=12_000)
+    clear_regional_egress_wireguard_config: bool = False
 
 
 def _normalize_source_or_400(platform: str, value: str) -> tuple[str, str]:
@@ -510,9 +515,11 @@ async def lifespan(app: FastAPI):
     settings.validate()
     init_db()
     reload_runtime()
+    await egress_manager.start()
     await manager.start()
     yield
     await manager.stop()
+    await egress_manager.stop()
 
 
 app = FastAPI(title="LiveVault", version=VERSION, lifespan=lifespan)
@@ -644,11 +651,20 @@ def get_settings(request: Request):
 
 
 @app.patch("/api/settings")
-def patch_settings(body: SettingsPatch, request: Request):
+async def patch_settings(body: SettingsPatch, request: Request):
     require_auth(request)
     updates = body.model_dump(exclude_none=True)
     clear_gofile = updates.pop("clear_gofile_token", False)
     clear_pixeldrain = updates.pop("clear_pixeldrain_api_key", False)
+    clear_egress = updates.pop("clear_regional_egress_wireguard_config", False)
+    egress_changed = clear_egress or any(
+        key in updates
+        for key in (
+            "regional_egress_enabled",
+            "regional_egress_name",
+            "regional_egress_wireguard_config",
+        )
+    )
     if updates.get("container_format") not in (None, "mp4", "mkv"):
         raise HTTPException(400, "Container deve essere mp4 o mkv")
     if updates.get("integrity_mode") not in (None, "quick", "packet"):
@@ -662,12 +678,23 @@ def patch_settings(body: SettingsPatch, request: Request):
     for secret_key in ("gofile_token", "pixeldrain_api_key"):
         if secret_key in updates:
             updates[secret_key] = updates[secret_key].strip()
+    if "regional_egress_name" in updates:
+        updates["regional_egress_name"] = updates["regional_egress_name"].strip() or "VPN"
+    if "regional_egress_wireguard_config" in updates:
+        try:
+            updates["regional_egress_wireguard_config"] = sanitize_wireguard_config(
+                updates["regional_egress_wireguard_config"]
+            )
+        except RegionalEgressError as exc:
+            raise HTTPException(400, str(exc)) from exc
     if "gofile_folder_id" in updates:
         updates["gofile_folder_id"] = _normalize_gofile_folder_id(updates["gofile_folder_id"])
     if clear_gofile:
         updates["gofile_token"] = ""
     if clear_pixeldrain:
         updates["pixeldrain_api_key"] = ""
+    if clear_egress:
+        updates["regional_egress_wireguard_config"] = ""
     # Validate disk guard ordering using current values plus this patch.
     current = runtime()
     min_free = float(updates.get("min_free_gb", current.min_free_gb))
@@ -676,8 +703,19 @@ def patch_settings(body: SettingsPatch, request: Request):
     if not (emergency_free <= critical_free <= min_free):
         raise HTTPException(400, "Le soglie devono rispettare: emergenza ≤ critica ≤ minima")
     set_values(updates)
+    if egress_changed:
+        await egress_manager.reload()
     manager.wake()
     return {"ok": True, "settings": public_settings()}
+
+
+@app.post("/api/settings/test/egress")
+async def test_regional_egress(request: Request):
+    require_auth(request)
+    try:
+        return await egress_manager.test_connection()
+    except RegionalEgressError as exc:
+        raise HTTPException(502, str(exc)) from exc
 
 
 @app.post("/api/settings/test/{provider}")

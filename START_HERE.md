@@ -1,4 +1,4 @@
-# LiveVault v2.8.9 — START HERE
+# LiveVault v2.9.0 — START HERE
 
 Guida breve per avviare LiveVault su una normale VPS Linux. Non dipende da un provider cloud specifico.
 
@@ -166,3 +166,7 @@ La CI controlla:
 - FFmpeg/media tests;
 - sintassi JavaScript;
 - sintassi degli script shell.
+
+## VPN per Chaturbate
+
+Per Proton VPN: crea un account, genera un file WireGuard da **Downloads → WireGuard configuration**, poi incollalo in **Impostazioni → Regional egress**. LiveVault avvia e riavvia automaticamente il tunnel userspace a ogni deploy/restart. Gli altri provider, la dashboard e gli upload restano sulla rete normale della VPS.

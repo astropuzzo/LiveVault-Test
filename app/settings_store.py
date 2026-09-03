@@ -12,7 +12,7 @@ from .config import settings
 from .db import AppSetting, db_session
 
 
-SECRET_KEYS = {"gofile_token", "pixeldrain_api_key"}
+SECRET_KEYS = {"gofile_token", "pixeldrain_api_key", "regional_egress_wireguard_config"}
 
 
 @dataclass
@@ -40,6 +40,9 @@ class RuntimeSettings:
     pixeldrain_api_key: str = ""
     recording_paused: bool = False
     upload_paused: bool = False
+    regional_egress_enabled: bool = False
+    regional_egress_name: str = "Proton VPN"
+    regional_egress_wireguard_config: str = ""
 
 
 _state = RuntimeSettings(
@@ -169,4 +172,5 @@ def public_settings() -> dict:
         "pixeldrain_key_hint": ("••••" + s.pixeldrain_api_key[-4:]) if s.pixeldrain_api_key else "",
         "recording_paused": s.recording_paused,
         "upload_paused": s.upload_paused,
+        **__import__("app.egress", fromlist=["manager"]).manager.public_status(),
     }

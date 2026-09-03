@@ -1,6 +1,10 @@
+FROM golang:1.26-bookworm AS wireproxy-builder
+RUN GOBIN=/out go install github.com/windtf/wireproxy/cmd/wireproxy@v1.1.2
+
 FROM python:3.13-slim
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1
 RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg ca-certificates curl tini tzdata && rm -rf /var/lib/apt/lists/*
+COPY --from=wireproxy-builder /out/wireproxy /usr/local/bin/wireproxy
 WORKDIR /app
 COPY requirements.txt .
 RUN pip install -r requirements.txt

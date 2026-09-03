@@ -12,6 +12,7 @@ from zoneinfo import ZoneInfo
 
 from .config import settings
 from .db import Source
+from .egress import subprocess_proxy_env
 from .settings_store import runtime
 from .source_providers import ResolvedInput, audit_inputs, resolve_inputs
 from .utils import probe_media, safe_name, utcnow
@@ -125,7 +126,8 @@ def build_chaturbate_synced_master(
         f"{video_url}\n",
         encoding="utf-8",
     )
-    return [ResolvedInput(str(manifest_path.resolve()), headers, "media")], manifest_path
+    proxy_url = video.proxy_url or audio.proxy_url
+    return [ResolvedInput(str(manifest_path.resolve()), headers, "media", proxy_url)], manifest_path
 
 
 def stream_transport_fault(line: str) -> str:
@@ -298,11 +300,16 @@ async def start_recorder(source: Source, *, session_id: str | None = None) -> Re
         preview_interval_seconds=LIVE_PREVIEW_INTERVAL_SECONDS,
         synchronized_hls=split_llhls,
     )
+    proxy_urls = {item.proxy_url for item in inputs if item.proxy_url}
+    if len(proxy_urls) > 1:
+        raise RuntimeError("Input recorder con egress incompatibili")
+    proxy_url = next(iter(proxy_urls), "")
     process = await asyncio.create_subprocess_exec(
         *cmd,
         stdout=asyncio.subprocess.DEVNULL,
         stderr=asyncio.subprocess.PIPE,
         start_new_session=True,
+        env=subprocess_proxy_env(proxy_url),
     )
     return RecorderSession(
         source_id=source.id,

@@ -1,4 +1,4 @@
-# LiveVault v2.8.9
+# LiveVault v2.9.0
 
 LiveVault è un recorder remoto 24/7 con dashboard web/PWA. Monitora sorgenti autorizzate, registra tramite FFmpeg in stream-copy, verifica i media, crea miniature, gestisce il buffer locale e carica automaticamente su Gofile/Pixeldrain.
 
@@ -186,3 +186,7 @@ bash -n scripts/*.sh
 ```
 
 Il job **Core tests** installa anche FFmpeg e tutte le dipendenze di sviluppo. Solo dopo il verde, il job **Deploy verified main** chiede a CapRover di pubblicare l'ultima versione. I push intermedi vengono annullati per evitare riavvii a raffica e `503` temporanei.
+
+## Regional egress (v2.9.0)
+
+LiveVault può instradare solo Chaturbate attraverso un profilo WireGuard standard. Il container include `wireproxy` e non richiede TUN, `NET_ADMIN` o una VPN sull'intera VPS. Nelle Impostazioni incolla una configurazione WireGuard del provider VPN, abilita **VPN per Chaturbate** e usa **Test VPN**. La configurazione è salvata cifrata; probe, yt-dlp, ffprobe e FFmpeg usano lo stesso egress. Se l'egress è abilitato ma cade, il traffico Chaturbate resta bloccato invece di tornare all'IP diretto.

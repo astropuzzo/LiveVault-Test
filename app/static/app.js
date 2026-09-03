@@ -785,8 +785,17 @@ async function loadSettings() {
   $('#setGofileRegion').value = settings.gofile_region || 'auto';
   $('#setGofileToken').value = '';
   $('#setPixeldrainKey').value = '';
+  $('#setEgressEnabled').checked = !!settings.regional_egress_enabled;
+  $('#setEgressName').value = settings.regional_egress_name || 'Proton VPN';
+  $('#setEgressConfig').value = '';
+  $('#clearEgressConfig').checked = false;
   $('#clearGofile').checked = false;
   $('#clearPixeldrain').checked = false;
+  const egressState = $('#egressState');
+  if (settings.regional_egress_running) egressState.textContent = settings.regional_egress_exit_ip ? `Connessa · ${settings.regional_egress_exit_ip}` : 'Connessa';
+  else if (settings.regional_egress_enabled) egressState.textContent = 'Non connessa';
+  else egressState.textContent = 'Disattivata';
+  $('#egressHint').textContent = settings.regional_egress_error || (settings.regional_egress_configured ? 'Configurazione salvata' : 'Configurazione mancante');
   $('#gofileHint').textContent = settings.gofile_configured ? `Token salvato ${settings.gofile_token_hint}` : 'Nessun token salvato';
   $('#pixeldrainHint').textContent = settings.pixeldrain_configured ? `Key salvata ${settings.pixeldrain_key_hint}` : 'Nessuna key salvata';
   $('#gofileState').textContent = settings.gofile_configured ? 'Configurato' : 'Non configurato';
@@ -879,6 +888,16 @@ function renderStatus(status) {
     health.className = 'pill warn'; health.textContent = 'Da controllare';
   } else {
     health.className = 'pill good'; health.textContent = 'Online';
+  }
+  const egress = status.config || {};
+  const egressPill = $('#egressPill');
+  if (egress.regional_egress_enabled) {
+    egressPill.classList.remove('hidden');
+    egressPill.className = egress.regional_egress_running ? 'pill good' : 'pill warn';
+    egressPill.textContent = egress.regional_egress_running ? 'VPN' : 'VPN !';
+    egressPill.title = egress.regional_egress_error || egress.regional_egress_name || 'Regional egress';
+  } else {
+    egressPill.className = 'pill hidden';
   }
 }
 
@@ -1518,10 +1537,14 @@ $('#settingsForm').addEventListener('submit', async event => {
     fallback_uploader: $('#setFallback').value, upload_retry_seconds: Number($('#setRetry').value),
     max_upload_attempts: Number($('#setAttempts').value), gofile_folder_id: $('#setGofileFolder').value.trim(),
     gofile_region: $('#setGofileRegion').value, clear_gofile_token: $('#clearGofile').checked,
-    clear_pixeldrain_api_key: $('#clearPixeldrain').checked
+    clear_pixeldrain_api_key: $('#clearPixeldrain').checked,
+    regional_egress_enabled: $('#setEgressEnabled').checked,
+    regional_egress_name: $('#setEgressName').value.trim() || 'VPN',
+    clear_regional_egress_wireguard_config: $('#clearEgressConfig').checked
   };
   if ($('#setGofileToken').value.trim()) body.gofile_token = $('#setGofileToken').value.trim();
   if ($('#setPixeldrainKey').value.trim()) body.pixeldrain_api_key = $('#setPixeldrainKey').value.trim();
+  if ($('#setEgressConfig').value.trim()) body.regional_egress_wireguard_config = $('#setEgressConfig').value.trim();
   setBusy(submit, true, 'Salvataggio…');
   try {
     await api('/api/settings', {method: 'PATCH', body: JSON.stringify(body)});
@@ -1530,6 +1553,29 @@ $('#settingsForm').addEventListener('submit', async event => {
     await refresh({includeRecordings: false});
   } catch (error) { $('#settingsError').textContent = error.message; }
   finally { setBusy(submit, false); }
+});
+
+$('#testEgressBtn').addEventListener('click', async () => {
+  const button = $('#testEgressBtn');
+  setBusy(button, true, 'Test…');
+  try {
+    const patch = {
+      regional_egress_enabled: $('#setEgressEnabled').checked,
+      regional_egress_name: $('#setEgressName').value.trim() || 'VPN',
+      clear_regional_egress_wireguard_config: $('#clearEgressConfig').checked
+    };
+    if ($('#setEgressConfig').value.trim()) patch.regional_egress_wireguard_config = $('#setEgressConfig').value.trim();
+    await api('/api/settings', {method: 'PATCH', body: JSON.stringify(patch)});
+    const result = await api('/api/settings/test/egress', {method: 'POST', body: '{}'});
+    $('#egressState').textContent = result.exit_ip ? `Connessa · ${result.exit_ip}` : 'Connessa';
+    $('#egressHint').textContent = 'VPN attiva';
+    toast(result.exit_ip ? `VPN ${result.exit_ip}` : 'VPN attiva');
+    await refresh({includeRecordings: false});
+  } catch (error) {
+    $('#egressState').textContent = 'Errore';
+    $('#egressHint').textContent = error.message;
+    toast(error.message, 'bad');
+  } finally { setBusy(button, false); }
 });
 
 $('#testGofileBtn').addEventListener('click', async () => {

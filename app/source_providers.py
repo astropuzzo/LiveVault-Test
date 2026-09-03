@@ -13,6 +13,12 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import requests
 
+from .egress import (
+    regional_egress_proxy_for_platform,
+    regional_egress_proxy_for_url,
+    subprocess_proxy_env,
+)
+
 
 @dataclass
 class ProbeResult:
@@ -30,6 +36,7 @@ class ResolvedInput:
     url: str
     http_headers: dict[str, str]
     kind: str
+    proxy_url: str = ""
 
 
 @dataclass
@@ -346,6 +353,9 @@ def _extract(url: str, quality: str, *, quiet: bool = True) -> dict[str, Any]:
         "retries": 2,
         "logger": _QuietLogger(),
     }
+    proxy_url = regional_egress_proxy_for_url(url)
+    if proxy_url:
+        params["proxy"] = proxy_url
     with yt_dlp.YoutubeDL(params) as ydl:
         return ydl.extract_info(url, download=False)
 
@@ -459,11 +469,15 @@ def _extract_last_broadcast_from_profile_html(
 
 
 def _browser_get(url: str, headers: dict[str, str], timeout: float = 15.0):
+    proxy_url = regional_egress_proxy_for_url(url)
+    proxies = {"http": proxy_url, "https": proxy_url} if proxy_url else None
     try:
         from curl_cffi import requests as curl_requests
     except Exception:
-        return requests.get(url, headers=headers, timeout=timeout)
-    return curl_requests.get(url, headers=headers, timeout=timeout, impersonate="chrome")
+        return requests.get(url, headers=headers, timeout=timeout, proxies=proxies)
+    return curl_requests.get(
+        url, headers=headers, timeout=timeout, impersonate="chrome", proxies=proxies
+    )
 
 
 def _fetch_biocontext(slug: str) -> dict[str, Any]:
@@ -730,6 +744,7 @@ async def probe(platform: str, slug: str, quality: str = "best") -> ProbeResult:
 
 async def resolve_inputs(platform: str, slug: str, quality: str = "best") -> list[ResolvedInput]:
     url = source_url(platform, slug)
+    proxy_url = regional_egress_proxy_for_platform(platform)
     info = await asyncio.to_thread(_extract, url, quality, quiet=False)
     formats = info.get("requested_formats") or []
     result: list[ResolvedInput] = []
@@ -754,7 +769,7 @@ async def resolve_inputs(platform: str, slug: str, quality: str = "best") -> lis
                 format_id=str(fmt.get("format_id") or ""),
                 format_label=str(fmt.get("format") or fmt.get("format_note") or ""),
             )
-            result.append(ResolvedInput(media_url, dict(fmt.get("http_headers") or {}), kind))
+            result.append(ResolvedInput(media_url, dict(fmt.get("http_headers") or {}), kind, proxy_url))
     elif info.get("url"):
         parsed_media = urlparse(str(info["url"]))
         if (
@@ -770,7 +785,7 @@ async def resolve_inputs(platform: str, slug: str, quality: str = "best") -> lis
             format_id=str(info.get("format_id") or ""),
             format_label=str(info.get("format") or info.get("format_note") or ""),
         )
-        result.append(ResolvedInput(str(info["url"]), dict(info.get("http_headers") or {}), kind))
+        result.append(ResolvedInput(str(info["url"]), dict(info.get("http_headers") or {}), kind, proxy_url))
     if not result:
         raise RuntimeError("No playable stream URL returned by yt-dlp")
     return result
@@ -802,6 +817,7 @@ async def _audit_input(item: ResolvedInput, timeout: float) -> InputAudit:
         *cmd,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
+        env=subprocess_proxy_env(item.proxy_url),
     )
     try:
         stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout + 2)

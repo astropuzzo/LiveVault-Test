@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.9.0 — Regional egress
+
+- Chaturbate può usare un'uscita WireGuard separata senza cambiare la rete della VPS o di CapRover.
+- Wireproxy gira interamente in userspace: probe, metadata, yt-dlp, ffprobe e FFmpeg/HLS usano lo stesso egress.
+- Fail-closed: se la VPN è abilitata ma non disponibile, Chaturbate non ricade sull'IP diretto della VPS.
+- Configurazione WireGuard cifrata nel database; la copia runtime è temporanea e con permessi 0600.
+- Stato VPN e test dell'IP di uscita nelle Impostazioni.
+
 ## 2.8.9 — FFmpeg HLS compatibility
 
 - Il master HLS sincronizzato locale non riceve più opzioni `reconnect*` HTTP incompatibili con alcune build FFmpeg.
