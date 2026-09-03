@@ -50,7 +50,7 @@ BASE = Path(__file__).parent
 LOGIN_FAILURES: dict[str, deque[float]] = defaultdict(deque)
 LOGIN_WINDOW = 10 * 60
 LOGIN_MAX_FAILURES = 6
-VERSION = "2.8.3"
+VERSION = "2.8.4"
 
 
 class LoginBody(BaseModel):
@@ -1486,6 +1486,18 @@ def control_room_pulse(request: Request, hours: int = 12):
                         merged_recordings.append({"started": rec_start, "ended": rec_end})
 
                 recording_items = [row[0] for row in overlapping]
+                recording_segments = [
+                    {
+                        "id": int(recording.id),
+                        "started_at": _iso_utc(rec_start),
+                        "ended_at": _iso_utc(rec_end),
+                        "filename": str(recording.filename or ""),
+                        "upload_provider": str(recording.upload_provider or ""),
+                        "remote_url": str(recording.remote_url or ""),
+                        "thumbnail_url": _safe_thumbnail_url(int(recording.id), str(recording.thumbnail_path or "")),
+                    }
+                    for recording, rec_start, rec_end in overlapping
+                ]
                 live_seconds = max(0.0, (ended - started).total_seconds())
                 recorded_seconds = sum(
                     max(0.0, (row["ended"] - row["started"]).total_seconds())
@@ -1519,6 +1531,7 @@ def control_room_pulse(request: Request, hours: int = 12):
                         {"started_at": _iso_utc(row["started"]), "ended_at": _iso_utc(row["ended"])}
                         for row in merged_recordings
                     ],
+                    "recordings": recording_segments,
                     "coverage_percent": round(coverage, 1),
                     "file_count": file_count,
                     "uploaded_count": uploaded_count,

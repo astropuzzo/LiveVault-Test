@@ -1904,6 +1904,52 @@ function pulseRecordingIntervals(session) {
   return Array.isArray(session?.recording_intervals) ? session.recording_intervals.filter(row => timestamp(row?.started_at) && timestamp(row?.ended_at)) : [];
 }
 
+function pulseRecordingFiles(session) {
+  const files = Array.isArray(session?.recordings) ? session.recordings : [];
+  if (files.length) return files.filter(row => timestamp(row?.started_at) && timestamp(row?.ended_at));
+  return pulseRecordingIntervals(session);
+}
+
+function ensurePulseMediaPreview() {
+  let node = $('#crPulseMediaPreview');
+  if (node) return node;
+  node = document.createElement('div');
+  node.id = 'crPulseMediaPreview';
+  node.className = 'cr-pulse-media-preview';
+  node.setAttribute('aria-hidden', 'true');
+  document.body.append(node);
+  return node;
+}
+
+function showPulseMediaPreview(target) {
+  const previewUrl = safeUrl(target?.dataset?.previewUrl || '');
+  if (!previewUrl) return;
+  const node = ensurePulseMediaPreview();
+  const title = target.dataset.previewTitle || 'REC';
+  const meta = target.dataset.previewMeta || '';
+  node.innerHTML = `<img src="${esc(previewUrl)}" alt=""><div><strong>${esc(title)}</strong>${meta ? `<span>${esc(meta)}</span>` : ''}</div>`;
+  node.classList.add('visible');
+  node.setAttribute('aria-hidden', 'false');
+}
+
+function hidePulseMediaPreview() {
+  const node = $('#crPulseMediaPreview');
+  if (!node) return;
+  node.classList.remove('visible');
+  node.setAttribute('aria-hidden', 'true');
+}
+
+document.addEventListener('pointerover', event => {
+  const target = event.target.closest?.('.cr-pulse-rec-media');
+  if (target) showPulseMediaPreview(target);
+});
+
+document.addEventListener('pointerout', event => {
+  const target = event.target.closest?.('.cr-pulse-rec-media');
+  if (!target || target.contains(event.relatedTarget)) return;
+  hidePulseMediaPreview();
+});
+
 function pulseRangeLabel(start, end, open = false) {
   if (!timestamp(start)) return '—';
   return `${pulseTimeLabel(start)}–${open ? 'ora' : pulseTimeLabel(end)}`;
@@ -1955,17 +2001,25 @@ function controlRoomPulseMarkup() {
       const x = xFor(start);
       const liveWidth = widthFor(start, end, compact ? 18 : 5);
       const title = `${session.display_name} · LIVE ${pulseRangeLabel(session.started_at, session.ended_at, !session.ended_at)} · REC ${session.recording_started_at ? pulseRangeLabel(session.recording_started_at, session.recording_ended_at, false) : '—'}`;
-      const recs = pulseRecordingIntervals(session).map(rec => {
+      const recs = pulseRecordingFiles(session).map(rec => {
         const recStart = Math.max(start, timestamp(rec.started_at));
         const recEnd = Math.min(end, timestamp(rec.ended_at));
         if (!recStart || recEnd <= recStart) return '';
         const recX = xFor(recStart);
         const recWidth = widthFor(recStart, recEnd, compact ? 12 : 4);
-        return `<rect class="cr-pulse-rec-span" x="${recX.toFixed(3)}" y="4" width="${recWidth.toFixed(3)}" height="8" rx="4" ry="4"></rect>`;
+        const remoteUrl = safeUrl(rec.remote_url || '');
+        const previewUrl = safeUrl(rec.thumbnail_url || '');
+        const provider = String(rec.upload_provider || '').toUpperCase();
+        const filename = String(rec.filename || 'REC');
+        const meta = `${provider || 'REC'} · ${pulseRangeLabel(rec.started_at, rec.ended_at, false)}`;
+        const rect = `<rect class="cr-pulse-rec-span ${remoteUrl ? 'remote' : ''}" x="${recX.toFixed(3)}" y="4" width="${recWidth.toFixed(3)}" height="8" rx="4" ry="4"></rect>`;
+        const attrs = `class="cr-pulse-rec-media" data-preview-url="${esc(previewUrl)}" data-preview-title="${esc(filename)}" data-preview-meta="${esc(meta)}"`;
+        if (remoteUrl) return `<a ${attrs} href="${esc(remoteUrl)}" target="_blank" rel="noopener noreferrer">${rect}<title>${esc(filename)} · ${esc(meta)}</title></a>`;
+        return `<g ${attrs}>${rect}<title>${esc(filename)} · ${esc(meta)}</title></g>`;
       }).join('');
-      const firstRec = pulseRecordingIntervals(session)[0];
+      const firstRec = pulseRecordingFiles(session)[0];
       const recMarkerX = firstRec ? xFor(Math.max(start, timestamp(firstRec.started_at))) : null;
-      return `<g class="cr-pulse-session" data-profile-link="${session.representative_source_id || 0}"><rect class="cr-pulse-live-span ${session.state === 'live' ? 'current' : ''} ${session.state === 'missed' ? 'missed' : ''}" x="${x.toFixed(3)}" y="2" width="${liveWidth.toFixed(3)}" height="12" rx="6" ry="6"></rect><line class="cr-pulse-live-marker" x1="${x.toFixed(3)}" y1="0" x2="${x.toFixed(3)}" y2="16"></line>${recMarkerX === null ? '' : `<line class="cr-pulse-rec-marker" x1="${recMarkerX.toFixed(3)}" y1="1" x2="${recMarkerX.toFixed(3)}" y2="15"></line>`}${recs}<title>${esc(title)}</title></g>`;
+      return `<g class="cr-pulse-session"><rect class="cr-pulse-live-span ${session.state === 'live' ? 'current' : ''} ${session.state === 'missed' ? 'missed' : ''}" x="${x.toFixed(3)}" y="2" width="${liveWidth.toFixed(3)}" height="12" rx="6" ry="6"></rect><line class="cr-pulse-live-marker" x1="${x.toFixed(3)}" y1="0" x2="${x.toFixed(3)}" y2="16"></line>${recMarkerX === null ? '' : `<line class="cr-pulse-rec-marker" x1="${recMarkerX.toFixed(3)}" y1="1" x2="${recMarkerX.toFixed(3)}" y2="15"></line>`}${recs}<title>${esc(title)}</title></g>`;
     }).join('');
     return `<div class="cr-pulse-row"><div class="cr-pulse-who">${creatorLinkMarkup(representative.representative_source_id, representative.display_name, 'cr-pulse-name')}${pulseSessionTimingMarkup(representative)}</div><div class="cr-pulse-track"><svg class="cr-pulse-svg" viewBox="0 0 1000 16" preserveAspectRatio="none" role="img" aria-label="Timeline ${esc(representative.display_name)}">${graphics}</svg></div></div>`;
   }).join('');

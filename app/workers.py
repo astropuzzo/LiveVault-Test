@@ -345,7 +345,7 @@ class WorkerManager:
                 if not path.exists() or not path.is_file():
                     continue
                 digest = rec.sha256 or await asyncio.to_thread(sha256_file, path)
-                candidate = settings.data_dir / "thumbnails" / f"{digest[:24]}-sheet-v1.jpg"
+                candidate = settings.data_dir / "thumbnails" / f"{digest[:24]}-sheet-v2.jpg"
                 if rec.thumbnail_path == str(candidate) and candidate.is_file():
                     continue
                 ok = await asyncio.to_thread(generate_thumbnail, path, candidate, rec.duration_seconds)
@@ -434,7 +434,7 @@ class WorkerManager:
             start = finalized
         thumb_path = ""
         if cfg.generate_thumbnails and integrity and integrity.ok:
-            candidate = settings.data_dir / "thumbnails" / f"{digest[:24]}-sheet-v1.jpg"
+            candidate = settings.data_dir / "thumbnails" / f"{digest[:24]}-sheet-v2.jpg"
             ok = await asyncio.to_thread(generate_thumbnail, path, candidate, integrity.duration)
             if ok:
                 thumb_path = str(candidate)

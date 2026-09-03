@@ -10,7 +10,7 @@ from app.recorder import finalize_mp4_for_streaming, mp4_is_streaming_ready
 from app.utils import generate_thumbnail, sha256_file, verify_media
 
 
-def test_thumbnail_storyboard_uses_four_fast_seeks(tmp_path: Path, monkeypatch):
+def test_thumbnail_storyboard_uses_nine_fast_seeks(tmp_path: Path, monkeypatch):
     media = tmp_path / "large.mp4"
     media.write_bytes(b"placeholder")
     thumb = tmp_path / "thumb.jpg"
@@ -26,10 +26,10 @@ def test_thumbnail_storyboard_uses_four_fast_seeks(tmp_path: Path, monkeypatch):
     assert generate_thumbnail(media, thumb, 100.0)
 
     command = calls[0]
-    assert command.count("-ss") == 4
-    assert command.count("-i") == 4
-    assert "hstack=inputs=2" in command[command.index("-filter_complex") + 1]
-    assert "vstack=inputs=2" in command[command.index("-filter_complex") + 1]
+    assert command.count("-ss") == 9
+    assert command.count("-i") == 9
+    assert "hstack=inputs=3" in command[command.index("-filter_complex") + 1]
+    assert "vstack=inputs=3" in command[command.index("-filter_complex") + 1]
     assert thumb.read_bytes() == b"new-storyboard"
     assert not list(tmp_path.glob(".thumb-*"))
 
@@ -64,7 +64,7 @@ def test_integrity_and_thumbnail_pipeline(tmp_path: Path):
         text=True,
         timeout=10,
     )
-    assert dimensions.stdout.strip() == "640x360"
+    assert dimensions.stdout.strip() == "960x540"
 
 
 @pytest.mark.skipif(not shutil.which("ffprobe"), reason="ffprobe missing")

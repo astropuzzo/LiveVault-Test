@@ -17,9 +17,12 @@ def test_live_pulse_is_csp_safe_and_shows_live_and_recording_geometry():
 
     assert 'style=' not in pulse
     assert 'const labelRatios = [0, .25, .5, .75, 1]' in pulse
-    assert 'pulseRecordingIntervals(session)' in pulse
+    assert 'pulseRecordingFiles(session)' in pulse
     assert '<rect class="cr-pulse-live-span' in pulse
-    assert '<rect class="cr-pulse-rec-span"' in pulse
+    assert "cr-pulse-rec-span ${remoteUrl ? 'remote' : ''}" in pulse
+    assert 'cr-pulse-rec-media' in pulse
+    assert 'data-preview-url' in pulse
+    assert 'target="_blank"' in pulse
     assert 'cr-pulse-live-marker' in pulse
     assert 'cr-pulse-rec-marker' in pulse
     assert 'pulseSessionTimingMarkup(representative)' in pulse

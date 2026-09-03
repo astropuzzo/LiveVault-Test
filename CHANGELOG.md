@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.8.4 — 2026-09-03
+- Live Pulse: hover sui segmenti REC con storyboard 3x3 a 9 frame.
+- Ogni segmento REC rappresenta il file reale e apre il relativo link Gofile/PixelDrain.
+- API Pulse espone URL remoto, provider e thumbnail per ciascuna registrazione.
+- Backfill automatico dei vecchi storyboard 2x2 quando il file locale è ancora disponibile.
+
 ## 2.8.3 — 2026-09-03
 
 - Live Pulse ora mostra gli intervalli **LIVE** e **REC** separatamente, con inizio/fine leggibili per ogni creator.

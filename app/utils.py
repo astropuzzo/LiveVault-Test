@@ -131,11 +131,11 @@ def media_duration(path: Path) -> float | None:
 
 
 def generate_thumbnail(path: Path, output: Path, duration: float | None = None) -> bool:
-    """Create a 2x2 storyboard from four evenly spaced moments.
+    """Create a 3x3 storyboard from nine evenly spaced moments.
 
-    Input-side seeks keep this inexpensive for hour-long recordings. The
-    previous single-frame extraction remains as a fallback for unusual media.
-    Writing to a temporary file makes regeneration atomic.
+    Input-side seeks keep this inexpensive for long recordings. A single-frame
+    extraction remains as a fallback for unusual media. Writing to a temporary
+    file keeps regeneration atomic.
     """
     output.parent.mkdir(parents=True, exist_ok=True)
     if duration is None or not math.isfinite(duration) or duration <= 0:
@@ -144,9 +144,8 @@ def generate_thumbnail(path: Path, output: Path, duration: float | None = None) 
     seek = 0.5
     seeks: list[float] = []
     if duration and math.isfinite(duration) and duration > 0:
-        # Stay clear of the trailer while covering the complete recording.
-        safe_end = max(0.0, duration - min(1.0, duration * 0.05))
-        seeks = [safe_end * fraction for fraction in (0.10, 0.35, 0.60, 0.85)]
+        safe_end = max(0.0, duration - min(1.0, duration * 0.03))
+        seeks = [safe_end * fraction for fraction in (0.05, 0.16, 0.27, 0.38, 0.50, 0.62, 0.73, 0.84, 0.95)]
         seek = min(30.0, max(0.05, duration * 0.2))
 
     with tempfile.NamedTemporaryFile(
@@ -165,12 +164,13 @@ def generate_thumbnail(path: Path, output: Path, duration: float | None = None) 
             cells = [
                 f"[{index}:v:0]scale=320:180:force_original_aspect_ratio=decrease,"
                 f"pad=320:180:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1[v{index}]"
-                for index in range(4)
+                for index in range(9)
             ]
             filters = ";".join(cells + [
-                "[v0][v1]hstack=inputs=2[top]",
-                "[v2][v3]hstack=inputs=2[bottom]",
-                "[top][bottom]vstack=inputs=2[sheet]",
+                "[v0][v1][v2]hstack=inputs=3[row0]",
+                "[v3][v4][v5]hstack=inputs=3[row1]",
+                "[v6][v7][v8]hstack=inputs=3[row2]",
+                "[row0][row1][row2]vstack=inputs=3[sheet]",
             ])
             command.extend([
                 "-filter_complex", filters, "-map", "[sheet]", "-an",
@@ -178,7 +178,7 @@ def generate_thumbnail(path: Path, output: Path, duration: float | None = None) 
                 "-q:v", "4", str(candidate),
             ])
             result = subprocess.run(
-                command, capture_output=True, text=True, timeout=75, check=False,
+                command, capture_output=True, text=True, timeout=120, check=False,
             )
             if result.returncode == 0 and candidate.exists() and candidate.stat().st_size > 0:
                 candidate.replace(output)
@@ -188,8 +188,8 @@ def generate_thumbnail(path: Path, output: Path, duration: float | None = None) 
             [
                 "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
                 "-ss", f"{seek:.2f}", "-i", str(path), "-frames:v", "1",
-                "-vf", "scale=640:360:force_original_aspect_ratio=decrease,"
-                "pad=640:360:(ow-iw)/2:(oh-ih)/2:color=black",
+                "-vf", "scale=960:540:force_original_aspect_ratio=decrease,"
+                "pad=960:540:(ow-iw)/2:(oh-ih)/2:color=black",
                 "-an", "-update", "1", "-pix_fmt", "yuvj420p",
                 "-q:v", "4", str(candidate),
             ],
