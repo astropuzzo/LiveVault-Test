@@ -18,13 +18,14 @@ let statisticsBusy = false;
 let lastStatisticsLoad = 0;
 let refreshBusy = false;
 let lastRecordingLoad = 0;
+let recordingsLoaded = false;
 let activeView = 'dashboard';
 let librarySmart = 'all';
 let libraryMode = localStorage.getItem('livevault-library-view') === 'list' ? 'list' : 'grid';
 let sourceFilterId = Number(new URLSearchParams(location.search).get('source')) || 0;
 const selectedProfiles = new Set();
-const DISPLAY_TIME_ZONE = 'Europe/Berlin';
-const DISPLAY_TIME_ZONE_LABEL = 'Frankfurt';
+const DISPLAY_TIME_ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/Rome';
+const DISPLAY_TIME_ZONE_LABEL = 'ora locale';
 
 function esc(value = '') {
   return String(value).replace(/[&<>'"]/g, char => ({
@@ -218,6 +219,14 @@ function closeModal(id) {
   if (id === 'profileModal') profileData = null;
 }
 
+function openLocalVideo(url, title = 'Copia locale') {
+  const localUrl = safeUrl(url);
+  if (!localUrl) return toast('Copia locale non disponibile', 'bad');
+  $('#videoTitle').textContent = title;
+  $('#videoPlayer').src = localUrl;
+  openModal('videoModal');
+}
+
 function statusLabel(value) {
   return ({
     recording: 'REC', live: 'LIVE', offline: 'Offline', paused: 'In pausa', archived: 'Archiviata',
@@ -344,6 +353,8 @@ function showView(name, updateHash = true) {
     history.replaceState({}, '', url);
   }
   if (activeView === 'library') renderLibrary();
+  if (activeView === 'dashboard') renderSources();
+  if (activeView !== 'dashboard') hidePulseMediaPreview();
   if (activeView === 'statistics') loadStatistics(statisticsDays).catch(error => toast(error.message, 'bad'));
   if (activeView === 'archive') {
     renderRecordings();
@@ -619,10 +630,18 @@ function renderProfile() {
     }).join('');
     return `<details class="profile-day" ${index === 0 ? 'open' : ''}><summary><div><strong>${esc(day.date)}</strong><small>${day.file_count || 0} file · ${esc(humanBytes(day.total_bytes || 0))} · ${esc(duration(day.total_duration_seconds || 0))}</small></div><div class="profile-day-links">${cloudLinks}</div></summary><div class="profile-day-videos">${videos}</div></details>`;
   }).join('') || '<div class="empty compact">Nessuna registrazione.</div>';
+  const localCaptures = (profileData.local_captures || []).filter(item => item.local_available);
+  const localCaptureCards = localCaptures.map(item => {
+    const state = item.state === 'recording' ? '● REC IN CORSO' : item.state === 'ready' ? 'PRONTA · CONSOLIDAMENTO' : item.state === 'checking' ? 'CONTROLLO IN CORSO' : 'RECUPERO DISPONIBILE';
+    const tone = item.state === 'recording' ? 'recording' : item.state === 'recovery' ? 'warning' : 'ready';
+    return `<article class="local-capture" data-tone="${tone}"><div><strong>${esc(item.source_name)}</strong><small>${esc(item.filename)} · ${esc(item.size_human || humanBytes(item.size_bytes || 0))} · ${esc(duration(item.duration_seconds || 0))}</small></div><span>${esc(state)}</span><button class="btn soft" data-profile-action="local-capture" data-url="${esc(item.view_url)}" data-title="${esc(`${item.source_name} · copia locale`)}" type="button">Anteprima locale</button></article>`;
+  }).join('');
+  const localCaptureSection = localCaptureCards ? `<section class="profile-section local-captures"><div class="profile-section-head"><div><h3>Sul server adesso</h3><span>Disponibile prima del caricamento cloud</span></div><span class="count">${localCaptures.length}</span></div><div class="local-capture-list">${localCaptureCards}</div></section>` : '';
   $('#profileContent').innerHTML = `<div class="profile-overview">
       <div class="profile-cover ${cover ? '' : 'empty'}">${cover ? `<img src="${esc(cover)}" alt="Copertina di ${esc(profile.display_name)}">` : `<span>${esc(profile.display_name.slice(0, 2).toUpperCase())}</span>`}</div>
-      <div class="profile-summary"><button class="favorite-toggle ${profile.favorite ? 'active' : ''}" data-profile-action="favorite" data-id="${profile.id}" type="button" aria-pressed="${profile.favorite}">★ ${profile.favorite ? 'Preferita' : 'Preferiti'}</button><div class="profile-metrics"><span><strong>${stats.recording_count || 0}</strong> file</span><span><strong>${stats.session_count || 0}</strong> sessioni</span><span><strong>${humanBytes(stats.total_bytes || 0)}</strong> registrati</span><span><strong>${duration(stats.total_duration_seconds || 0)}</strong> durata</span><span><strong>${stats.uploaded_count || 0}</strong> cloud</span><span class="${stats.failed_count ? 'danger-text' : ''}"><strong>${stats.failed_count || 0}</strong> problemi</span></div></div>
+      <div class="profile-summary"><button class="favorite-toggle ${profile.favorite ? 'active' : ''}" data-profile-action="favorite" data-id="${profile.id}" type="button" aria-pressed="${profile.favorite}">★ ${profile.favorite ? 'Preferita' : 'Preferiti'}</button><div class="profile-metrics"><span><strong>${stats.recording_count || 0}</strong> completati</span><span><strong>${localCaptures.length}</strong> locali ora</span><span><strong>${humanBytes(stats.total_bytes || 0)}</strong> archiviati</span><span><strong>${duration(stats.total_duration_seconds || 0)}</strong> durata</span><span><strong>${stats.uploaded_count || 0}</strong> cloud</span><span class="${stats.failed_count ? 'danger-text' : ''}"><strong>${stats.failed_count || 0}</strong> problemi</span></div></div>
     </div>
+    ${localCaptureSection}
     <section class="profile-section profile-statistics"><div class="profile-section-head"><div><h3>Statistiche</h3></div><label class="stats-range compact"><span>Periodo</span><select id="profileStatisticsRange"><option value="7" ${profileStatisticsDays === 7 ? 'selected' : ''}>7g</option><option value="30" ${profileStatisticsDays === 30 ? 'selected' : ''}>30g</option><option value="90" ${profileStatisticsDays === 90 ? 'selected' : ''}>90g</option><option value="365" ${profileStatisticsDays === 365 ? 'selected' : ''}>365g</option></select></label></div>${activity ? `<div class="stats-summary-grid compact">${statisticsSummaryMarkup(activity, true)}</div><div class="stats-chart-grid profile"><div class="stats-mini-chart"><div class="chart-title">Online vs registrato</div>${activityChartSvg(activity.daily)}</div><div class="stats-mini-chart"><div class="chart-title">Orari più frequenti</div>${hourlyChartSvg(activity.hourly)}</div></div>${statisticsHistoryNote(activity) ? `<p class="stats-note">${esc(statisticsHistoryNote(activity))}</p>` : ''}` : '<div class="empty compact">Statistiche non disponibili.</div>'}</section>
     <section class="profile-section"><div class="profile-section-head"><h3>Identità e note</h3></div><label class="field"><span>Nome profilo</span><input id="profileDisplayName" maxlength="120" value="${esc(profile.display_name)}"></label><label class="field"><span>Note private</span><textarea id="profileNotes" maxlength="20000" rows="4" placeholder="Note, preferenze, riferimenti…">${esc(profile.notes)}</textarea></label></section>
     <section class="profile-section"><div class="profile-section-head"><h3>Categorie</h3><button class="btn quiet" data-profile-action="manage-taxonomy" type="button">Gestisci</button></div><div class="choice-grid">${categoryChecks}</div></section>
@@ -832,31 +851,86 @@ function renderStatus(status) {
   $('#versionLabel').textContent = `v${status.config.version}`;
   const active = status.worker.active || [];
   const history = status.history || {};
+  const errors = status.worker.errors || {};
+  const errorCount = Object.keys(errors).length;
+  const setTone = (selector, tone) => {
+    const element = $(selector);
+    if (element) element.dataset.tone = tone;
+  };
   $('#activeCount').textContent = active.length;
   $('#activeNames').innerHTML = active.length ? active.map(item => {
     const source = sources.find(row => row.id === Number(item.source_id));
     return creatorLinkMarkup(item.source_id, source?.display_name || item.source_name);
-  }).join(' · ') : 'Nessuna';
+  }).join(' · ') : 'Nessuna registrazione in corso';
+  setTone('#metricActive', active.length ? 'recording' : 'neutral');
   $('#queueCount').textContent = status.queue.pending;
-  $('#queueNote').textContent = status.queue.integrity_failed ? `${status.queue.integrity_failed} integrità fallita` : status.queue.failed ? `${status.queue.failed} falliti` : status.queue.pending ? 'file in attesa' : 'Coda vuota';
+  $('#queueNote').textContent = status.queue.integrity_failed ? `${status.queue.integrity_failed} con integrità fallita` : status.queue.failed ? `${status.queue.failed} upload falliti` : status.queue.pending ? `${status.queue.pending === 1 ? '1 file attende' : `${status.queue.pending} file attendono`} il cloud` : 'Nessun file in attesa';
+  setTone('#metricQueue', status.queue.integrity_failed || status.queue.failed ? 'danger' : status.queue.pending ? 'warning' : 'good');
   $('#historyCount').textContent = history.recordings || 0;
   $('#historyNote').textContent = `${history.sessions || 0} sessioni · ${history.today || 0} oggi`;
   $('#cloudCount').textContent = history.uploaded || 0;
   $('#cloudNote').textContent = `${history.uploaded_human || '0 B'} verificati`;
+  setTone('#metricCloud', history.uploaded ? 'good' : 'neutral');
   $('#bufferValue').textContent = status.queue.local_human;
   $('#bufferNote').textContent = status.config.buffer_max_gb ? `${status.queue.buffer_percent}% di ${status.queue.buffer_max_human}` : 'Nessun limite';
   $('#bufferBar').style.width = `${Math.min(100, status.queue.buffer_percent || 0)}%`;
   $('#bufferBar').className = status.queue.buffer_percent > 95 ? 'bad' : status.queue.buffer_percent > 80 ? 'warn' : '';
+  setTone('#metricBuffer', status.queue.buffer_percent > 95 ? 'danger' : status.queue.buffer_percent > 80 ? 'warning' : 'neutral');
   $('#freeSpace').textContent = status.disk.free_human;
   $('#diskUsage').textContent = `${status.disk.used_human} / ${status.disk.total_human} usati`;
   const diskUsed = status.disk.total ? Math.min(100, status.disk.used / status.disk.total * 100) : 0;
   $('#diskBar').style.width = `${diskUsed}%`;
   $('#diskBar').className = status.disk.pressure === 'critical' ? 'bad' : status.disk.pressure === 'warning' ? 'warn' : '';
+  setTone('#metricDisk', status.disk.pressure === 'critical' ? 'danger' : status.disk.pressure === 'warning' ? 'warning' : 'good');
   $('#providerRoute').textContent = `${status.config.primary_uploader} → ${status.config.fallback_uploader}`;
-  $('#recordingControlState').textContent = status.config.recording_paused ? 'In pausa' : 'Attive';
+  $('#recordingControlState').textContent = status.config.recording_paused ? 'In pausa' : 'Attiva';
   $('#uploadControlState').textContent = status.config.upload_paused ? 'In pausa' : 'Attivo';
-  $('#pauseRecordingsBtn').textContent = status.config.recording_paused ? 'Riprendi registrazioni' : 'Pausa registrazioni';
-  $('#pauseUploadsBtn').textContent = status.config.upload_paused ? 'Riprendi upload' : 'Pausa upload';
+  $('#recordingControlHint').textContent = status.config.recording_paused ? 'Le live vengono rilevate, ma non saranno registrate.' : 'Le nuove live vengono registrate automaticamente.';
+  $('#uploadControlHint').textContent = status.config.upload_paused ? 'I file restano al sicuro sul server finché non riprendi.' : 'La coda viene smaltita automaticamente.';
+  $('#pauseRecordingsBtn').textContent = status.config.recording_paused ? 'Riattiva' : 'Metti in pausa';
+  $('#pauseUploadsBtn').textContent = status.config.upload_paused ? 'Riattiva' : 'Metti in pausa';
+  setTone('#recordingControl', status.config.recording_paused ? 'warning' : 'good');
+  setTone('#uploadControl', status.config.upload_paused ? 'warning' : 'good');
+
+  const overview = $('#systemOverview');
+  const overviewTitle = $('#systemOverviewTitle');
+  const overviewText = $('#systemOverviewText');
+  const overviewAction = $('#systemOverviewAction');
+  const issueCount = errorCount + Number(status.queue.integrity_failed || 0) + Number(history.audio_missing || 0);
+  overviewAction.dataset.action = 'none';
+  overviewAction.disabled = true;
+  if (status.disk.pressure === 'critical') {
+    overview.dataset.tone = 'danger';
+    overviewTitle.textContent = 'Spazio quasi esaurito';
+    overviewText.textContent = `${status.disk.free_human} liberi: le nuove registrazioni potrebbero fermarsi.`;
+    overviewAction.textContent = 'Libera il disco';
+    overviewAction.dataset.action = 'settings';
+    overviewAction.disabled = false;
+  } else if (status.config.recording_paused) {
+    overview.dataset.tone = 'warning';
+    overviewTitle.textContent = 'Registrazioni in pausa';
+    overviewText.textContent = 'Il monitoraggio continua, ma nessuna nuova live verrà salvata.';
+    overviewAction.textContent = 'Riattiva REC';
+    overviewAction.dataset.action = 'resume';
+    overviewAction.disabled = false;
+  } else if (issueCount) {
+    overview.dataset.tone = 'warning';
+    overviewTitle.textContent = `${issueCount} ${issueCount === 1 ? 'elemento richiede' : 'elementi richiedono'} attenzione`;
+    overviewText.textContent = 'Le automazioni restano operative; controlla i dettagli evidenziati in ambra o rosso.';
+    overviewAction.textContent = 'Controlla errori';
+    overviewAction.dataset.action = 'attention';
+    overviewAction.disabled = false;
+  } else if (active.length) {
+    overview.dataset.tone = 'recording';
+    overviewTitle.textContent = `${active.length} ${active.length === 1 ? 'registrazione in corso' : 'registrazioni in corso'}`;
+    overviewText.textContent = status.queue.pending ? `${status.queue.pending} file ${status.queue.pending === 1 ? 'attende' : 'attendono'} anche il caricamento cloud.` : 'Acquisizione attiva; la coda cloud è libera.';
+    overviewAction.textContent = 'Nessuna';
+  } else {
+    overview.dataset.tone = 'good';
+    overviewTitle.textContent = 'Sistema pronto';
+    overviewText.textContent = status.config.upload_paused ? 'Il monitoraggio è attivo; il caricamento cloud è in pausa.' : 'Monitoraggio e caricamento sono attivi. LiveVault avvierà la REC alla prossima live.';
+    overviewAction.textContent = status.config.upload_paused ? 'Upload in pausa' : 'Nessuna';
+  }
 
   const current = status.worker.upload_current;
   $('#uploadNowCard').classList.toggle('hidden', !current);
@@ -867,20 +941,61 @@ function renderStatus(status) {
     $('#uploadProgressText').textContent = `${current.percent || 0}%`;
   }
 
-  const errors = status.worker.errors || {};
-  const errorCount = Object.keys(errors).length;
   $('#errorsPanel').classList.toggle('hidden', errorCount === 0);
   $('#diagnosticCount').textContent = errorCount;
   $('#errors').textContent = Object.entries(errors).map(([name, message]) => `${name}\n${message}`).join('\n\n');
   const health = $('#healthPill');
   if (status.disk.pressure === 'critical') {
     health.className = 'pill bad'; health.textContent = 'Disco critico';
+    health.dataset.action = 'settings'; health.disabled = false;
   } else if (errorCount || status.queue.integrity_failed || history.audio_missing) {
     health.className = 'pill warn'; health.textContent = 'Da controllare';
+    health.dataset.action = 'attention'; health.disabled = false;
   } else {
     health.className = 'pill good'; health.textContent = 'Online';
+    health.dataset.action = 'none'; health.disabled = true;
   }
 }
+
+function openSystemAttention() {
+  if (!$('#errorsPanel').classList.contains('hidden')) {
+    $('#errorsPanel').scrollIntoView({behavior: 'smooth', block: 'start'});
+    return;
+  }
+  showView('archive');
+  if (Number(statusData?.queue?.integrity_failed || 0)) $('#recordingStatus').value = 'integrity_failed';
+  else if (Number(statusData?.queue?.failed || 0)) $('#recordingStatus').value = 'failed';
+  renderRecordings();
+}
+
+function runSystemAction(action) {
+  if (action === 'attention') return openSystemAttention();
+  if (action === 'settings') return $('#settingsBtn').click();
+  if (action === 'resume') return $('#pauseRecordingsBtn').click();
+}
+
+$('#healthPill').addEventListener('click', event => runSystemAction(event.currentTarget.dataset.action));
+$('#systemOverviewAction').addEventListener('click', event => runSystemAction(event.currentTarget.dataset.action));
+$('#retryRecoveryBtn').addEventListener('click', async event => {
+  const button = event.currentTarget;
+  setBusy(button, true, 'Recupero…');
+  try {
+    const result = await api('/api/recovery/run', {method: 'POST'});
+    toast(result.started ? 'Recupero avviato: le registrazioni continuano' : 'Recupero già in corso');
+    await refresh({includeRecordings: false});
+  } catch (error) { toast(error.message, 'bad'); }
+  finally { setBusy(button, false); }
+});
+$('#clearErrorsBtn').addEventListener('click', async event => {
+  const button = event.currentTarget;
+  setBusy(button, true, 'Pulizia…');
+  try {
+    const result = await api('/api/status/errors', {method: 'DELETE'});
+    toast(`${result.cleared || 0} avvisi rimossi`);
+    await refresh({includeRecordings: false});
+  } catch (error) { toast(error.message, 'bad'); }
+  finally { setBusy(button, false); }
+});
 
 function renderLivePauseAlert() {
   const root = $('#livePauseAlert');
@@ -929,28 +1044,33 @@ async function loadProfileStatistics(days) {
   renderProfile();
 }
 
-async function refresh({includeRecordings = false} = {}) {
+async function refresh({includeRecordings = false, deferDashboardRender = false} = {}) {
   if (refreshBusy) return;
   refreshBusy = true;
   try {
-    const shouldLoadRecordings = includeRecordings || !recordings.length || Date.now() - lastRecordingLoad > 30000;
+    const shouldLoadRecordings = includeRecordings || (
+      activeView === 'archive' && (!recordingsLoaded || Date.now() - lastRecordingLoad > 30000)
+    );
     const calls = [api('/api/status'), api('/api/sources'), api('/api/library/meta')];
     if (shouldLoadRecordings) calls.push(api('/api/recordings?limit=1000'));
     const [status, sourceRows, meta, recordingRows] = await Promise.all(calls);
     statusData = status;
     sources = sourceRows;
     libraryMeta = meta;
-    if (recordingRows) {
+    if (recordingRows !== undefined) {
       recordings = recordingRows;
+      recordingsLoaded = true;
       lastRecordingLoad = Date.now();
     }
     buildLibraryProfiles();
-    fillLibraryControls();
     renderStatus(status);
-    renderSources();
-    renderLibrary();
-    renderRecordings();
-    renderLivePauseAlert();
+    if (activeView === 'dashboard' && !deferDashboardRender) renderSources();
+    if (activeView === 'library') {
+      fillLibraryControls();
+      renderLibrary();
+    }
+    if (activeView === 'archive') renderRecordings();
+    if (activeView === 'dashboard') renderLivePauseAlert();
     if (activeView === 'statistics' && Date.now() - lastStatisticsLoad > 30000) loadStatistics(statisticsDays).catch(() => {});
     $('#lastRefresh').textContent = `Aggiornato ${new Intl.DateTimeFormat('it-IT', {hour: '2-digit', minute: '2-digit', second: '2-digit'}).format(new Date())}`;
   } catch (error) {
@@ -989,6 +1109,12 @@ async function bulkAction(action, button) {
 }
 
 document.addEventListener('click', event => {
+  const localVideo = event.target.closest('[data-local-video]');
+  if (localVideo) {
+    event.preventDefault();
+    openLocalVideo(localVideo.dataset.localVideo, localVideo.dataset.localTitle || 'Copia locale');
+    return;
+  }
   const profileLink = event.target.closest('[data-profile-link]');
   if (profileLink) {
     event.preventDefault();
@@ -1031,8 +1157,10 @@ $('#loginForm').addEventListener('submit', async event => {
     login.classList.add('hidden');
     app.classList.remove('hidden');
     await loadProviders();
-    await refresh({includeRecordings: true});
-    showView(location.hash.slice(1) || (sourceFilterId ? 'archive' : 'dashboard'), false);
+    const initialView = location.hash.slice(1) || (sourceFilterId ? 'archive' : 'dashboard');
+    activeView = ['dashboard', 'library', 'archive', 'statistics'].includes(initialView) ? initialView : 'dashboard';
+    await refresh({includeRecordings: activeView === 'archive'});
+    showView(activeView, false);
   } catch (error) {
     $('#loginError').textContent = error.message === 'auth' ? 'Accesso non valido' : error.message;
   }
@@ -1426,6 +1554,9 @@ $('#profileContent').addEventListener('click', async event => {
     $('#videoPlayer').src = recording.view_url;
     return openModal('videoModal');
   }
+  if (action === 'local-capture') {
+    return openLocalVideo(button.dataset.url, button.dataset.title || 'Copia locale');
+  }
   setBusy(button, true);
   try {
     if (action === 'favorite') {
@@ -1551,8 +1682,10 @@ async function boot() {
     login.classList.add('hidden');
     app.classList.remove('hidden');
     await loadProviders();
-    await refresh({includeRecordings: true});
-    showView(location.hash.slice(1) || (sourceFilterId ? 'archive' : 'dashboard'), false);
+    const initialView = location.hash.slice(1) || (sourceFilterId ? 'archive' : 'dashboard');
+    activeView = ['dashboard', 'library', 'archive', 'statistics'].includes(initialView) ? initialView : 'dashboard';
+    await refresh({includeRecordings: activeView === 'archive'});
+    showView(activeView, false);
     if (sourceFilterId) setSourceFilter(sourceFilterId);
   } catch (error) {
     if (error.message === 'auth') login.classList.remove('hidden');
@@ -1629,13 +1762,14 @@ function controlRoomInitials(name) {
 function controlRoomPreviewMarkup(profile, wall = false) {
   const source = profile.preview_source || profile.source;
   const updated = source?.preview_updated_at;
-  const previewUrl = source?.preview_url ? `${source.preview_url}?v=${timestamp(updated) || 0}` : '';
+  const previewEnabled = !document.hidden && activeView === 'dashboard' && profile.recording;
+  const previewUrl = previewEnabled && source?.preview_url ? `${source.preview_url}?v=${timestamp(updated) || 0}` : '';
   const cover = safeUrl(source?.cover_thumbnail_url || '');
   const recordingLabel = profile.recording ? 'REC' : profile.live ? 'LIVE' : 'OFFLINE';
   const alertLabel = profile.blocked ? 'NON REGISTRATA' : '';
   const freshness = updated ? ago(updated) : '';
   return `<div class="cr-preview ${profile.blocked ? 'attention' : ''} ${wall ? 'wall' : ''}">
-    ${previewUrl ? `<img data-live-preview src="${esc(previewUrl)}" alt="Preview live di ${esc(profile.display_name)}">` : cover ? `<img class="cr-preview-cover" src="${esc(cover)}" alt="Copertina di ${esc(profile.display_name)}">` : `<div class="cr-preview-placeholder"><span>${esc(controlRoomInitials(profile.display_name))}</span></div>`}
+    ${previewUrl ? `<img data-live-preview src="${esc(previewUrl)}" alt="Preview live di ${esc(profile.display_name)}" loading="lazy" decoding="async" fetchpriority="low">` : cover ? `<img class="cr-preview-cover" src="${esc(cover)}" alt="Copertina di ${esc(profile.display_name)}" loading="lazy" decoding="async">` : `<div class="cr-preview-placeholder"><span>${esc(controlRoomInitials(profile.display_name))}</span></div>`}
     <div class="cr-preview-shade"></div>
     <div class="cr-preview-badges"><span class="cr-live-badge">● ${esc(recordingLabel)}</span>${alertLabel ? `<span class="cr-alert-badge">${esc(alertLabel)}</span>` : ''}${profile.focus ? '<span class="cr-focus-badge">★ FOCUS</span>' : ''}</div>
     ${freshness ? `<span class="cr-preview-age">${esc(freshness)}</span>` : ''}
@@ -1659,10 +1793,12 @@ function controlRoomStatusText(profile) {
 function controlRoomLiveCard(profile, wall = false) {
   const source = profile.source;
   const publicUrl = safeUrl(source.source_url);
+  const captureSourceId = Number(profile.active?.source_id || 0);
   const multi = profile.rows.length > 1 ? `<span class="cr-account-count">${profile.rows.length} account</span>` : '';
   const controls = wall ? '' : `<div class="cr-card-actions">
       <button class="btn ${profile.focus ? 'accent' : 'soft'}" data-focus-toggle="${source.id}" type="button" aria-pressed="${profile.focus}">★ Focus</button>
       <button class="btn soft" data-action="profile" data-id="${source.id}" type="button">Profilo</button>
+      ${captureSourceId ? `<button class="btn soft" data-local-video="/api/sources/${captureSourceId}/capture" data-local-title="${esc(`${profile.display_name} · REC locale`)}" type="button">REC locale</button>` : ''}
       ${profile.blocked && source.pause_reason === 'global' ? '<button class="btn primary" data-cr-resume-global type="button">Riprendi REC</button>' : profile.blocked && source.pause_reason === 'source' ? `<button class="btn primary" data-action="toggle" data-id="${source.id}" type="button">Avvia REC</button>` : ''}
       ${publicUrl ? `<a class="btn soft" href="${esc(publicUrl)}" target="_blank" rel="noopener">Sorgente ↗</a>` : ''}
     </div>`;
@@ -1720,6 +1856,13 @@ renderSources = function renderSourcesControlRoom() {
   const offline = profiles.filter(profile => !profile.live && !profile.focus).sort((a, b) => Number(!!b.last_error) - Number(!!a.last_error) || timestamp(b.last_seen_live_at) - timestamp(a.last_seen_live_at) || a.display_name.localeCompare(b.display_name, 'it'));
   const recCount = live.filter(profile => profile.recording).length;
   const blockedCount = live.filter(profile => profile.blocked).length;
+  const summaryTone = blockedCount ? 'danger' : live.length ? 'recording' : 'neutral';
+  const summaryText = !live.length
+    ? 'Nessuna attività: il monitoraggio resta acceso.'
+    : blockedCount
+      ? `${recCount} in registrazione · ${blockedCount} ${blockedCount === 1 ? 'live non registrata' : 'live non registrate'}`
+      : live.length === 1 ? 'La live è in registrazione.' : `Tutte le ${live.length} live sono in registrazione.`;
+  const coverageLabel = blockedCount ? `${blockedCount} DA CONTROLLARE` : live.length ? 'REC COPERTA' : 'IN ATTESA';
   $('#sourceCount').textContent = profiles.length;
   const panelHead = root.closest('.section')?.querySelector('.section-head');
   if (panelHead) {
@@ -1734,7 +1877,7 @@ renderSources = function renderSourcesControlRoom() {
     return;
   }
   root.innerHTML = `<div class="cr-toolbar">
-      <div class="cr-now-summary"><strong>${live.length} LIVE</strong><span>${recCount} REC</span><span class="${blockedCount ? 'danger-text' : ''}">${blockedCount} NON REC</span></div>
+      <div class="cr-now-summary" data-tone="${summaryTone}" role="status"><span class="cr-summary-signal" aria-hidden="true"></span><div><strong>${live.length} ${live.length === 1 ? 'live adesso' : 'live adesso'}</strong><small>${esc(summaryText)}</small></div><span class="cr-coverage-label">${esc(coverageLabel)}</span></div>
       <button class="btn accent" data-live-wall type="button" ${live.length ? '' : 'disabled'}>▦ Live Wall</button>
     </div>
     <section class="cr-live-section">
@@ -1846,11 +1989,14 @@ document.addEventListener('keydown', event => {
 
 /* LiveVault Live Intelligence v2.8.3 */
 let controlRoomPulseData = {hours: 12, window_start: null, generated_at: null, sessions: []};
+let lastControlRoomPulseLoad = 0;
 let archiveGroupLimit = 10;
 
 async function loadControlRoomPulse() {
+  if (Date.now() - lastControlRoomPulseLoad < 20000) return controlRoomPulseData;
   try {
     controlRoomPulseData = await api('/api/control-room/pulse?hours=12');
+    lastControlRoomPulseLoad = Date.now();
   } catch (error) {
     if (error.message !== 'auth') console.warn('Live Pulse:', error.message);
   }
@@ -1886,7 +2032,8 @@ controlRoomStatusText = function controlRoomStatusTextV280(profile) {
 
 function pulseSessionMeta(session) {
   const bits = [];
-  if (session.file_count) bits.push(`${session.file_count} file`);
+  if (session.processing_count) bits.push(`${session.processing_count} ${session.processing_count === 1 ? 'parte locale' : 'parti locali'}`);
+  else if (session.file_count) bits.push(`${session.file_count} file`);
   if (session.total_bytes) bits.push(humanBytes(session.total_bytes));
   if (session.file_count) bits.push(`${Math.round(Number(session.coverage_percent) || 0)}%`);
   return bits.join(' · ');
@@ -1907,6 +2054,7 @@ controlRoomLiveCard = function controlRoomLiveCardV280(profile, wall = false) {
 function pulseBlockClass(session) {
   if (session.state === 'live') return session.file_count || Number(session.recorded_seconds) > 0 ? 'live rec' : 'live';
   if (session.state === 'missed' || Number(session.coverage_percent) < 55) return 'missed';
+  if (session.state === 'processing') return 'processing';
   if (session.state === 'saved') return 'saved';
   return 'ended';
 }
@@ -1978,7 +2126,26 @@ function pulseSessionTimingMarkup(session) {
   const recs = pulseRecordingIntervals(session);
   const recStart = session.recording_started_at || recs[0]?.started_at;
   const recEnd = session.recording_ended_at || recs[recs.length - 1]?.ended_at;
-  return `<span class="cr-pulse-times"><span><b>LIVE</b> ${esc(pulseRangeLabel(session.started_at, session.ended_at, !session.ended_at))}</span><span><b>REC</b> ${recStart ? esc(pulseRangeLabel(recStart, recEnd, false)) : '—'}</span></span>`;
+  const latest = recs[recs.length - 1];
+  const recLabel = recs.length > 1
+    ? `${recs.length} blocchi · ${pulseRangeLabel(latest.started_at, latest.ended_at, !!session.recording_active)}`
+    : recStart ? pulseRangeLabel(recStart, recEnd, !!session.recording_active) : '—';
+  return `<span class="cr-pulse-times"><span><b>ONLINE</b> ${esc(pulseRangeLabel(session.started_at, session.ended_at, !session.ended_at))}</span><span><b>REC</b> ${esc(recLabel)}</span></span>`;
+}
+
+function pulseMissingIntervals(start, end, intervals) {
+  const covered = intervals.map(row => ({
+    start: Math.max(start, timestamp(row.started_at)),
+    end: Math.min(end, timestamp(row.ended_at)),
+  })).filter(row => row.end > row.start).sort((a, b) => a.start - b.start);
+  const missing = [];
+  let cursor = start;
+  for (const row of covered) {
+    if (row.start - cursor > 12000) missing.push({start: cursor, end: row.start});
+    cursor = Math.max(cursor, row.end);
+  }
+  if (end - cursor > 12000) missing.push({start: cursor, end});
+  return missing;
 }
 
 function controlRoomPulseMarkup() {
@@ -2019,31 +2186,41 @@ function controlRoomPulseMarkup() {
       if (!start || end <= start) return '';
       const x = xFor(start);
       const liveWidth = widthFor(start, end, compact ? 18 : 5);
-      const title = `${session.display_name} · LIVE ${pulseRangeLabel(session.started_at, session.ended_at, !session.ended_at)} · REC ${session.recording_started_at ? pulseRangeLabel(session.recording_started_at, session.recording_ended_at, false) : '—'}`;
-      const recs = pulseRecordingFiles(session).map(rec => {
+      const recordingFiles = pulseRecordingFiles(session);
+      const hasRecording = recordingFiles.length > 0 || !!session.recording_started_at || !!session.recording_active;
+      const missed = hasRecording ? pulseMissingIntervals(start, end, pulseRecordingIntervals(session)).map(gap => {
+        const missedX = xFor(gap.start);
+        const missedWidth = widthFor(gap.start, gap.end, compact ? 12 : 4);
+        return `<rect class="cr-pulse-missed-span" x="${missedX.toFixed(3)}" y="4" width="${missedWidth.toFixed(3)}" height="8" rx="4" ry="4"><title>NON REC · ${esc(pulseRangeLabel(gap.start, gap.end))}</title></rect>`;
+      }).join('') : '';
+      const title = `${session.display_name} · ONLINE ${pulseRangeLabel(session.started_at, session.ended_at, !session.ended_at)} · REC ${session.recording_started_at ? pulseRangeLabel(session.recording_started_at, session.recording_ended_at, !!session.recording_active) : '—'}`;
+      const recs = recordingFiles.map(rec => {
         const recStart = Math.max(start, timestamp(rec.started_at));
         const recEnd = Math.min(end, timestamp(rec.ended_at));
         if (!recStart || recEnd <= recStart) return '';
         const recX = xFor(recStart);
         const recWidth = widthFor(recStart, recEnd, compact ? 12 : 4);
         const remoteUrl = safeUrl(rec.remote_url || '');
+        const localUrl = safeUrl(rec.local_url || '');
+        const targetUrl = remoteUrl || localUrl;
         const previewUrl = safeUrl(rec.thumbnail_url || '');
         const provider = String(rec.upload_provider || '').toUpperCase();
         const filename = String(rec.filename || 'REC');
-        const meta = `${provider || 'REC'} · ${pulseRangeLabel(rec.started_at, rec.ended_at, false)}`;
-        const rect = `<rect class="cr-pulse-rec-span ${remoteUrl ? 'remote' : ''}" x="${recX.toFixed(3)}" y="4" width="${recWidth.toFixed(3)}" height="8" rx="4" ry="4"></rect>`;
+        const storage = provider || (rec.active ? 'REC LOCALE' : rec.processing ? 'PARTE LOCALE' : 'LOCALE');
+        const meta = `${storage} · ${pulseRangeLabel(rec.started_at, rec.ended_at, !!rec.active)}`;
+        const rect = `<rect class="cr-pulse-rec-span ${remoteUrl ? 'remote' : localUrl ? 'local' : ''} ${rec.processing ? 'processing' : ''}" x="${recX.toFixed(3)}" y="4" width="${recWidth.toFixed(3)}" height="8" rx="4" ry="4"></rect>`;
         const attrs = `class="cr-pulse-rec-media" data-preview-url="${esc(previewUrl)}" data-preview-title="${esc(filename)}" data-preview-meta="${esc(meta)}"`;
-        if (remoteUrl) return `<a ${attrs} href="${esc(remoteUrl)}" target="_blank" rel="noopener noreferrer">${rect}<title>${esc(filename)} · ${esc(meta)}</title></a>`;
+        if (targetUrl) return `<a ${attrs} href="${esc(targetUrl)}" target="_blank" rel="noopener noreferrer">${rect}<title>${esc(filename)} · ${esc(meta)}</title></a>`;
         return `<g ${attrs}>${rect}<title>${esc(filename)} · ${esc(meta)}</title></g>`;
       }).join('');
-      const firstRec = pulseRecordingFiles(session)[0];
+      const firstRec = recordingFiles[0];
       const recMarkerX = firstRec ? xFor(Math.max(start, timestamp(firstRec.started_at))) : null;
-      return `<g class="cr-pulse-session"><rect class="cr-pulse-live-span ${session.state === 'live' ? 'current' : ''} ${session.state === 'missed' ? 'missed' : ''}" x="${x.toFixed(3)}" y="2" width="${liveWidth.toFixed(3)}" height="12" rx="6" ry="6"></rect><line class="cr-pulse-live-marker" x1="${x.toFixed(3)}" y1="0" x2="${x.toFixed(3)}" y2="16"></line>${recMarkerX === null ? '' : `<line class="cr-pulse-rec-marker" x1="${recMarkerX.toFixed(3)}" y1="1" x2="${recMarkerX.toFixed(3)}" y2="15"></line>`}${recs}<title>${esc(title)}</title></g>`;
+      return `<g class="cr-pulse-session"><rect class="cr-pulse-live-span ${session.state === 'live' ? 'current' : ''} ${!hasRecording ? 'unrecorded' : ''}" x="${x.toFixed(3)}" y="2" width="${liveWidth.toFixed(3)}" height="12" rx="6" ry="6"></rect>${missed}<line class="cr-pulse-live-marker" x1="${x.toFixed(3)}" y1="0" x2="${x.toFixed(3)}" y2="16"></line>${recMarkerX === null ? '' : `<line class="cr-pulse-rec-marker" x1="${recMarkerX.toFixed(3)}" y1="1" x2="${recMarkerX.toFixed(3)}" y2="15"></line>`}${recs}<title>${esc(title)}</title></g>`;
     }).join('');
     return `<div class="cr-pulse-row"><div class="cr-pulse-who">${creatorLinkMarkup(representative.representative_source_id, representative.display_name, 'cr-pulse-name')}${pulseSessionTimingMarkup(representative)}</div><div class="cr-pulse-track"><svg class="cr-pulse-svg" viewBox="0 0 1000 16" preserveAspectRatio="none" role="img" aria-label="Timeline ${esc(representative.display_name)}">${graphics}</svg></div></div>`;
   }).join('');
   const hidden = Math.max(0, profileOrder.length - recentProfiles.length);
-  return `<section class="cr-pulse"><div class="cr-pulse-head"><strong>Live Pulse</strong><div class="cr-pulse-head-right"><span class="cr-pulse-legend"><i class="live"></i>LIVE <i class="rec"></i>REC</span><span>${controlRoomPulseData.hours || 12}h · ${DISPLAY_TIME_ZONE_LABEL}${hidden ? ` · +${hidden}` : ''}</span></div></div><div class="cr-pulse-scale"><span></span><div>${labels}</div></div>${rows || '<div class="cr-pulse-empty">—</div>'}</section>`;
+  return `<section class="cr-pulse"><div class="cr-pulse-head"><div><strong>Cronologia live</strong><small>Online e copertura della registrazione</small></div><div class="cr-pulse-head-right"><span class="cr-pulse-legend"><i class="live"></i>ONLINE <i class="rec"></i>REC <i class="processing"></i>RECUPERO <i class="missed"></i>NON REC</span><span>Ultime ${controlRoomPulseData.hours || 12} ore · ${DISPLAY_TIME_ZONE_LABEL}${hidden ? ` · +${hidden}` : ''}</span></div></div><div class="cr-pulse-scale"><span></span><div>${labels}</div></div>${rows || '<div class="cr-pulse-empty">Nessuna attività nel periodo.</div>'}</section>`;
 }
 
 function controlRoomRecentEnded(profiles) {
@@ -2061,11 +2238,13 @@ function controlRoomEndedCard(session) {
   const source = sources.find(row => Number(row.id) === Number(session.representative_source_id)) || sources.find(row => Number(row.profile_id) === Number(session.profile_id));
   const cover = safeUrl(source?.cover_thumbnail_url || '');
   const saved = session.state === 'saved';
-  const state = saved ? '✓ SALVATA' : session.state === 'missed' ? 'NON REC' : session.file_count ? `UPLOAD ${session.uploaded_count}/${session.file_count}` : 'TERMINATA';
+  const processing = session.state === 'processing';
+  const state = saved ? '✓ SALVATA' : processing ? 'IN RECUPERO' : session.state === 'missed' ? 'NON REC' : session.file_count ? `UPLOAD ${session.uploaded_count}/${session.file_count}` : 'TERMINATA';
   const meta = [duration(session.duration_seconds), session.file_count ? `${session.file_count} file` : '', session.total_bytes ? humanBytes(session.total_bytes) : '', session.file_count ? `${Math.round(Number(session.coverage_percent) || 0)}% REC` : ''].filter(Boolean).join(' · ');
-  return `<article class="cr-ended-card ${saved ? 'saved' : ''} ${session.state === 'missed' ? 'missed' : ''}">
+  const local = (session.recordings || []).find(item => item.local_url);
+  return `<article class="cr-ended-card ${saved ? 'saved' : ''} ${processing ? 'processing' : ''} ${session.state === 'missed' ? 'missed' : ''}">
     <div class="cr-ended-cover">${cover ? `<img src="${esc(cover)}" alt="">` : `<span>${esc(controlRoomInitials(session.display_name))}</span>`}</div>
-    <div class="cr-ended-main"><div>${creatorLinkMarkup(session.representative_source_id, session.display_name, 'cr-ended-name')}<small>${esc(meta)}</small></div><div class="cr-ended-state"><strong>${esc(state)}</strong><span>${esc(ago(session.ended_at))}</span></div></div>
+    <div class="cr-ended-main"><div>${creatorLinkMarkup(session.representative_source_id, session.display_name, 'cr-ended-name')}<small>${esc(meta)}</small></div><div class="cr-ended-state"><strong>${esc(state)}</strong><span>${esc(ago(session.ended_at))}</span>${local ? `<button class="btn quiet" data-local-video="${esc(local.local_url)}" data-local-title="${esc(`${session.display_name} · copia locale`)}" type="button">Anteprima</button>` : ''}</div></div>
   </article>`;
 }
 
@@ -2278,9 +2457,12 @@ $('#recordings')?.addEventListener('click', event => {
 
 const refreshV271 = refresh;
 refresh = async function refreshV280(options = {}) {
-  const pulsePromise = loadControlRoomPulse();
-  await refreshV271(options);
+  const shouldLoadPulse = activeView === 'dashboard' && !document.hidden && !app.classList.contains('hidden');
+  const pulsePromise = shouldLoadPulse ? loadControlRoomPulse() : Promise.resolve(controlRoomPulseData);
+  await refreshV271({...options, deferDashboardRender: shouldLoadPulse});
   await pulsePromise;
-  renderSources();
-  if (activeView === 'archive') renderRecordings();
+  if (activeView === 'dashboard') {
+    renderSources();
+    renderLivePauseAlert();
+  }
 };

@@ -36,7 +36,7 @@
           <button class="nav-link" type="button" data-view="statistics">Statistiche</button>
         </nav>
         <div class="top-actions">
-          <span id="healthPill" class="pill good">Online</span>
+          <button id="healthPill" class="pill good" type="button">Online</button>
           <button id="settingsBtn" class="btn quiet" type="button">Impostazioni</button>
           <button id="logoutBtn" class="btn quiet" type="button">Esci</button>
         </div>
@@ -45,28 +45,37 @@
 
     <main class="shell">
       <div id="dashboardView" class="view-section" data-page="dashboard">
-        <section class="page-head">
-          <div><h1>Dashboard</h1><p id="lastRefresh">Caricamento…</p></div>
+        <section class="page-head dashboard-head">
+          <div><span class="eyebrow">CENTRO OPERATIVO</span><h1>Panoramica</h1><p id="lastRefresh">Caricamento…</p></div>
           <button id="showAddBtn" class="btn primary" type="button">Aggiungi sorgente</button>
         </section>
 
-        <section class="control-strip panel" aria-label="Controlli registrazione e upload">
-          <div class="control-state"><span class="label">Registrazioni</span><strong id="recordingControlState">Attive</strong></div>
-          <button id="pauseRecordingsBtn" class="btn soft" type="button">Pausa registrazioni</button>
-          <div class="divider"></div>
-          <div class="control-state"><span class="label">Upload</span><strong id="uploadControlState">Attivo</strong></div>
-          <button id="pauseUploadsBtn" class="btn soft" type="button">Pausa upload</button>
-          <button id="runUploadsBtn" class="btn accent" type="button">Upload ora</button>
-          <button id="refreshBtn" class="btn soft" type="button">Controlla sorgenti</button>
+        <section id="systemOverview" class="system-overview panel" data-tone="neutral" aria-live="polite">
+          <span class="system-signal" aria-hidden="true"><i></i></span>
+          <div class="system-overview-copy"><span>STATO GENERALE</span><h2 id="systemOverviewTitle">Controllo del sistema…</h2><p id="systemOverviewText">Verifico registrazioni, upload e spazio disponibile.</p></div>
+          <div class="system-overview-side"><span>AZIONE RICHIESTA</span><button id="systemOverviewAction" type="button">Nessuna</button></div>
         </section>
 
-        <section class="metrics-grid panel" aria-label="Stato del sistema">
-          <article class="metric"><span>REC attive</span><strong id="activeCount">0</strong><small id="activeNames">Nessuna</small></article>
-          <article class="metric"><span>Coda upload</span><strong id="queueCount">0</strong><small id="queueNote">Vuota</small></article>
-          <article class="metric"><span>Registrazioni</span><strong id="historyCount">0</strong><small id="historyNote">0 sessioni</small></article>
-          <article class="metric"><span>Cloud verificato</span><strong id="cloudCount">0</strong><small id="cloudNote">0 B</small></article>
-          <article class="metric"><span>Buffer locale</span><strong id="bufferValue">—</strong><small id="bufferNote">—</small><div class="meter"><i id="bufferBar"></i></div></article>
-          <article class="metric"><span>Disco libero</span><strong id="freeSpace">—</strong><small id="diskUsage">—</small><div class="meter"><i id="diskBar"></i></div></article>
+        <section class="control-center panel" aria-label="Controlli registrazione e upload">
+          <div class="control-center-intro"><span>CONTROLLO AUTOMAZIONI</span><p>Registrazione e caricamento restano indipendenti.</p></div>
+          <article id="recordingControl" class="control-module" data-tone="good">
+            <div><span>REGISTRAZIONE</span><strong id="recordingControlState">Attiva</strong><small id="recordingControlHint">Le nuove live vengono registrate automaticamente.</small></div>
+            <button id="pauseRecordingsBtn" class="btn soft" type="button">Metti in pausa</button>
+          </article>
+          <article id="uploadControl" class="control-module" data-tone="good">
+            <div><span>CARICAMENTO CLOUD</span><strong id="uploadControlState">Attivo</strong><small id="uploadControlHint">La coda viene smaltita automaticamente.</small></div>
+            <button id="pauseUploadsBtn" class="btn soft" type="button">Metti in pausa</button>
+          </article>
+          <div class="control-quick-actions"><button id="runUploadsBtn" class="btn accent" type="button">Smaltisci coda</button><button id="refreshBtn" class="btn soft" type="button">Controlla ora</button></div>
+        </section>
+
+        <section class="dashboard-metrics" aria-label="Dati principali">
+          <article id="metricActive" class="metric-card panel" data-tone="neutral"><header><span>REGISTRAZIONE ORA</span><i>REC</i></header><strong id="activeCount">0</strong><small id="activeNames">Nessuna registrazione in corso</small><p>Numero di video scritti in questo momento.</p></article>
+          <article id="metricQueue" class="metric-card panel" data-tone="good"><header><span>DA CARICARE</span><i>CODA</i></header><strong id="queueCount">0</strong><small id="queueNote">Nessun file in attesa</small><p>File locali che devono ancora arrivare nel cloud.</p></article>
+          <article id="metricHistory" class="metric-card panel" data-tone="info"><header><span>ARCHIVIO COMPLESSIVO</span><i>FILE</i></header><strong id="historyCount">0</strong><small id="historyNote">0 sessioni · 0 oggi</small><p>Tutte le registrazioni catalogate da LiveVault.</p></article>
+          <article id="metricCloud" class="metric-card panel" data-tone="good"><header><span>NEL CLOUD</span><i>OK</i></header><strong id="cloudCount">0</strong><small id="cloudNote">0 B verificati</small><p>Upload completati e verificati sul provider remoto.</p></article>
+          <article id="metricBuffer" class="metric-card panel" data-tone="neutral"><header><span>SUL SERVER</span><i>BUFFER</i></header><strong id="bufferValue">—</strong><small id="bufferNote">Calcolo spazio locale…</small><p>Video conservati localmente in attesa o come copia.</p><div class="meter"><i id="bufferBar"></i></div></article>
+          <article id="metricDisk" class="metric-card panel" data-tone="neutral"><header><span>SPAZIO NVME LIBERO</span><i>DISCO</i></header><strong id="freeSpace">—</strong><small id="diskUsage">Calcolo capacità…</small><p>Spazio realmente disponibile per nuove registrazioni.</p><div class="meter"><i id="diskBar"></i></div></article>
         </section>
 
         <section id="uploadNowCard" class="upload-card panel hidden" aria-live="polite">
@@ -80,7 +89,7 @@
         </section>
 
         <section id="errorsPanel" class="panel section hidden">
-          <div class="section-head"><div><h2>Errori recenti</h2></div><span id="diagnosticCount" class="count danger">0</span></div>
+          <div class="section-head"><div><h2>Errori recenti</h2><p>I file restano conservati. Riprova il recupero oppure pulisci solo gli avvisi mostrati.</p></div><div class="diagnostic-actions"><button id="retryRecoveryBtn" class="btn soft" type="button">Recupera file</button><button id="clearErrorsBtn" class="btn quiet" type="button">Pulisci avvisi</button><span id="diagnosticCount" class="count danger">0</span></div></div>
           <pre id="errors"></pre>
         </section>
       </div>

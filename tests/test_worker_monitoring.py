@@ -103,3 +103,31 @@ def test_legacy_gap_only_fragment_remains_stitchable(tmp_path):
 
     fragment.integrity_error = "Packet scan failed"
     assert fragment_usable_for_stitch(fragment) is False
+
+
+def test_capture_fragments_are_validated_without_rewriting_mp4():
+    fragment_indexer = inspect.getsource(WorkerManager._index_fragment_unlocked)
+    recovery = inspect.getsource(WorkerManager._revalidate_retryable_fragments)
+
+    assert "_prepare_mp4" not in fragment_indexer
+    assert "verify_media" in fragment_indexer
+    assert "finalizzazione frammento fallita" in recovery
+
+
+def test_startup_recovery_does_not_block_source_poller():
+    leader = inspect.getsource(WorkerManager._leader_loop)
+    poller = leader.index('asyncio.create_task(self._poll_loop()')
+    recovery = leader.index('self._start_recovery_task()')
+
+    assert poller < recovery
+    assert 'await self._recover_orphans()' not in leader
+
+
+def test_recorder_slot_is_released_before_large_fragment_validation():
+    watcher = inspect.getsource(WorkerManager._watch_session)
+
+    release = watcher.index("self.active.pop(session.source_id, None)")
+    finalization = watcher.index("if await self._finalize_segment(session, path)", release)
+    assert release < finalization
+    assert "session.safe_stop_bytes * 0.98" in watcher
+    assert "replacement is not None and replacement is not session" in watcher

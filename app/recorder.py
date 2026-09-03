@@ -21,6 +21,28 @@ LIVE_PREVIEW_MAX_AGE_SECONDS = 90
 STITCH_MARKER_NAME = ".livevault-stitch-session.json"
 
 
+def write_stitch_marker(path: Path, payload: dict) -> None:
+    """Atomically persist recovery metadata before capture starts."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(f"{path.name}.tmp")
+    with temporary.open("w", encoding="utf-8") as handle:
+        json.dump(payload, handle, ensure_ascii=False)
+        handle.flush()
+        os.fsync(handle.fileno())
+    os.replace(temporary, path)
+    # On Linux this also commits the directory entry. Windows does not allow
+    # opening directories this way, so the atomic replace above is the guard.
+    try:
+        flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+        directory_fd = os.open(path.parent, flags)
+    except OSError:
+        return
+    try:
+        os.fsync(directory_fd)
+    finally:
+        os.close(directory_fd)
+
+
 def live_preview_path(source_id: int) -> Path:
     return settings.data_dir / "live_previews" / f"{int(source_id)}.jpg"
 
@@ -275,12 +297,12 @@ async def start_recorder(source: Source, *, session_id: str | None = None) -> Re
     directory = settings.recordings_dir / source_name / session_id
     directory.mkdir(parents=True, exist_ok=True)
     # Persist enough state for crash recovery before FFmpeg writes the first part.
-    (directory / STITCH_MARKER_NAME).write_text(json.dumps({
+    write_stitch_marker(directory / STITCH_MARKER_NAME, {
         "source_id": int(source.id),
         "source_name": source.name,
         "session_id": session_id,
         "started_at": utcnow().isoformat(),
-    }, ensure_ascii=False), encoding="utf-8")
+    })
     capture_id = local_now.strftime("%Y%m%d_%H%M%S_%f")
     manifest_path: Path | None = None
     if split_llhls:
@@ -299,8 +321,10 @@ async def start_recorder(source: Source, *, session_id: str | None = None) -> Re
         segment_minutes=cfg.segment_minutes,
         segment_max_gb=cfg.segment_max_gb,
         container_format=cfg.container_format,
-        preview_path=preview_path,
-        preview_interval_seconds=LIVE_PREVIEW_INTERVAL_SECONDS,
+        # Live previews are generated lazily by the authenticated preview
+        # endpoint. Keeping the JPEG output attached here would decode video
+        # continuously even when nobody has the dashboard open.
+        preview_path=None,
         synchronized_hls=split_llhls,
     )
     process = await asyncio.create_subprocess_exec(
@@ -462,7 +486,10 @@ async def _copy_remux(source: Path, output: Path) -> None:
         stdout=asyncio.subprocess.DEVNULL,
         stderr=asyncio.subprocess.PIPE,
     )
-    timeout = max(120, min(900, int(source.stat().st_size / (8 * 1024**2))))
+    # Remuxing competes with capture and upload I/O on production storage.
+    # Budget for a conservative 4 MiB/s instead of declaring healthy large
+    # files dead while the disk is busy.
+    timeout = max(180, min(3600, int(source.stat().st_size / (4 * 1024**2))))
     try:
         _, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
     except asyncio.CancelledError:

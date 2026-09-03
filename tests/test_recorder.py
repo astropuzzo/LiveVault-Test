@@ -1,10 +1,12 @@
 from pathlib import Path
+import inspect
 
 from app.recorder import (
     build_chaturbate_synced_master,
     build_ffmpeg_command,
     max_output_bytes,
     safe_output_limit_bytes,
+    start_recorder,
 )
 from app.source_providers import ResolvedInput
 
@@ -103,6 +105,11 @@ def test_ffmpeg_live_preview_uses_same_process():
     assert "-threads:v 1" in joined
     assert "-update 1" in joined
     assert joined.index("out_%03d.mp4") < joined.index("preview.jpg")
+
+
+def test_recorder_does_not_decode_previews_without_a_viewer():
+    source = inspect.getsource(start_recorder)
+    assert "preview_path=None" in source
 
 
 def test_local_synchronized_hls_never_receives_http_avoptions():
