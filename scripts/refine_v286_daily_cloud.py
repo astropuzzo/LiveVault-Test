@@ -29,12 +29,20 @@ patch(
     "nested Gofile db session",
 )
 
+# Keep the changelog heading compatible with the release consistency test.
+patch(
+    "CHANGELOG.md",
+    "## 2.8.6\n",
+    "## 2.8.6 — Daily cloud\n",
+    "v2.8.6 changelog heading",
+)
+
 # Existing release consistency tests intentionally pin the current release.
 for path in ("tests/test_v284_pulse_media.py", "tests/test_version_consistency.py"):
     target = ROOT / path
     text = target.read_text(encoding="utf-8")
-    if '"2.8.5"' not in text:
-        raise SystemExit(f"missing 2.8.5 assertion in {path}")
-    target.write_text(text.replace('"2.8.5"', '"2.8.6"'), encoding="utf-8")
+    if "2.8.5" not in text:
+        raise SystemExit(f"missing 2.8.5 release marker in {path}")
+    target.write_text(text.replace("2.8.5", "2.8.6"), encoding="utf-8")
 
 print("v2.8.6 staging refinements applied")
