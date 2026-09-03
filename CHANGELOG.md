@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.8.5 — 2026-09-03
+- Registratore: normalizzazione PTS/DTS su ogni input live e correzione delle discontinuità oltre 1 secondo.
+- Video ancora in stream-copy; audio rigenerato in AAC 48 kHz con clock asincrono per evitare drift A/V.
+- Code FFmpeg dedicate per input e interleave ridotto a 1 secondo.
+- Integrity Guard: blocca upload con forte offset A/V o gap video temporali.
+
 ## 2.8.4 — 2026-09-03
 - Live Pulse: hover sui segmenti REC con storyboard 3x3 a 9 frame.
 - Ogni segmento REC rappresenta il file reale e apre il relativo link Gofile/PixelDrain.

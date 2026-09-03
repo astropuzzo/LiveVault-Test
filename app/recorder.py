@@ -74,7 +74,12 @@ def build_ffmpeg_command(
     container_format = (container_format or cfg.container_format).lower()
     cmd = ["ffmpeg", "-hide_banner", "-loglevel", "warning", "-nostdin", "-y"]
     for item in inputs:
-        cmd += ["-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "5"]
+        cmd += [
+            "-fflags", "+genpts+discardcorrupt",
+            "-dts_delta_threshold", "1",
+            "-thread_queue_size", "8192",
+            "-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "5",
+        ]
         headers = _ffmpeg_headers(item.http_headers)
         if headers:
             cmd += ["-headers", headers]
@@ -95,8 +100,14 @@ def build_ffmpeg_command(
     cmd += ["-map", video_map, "-map", audio_map]
 
     cmd += [
-        "-c", "copy",
-        "-max_interleave_delta", "10000000",
+        "-c:v", "copy",
+        "-copytb", "1",
+        "-c:a", "aac",
+        "-b:a", "192k",
+        "-ar", "48000",
+        "-af", "aresample=async=1000:first_pts=0:min_hard_comp=0.100",
+        "-max_interleave_delta", "1000000",
+        "-avoid_negative_ts", "make_zero",
         "-f", "segment",
         "-segment_time", str(max(60, segment_minutes * 60)),
         "-reset_timestamps", "1",
@@ -237,8 +248,11 @@ def mp4_is_streaming_ready(path: Path) -> bool:
 
 async def _copy_remux(source: Path, output: Path) -> None:
     proc = await asyncio.create_subprocess_exec(
-        "ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", str(source),
-        "-map", "0", "-dn", "-ignore_unknown", "-c", "copy", "-movflags", "+faststart", str(output),
+        "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+        "-fflags", "+genpts+discardcorrupt", "-i", str(source),
+        "-map", "0", "-dn", "-ignore_unknown", "-c", "copy",
+        "-max_interleave_delta", "1000000", "-avoid_negative_ts", "make_zero",
+        "-movflags", "+faststart", str(output),
         stdout=asyncio.subprocess.DEVNULL,
         stderr=asyncio.subprocess.PIPE,
     )
