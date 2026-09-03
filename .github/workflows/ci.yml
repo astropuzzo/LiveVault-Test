@@ -4,9 +4,6 @@ on:
   push:
   pull_request:
 
-permissions:
-  contents: write
-
 concurrency:
   group: livevault-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -23,14 +20,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Apply video gap preservation hotfix
-        if: github.event_name == 'push' && github.ref == 'refs/heads/hotfix/video-gap-preservation'
-        run: |
-          if [ -f scripts/apply_gap_preservation_hotfix.py ]; then
-            python scripts/apply_gap_preservation_hotfix.py
-          else
-            echo "Hotfix already materialized"
-          fi
       - name: Install FFmpeg
         run: sudo apt-get update && sudo apt-get install -y ffmpeg
       - name: Install dependencies
@@ -43,19 +32,6 @@ jobs:
         run: node --check app/static/app.js
       - name: Check shell scripts
         run: bash -n scripts/*.sh
-      - name: Publish verified hotfix
-        if: github.event_name == 'push' && github.ref == 'refs/heads/hotfix/video-gap-preservation'
-        run: |
-          if [ ! -f scripts/apply_gap_preservation_hotfix.py ]; then
-            echo "Hotfix already published"
-            exit 0
-          fi
-          rm scripts/apply_gap_preservation_hotfix.py
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add app/utils.py app/workers.py tests/test_media_integrity.py tests/test_worker_monitoring.py scripts/apply_gap_preservation_hotfix.py
-          git commit -m "fix(integrity): preserve HLS fragments with timestamp gaps"
-          git push origin HEAD:hotfix/video-gap-preservation
 
   deploy:
     name: Deploy verified main
