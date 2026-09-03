@@ -1,0 +1,51 @@
+name: Release v2.8.4 Pulse media
+
+on:
+  push:
+    branches:
+      - hotfix/v2.8.4-pulse-media
+
+permissions:
+  contents: write
+
+concurrency:
+  group: livevault-v284-pulse-media
+  cancel-in-progress: true
+
+jobs:
+  verify-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install FFmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+      - name: Apply v2.8.4 Pulse media patch
+        run: python scripts/apply_v284_pulse_media.py
+      - name: Remove staging machinery
+        run: rm scripts/apply_v284_pulse_media.py .github/workflows/release-v284.yml
+      - name: Compile Python
+        run: python -m compileall -q app tests
+      - name: Run tests
+        run: PYTHONPATH=. pytest -q
+      - name: Check JavaScript
+        run: node --check app/static/app.js
+      - name: Check shell scripts
+        run: bash -n scripts/*.sh
+      - name: Publish verified branch
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --check
+          git commit -m 'feat(ui): Pulse media hover and 9-frame previews'
+          git push origin HEAD:hotfix/v2.8.4-pulse-media
