@@ -69,8 +69,8 @@ for path in ["README.md", "START_HERE.md", "app/main.py", "tests/test_version_co
     target.write_text(text, encoding="utf-8")
 replace(
     "tests/test_v284_pulse_media.py",
-    'def test_release_is_v284():\n    assert (ROOT / "VERSION").read_text(encoding="utf-8").strip() == "2.8.4"\n',
-    'def test_release_tracks_current_version():\n    assert (ROOT / "VERSION").read_text(encoding="utf-8").strip() == "2.8.5"\n',
+    '''def test_release_is_v284():\n    assert (ROOT / "VERSION").read_text(encoding="utf-8").strip() == "2.8.4"\n    assert 'VERSION = "2.8.4"' in (ROOT / "app/main.py").read_text(encoding="utf-8")\n    assert "livevault-shell-v2.8.4" in (ROOT / "app/static/sw.js").read_text(encoding="utf-8")\n''',
+    '''def test_release_tracks_current_version():\n    assert (ROOT / "VERSION").read_text(encoding="utf-8").strip() == "2.8.5"\n    assert 'VERSION = "2.8.5"' in (ROOT / "app/main.py").read_text(encoding="utf-8")\n    assert "livevault-shell-v2.8.5" in (ROOT / "app/static/sw.js").read_text(encoding="utf-8")\n''',
 )
 
 changelog = ROOT / "CHANGELOG.md"
