@@ -99,6 +99,8 @@ def test_ffmpeg_live_preview_uses_same_process():
     assert "-c:a aac" not in joined
     assert "-vf fps=1/20,scale=640:-2:force_original_aspect_ratio=decrease" in joined
     assert "-c:v mjpeg" in joined
+    assert "-skip_frame nokey" in joined
+    assert "-threads:v 1" in joined
     assert "-update 1" in joined
     assert joined.index("out_%03d.mp4") < joined.index("preview.jpg")
 

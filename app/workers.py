@@ -37,6 +37,8 @@ except ImportError:  # pragma: no cover - production containers are Linux
 RETRYABLE_MEDIA_ERRORS = ("scadut", "timeout", "timed out", "tempor", "gap video")
 CLOUD_TIME_ZONE = ZoneInfo("Europe/Berlin")
 SESSION_STITCH_GAP_SECONDS = 20 * 60
+SESSION_STITCH_READY_SECONDS = 15 * 60
+NONFATAL_FFMPEG_NOISE = ("found duplicated moov atom. skipped it",)
 
 
 def cloud_day_key(value: datetime) -> str:
@@ -67,6 +69,17 @@ def fragment_usable_for_stitch(fragment: RecordingFragment) -> bool:
     return fragment.integrity_status == "failed" and error.startswith("gap video rilevato:")
 
 
+def capture_output_files(session: RecorderSession) -> list[Path]:
+    """Return FFmpeg parts only; consolidated outputs must never be re-indexed."""
+    return sorted(
+        (
+            path for path in session.directory.glob(f"*{session.extension}")
+            if path.is_file() and not path.name.startswith(".") and "_complete" not in path.stem
+        ),
+        key=lambda path: path.stat().st_mtime,
+    )
+
+
 class WorkerManager:
     def __init__(self) -> None:
         self.active: dict[int, RecorderSession] = {}
@@ -80,6 +93,7 @@ class WorkerManager:
         self.started_at: datetime | None = None
         self.upload_current: dict | None = None
         self._retry_after: dict[int, float] = {}
+        self._stitch_retry_after: dict[tuple[int, str], float] = {}
         self._source_check_locks: dict[int, asyncio.Lock] = {}
         self._mp4_finalize_lock = asyncio.Lock()
         self.backfill_task: asyncio.Task | None = None
@@ -253,7 +267,7 @@ class WorkerManager:
         for s in self.active.values():
             current_size = 0
             with contextlib.suppress(Exception):
-                current_size = sum(p.stat().st_size for p in s.directory.glob(f"*{s.extension}") if p.is_file())
+                current_size = sum(path.stat().st_size for path in capture_output_files(s))
             started = s.started_at
             if started.tzinfo is None:
                 started = started.replace(tzinfo=timezone.utc)
@@ -554,15 +568,21 @@ class WorkerManager:
         for row in rows:
             groups.setdefault((int(row.source_id), row.session_id), []).append(row)
         for (source_id, session_id), items in groups.items():
-            if self._stopping or source_id in self.active:
+            if self._stopping:
+                continue
+            retry_key = (source_id, session_id)
+            if self._stitch_retry_after.get(retry_key, 0) > time.monotonic():
                 continue
             latest = max(item.finalized_at for item in items)
-            if stitch_gap_open(latest, now):
+            ready_seconds = sum(
+                float(item.duration_seconds or 0)
+                for item in items
+                if fragment_usable_for_stitch(item)
+            )
+            if ready_seconds < SESSION_STITCH_READY_SECONDS and stitch_gap_open(latest, now):
                 continue
             lock = self._source_check_locks.setdefault(source_id, asyncio.Lock())
             async with lock:
-                if source_id in self.active:
-                    continue
                 with db_session() as db:
                     current = list(db.scalars(
                         select(RecordingFragment)
@@ -577,17 +597,33 @@ class WorkerManager:
                 if not current:
                     continue
                 latest = max(item.finalized_at for item in current)
-                if stitch_gap_open(latest, utcnow()):
+                ready_seconds = sum(
+                    float(item.duration_seconds or 0)
+                    for item in current
+                    if fragment_usable_for_stitch(item)
+                )
+                if ready_seconds < SESSION_STITCH_READY_SECONDS and stitch_gap_open(latest, utcnow()):
                     continue
                 try:
-                    await self._stitch_fragment_group(current)
+                    active = self.active.get(source_id)
+                    await self._stitch_fragment_group(
+                        current,
+                        allow_transcode=not (active and active.session_id == session_id),
+                    )
+                    self._stitch_retry_after.pop(retry_key, None)
                     self.last_errors.pop(f"stitch:{source_id}:{session_id}", None)
                 except asyncio.CancelledError:
                     raise
                 except Exception as exc:
+                    self._stitch_retry_after[retry_key] = time.monotonic() + 300
                     self.last_errors[f"stitch:{source_id}:{session_id}"] = str(exc)[-1400:]
 
-    async def _stitch_fragment_group(self, fragments: list[RecordingFragment]) -> None:
+    async def _stitch_fragment_group(
+        self,
+        fragments: list[RecordingFragment],
+        *,
+        allow_transcode: bool = True,
+    ) -> None:
         fragments = sorted(fragments, key=lambda item: (item.started_at, item.id))
         good = [item for item in fragments if fragment_usable_for_stitch(item)]
         if not good:
@@ -600,9 +636,10 @@ class WorkerManager:
             raise RuntimeError("Spazio insufficiente per consolidare la sessione")
         suffixes = {path.suffix.lower() for path in paths}
         suffix = next(iter(suffixes)) if len(suffixes) == 1 else ".mp4"
-        output = paths[0].parent / f"{first.session_id}_complete{suffix}"
+        batch = f"{good[0].id:06d}-{good[-1].id:06d}"
+        output = paths[0].parent / f"{first.session_id}_batch{batch}_complete{suffix}"
         output.unlink(missing_ok=True)
-        await stitch_recording_parts(paths, output)
+        await stitch_recording_parts(paths, output, allow_transcode=allow_transcode)
         if output.suffix.lower() == ".mp4":
             await self._prepare_mp4(output)
         integrity = await asyncio.to_thread(verify_media, output, runtime().integrity_mode)
@@ -618,10 +655,7 @@ class WorkerManager:
         started = min(item.started_at for item in good)
         finalized = max(item.finalized_at for item in good)
         with db_session() as db:
-            existing = db.scalar(select(Recording).where(
-                Recording.source_id == first.source_id,
-                Recording.session_id == first.session_id,
-            ))
+            existing = db.scalar(select(Recording).where(Recording.local_path == str(output)))
             if existing is None:
                 db.add(Recording(
                     source_id=first.source_id,
@@ -645,9 +679,9 @@ class WorkerManager:
                     video_codec=integrity.codec("video"),
                     audio_codec=integrity.codec("audio"),
                 ))
+            fragment_ids = [int(fragment.id) for fragment in fragments]
             for fragment in db.scalars(select(RecordingFragment).where(
-                RecordingFragment.source_id == first.source_id,
-                RecordingFragment.session_id == first.session_id,
+                RecordingFragment.id.in_(fragment_ids)
             )).all():
                 db.delete(fragment)
         for path in paths:
@@ -657,9 +691,11 @@ class WorkerManager:
             path = Path(fragment.local_path)
             if path not in paths:
                 path.unlink(missing_ok=True)
-        (output.parent / STITCH_MARKER_NAME).unlink(missing_ok=True)
-        for manifest in output.parent.glob(".livevault-synced-master-*.m3u8"):
-            manifest.unlink(missing_ok=True)
+        active = self.active.get(first.source_id)
+        if not active or active.session_id != first.session_id:
+            (output.parent / STITCH_MARKER_NAME).unlink(missing_ok=True)
+            for manifest in output.parent.glob(".livevault-synced-master-*.m3u8"):
+                manifest.unlink(missing_ok=True)
         self.wake()
 
     async def _index_file(self, *, source_id: int, source_name: str, session_id: str, path: Path, started_at: datetime | None) -> bool:
@@ -848,13 +884,14 @@ class WorkerManager:
                     break
                 text = line.decode(errors="replace").strip()
                 if text:
-                    tail.append(text)
-                    tail = tail[-10:]
                     if session.transport_guard and not session.restart_requested:
                         reason = stream_transport_fault(text)
                         if reason:
                             session.restart_requested = True
                             session.restart_reason = reason
+                    if not any(noise in text.lower() for noise in NONFATAL_FFMPEG_NOISE):
+                        tail.append(text)
+                        tail = tail[-10:]
         finally:
             if tail and session.process.returncode not in (0, None):
                 self.last_errors[f"ffmpeg:{session.source_id}"] = " | ".join(tail)[-1800:]
@@ -872,7 +909,7 @@ class WorkerManager:
                     session.rollover_requested = True
                     await stop_recorder(session)
                     continue
-                files = sorted(session.directory.glob(f"*{session.extension}"), key=lambda p: p.stat().st_mtime)
+                files = capture_output_files(session)
                 if files and files[-1].stat().st_size >= session.safe_stop_bytes:
                     session.rollover_requested = True
                     await stop_recorder(session)
@@ -882,7 +919,7 @@ class WorkerManager:
                         if await self._finalize_segment(session, path):
                             processed.add(path)
             await session.process.wait()
-            files = sorted(session.directory.glob(f"*{session.extension}"), key=lambda p: p.stat().st_mtime)
+            files = capture_output_files(session)
             for path in files:
                 if path not in processed and path.exists() and path.stat().st_size > 0:
                     if await self._finalize_segment(session, path):
@@ -906,7 +943,7 @@ class WorkerManager:
             total_session_bytes = 0
             with contextlib.suppress(Exception):
                 total_session_bytes = sum(
-                    path.stat().st_size for path in session.directory.glob(f"*{session.extension}") if path.is_file()
+                    path.stat().st_size for path in capture_output_files(session)
                 )
             size_rollover = session.rollover_requested or total_session_bytes >= session.safe_stop_bytes
             controlled_restart = session.restart_requested

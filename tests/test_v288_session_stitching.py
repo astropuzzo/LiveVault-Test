@@ -9,7 +9,12 @@ from pathlib import Path
 import pytest
 
 from app.recorder import STITCH_MARKER_NAME, stitch_recording_parts
-from app.workers import SESSION_STITCH_GAP_SECONDS, stitch_gap_open
+from app.workers import (
+    SESSION_STITCH_GAP_SECONDS,
+    SESSION_STITCH_READY_SECONDS,
+    capture_output_files,
+    stitch_gap_open,
+)
 from app.utils import probe_media
 
 
@@ -19,6 +24,21 @@ def test_session_gap_is_exactly_twenty_minutes():
     assert stitch_gap_open(now - timedelta(minutes=19, seconds=59), now)
     assert stitch_gap_open(now - timedelta(minutes=20), now)
     assert not stitch_gap_open(now - timedelta(minutes=20, seconds=1), now)
+
+
+def test_long_live_session_is_flushed_every_fifteen_minutes():
+    assert SESSION_STITCH_READY_SECONDS == 15 * 60
+
+
+def test_consolidated_outputs_are_not_seen_as_capture_parts(tmp_path):
+    (tmp_path / "creator_part000.mp4").write_bytes(b"part")
+    (tmp_path / "creator_batch000001-000002_complete.mp4").write_bytes(b"complete")
+
+    class Session:
+        directory = tmp_path
+        extension = ".mp4"
+
+    assert [path.name for path in capture_output_files(Session())] == ["creator_part000.mp4"]
 
 
 def test_stitch_marker_and_fragment_table_are_persistent():

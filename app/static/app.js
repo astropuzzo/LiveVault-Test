@@ -1418,7 +1418,9 @@ $('#profileContent').addEventListener('click', async event => {
     return showSource(source);
   }
   if (action === 'preview') {
-    const recording = (profileData.recent_recordings || []).find(item => item.id === Number(button.dataset.id));
+    const dailyRecordings = (profileData.recording_days || []).flatMap(day => day.recordings || []);
+    const recording = [...(profileData.recent_recordings || []), ...dailyRecordings]
+      .find(item => item.id === Number(button.dataset.id));
     if (!recording?.local_available) return toast('Anteprima locale non disponibile', 'bad');
     $('#videoTitle').textContent = `${recording.source_name} · ${recording.filename}`;
     $('#videoPlayer').src = recording.view_url;

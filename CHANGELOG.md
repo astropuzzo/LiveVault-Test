@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.8.10 — Live recovery e stabilità media
+
+- Le sessioni con privato/tip-jar consolidano i frammenti in batch stabili, senza decine di micro-upload né attese indefinite mentre la creator resta online.
+- Gli output consolidati non vengono più scambiati per nuovi segmenti di cattura; la rimozione dal buffer è atomica per batch.
+- L'anteprima live decodifica soltanto keyframe e usa un solo thread, lasciando CPU alla registrazione audio/video.
+- Il fallback di transcode viene rinviato durante una cattura attiva per evitare freeze e perdita di frame sotto carico.
+- L'avviso upstream `duplicated MOOV Atom` resta ignorato come rumore non fatale; l'integrità finale continua a essere verificata.
+- Link Gofile e anteprime delle giornate creator puntano correttamente al singolo video.
+
 ## 2.8.9 — FFmpeg HLS compatibility
 
 - Il master HLS sincronizzato locale non riceve più opzioni `reconnect*` HTTP incompatibili con alcune build FFmpeg.

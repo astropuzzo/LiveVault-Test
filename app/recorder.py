@@ -178,6 +178,10 @@ def build_ffmpeg_command(
             "-thread_queue_size", "8192",
             "-rw_timeout", "15000000",
         ]
+        if preview_path is not None:
+            # Preview shares the demuxer so signed LL-HLS is opened only once,
+            # but decoding keyframes only keeps it from starving stream-copy.
+            cmd += ["-skip_frame", "nokey"]
         # HTTP AVOptions must only be attached to a top-level HTTP(S)
         # input. Our synchronized Chaturbate master is a local file containing
         # signed remote child URLs; binding -headers/-reconnect to that file can
@@ -246,6 +250,7 @@ def build_ffmpeg_command(
             "-an",
             "-vf", f"fps=1/{interval},scale=640:-2:force_original_aspect_ratio=decrease",
             "-c:v", "mjpeg",
+            "-threads:v", "1",
             "-q:v", "6",
             "-f", "image2",
             "-update", "1",
@@ -341,7 +346,7 @@ async def stop_recorder(session: RecorderSession) -> None:
                 pass
 
 
-async def stitch_recording_parts(parts: list[Path], output: Path) -> None:
+async def stitch_recording_parts(parts: list[Path], output: Path, *, allow_transcode: bool = True) -> None:
     """Join public-live capture parts back-to-back, deliberately removing offline gaps.
 
     Stream-copy is attempted first so normal sessions keep original video quality.  A
@@ -389,6 +394,8 @@ async def stitch_recording_parts(parts: list[Path], output: Path) -> None:
         if code == 0 and output.is_file() and output.stat().st_size > 0:
             return
         output.unlink(missing_ok=True)
+        if not allow_transcode:
+            raise RuntimeError(detail or "Stitching stream-copy fallito; transcode rinviato")
         code, fallback_detail = await run(base + [
             "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
             "-pix_fmt", "yuv420p", "-fps_mode", "vfr",

@@ -251,7 +251,14 @@ def upload_gofile(
                     raise UploadError(str(payload)[:700])
                 item = payload.get("data") if isinstance(payload.get("data"), dict) else payload
                 remote_id = str(item.get("id") or item.get("fileId") or item.get("contentId") or "")
-                remote_url = str(item.get("downloadPage") or item.get("url") or item.get("directLink") or "")
+                code = str(item.get("code") or "")
+                remote_url = str(
+                    item.get("downloadPage")
+                    or item.get("directLink")
+                    or (f"https://gofile.io/d/{code}" if code else "")
+                    or item.get("url")
+                    or ""
+                )
                 server_size = item.get("size")
                 remote_md5 = str(item.get("md5") or "").lower().strip()
                 if not remote_id and not remote_url:
