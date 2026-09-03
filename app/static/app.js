@@ -1821,7 +1821,7 @@ document.addEventListener('keydown', event => {
 
 
 
-/* LiveVault Live Intelligence v2.8.1 */
+/* LiveVault Live Intelligence v2.8.2 */
 let controlRoomPulseData = {hours: 12, window_start: null, generated_at: null, sessions: []};
 let archiveGroupLimit = 10;
 
@@ -1914,10 +1914,10 @@ function controlRoomPulseMarkup() {
   }
   const maxProfiles = compact ? 5 : 8;
   const recentProfiles = profileOrder.slice(-maxProfiles).reverse();
-  const labelRatios = compact ? [0, .5, 1] : [0, .25, .5, .75, 1];
-  const labels = labelRatios.map(ratio => {
+  const labelRatios = [0, .25, .5, .75, 1];
+  const labels = labelRatios.map((ratio, index) => {
     const value = new Date(windowStart + span * ratio);
-    return `<span style="left:${ratio * 100}%">${esc(new Intl.DateTimeFormat('it-IT', {hour:'2-digit', minute:'2-digit'}).format(value))}</span>`;
+    return `<span class="cr-pulse-tick cr-pulse-tick-${index}">${esc(new Intl.DateTimeFormat('it-IT', {hour:'2-digit', minute:'2-digit'}).format(value))}</span>`;
   }).join('');
   const rows = recentProfiles.map(profileId => {
     const profileSessions = byProfile.get(profileId) || [];
@@ -1925,12 +1925,14 @@ function controlRoomPulseMarkup() {
     const blocks = profileSessions.map(session => {
       const start = Math.max(windowStart, timestamp(session.started_at));
       const end = session.ended_at ? Math.min(generatedAt, timestamp(session.ended_at)) : generatedAt;
-      const left = Math.max(0, Math.min(100, (start - windowStart) / span * 100));
-      const width = Math.max(.65, Math.min(100 - left, (end - start) / span * 100));
+      const x = Math.max(0, Math.min(1000, (start - windowStart) / span * 1000));
+      const rawWidth = Math.max(0, (end - start) / span * 1000);
+      const minWidth = compact ? 24 : 6;
+      const width = Math.max(0, Math.min(1000 - x, Math.max(minWidth, rawWidth)));
       const title = `${session.display_name} · ${pulseTimeLabel(session.started_at)}${session.ended_at ? `–${pulseTimeLabel(session.ended_at)}` : '–ora'} · ${Math.round(Number(session.coverage_percent) || 0)}% REC`;
-      return `<button class="cr-pulse-block ${pulseBlockClass(session)}" style="left:${left.toFixed(3)}%;width:${width.toFixed(3)}%" data-profile-link="${session.representative_source_id || 0}" type="button" title="${esc(title)}" aria-label="${esc(title)}"></button>`;
+      return `<rect class="cr-pulse-block ${pulseBlockClass(session)}" x="${x.toFixed(3)}" y="1" width="${width.toFixed(3)}" height="10" rx="5" ry="5" data-profile-link="${session.representative_source_id || 0}" aria-label="${esc(title)}"><title>${esc(title)}</title></rect>`;
     }).join('');
-    return `<div class="cr-pulse-row"><button class="creator-link cr-pulse-name" data-profile-link="${representative.representative_source_id || 0}" type="button">${esc(representative.display_name)}</button><div class="cr-pulse-track">${blocks}</div></div>`;
+    return `<div class="cr-pulse-row"><button class="creator-link cr-pulse-name" data-profile-link="${representative.representative_source_id || 0}" type="button">${esc(representative.display_name)}</button><div class="cr-pulse-track"><svg class="cr-pulse-svg" viewBox="0 0 1000 12" preserveAspectRatio="none" aria-hidden="true">${blocks}</svg></div></div>`;
   }).join('');
   const hidden = Math.max(0, profileOrder.length - recentProfiles.length);
   return `<section class="cr-pulse"><div class="cr-pulse-head"><strong>Live Pulse</strong><span>${controlRoomPulseData.hours || 12}h${hidden ? ` · +${hidden}` : ''}</span></div><div class="cr-pulse-scale"><span></span><div>${labels}</div></div>${rows || '<div class="cr-pulse-empty">—</div>'}</section>`;

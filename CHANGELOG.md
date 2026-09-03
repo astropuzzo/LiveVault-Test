@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.8.2 — 2026-09-03
+
+- Corretto **Live Pulse** sotto CSP stretta: rimossi gli inline style bloccati da `style-src 'self'`.
+- Tick temporali ora distribuiti con CSS Grid; sessioni renderizzate in SVG con coordinate native `x`/`width`.
+- La CSP non viene indebolita; cache PWA aggiornata per forzare il nuovo frontend.
+
 ## 2.8.1 — 2026-09-03
 
 - Hotfix **Live Pulse mobile**: asse temporale leggibile, tre tick su schermi stretti e massimo cinque creator visibili.
