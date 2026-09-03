@@ -4,9 +4,6 @@ on:
   push:
   pull_request:
 
-permissions:
-  contents: write
-
 concurrency:
   group: livevault-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -23,9 +20,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Apply FFmpeg local HLS hotfix
-        if: github.event_name == 'push' && github.ref == 'refs/heads/hotfix/ffmpeg-local-hls-headers'
-        run: python scripts/apply_ffmpeg_local_hls_headers_hotfix.py
       - name: Install FFmpeg
         run: sudo apt-get update && sudo apt-get install -y ffmpeg
       - name: Install dependencies
@@ -38,18 +32,6 @@ jobs:
         run: node --check app/static/app.js
       - name: Check shell scripts
         run: bash -n scripts/*.sh
-      - name: Publish verified hotfix commit
-        if: github.event_name == 'push' && github.ref == 'refs/heads/hotfix/ffmpeg-local-hls-headers'
-        run: |
-          if git diff --quiet; then
-            echo "No hotfix changes found"
-            exit 0
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
-          git commit -m "fix(recorder): never bind HTTP AVOptions to local HLS master"
-          git push origin HEAD:hotfix/ffmpeg-local-hls-headers
 
   deploy:
     name: Deploy verified main

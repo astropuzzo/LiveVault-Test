@@ -1,6 +1,11 @@
 from pathlib import Path
 
-from app.recorder import build_ffmpeg_command, max_output_bytes, safe_output_limit_bytes
+from app.recorder import (
+    build_chaturbate_synced_master,
+    build_ffmpeg_command,
+    max_output_bytes,
+    safe_output_limit_bytes,
+)
 from app.source_providers import ResolvedInput
 
 
@@ -96,3 +101,56 @@ def test_ffmpeg_live_preview_uses_same_process():
     assert "-c:v mjpeg" in joined
     assert "-update 1" in joined
     assert joined.index("out_%03d.mp4") < joined.index("preview.jpg")
+
+
+def test_local_synchronized_hls_never_receives_http_avoptions():
+    cmd = build_ffmpeg_command(
+        [ResolvedInput(
+            "/data/recordings/test/.livevault-synced-master.m3u8",
+            {"User-Agent": "LiveVault-Test", "Referer": "https://chaturbate.com/"},
+            "media",
+        )],
+        Path("out_%03d.mp4"),
+        segment_minutes=10,
+        container_format="mp4",
+        synchronized_hls=True,
+    )
+    assert "-headers" not in cmd
+    assert "-reconnect" not in cmd
+    assert "-reconnect_streamed" not in cmd
+    assert "-reconnect_delay_max" not in cmd
+    assert "-protocol_whitelist" in cmd
+
+
+def test_synced_master_drops_top_level_http_headers(tmp_path):
+    inputs = [
+        ResolvedInput(
+            "https://example.test/llhls/video.m3u8",
+            {"User-Agent": "UA", "Referer": "https://chaturbate.com/"},
+            "video",
+        ),
+        ResolvedInput(
+            "https://example.test/llhls/audio.m3u8",
+            {"User-Agent": "UA", "Referer": "https://chaturbate.com/"},
+            "audio",
+        ),
+    ]
+    synced, manifest = build_chaturbate_synced_master(inputs, tmp_path / "master.m3u8")
+    assert manifest.is_file()
+    assert synced[0].url == str(manifest.resolve())
+    assert synced[0].http_headers == {}
+
+
+def test_direct_http_input_still_receives_headers_and_reconnect():
+    cmd = build_ffmpeg_command(
+        [ResolvedInput(
+            "https://example.test/master.m3u8",
+            {"User-Agent": "LiveVault-Test", "Referer": "https://example.test/"},
+            "media",
+        )],
+        Path("out_%03d.mp4"),
+        segment_minutes=10,
+        container_format="mp4",
+    )
+    assert "-headers" in cmd
+    assert "-reconnect" in cmd
