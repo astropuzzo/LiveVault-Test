@@ -30,9 +30,7 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements-dev.txt
       - name: Apply v2.8.5 A/V fix
-        run: |
-          python scripts/apply_v285_av_integrity.py
-          python scripts/fix_v285_release_test.py
+        run: python scripts/apply_v285_av_integrity.py
       - name: Compile Python
         run: python -m compileall -q app tests
       - name: Run tests
@@ -43,7 +41,7 @@ jobs:
         run: bash -n scripts/*.sh
       - name: Publish clean branch
         run: |
-          rm -f scripts/apply_v285_av_integrity.py scripts/fix_v285_release_test.py .github/workflows/v285-stage.yml
+          rm -f scripts/apply_v285_av_integrity.py .github/workflows/v285-stage.yml
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
