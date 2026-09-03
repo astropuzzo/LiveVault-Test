@@ -22,7 +22,7 @@ replace_once(
 replace_once(
     "tests/test_live_pulse_ui.py",
     "    assert '<rect class=\"cr-pulse-rec-span\"' in pulse\n",
-    "    assert '<rect class=\"cr-pulse-rec-span ${remoteUrl ? \'remote\' : \'\'}\"' in pulse\n    assert 'cr-pulse-rec-media' in pulse\n    assert 'data-preview-url' in pulse\n    assert 'target=\"_blank\"' in pulse\n",
+    "    assert \"cr-pulse-rec-span ${remoteUrl ? 'remote' : ''}\" in pulse\n    assert 'cr-pulse-rec-media' in pulse\n    assert 'data-preview-url' in pulse\n    assert 'target=\"_blank\"' in pulse\n",
 )
 
 # Storyboard contract is now nine input-side seeks assembled as a 3x3 sheet.
