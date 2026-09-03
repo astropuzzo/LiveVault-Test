@@ -20,3 +20,26 @@
 .archive-intel-controls{display:flex;gap:8px;flex-wrap:wrap;flex:1 1 100%}.archive-intel-controls select{min-width:125px}.archive-group{border:1px solid var(--line);border-radius:14px;background:rgba(255,255,255,.012);overflow:hidden;margin-bottom:10px}.archive-group>summary{list-style:none;cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:14px;padding:12px 14px;background:rgba(255,255,255,.022)}.archive-group>summary::-webkit-details-marker{display:none}.archive-group>summary>span:first-child{min-width:0}.archive-group>summary strong{display:block;font-size:.9rem;text-transform:none}.archive-group>summary small{display:block;margin-top:3px;font-size:.67rem;color:var(--muted)}.archive-chevron{color:var(--muted);transition:transform .18s ease}.archive-group[open] .archive-chevron{transform:rotate(180deg)}.archive-group-grid{padding:10px}.archive-more{display:block;margin:16px auto 4px}
 @media(max-width:900px){.dna-layout{grid-template-columns:1fr}.dna-metrics{grid-template-columns:repeat(3,1fr)}.archive-intel-controls{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:100%}.archive-intel-controls select{min-width:0;width:100%}}
 @media(max-width:620px){.cr-pulse-scale,.cr-pulse-row{grid-template-columns:78px minmax(0,1fr)}.cr-pulse-name{font-size:.64rem}.cr-ended-main{display:block}.cr-ended-state{text-align:left;margin-top:5px}.archive-intel-controls{grid-template-columns:1fr}.dna-hours{gap:1px}}
+
+
+/* LiveVault Live Pulse mobile hotfix v2.8.1 */
+.cr-pulse-scale>div,.cr-pulse-track{min-width:0}
+@media(max-width:620px){
+  .cr-pulse{padding:14px 12px 13px;margin-bottom:20px}
+  .cr-pulse-head{margin-bottom:10px}
+  .cr-pulse-head strong{font-size:.94rem}
+  .cr-pulse-head span{font-size:.74rem}
+  .cr-pulse-scale,.cr-pulse-row{grid-template-columns:96px minmax(0,1fr);gap:10px}
+  .cr-pulse-scale{height:24px;margin-bottom:3px}
+  .cr-pulse-scale>div span{bottom:6px;font-size:.66rem;line-height:1;white-space:nowrap}
+  .cr-pulse-row{min-height:34px;padding:2px 0}
+  .cr-pulse-name{font-size:.72rem;font-weight:700;line-height:1.15;padding:4px 0;max-width:100%}
+  .cr-pulse-track{height:11px;overflow:hidden;background:rgba(255,255,255,.045)}
+  .cr-pulse-track:after{top:-3px;height:17px}
+  .cr-pulse-block{height:11px;min-width:6px}
+}
+@media(max-width:400px){
+  .cr-pulse-scale,.cr-pulse-row{grid-template-columns:84px minmax(0,1fr);gap:9px}
+  .cr-pulse-name{font-size:.68rem}
+  .cr-pulse-scale>div span{font-size:.63rem}
+}
