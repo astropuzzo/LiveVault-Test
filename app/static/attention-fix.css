@@ -1,0 +1,58 @@
+/* LiveVault targeted attention navigation */
+.rec-card.lv-attention {
+  border-color: rgba(222, 157, 61, .78);
+  box-shadow: 0 0 0 1px rgba(222, 157, 61, .16), 0 14px 34px rgba(0, 0, 0, .24);
+}
+.rec-card.lv-audio-missing {
+  border-color: rgba(224, 88, 88, .78);
+  box-shadow: 0 0 0 1px rgba(224, 88, 88, .15), 0 14px 34px rgba(0, 0, 0, .25);
+}
+.lv-attention-banner {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: -1px -1px 9px;
+  padding: 7px 9px;
+  border: 1px solid rgba(222, 157, 61, .28);
+  border-radius: 7px;
+  background: rgba(222, 157, 61, .09);
+  color: #f2c879;
+  font-size: .68rem;
+  line-height: 1.25;
+}
+.lv-attention-banner strong {
+  flex: 0 0 auto;
+  color: #ffd58b;
+  font-size: .62rem;
+  letter-spacing: .08em;
+}
+.lv-attention-banner span { color: #e9c991; }
+.lv-audio-missing .lv-attention-banner {
+  border-color: rgba(224, 88, 88, .3);
+  background: rgba(224, 88, 88, .1);
+}
+.lv-audio-missing .lv-attention-banner strong { color: #ff9a9f; }
+.lv-audio-missing .lv-attention-banner span { color: #efb3b6; }
+.archive-group:has(.rec-card.lv-attention) {
+  border-color: rgba(222, 157, 61, .42);
+}
+.archive-group:has(.rec-card.lv-audio-missing) {
+  border-color: rgba(224, 88, 88, .48);
+}
+.rec-card:has(.stream-bad),
+.rec-card:has(.rec-error),
+.rec-card:has(.upload-status.failed),
+.rec-card:has(.upload-status.integrity_failed),
+.rec-card:has(.upload-status.waiting_config) {
+  border-color: rgba(222, 157, 61, .58);
+}
+.lv-attention-focus {
+  animation: lv-attention-focus 1.15s ease-in-out 3;
+}
+@keyframes lv-attention-focus {
+  0%, 100% { box-shadow: 0 0 0 1px rgba(222, 157, 61, .18), 0 14px 34px rgba(0, 0, 0, .24); }
+  50% { box-shadow: 0 0 0 3px rgba(255, 191, 82, .72), 0 0 28px rgba(222, 157, 61, .28); }
+}
+@media (max-width: 620px) {
+  .lv-attention-banner { align-items: flex-start; flex-direction: column; gap: 3px; }
+}
