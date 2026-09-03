@@ -85,6 +85,24 @@ class CollectionProfile(Base):
     profile_id: Mapped[int] = mapped_column(ForeignKey("profiles.id", ondelete="CASCADE"), primary_key=True)
 
 
+class CloudDay(Base):
+    __tablename__ = "cloud_days"
+    __table_args__ = (
+        Index("ux_cloud_days_profile_day_provider", "profile_id", "day_key", "provider", unique=True),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    profile_id: Mapped[int] = mapped_column(ForeignKey("profiles.id", ondelete="CASCADE"), index=True)
+    day_key: Mapped[str] = mapped_column(String(10), index=True)
+    provider: Mapped[str] = mapped_column(String(30), index=True)
+    title: Mapped[str] = mapped_column(String(255), default="")
+    remote_id: Mapped[str] = mapped_column(String(255), default="")
+    remote_url: Mapped[str] = mapped_column(Text, default="")
+    file_count: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
 class Recording(Base):
     __tablename__ = "recordings"
 
@@ -103,6 +121,9 @@ class Recording(Base):
     upload_provider: Mapped[str] = mapped_column(String(30), default="")
     remote_id: Mapped[str] = mapped_column(String(255), default="")
     remote_url: Mapped[str] = mapped_column(Text, default="")
+    cloud_day_key: Mapped[str] = mapped_column(String(10), default="", index=True)
+    remote_parent_id: Mapped[str] = mapped_column(String(255), default="")
+    remote_parent_url: Mapped[str] = mapped_column(Text, default="")
     upload_attempts: Mapped[int] = mapped_column(Integer, default=0)
     last_error: Mapped[str] = mapped_column(Text, default="")
     local_deleted: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -177,6 +198,9 @@ def _migrate_recordings() -> None:
         "has_audio": "BOOLEAN",
         "video_codec": "VARCHAR(40) NOT NULL DEFAULT ''",
         "audio_codec": "VARCHAR(40) NOT NULL DEFAULT ''",
+        "cloud_day_key": "VARCHAR(10) NOT NULL DEFAULT ''",
+        "remote_parent_id": "VARCHAR(255) NOT NULL DEFAULT ''",
+        "remote_parent_url": "TEXT NOT NULL DEFAULT ''",
     }
     with engine.begin() as conn:
         for name, ddl in additions.items():
@@ -184,6 +208,7 @@ def _migrate_recordings() -> None:
                 conn.execute(text(f"ALTER TABLE recordings ADD COLUMN {name} {ddl}"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS ix_recordings_integrity_status ON recordings (integrity_status)"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS ix_recordings_upload_priority ON recordings (upload_priority)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_recordings_cloud_day_key ON recordings (cloud_day_key)"))
         # Older releases mixed local wall-clock values with UTC in started_at.
         # The segment mtime and probed duration provide an unambiguous UTC start.
         conn.execute(text("""

@@ -5,11 +5,12 @@ import contextlib
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import func, select
 
 from .config import settings
-from .db import LiveSession, Recording, Source, db_session
+from .db import CloudDay, LiveSession, Profile, Recording, Source, db_session
 from .recorder import (
     RecorderSession,
     finalize_mp4_for_streaming,
@@ -20,7 +21,7 @@ from .recorder import (
 from .settings_store import runtime
 from .source_providers import probe
 from .storage import disk_state
-from .uploaders import UploadCancelled, create_gofile_folder, provider_available, upload
+from .uploaders import UploadCancelled, create_gofile_folder, create_pixeldrain_list, provider_available, upload
 from .utils import generate_thumbnail, human_bytes, safe_name, sha256_file, utcnow, verify_media
 
 try:
@@ -29,6 +30,13 @@ except ImportError:  # pragma: no cover - production containers are Linux
     _fcntl = None
 
 RETRYABLE_MEDIA_ERRORS = ("scadut", "timeout", "timed out", "tempor")
+CLOUD_TIME_ZONE = ZoneInfo("Europe/Berlin")
+
+
+def cloud_day_key(value: datetime) -> str:
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(CLOUD_TIME_ZONE).date().isoformat()
 
 
 class WorkerManager:
@@ -246,6 +254,7 @@ class WorkerManager:
         while not self._stopping:
             await self._repair_local_mp4s()
             await self._backfill_thumbnails()
+            await self._finalize_closed_pixeldrain_days()
             await asyncio.sleep(60)
 
     async def _repair_local_mp4s(self) -> None:
@@ -715,29 +724,112 @@ class WorkerManager:
                 db.expunge(rec)
             return rec
 
-    async def _gofile_folder_for(self, rec: Recording) -> tuple[str, str]:
-        """Resolve or lazily create the stable Gofile folder for one source."""
+    def _cloud_day_spec(self, rec: Recording) -> tuple[int | None, str, str, bool]:
+        day_key = cloud_day_key(rec.started_at)
         with db_session() as db:
             source = db.get(Source, rec.source_id)
-            if not source or not source.organize_cloud:
-                return "", ""
-            existing_id = source.gofile_folder_id
-            existing_url = source.gofile_folder_url
-            source_name = source.name
-        if existing_id:
-            return existing_id, existing_url
-        parent_id = runtime().gofile_folder_id
-        folder_id, folder_url = await asyncio.to_thread(create_gofile_folder, source_name, parent_id)
+            if not source:
+                return None, day_key, f"{rec.source_name} - {day_key}", False
+            profile = db.get(Profile, source.profile_id) if source.profile_id is not None else None
+            display_name = profile.display_name if profile else source.name
+            return source.profile_id, day_key, f"{display_name} - {day_key}"[:255], bool(source.organize_cloud)
+
+    async def _gofile_folder_for(self, rec: Recording) -> tuple[str, str, str]:
+        """Return the Gofile folder dedicated to this creator and Frankfurt calendar day."""
+        profile_id, day_key, title, organize = self._cloud_day_spec(rec)
+        if not organize or profile_id is None:
+            return "", "", day_key
         with db_session() as db:
-            source = db.get(Source, rec.source_id)
-            if source:
-                if not source.gofile_folder_id:
-                    source.gofile_folder_id = folder_id
-                if folder_url and not source.gofile_folder_url:
-                    source.gofile_folder_url = folder_url
-                folder_id = source.gofile_folder_id
-                folder_url = source.gofile_folder_url
-        return folder_id, folder_url
+            existing = db.scalar(select(CloudDay).where(
+                CloudDay.profile_id == profile_id,
+                CloudDay.day_key == day_key,
+                CloudDay.provider == "gofile",
+            ))
+            if existing and existing.remote_id:
+                return existing.remote_id, existing.remote_url, day_key
+        folder_id, folder_url = await asyncio.to_thread(
+            create_gofile_folder, title, runtime().gofile_folder_id
+        )
+        with db_session() as db:
+            row = db.scalar(select(CloudDay).where(
+                CloudDay.profile_id == profile_id,
+                CloudDay.day_key == day_key,
+                CloudDay.provider == "gofile",
+            ))
+            if row is None:
+                row = CloudDay(profile_id=profile_id, day_key=day_key, provider="gofile")
+                db.add(row)
+            row.title = title
+            row.remote_id = folder_id
+            row.remote_url = folder_url
+            row.updated_at = utcnow()
+        return folder_id, folder_url, day_key
+
+    async def _finalize_closed_pixeldrain_days(self) -> None:
+        """Create one Pixeldrain list after a Frankfurt day closes; never churn lists during the day."""
+        today_key = datetime.now(CLOUD_TIME_ZONE).date().isoformat()
+        with db_session() as db:
+            rows = db.execute(
+                select(Recording, Source.profile_id)
+                .join(Source, Source.id == Recording.source_id)
+                .where(
+                    Recording.upload_status == "uploaded",
+                    Recording.upload_provider == "pixeldrain",
+                    Recording.remote_id != "",
+                    Source.profile_id.is_not(None),
+                )
+                .order_by(Recording.started_at.asc(), Recording.id.asc())
+            ).all()
+            profile_ids = {int(profile_id) for _recording, profile_id in rows if profile_id is not None}
+            profiles = {
+                int(profile.id): profile.display_name
+                for profile in db.scalars(select(Profile).where(Profile.id.in_(profile_ids))).all()
+            } if profile_ids else {}
+            existing = {
+                (int(row.profile_id), row.day_key): (row.remote_id, int(row.file_count or 0))
+                for row in db.scalars(select(CloudDay).where(CloudDay.provider == "pixeldrain")).all()
+            }
+        grouped: dict[tuple[int, str], list[tuple[int, str]]] = {}
+        for recording, profile_id in rows:
+            if profile_id is None:
+                continue
+            key = cloud_day_key(recording.started_at)
+            if key >= today_key:
+                continue
+            grouped.setdefault((int(profile_id), key), []).append((int(recording.id), str(recording.remote_id)))
+        for (profile_id, day_key), items in grouped.items():
+            if self._stopping:
+                return
+            remote_ids = list(dict.fromkeys(remote_id for _recording_id, remote_id in items if remote_id))
+            old_id, old_count = existing.get((profile_id, day_key), ("", 0))
+            if old_id and old_count == len(remote_ids):
+                continue
+            title = f"{profiles.get(profile_id, f'Creator {profile_id}')} - {day_key}"[:300]
+            try:
+                list_id, list_url = await asyncio.to_thread(create_pixeldrain_list, title, remote_ids)
+            except Exception as exc:
+                self.last_errors[f"cloud-day:pixeldrain:{profile_id}:{day_key}"] = str(exc)[-900:]
+                continue
+            recording_ids = [recording_id for recording_id, _remote_id in items]
+            with db_session() as db:
+                row = db.scalar(select(CloudDay).where(
+                    CloudDay.profile_id == profile_id,
+                    CloudDay.day_key == day_key,
+                    CloudDay.provider == "pixeldrain",
+                ))
+                if row is None:
+                    row = CloudDay(profile_id=profile_id, day_key=day_key, provider="pixeldrain")
+                    db.add(row)
+                row.title = title
+                row.remote_id = list_id
+                row.remote_url = list_url
+                row.file_count = len(remote_ids)
+                row.updated_at = utcnow()
+                for recording in db.scalars(select(Recording).where(Recording.id.in_(recording_ids))).all():
+                    recording.cloud_day_key = day_key
+                    recording.remote_parent_id = list_id
+                    recording.remote_parent_url = list_url
+            self.last_errors.pop(f"cloud-day:pixeldrain:{profile_id}:{day_key}", None)
 
     async def _verify_before_upload(self, rec: Recording, path: Path) -> bool:
         cfg = runtime()
@@ -882,8 +974,9 @@ class WorkerManager:
 
                         gofile_folder_id = ""
                         gofile_folder_url = ""
+                        recording_day_key = cloud_day_key(rec.started_at)
                         if provider == "gofile":
-                            gofile_folder_id, gofile_folder_url = await self._gofile_folder_for(rec)
+                            gofile_folder_id, gofile_folder_url, recording_day_key = await self._gofile_folder_for(rec)
                         result = await asyncio.to_thread(
                             upload,
                             path,
@@ -908,13 +1001,24 @@ class WorkerManager:
                             current.upload_provider = result.provider
                             current.remote_id = result.remote_id
                             current.remote_url = result.remote_url
+                            current.cloud_day_key = recording_day_key
+                            if result.provider == "gofile" and gofile_folder_id:
+                                current.remote_parent_id = gofile_folder_id
+                                current.remote_parent_url = gofile_folder_url
                             current.uploaded_at = utcnow()
                             current.last_error = ""
-                    if result.provider == "gofile":
-                        with db_session() as db:
-                            source = db.get(Source, rec.source_id)
-                            if source and source.organize_cloud and gofile_folder_url and not source.gofile_folder_url:
-                                source.gofile_folder_url = gofile_folder_url
+                    if result.provider == "gofile" and gofile_folder_id:
+                        profile_id, day_key, _title, _organize = self._cloud_day_spec(rec)
+                        if profile_id is not None:
+                            with db_session() as db:
+                                day = db.scalar(select(CloudDay).where(
+                                    CloudDay.profile_id == profile_id,
+                                    CloudDay.day_key == day_key,
+                                    CloudDay.provider == "gofile",
+                                ))
+                                if day:
+                                    day.file_count = int(day.file_count or 0) + 1
+                                    day.updated_at = utcnow()
                     self._retry_after.pop(rec.id, None)
                     if runtime().delete_after_upload:
                         path.unlink(missing_ok=True)
