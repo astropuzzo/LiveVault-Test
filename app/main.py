@@ -50,7 +50,7 @@ BASE = Path(__file__).parent
 LOGIN_FAILURES: dict[str, deque[float]] = defaultdict(deque)
 LOGIN_WINDOW = 10 * 60
 LOGIN_MAX_FAILURES = 6
-VERSION = "2.8.2"
+VERSION = "2.8.3"
 
 
 class LoginBody(BaseModel):
@@ -1465,7 +1465,7 @@ def control_room_pulse(request: Request, hours: int = 12):
             for interval in intervals:
                 started = interval["started"]
                 ended = interval["ended"]
-                overlapping = []
+                overlapping: list[tuple[Recording, datetime, datetime]] = []
                 for recording in recording_rows:
                     if int(recording.source_id) not in linked_ids:
                         continue
@@ -1473,14 +1473,28 @@ def control_room_pulse(request: Request, hours: int = 12):
                     rec_end = _pulse_aware(recording.finalized_at)
                     if rec_start is None or rec_end is None:
                         continue
-                    if rec_start < ended and rec_end > started:
-                        overlapping.append(recording)
+                    clipped_start = max(started, rec_start)
+                    clipped_end = min(ended, rec_end)
+                    if clipped_start < clipped_end:
+                        overlapping.append((recording, clipped_start, clipped_end))
+
+                merged_recordings: list[dict] = []
+                for _recording, rec_start, rec_end in sorted(overlapping, key=lambda row: row[1]):
+                    if merged_recordings and rec_start <= merged_recordings[-1]["ended"] + timedelta(seconds=12):
+                        merged_recordings[-1]["ended"] = max(merged_recordings[-1]["ended"], rec_end)
+                    else:
+                        merged_recordings.append({"started": rec_start, "ended": rec_end})
+
+                recording_items = [row[0] for row in overlapping]
                 live_seconds = max(0.0, (ended - started).total_seconds())
-                recorded_seconds = sum(float(row.duration_seconds or 0.0) for row in overlapping)
-                file_count = len(overlapping)
-                uploaded_count = sum(1 for row in overlapping if row.upload_status == "uploaded")
-                failed_count = sum(1 for row in overlapping if row.upload_status in {"failed", "integrity_failed"})
-                total_bytes = sum(int(row.size_bytes or 0) for row in overlapping)
+                recorded_seconds = sum(
+                    max(0.0, (row["ended"] - row["started"]).total_seconds())
+                    for row in merged_recordings
+                )
+                file_count = len(recording_items)
+                uploaded_count = sum(1 for row in recording_items if row.upload_status == "uploaded")
+                failed_count = sum(1 for row in recording_items if row.upload_status in {"failed", "integrity_failed"})
+                total_bytes = sum(int(row.size_bytes or 0) for row in recording_items)
                 coverage = min(100.0, recorded_seconds / live_seconds * 100.0) if live_seconds > 0 else 0.0
                 if interval["open"]:
                     state = "live"
@@ -1499,6 +1513,12 @@ def control_room_pulse(request: Request, hours: int = 12):
                     "ended_at": None if interval["open"] else _iso_utc(ended),
                     "duration_seconds": round(live_seconds, 2),
                     "recorded_seconds": round(recorded_seconds, 2),
+                    "recording_started_at": _iso_utc(merged_recordings[0]["started"]) if merged_recordings else None,
+                    "recording_ended_at": _iso_utc(merged_recordings[-1]["ended"]) if merged_recordings else None,
+                    "recording_intervals": [
+                        {"started_at": _iso_utc(row["started"]), "ended_at": _iso_utc(row["ended"])}
+                        for row in merged_recordings
+                    ],
                     "coverage_percent": round(coverage, 1),
                     "file_count": file_count,
                     "uploaded_count": uploaded_count,
