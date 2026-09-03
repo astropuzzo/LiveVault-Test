@@ -31,8 +31,10 @@ jobs:
         run: pip install -r requirements-dev.txt
       - name: Apply v2.8.4 Pulse media patch
         run: python scripts/apply_v284_pulse_media.py
+      - name: Update v2.8.4 regression expectations
+        run: python scripts/fix_v284_tests.py
       - name: Remove staging machinery
-        run: rm scripts/apply_v284_pulse_media.py .github/workflows/release-v284.yml
+        run: rm scripts/apply_v284_pulse_media.py scripts/fix_v284_tests.py .github/workflows/release-v284.yml
       - name: Compile Python
         run: python -m compileall -q app tests
       - name: Run tests
