@@ -6,7 +6,7 @@ from app.recorder import build_ffmpeg_command
 from app.source_providers import ResolvedInput
 
 
-def test_live_recorder_normalizes_timestamps_without_reencoding_video():
+def test_live_recorder_keeps_audio_and_video_on_the_same_source_timeline():
     cmd = build_ffmpeg_command(
         [ResolvedInput("https://example.test/live.m3u8", {}, "media")],
         Path("out_%03d.mp4"),
@@ -17,13 +17,11 @@ def test_live_recorder_normalizes_timestamps_without_reencoding_video():
     assert "-fflags +genpts+discardcorrupt" in joined
     assert "-dts_delta_threshold 1" in joined
     assert "-thread_queue_size 8192" in joined
-    assert "-c:v copy" in joined
-    assert "-c:a aac" in joined
-    assert "-ar 48000" in joined
-    assert "aresample=async=1000:first_pts=0:min_hard_comp=0.100" in joined
+    assert "-c copy" in joined
+    assert "-c:a aac" not in joined
+    assert "aresample=" not in joined
     assert "-max_interleave_delta 1000000" in joined
     assert "-avoid_negative_ts make_zero" in joined
-    assert "-c:v libx264" not in joined
 
 
 def test_timestamp_normalization_is_applied_to_each_separate_input():
