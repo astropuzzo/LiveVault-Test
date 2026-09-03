@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.8.3 — 2026-09-03
+
+- Live Pulse ora mostra gli intervalli **LIVE** e **REC** separatamente, con inizio/fine leggibili per ogni creator.
+- L'API Pulse espone gli intervalli reali di registrazione anziché una sola percentuale aggregata.
+- Tutti gli orari UI principali usano `Europe/Berlin` (Francoforte), con cambio CET/CEST automatico.
+- Timeline resa più leggibile su desktop e mobile senza inline style, mantenendo la CSP stretta.
+
 ## 2.8.2 — 2026-09-03
 
 - Corretto **Live Pulse** sotto CSP stretta: rimossi gli inline style bloccati da `style-src 'self'`.

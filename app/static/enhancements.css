@@ -59,3 +59,10 @@
   .cr-pulse-tick-1,.cr-pulse-tick-3{display:none!important}
   .cr-pulse-track,.cr-pulse-svg{height:12px}
 }
+
+
+/* LiveVault Pulse timing + Frankfurt timezone v2.8.3 */
+.cr-pulse-scale,.cr-pulse-row{grid-template-columns:250px minmax(0,1fr);gap:12px}
+.cr-pulse-row{min-height:39px}.cr-pulse-who{min-width:0;display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:10px}.creator-link.cr-pulse-name{font-size:.72rem;font-weight:780;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.cr-pulse-times{display:grid;gap:1px;min-width:116px;font-size:.61rem;line-height:1.25;color:var(--muted);font-variant-numeric:tabular-nums}.cr-pulse-times b{font-size:.55rem;letter-spacing:.04em;color:#aab4ad;margin-right:3px}.cr-pulse-track,.cr-pulse-svg{height:16px}.cr-pulse-track{overflow:hidden;background:rgba(255,255,255,.035)}.cr-pulse-svg{display:block;width:100%;overflow:hidden}.cr-pulse-session{cursor:pointer}.cr-pulse-live-span{fill:#555e59;opacity:.82}.cr-pulse-live-span.current{fill:#b93b46;opacity:1}.cr-pulse-live-span.missed{fill:#8f6b32}.cr-pulse-rec-span{fill:#b8d66f;opacity:.96}.cr-pulse-live-marker{stroke:rgba(255,255,255,.42);stroke-width:1.2;vector-effect:non-scaling-stroke}.cr-pulse-rec-marker{stroke:#d9ef9c;stroke-width:1.5;vector-effect:non-scaling-stroke}.cr-pulse-head-right{display:flex;align-items:center;gap:12px}.cr-pulse-legend{display:flex;align-items:center;gap:5px}.cr-pulse-legend i{display:inline-block;width:12px;height:5px;border-radius:999px}.cr-pulse-legend i.live{background:#666f69}.cr-pulse-legend i.rec{background:#b8d66f}
+@media(max-width:760px){.cr-pulse-scale,.cr-pulse-row{grid-template-columns:164px minmax(0,1fr)}.cr-pulse-who{display:block}.cr-pulse-times{margin-top:2px;min-width:0;font-size:.58rem}.cr-pulse-times span{display:block}.cr-pulse-head-right{gap:7px}.cr-pulse-legend{display:none}}
+@media(max-width:620px){.cr-pulse-scale,.cr-pulse-row{grid-template-columns:118px minmax(0,1fr);gap:8px}.cr-pulse-row{min-height:42px}.creator-link.cr-pulse-name{font-size:.64rem}.cr-pulse-times{font-size:.54rem}.cr-pulse-times b{font-size:.5rem}.cr-pulse-track,.cr-pulse-svg{height:16px}}

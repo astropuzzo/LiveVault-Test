@@ -12,6 +12,9 @@ def test_live_pulse_endpoint_and_session_evolution_are_wired():
     assert 'controlRoomRecentEnded' in js
     assert 'Appena terminate' in js
     assert '✓ SALVATA' in js
+    assert 'recording_intervals' in main
+    assert 'recording_started_at' in main
+    assert "Europe/Berlin" in js
 
 
 def test_live_dna_uses_existing_activity_statistics():

@@ -23,6 +23,8 @@ let librarySmart = 'all';
 let libraryMode = localStorage.getItem('livevault-library-view') === 'list' ? 'list' : 'grid';
 let sourceFilterId = Number(new URLSearchParams(location.search).get('source')) || 0;
 const selectedProfiles = new Set();
+const DISPLAY_TIME_ZONE = 'Europe/Berlin';
+const DISPLAY_TIME_ZONE_LABEL = 'Frankfurt';
 
 function esc(value = '') {
   return String(value).replace(/[&<>'"]/g, char => ({
@@ -76,6 +78,7 @@ function ago(value) {
 function dateText(value) {
   if (!timestamp(value)) return '—';
   return new Intl.DateTimeFormat('it-IT', {
+    timeZone: DISPLAY_TIME_ZONE,
     day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'
   }).format(new Date(value));
 }
@@ -83,6 +86,7 @@ function dateText(value) {
 function dateFull(value) {
   if (!timestamp(value)) return '—';
   return new Intl.DateTimeFormat('it-IT', {
+    timeZone: DISPLAY_TIME_ZONE,
     day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit'
   }).format(new Date(value));
 }
@@ -1821,7 +1825,7 @@ document.addEventListener('keydown', event => {
 
 
 
-/* LiveVault Live Intelligence v2.8.2 */
+/* LiveVault Live Intelligence v2.8.3 */
 let controlRoomPulseData = {hours: 12, window_start: null, generated_at: null, sessions: []};
 let archiveGroupLimit = 10;
 
@@ -1888,8 +1892,28 @@ function pulseBlockClass(session) {
   return 'ended';
 }
 
-function pulseTimeLabel(value) {
-  return new Intl.DateTimeFormat('it-IT', {hour: '2-digit', minute: '2-digit'}).format(new Date(value));
+function pulseTimeLabel(value, seconds = false) {
+  if (!timestamp(value)) return '—';
+  return new Intl.DateTimeFormat('it-IT', {
+    timeZone: DISPLAY_TIME_ZONE,
+    hour: '2-digit', minute: '2-digit', ...(seconds ? {second: '2-digit'} : {})
+  }).format(new Date(value));
+}
+
+function pulseRecordingIntervals(session) {
+  return Array.isArray(session?.recording_intervals) ? session.recording_intervals.filter(row => timestamp(row?.started_at) && timestamp(row?.ended_at)) : [];
+}
+
+function pulseRangeLabel(start, end, open = false) {
+  if (!timestamp(start)) return '—';
+  return `${pulseTimeLabel(start)}–${open ? 'ora' : pulseTimeLabel(end)}`;
+}
+
+function pulseSessionTimingMarkup(session) {
+  const recs = pulseRecordingIntervals(session);
+  const recStart = session.recording_started_at || recs[0]?.started_at;
+  const recEnd = session.recording_ended_at || recs[recs.length - 1]?.ended_at;
+  return `<span class="cr-pulse-times"><span><b>LIVE</b> ${esc(pulseRangeLabel(session.started_at, session.ended_at, !session.ended_at))}</span><span><b>REC</b> ${recStart ? esc(pulseRangeLabel(recStart, recEnd, false)) : '—'}</span></span>`;
 }
 
 function controlRoomPulseMarkup() {
@@ -1917,25 +1941,36 @@ function controlRoomPulseMarkup() {
   const labelRatios = [0, .25, .5, .75, 1];
   const labels = labelRatios.map((ratio, index) => {
     const value = new Date(windowStart + span * ratio);
-    return `<span class="cr-pulse-tick cr-pulse-tick-${index}">${esc(new Intl.DateTimeFormat('it-IT', {hour:'2-digit', minute:'2-digit'}).format(value))}</span>`;
+    return `<span class="cr-pulse-tick cr-pulse-tick-${index}">${esc(pulseTimeLabel(value))}</span>`;
   }).join('');
+  const xFor = value => Math.max(0, Math.min(1000, (value - windowStart) / span * 1000));
+  const widthFor = (start, end, minWidth = 5) => Math.max(0, Math.min(1000 - xFor(start), Math.max(minWidth, (end - start) / span * 1000)));
   const rows = recentProfiles.map(profileId => {
     const profileSessions = byProfile.get(profileId) || [];
     const representative = profileSessions[profileSessions.length - 1];
-    const blocks = profileSessions.map(session => {
+    const graphics = profileSessions.map(session => {
       const start = Math.max(windowStart, timestamp(session.started_at));
       const end = session.ended_at ? Math.min(generatedAt, timestamp(session.ended_at)) : generatedAt;
-      const x = Math.max(0, Math.min(1000, (start - windowStart) / span * 1000));
-      const rawWidth = Math.max(0, (end - start) / span * 1000);
-      const minWidth = compact ? 24 : 6;
-      const width = Math.max(0, Math.min(1000 - x, Math.max(minWidth, rawWidth)));
-      const title = `${session.display_name} · ${pulseTimeLabel(session.started_at)}${session.ended_at ? `–${pulseTimeLabel(session.ended_at)}` : '–ora'} · ${Math.round(Number(session.coverage_percent) || 0)}% REC`;
-      return `<rect class="cr-pulse-block ${pulseBlockClass(session)}" x="${x.toFixed(3)}" y="1" width="${width.toFixed(3)}" height="10" rx="5" ry="5" data-profile-link="${session.representative_source_id || 0}" aria-label="${esc(title)}"><title>${esc(title)}</title></rect>`;
+      if (!start || end <= start) return '';
+      const x = xFor(start);
+      const liveWidth = widthFor(start, end, compact ? 18 : 5);
+      const title = `${session.display_name} · LIVE ${pulseRangeLabel(session.started_at, session.ended_at, !session.ended_at)} · REC ${session.recording_started_at ? pulseRangeLabel(session.recording_started_at, session.recording_ended_at, false) : '—'}`;
+      const recs = pulseRecordingIntervals(session).map(rec => {
+        const recStart = Math.max(start, timestamp(rec.started_at));
+        const recEnd = Math.min(end, timestamp(rec.ended_at));
+        if (!recStart || recEnd <= recStart) return '';
+        const recX = xFor(recStart);
+        const recWidth = widthFor(recStart, recEnd, compact ? 12 : 4);
+        return `<rect class="cr-pulse-rec-span" x="${recX.toFixed(3)}" y="4" width="${recWidth.toFixed(3)}" height="8" rx="4" ry="4"></rect>`;
+      }).join('');
+      const firstRec = pulseRecordingIntervals(session)[0];
+      const recMarkerX = firstRec ? xFor(Math.max(start, timestamp(firstRec.started_at))) : null;
+      return `<g class="cr-pulse-session" data-profile-link="${session.representative_source_id || 0}"><rect class="cr-pulse-live-span ${session.state === 'live' ? 'current' : ''} ${session.state === 'missed' ? 'missed' : ''}" x="${x.toFixed(3)}" y="2" width="${liveWidth.toFixed(3)}" height="12" rx="6" ry="6"></rect><line class="cr-pulse-live-marker" x1="${x.toFixed(3)}" y1="0" x2="${x.toFixed(3)}" y2="16"></line>${recMarkerX === null ? '' : `<line class="cr-pulse-rec-marker" x1="${recMarkerX.toFixed(3)}" y1="1" x2="${recMarkerX.toFixed(3)}" y2="15"></line>`}${recs}<title>${esc(title)}</title></g>`;
     }).join('');
-    return `<div class="cr-pulse-row"><button class="creator-link cr-pulse-name" data-profile-link="${representative.representative_source_id || 0}" type="button">${esc(representative.display_name)}</button><div class="cr-pulse-track"><svg class="cr-pulse-svg" viewBox="0 0 1000 12" preserveAspectRatio="none" aria-hidden="true">${blocks}</svg></div></div>`;
+    return `<div class="cr-pulse-row"><div class="cr-pulse-who">${creatorLinkMarkup(representative.representative_source_id, representative.display_name, 'cr-pulse-name')}${pulseSessionTimingMarkup(representative)}</div><div class="cr-pulse-track"><svg class="cr-pulse-svg" viewBox="0 0 1000 16" preserveAspectRatio="none" role="img" aria-label="Timeline ${esc(representative.display_name)}">${graphics}</svg></div></div>`;
   }).join('');
   const hidden = Math.max(0, profileOrder.length - recentProfiles.length);
-  return `<section class="cr-pulse"><div class="cr-pulse-head"><strong>Live Pulse</strong><span>${controlRoomPulseData.hours || 12}h${hidden ? ` · +${hidden}` : ''}</span></div><div class="cr-pulse-scale"><span></span><div>${labels}</div></div>${rows || '<div class="cr-pulse-empty">—</div>'}</section>`;
+  return `<section class="cr-pulse"><div class="cr-pulse-head"><strong>Live Pulse</strong><div class="cr-pulse-head-right"><span class="cr-pulse-legend"><i class="live"></i>LIVE <i class="rec"></i>REC</span><span>${controlRoomPulseData.hours || 12}h · ${DISPLAY_TIME_ZONE_LABEL}${hidden ? ` · +${hidden}` : ''}</span></div></div><div class="cr-pulse-scale"><span></span><div>${labels}</div></div>${rows || '<div class="cr-pulse-empty">—</div>'}</section>`;
 }
 
 function controlRoomRecentEnded(profiles) {
