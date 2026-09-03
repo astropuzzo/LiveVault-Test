@@ -29,6 +29,26 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y ffmpeg
       - name: Install dependencies
         run: pip install -r requirements-dev.txt
+      - name: Repair staging patch anchor
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('scripts/apply_v290_regional_egress.py')
+          text = path.read_text(encoding='utf-8')
+          old = '''    ''' + '''clear_gofile_token: $('#clearGofile').checked,\\n    clear_pixeldrain_api_key: $('#clearPixeldrain').checked\\n  };\\n'''
+          actual = '''    gofile_region: $('#setGofileRegion').value, clear_gofile_token: $('#clearGofile').checked,\\n    clear_pixeldrain_api_key: $('#clearPixeldrain').checked\\n  };\\n'''
+          replacement = '''    gofile_region: $('#setGofileRegion').value, clear_gofile_token: $('#clearGofile').checked,\\n    clear_pixeldrain_api_key: $('#clearPixeldrain').checked,\\n    regional_egress_enabled: $('#setEgressEnabled').checked,\\n    regional_egress_name: $('#setEgressName').value.trim() || 'VPN',\\n    clear_regional_egress_wireguard_config: $('#clearEgressConfig').checked\\n  };\\n'''
+          block_start = 'replace_once(\\n    "app/static/app.js",\\n    \'\'\'    clear_gofile_token:'
+          start = text.find(block_start)
+          if start < 0:
+              raise SystemExit('old app.js anchor block not found')
+          end = text.find('\\n)\\n', start)
+          if end < 0:
+              raise SystemExit('old app.js anchor block end not found')
+          end += 3
+          new_block = '''replace_once(\n    "app/static/app.js",\n    ''' + "'''" + actual + "''',\n    " + "'''" + replacement + "''',\n)\n"
+          path.write_text(text[:start] + new_block + text[end:], encoding='utf-8')
+          PY
       - name: Apply patch
         run: python scripts/apply_v290_regional_egress.py
       - name: Compile Python
