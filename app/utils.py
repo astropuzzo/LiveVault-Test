@@ -19,6 +19,7 @@ class IntegrityResult:
     duration: float | None
     error: str = ""
     streams: list[dict] | None = None
+    warning: str = ""
 
     @property
     def has_video(self) -> bool:
@@ -201,9 +202,9 @@ def verify_media(path: Path, mode: str = "packet", *, require_audio: bool = True
         )
         if p.returncode != 0:
             return IntegrityResult(False, quick.duration, (p.stderr or "Packet scan failed")[-1600:], quick.streams)
-        gap_error = _video_gap_error(path, quick.streams or [])
-        if gap_error:
-            return IntegrityResult(False, quick.duration, gap_error, quick.streams)
+        gap_warning = _video_gap_error(path, quick.streams or [])
+        if gap_warning:
+            quick.warning = gap_warning
         return quick
     except Exception as exc:
         return IntegrityResult(False, quick.duration, str(exc)[-1200:], quick.streams)

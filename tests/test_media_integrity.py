@@ -114,3 +114,22 @@ def test_fragmented_mp4_is_finalized_for_streaming(tmp_path: Path):
     assert result.ok
     assert result.duration and result.duration > 0
     assert result.has_video and result.has_audio
+
+
+def test_video_timestamp_gap_is_warning_not_integrity_failure(tmp_path: Path, monkeypatch):
+    media = tmp_path / "gap.mp4"
+    media.write_bytes(b"placeholder")
+    quick = __import__("app.utils", fromlist=["IntegrityResult"]).IntegrityResult(
+        True, 60.0, "", [{"codec_type": "video", "avg_frame_rate": "30/1"}, {"codec_type": "audio"}]
+    )
+
+    monkeypatch.setattr("app.utils.probe_media", lambda *_args, **_kwargs: quick)
+    monkeypatch.setattr(
+        "app.utils.subprocess.run",
+        lambda *_args, **_kwargs: SimpleNamespace(returncode=0, stdout="", stderr=""),
+    )
+    monkeypatch.setattr("app.utils._video_gap_error", lambda *_args, **_kwargs: "Gap video rilevato: 0.94s senza frame continui")
+
+    result = verify_media(media, "packet")
+    assert result.ok
+    assert result.warning == "Gap video rilevato: 0.94s senza frame continui"

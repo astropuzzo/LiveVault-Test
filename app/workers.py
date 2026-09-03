@@ -34,7 +34,7 @@ try:
 except ImportError:  # pragma: no cover - production containers are Linux
     _fcntl = None
 
-RETRYABLE_MEDIA_ERRORS = ("scadut", "timeout", "timed out", "tempor")
+RETRYABLE_MEDIA_ERRORS = ("scadut", "timeout", "timed out", "tempor", "gap video")
 CLOUD_TIME_ZONE = ZoneInfo("Europe/Berlin")
 SESSION_STITCH_GAP_SECONDS = 20 * 60
 
@@ -53,6 +53,18 @@ def stitch_gap_open(last_at: datetime, now: datetime, gap_seconds: int = SESSION
         now = now.replace(tzinfo=timezone.utc)
     delta = (now.astimezone(timezone.utc) - last_at.astimezone(timezone.utc)).total_seconds()
     return 0 <= delta <= max(0, int(gap_seconds))
+
+
+def fragment_usable_for_stitch(fragment: RecordingFragment) -> bool:
+    path = Path(fragment.local_path)
+    if not path.is_file():
+        return False
+    if fragment.integrity_status == "passed":
+        return True
+    # Rescue fragments indexed by pre-hotfix builds where the only failure was
+    # a timestamp discontinuity. The final combined media is verified again.
+    error = str(fragment.integrity_error or "").lower()
+    return fragment.integrity_status == "failed" and error.startswith("gap video rilevato:")
 
 
 class WorkerManager:
@@ -577,7 +589,7 @@ class WorkerManager:
 
     async def _stitch_fragment_group(self, fragments: list[RecordingFragment]) -> None:
         fragments = sorted(fragments, key=lambda item: (item.started_at, item.id))
-        good = [item for item in fragments if item.integrity_status == "passed" and Path(item.local_path).is_file()]
+        good = [item for item in fragments if fragment_usable_for_stitch(item)]
         if not good:
             raise RuntimeError("Nessun frammento integro nella sessione")
         first = good[0]
