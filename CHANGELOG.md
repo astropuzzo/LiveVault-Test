@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.8.6 — Daily cloud
+
+- Cartelle Gofile giornaliere per creator: `NOME CREATOR - YYYY-MM-DD`.
+- Giornata calcolata in `Europe/Berlin` per allinearsi agli orari Frankfurt della UI.
+- PixelDrain crea una lista giornaliera unica quando la giornata si chiude.
+- Profilo creator organizzato per giornate con video e link cloud dedicati.
+- Click sulla miniatura apre il singolo video remoto quando disponibile.
+
 ## 2.8.5 — 2026-09-03
 - Registratore: normalizzazione PTS/DTS su ogni input live e correzione delle discontinuità oltre 1 secondo.
 - Video ancora in stream-copy; audio rigenerato in AAC 48 kHz con clock asincrono per evitare drift A/V.

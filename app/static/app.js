@@ -601,9 +601,23 @@ function renderProfile() {
   const timeline = (profileData.timeline || []).map(event =>
     `<li><time>${esc(dateText(event.at))}</time><span>${esc(event.title)}</span></li>`
   ).join('') || '<li><span>Nessuna attività.</span></li>';
-  const recent = (profileData.recent_recordings || []).slice(0, 8).map(recording => {
-    const remote = safeUrl(recording.remote_url);
-    return `<article class="profile-recording"><div><strong>${esc(recording.filename)}</strong><small>${esc(dateText(recording.started_at))} · ${esc(recording.size_human)} · ${esc(duration(recording.duration_seconds))}</small></div>${recording.local_available ? `<button class="btn quiet" data-profile-action="preview" data-id="${recording.id}" type="button">Vedi</button>` : ''}${remote ? `<a class="btn quiet" href="${esc(remote)}" target="_blank" rel="noopener">Cloud ↗</a>` : ''}</article>`;
+  const recordingDays = (profileData.recording_days || []).map((day, index) => {
+    const cloudLinks = (day.cloud_links || []).map(link => {
+      const url = safeUrl(link.remote_url);
+      return url ? `<a class="btn quiet" href="${esc(url)}" target="_blank" rel="noopener">${esc(link.provider)} ↗</a>` : '';
+    }).join('');
+    const videos = (day.recordings || []).map(recording => {
+      const remote = safeUrl(recording.remote_url);
+      const thumb = recording.thumbnail_available ? safeUrl(recording.thumbnail_url) : '';
+      const visual = thumb ? `<img src="${esc(thumb)}" loading="lazy" alt="${esc(recording.filename)}">` : '<span>LV</span>';
+      const thumbnail = remote
+        ? `<a class="profile-day-thumb ${thumb ? '' : 'empty'}" href="${esc(remote)}" target="_blank" rel="noopener" aria-label="Apri video ${esc(recording.filename)}">${visual}</a>`
+        : recording.local_available
+          ? `<button class="profile-day-thumb ${thumb ? '' : 'empty'}" data-profile-action="preview" data-id="${recording.id}" type="button">${visual}</button>`
+          : `<div class="profile-day-thumb ${thumb ? '' : 'empty'}">${visual}</div>`;
+      return `<article class="profile-day-video">${thumbnail}<div class="profile-day-video-body"><strong>${esc(recording.filename)}</strong><small>${esc(dateText(recording.started_at))} · ${esc(recording.size_human)} · ${esc(duration(recording.duration_seconds))}</small><div>${remote ? `<a class="btn quiet" href="${esc(remote)}" target="_blank" rel="noopener">Apri video ↗</a>` : '<span class="muted">Non caricato</span>'}</div></div></article>`;
+    }).join('');
+    return `<details class="profile-day" ${index === 0 ? 'open' : ''}><summary><div><strong>${esc(day.date)}</strong><small>${day.file_count || 0} file · ${esc(humanBytes(day.total_bytes || 0))} · ${esc(duration(day.total_duration_seconds || 0))}</small></div><div class="profile-day-links">${cloudLinks}</div></summary><div class="profile-day-videos">${videos}</div></details>`;
   }).join('') || '<div class="empty compact">Nessuna registrazione.</div>';
   $('#profileContent').innerHTML = `<div class="profile-overview">
       <div class="profile-cover ${cover ? '' : 'empty'}">${cover ? `<img src="${esc(cover)}" alt="Copertina di ${esc(profile.display_name)}">` : `<span>${esc(profile.display_name.slice(0, 2).toUpperCase())}</span>`}</div>
@@ -614,7 +628,7 @@ function renderProfile() {
     <section class="profile-section"><div class="profile-section-head"><h3>Categorie</h3><button class="btn quiet" data-profile-action="manage-taxonomy" type="button">Gestisci</button></div><div class="choice-grid">${categoryChecks}</div></section>
     <section class="profile-section"><div class="profile-section-head"><h3>Raccolte libreria</h3></div><div class="choice-grid">${collectionChecks}</div></section>
     <section class="profile-section"><div class="profile-section-head"><h3>Account e provider</h3><button class="btn soft" data-profile-action="add-source" data-id="${profile.profile_id}" type="button">Collega nuova sorgente</button></div><div class="linked-list">${linked}</div></section>
-    <section class="profile-section"><div class="profile-section-head"><h3>Registrazioni recenti</h3><button class="btn quiet" data-profile-action="archive" data-id="${profile.id}" type="button">Apri archivio</button></div><div class="profile-recordings">${recent}</div></section>
+    <section class="profile-section"><div class="profile-section-head"><h3>Giornate</h3><button class="btn quiet" data-profile-action="archive" data-id="${profile.id}" type="button">Archivio${Number(profileData.recording_day_count || 0) > Number((profileData.recording_days || []).length) ? ' · altre' : ''}</button></div><div class="profile-days">${recordingDays}</div></section>
     <section class="profile-section"><div class="profile-section-head"><h3>Timeline</h3></div><ol class="timeline">${timeline}</ol></section>
     <div class="profile-save"><button class="btn danger" data-profile-action="delete-profile" data-id="${profile.profile_id}" type="button">Elimina creator definitivamente</button><span id="profileSaveError" class="error-text"></span><button class="btn primary" data-profile-action="save" data-id="${profile.id}" type="button">Salva profilo</button></div>`;
 }
@@ -686,8 +700,11 @@ function renderRecordings() {
     const error = recording.integrity_error || recording.last_error || '';
     const recordingSource = sources.find(source => source.id === recording.source_id);
     const creatorName = recordingSource?.display_name || recording.source_name;
+    const thumbControl = remote
+      ? `<a class="thumb ${thumbnail ? '' : 'empty'}" href="${esc(remote)}" target="_blank" rel="noopener" aria-label="Apri video ${esc(recording.filename)}">${thumbnail || '<span>LV</span>'}<span class="play-badge">↗ Video</span></a>`
+      : `<button class="thumb ${thumbnail ? '' : 'empty'}" data-rec-action="preview" data-id="${recording.id}" type="button" aria-label="Anteprima ${esc(recording.filename)}">${thumbnail || '<span>LV</span>'}${recording.local_available ? '<span class="play-badge">▶ Anteprima</span>' : ''}</button>`;
     return `<article class="rec-card">
-      <button class="thumb ${thumbnail ? '' : 'empty'}" data-rec-action="preview" data-id="${recording.id}" type="button" aria-label="Anteprima ${esc(recording.filename)}">${thumbnail || '<span>LV</span>'}${recording.local_available ? '<span class="play-badge">▶ Anteprima</span>' : ''}</button>
+      ${thumbControl}
       <div class="rec-body">
         <div class="rec-title">${creatorLinkMarkup(recordingSource?.id || 0, creatorName)}</div><div class="rec-file">${esc(recording.filename)}</div><div class="rec-date">${esc(dateText(recording.started_at))} · ${esc(recording.session_id)}</div>
         <div class="rec-meta"><span class="chip">${esc(recording.size_human)}</span><span class="chip">${esc(duration(recording.duration_seconds))}</span><span class="chip">${esc((recording.container_format || '').toUpperCase())}</span>${recordingStreamMarkup(recording)}<span class="integrity ${esc(recording.integrity_status)}">${recording.integrity_status === 'passed' ? '✓ Integro' : recording.integrity_status === 'failed' || recording.integrity_status === 'integrity_failed' ? '✕ Fallita' : `… ${esc(recording.integrity_status)}`}</span><span class="upload-status ${esc(recording.upload_status)}">${esc(uploadLabel(recording.upload_status))}${recording.upload_provider ? ` · ${esc(recording.upload_provider)}` : ''}</span></div>

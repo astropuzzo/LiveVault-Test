@@ -323,6 +323,30 @@ def upload_pixeldrain(path: Path, progress: Callable[[int, int], None] | None = 
     return UploadResult("pixeldrain", remote_id, f"https://pixeldrain.com/u/{remote_id}", True, int(remote_size))
 
 
+def create_pixeldrain_list(title: str, file_ids: list[str]) -> tuple[str, str]:
+    """Create one stable album for a completed recording day."""
+    cfg = runtime()
+    if not cfg.pixeldrain_api_key:
+        raise UploadError("Pixeldrain API key non configurata")
+    ids = list(dict.fromkeys(str(item).strip() for item in file_ids if str(item).strip()))
+    if not ids:
+        raise UploadError("Pixeldrain: impossibile creare una lista vuota")
+    response = requests.post(
+        "https://pixeldrain.com/api/list",
+        auth=("", cfg.pixeldrain_api_key),
+        headers={"Content-Type": "application/json"},
+        json={"title": title[:300], "anonymous": False, "files": [{"id": item} for item in ids[:10000]]},
+        timeout=60,
+    )
+    payload = _json(response, "Pixeldrain")
+    if not payload.get("success", True):
+        raise UploadError(payload.get("message") or "Pixeldrain: creazione lista fallita")
+    remote_id = str(payload.get("id") or "")
+    if not remote_id:
+        raise UploadError("Pixeldrain non ha restituito un list id")
+    return remote_id, f"https://pixeldrain.com/l/{remote_id}"
+
+
 def provider_available(provider: str) -> bool:
     cfg = runtime()
     provider = provider.lower().strip()

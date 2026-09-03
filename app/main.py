@@ -7,6 +7,7 @@ from collections import defaultdict, deque
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo
 from typing import Literal
 
 from fastapi import FastAPI, HTTPException, Request, Response
@@ -20,6 +21,7 @@ from .auth import COOKIE_NAME, MAX_AGE, create_session_token, password_ok, requi
 from .config import settings
 from .db import (
     Category,
+    CloudDay,
     Collection,
     CollectionProfile,
     LiveSession,
@@ -50,7 +52,7 @@ BASE = Path(__file__).parent
 LOGIN_FAILURES: dict[str, deque[float]] = defaultdict(deque)
 LOGIN_WINDOW = 10 * 60
 LOGIN_MAX_FAILURES = 6
-VERSION = "2.8.5"
+VERSION = "2.8.6"
 
 
 class LoginBody(BaseModel):
@@ -1171,6 +1173,35 @@ def profile_statistics(profile_id: int, request: Request, days: int = 30):
         return _activity_statistics(db, days, profile_id=profile_id)
 
 
+def _profile_recording_days(recordings: list[Recording], cloud_days: list[CloudDay], limit_days: int = 30) -> tuple[list[dict], int]:
+    groups: dict[str, list[Recording]] = defaultdict(list)
+    for recording in recordings:
+        groups[recording.cloud_day_key or _recording_day_key(recording.started_at)].append(recording)
+    day_keys = sorted((key for key in groups if key), reverse=True)
+    cloud_map: dict[str, list[dict]] = defaultdict(list)
+    for day in cloud_days:
+        if day.remote_url:
+            cloud_map[day.day_key].append({
+                "provider": day.provider,
+                "title": day.title,
+                "remote_id": day.remote_id,
+                "remote_url": day.remote_url,
+                "file_count": int(day.file_count or 0),
+            })
+    payload = []
+    for day_key in day_keys[:max(1, limit_days)]:
+        rows = groups[day_key]
+        payload.append({
+            "date": day_key,
+            "file_count": len(rows),
+            "total_bytes": sum(int(row.size_bytes or 0) for row in rows),
+            "total_duration_seconds": sum(float(row.duration_seconds or 0) for row in rows),
+            "cloud_links": cloud_map.get(day_key, []),
+            "recordings": [_recording_json(row) for row in rows],
+        })
+    return payload, len(day_keys)
+
+
 @app.get("/api/sources/{source_id}/profile")
 def source_profile(source_id: int, request: Request):
     require_auth(request)
@@ -1195,13 +1226,18 @@ def source_profile(source_id: int, request: Request):
             func.min(Recording.finalized_at),
             func.max(Recording.finalized_at),
         ).where(Recording.source_id.in_(linked_source_ids))).one()
-        recent = list(db.scalars(
+        profile_recordings = list(db.scalars(
             select(Recording)
             .where(Recording.source_id.in_(linked_source_ids))
             .order_by(Recording.finalized_at.desc(), Recording.id.desc())
-            .limit(20)
+            .limit(2000)
         ).all())
+        recent = profile_recordings[:20]
         recent_payload = [_recording_json(recording) for recording in recent]
+        cloud_days = list(db.scalars(
+            select(CloudDay).where(CloudDay.profile_id == profile.id).order_by(CloudDay.day_key.desc())
+        ).all())
+        recording_days, recording_day_count = _profile_recording_days(profile_recordings, cloud_days, 30)
         source_payload = {
             **profile_payload,
             "id": source.id,
@@ -1265,7 +1301,13 @@ def source_profile(source_id: int, request: Request):
             key=lambda event: str(event["at"]),
             reverse=True,
         )[:30]
-        return {"source": source_payload, "recent_recordings": recent_payload, "timeline": timeline}
+        return {
+            "source": source_payload,
+            "recent_recordings": recent_payload,
+            "recording_days": recording_days,
+            "recording_day_count": recording_day_count,
+            "timeline": timeline,
+        }
 
 
 @app.get("/api/sources")
@@ -1755,6 +1797,17 @@ async def check_source_now(source_id: int, request: Request):
     return {"ok": True}
 
 
+DISPLAY_TIME_ZONE = ZoneInfo("Europe/Berlin")
+
+
+def _recording_day_key(value: datetime | None) -> str:
+    if value is None:
+        return ""
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(DISPLAY_TIME_ZONE).date().isoformat()
+
+
 def _recording_json(r: Recording) -> dict:
     local_available = (not r.local_deleted) and Path(r.local_path).exists()
     thumbnail_url = _safe_thumbnail_url(r.id, r.thumbnail_path)
@@ -1768,6 +1821,8 @@ def _recording_json(r: Recording) -> dict:
         "sha256": r.sha256, "integrity_status": r.integrity_status, "integrity_error": r.integrity_error,
         "integrity_checked_at": _iso_utc(r.integrity_checked_at),
         "upload_status": r.upload_status, "upload_provider": r.upload_provider, "remote_url": r.remote_url,
+        "cloud_day_key": r.cloud_day_key or _recording_day_key(r.started_at),
+        "remote_parent_id": r.remote_parent_id, "remote_parent_url": r.remote_parent_url,
         "collection_url": f"/?source={r.source_id}#archive",
         "upload_attempts": r.upload_attempts, "uploaded_at": _iso_utc(r.uploaded_at),
         "has_video": r.has_video, "has_audio": r.has_audio,
