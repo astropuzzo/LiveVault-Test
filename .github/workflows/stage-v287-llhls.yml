@@ -1,0 +1,52 @@
+name: Stage v2.8.7 LL-HLS
+
+on:
+  push:
+    branches:
+      - fix/v2.8.7-chaturbate-llhls-sync
+
+permissions:
+  contents: write
+
+concurrency:
+  group: stage-v287-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-publish:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install FFmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+      - name: Apply LL-HLS patch
+        run: python scripts/apply_v287_llhls_sync.py
+      - name: Compile Python
+        run: python -m compileall -q app tests
+      - name: Run full tests
+        run: PYTHONPATH=. pytest -q
+      - name: Check JavaScript
+        run: node --check app/static/app.js
+      - name: Check shell scripts
+        run: bash -n scripts/*.sh
+      - name: Publish clean branch
+        run: |
+          rm -f scripts/apply_v287_llhls_sync.py
+          rm -f .github/workflows/stage-v287-llhls.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --quiet && exit 1
+          git commit -m "fix(recorder): synchronize Chaturbate LL-HLS capture"
+          git push origin HEAD:fix/v2.8.7-chaturbate-llhls-sync
