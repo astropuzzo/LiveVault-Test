@@ -31,7 +31,9 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements-dev.txt
       - name: Apply LL-HLS patch
-        run: python scripts/apply_v287_llhls_sync.py
+        run: |
+          python scripts/apply_v287_llhls_sync.py
+          python scripts/fix_v287_version_tests.py
       - name: Compile Python
         run: python -m compileall -q app tests
       - name: Run full tests
@@ -43,6 +45,7 @@ jobs:
       - name: Publish clean branch
         run: |
           rm -f scripts/apply_v287_llhls_sync.py
+          rm -f scripts/fix_v287_version_tests.py
           rm -f .github/workflows/stage-v287-llhls.yml
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
