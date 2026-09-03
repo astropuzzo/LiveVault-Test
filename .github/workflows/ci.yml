@@ -4,6 +4,9 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: write
+
 concurrency:
   group: livevault-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -14,6 +17,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13'
@@ -24,6 +29,9 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y ffmpeg
       - name: Install dependencies
         run: pip install -r requirements-dev.txt
+      - name: Apply v2.8.3 Pulse timing fix
+        if: github.event_name == 'push' && github.ref == 'refs/heads/hotfix/v2.8.3-pulse-timing'
+        run: python scripts/apply_v283_pulse_timing.py
       - name: Compile Python
         run: python -m compileall -q app tests
       - name: Run tests
@@ -32,6 +40,17 @@ jobs:
         run: node --check app/static/app.js
       - name: Check shell scripts
         run: bash -n scripts/*.sh
+      - name: Publish verified v2.8.3 branch
+        if: github.event_name == 'push' && github.ref == 'refs/heads/hotfix/v2.8.3-pulse-timing'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin main
+          git checkout origin/main -- .github/workflows/ci.yml
+          rm -f scripts/apply_v283_pulse_timing.py
+          git add -A
+          git commit -m "fix(ui): show LIVE and REC timing in Frankfurt time"
+          git push origin HEAD:hotfix/v2.8.3-pulse-timing
 
   deploy:
     name: Deploy verified main
