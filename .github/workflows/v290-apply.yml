@@ -29,7 +29,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y ffmpeg
       - name: Install dependencies
         run: pip install -r requirements-dev.txt
-      - name: Repair staging patch anchor
+      - name: Repair staging patch anchors
         run: |
           python - <<'PY'
           from pathlib import Path
@@ -51,7 +51,13 @@ jobs:
           )
           if text.count(old_block) != 1:
               raise SystemExit(f'expected one obsolete app.js block, got {text.count(old_block)}')
-          path.write_text(text.replace(old_block, new_block, 1), encoding='utf-8')
+          text = text.replace(old_block, new_block, 1)
+          old_go = 'FROM golang:1.25-bookworm AS wireproxy-builder'
+          new_go = 'FROM golang:1.26-bookworm AS wireproxy-builder'
+          if text.count(old_go) != 1:
+              raise SystemExit(f'expected one Go builder anchor, got {text.count(old_go)}')
+          text = text.replace(old_go, new_go, 1)
+          path.write_text(text, encoding='utf-8')
           PY
       - name: Apply patch
         run: python scripts/apply_v290_regional_egress.py
