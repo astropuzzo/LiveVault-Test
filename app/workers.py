@@ -17,6 +17,7 @@ from .recorder import (
     mp4_is_streaming_ready,
     start_recorder,
     stop_recorder,
+    stream_transport_fault,
 )
 from .settings_store import runtime
 from .source_providers import probe
@@ -277,10 +278,11 @@ class WorkerManager:
             if path.suffix.lower() != ".mp4" or not path.is_file():
                 continue
             error_text = f"{rec.integrity_error} {rec.last_error}".lower()
-            retryable_probe = rec.upload_status == "integrity_failed" and any(
-                marker in error_text for marker in RETRYABLE_MEDIA_ERRORS
+            repairable_media = rec.upload_status == "integrity_failed" and (
+                any(marker in error_text for marker in RETRYABLE_MEDIA_ERRORS)
+                or "a/v fuori sync" in error_text
             )
-            if mp4_is_streaming_ready(path) and not retryable_probe:
+            if mp4_is_streaming_ready(path) and not repairable_media:
                 continue
             if self._retry_after.get(rec.id, 0) > time.monotonic():
                 continue
@@ -317,6 +319,7 @@ class WorkerManager:
                         current.thumbnail_path = ""
                 if integrity.ok:
                     self._retry_after.pop(rec.id, None)
+                    self.last_errors.pop(f"mp4-repair:{rec.id}", None)
                 elif any(marker in (integrity.error or "").lower() for marker in RETRYABLE_MEDIA_ERRORS):
                     self._retry_after[rec.id] = time.monotonic() + 300
                 self.wake()
@@ -608,6 +611,11 @@ class WorkerManager:
                 if text:
                     tail.append(text)
                     tail = tail[-10:]
+                    if session.transport_guard and not session.restart_requested:
+                        reason = stream_transport_fault(text)
+                        if reason:
+                            session.restart_requested = True
+                            session.restart_reason = reason
         finally:
             if tail and session.process.returncode not in (0, None):
                 self.last_errors[f"ffmpeg:{session.source_id}"] = " | ".join(tail)[-1800:]
@@ -618,6 +626,9 @@ class WorkerManager:
         try:
             while session.process.returncode is None:
                 await asyncio.sleep(1)
+                if session.restart_requested:
+                    await stop_recorder(session)
+                    continue
                 files = sorted(session.directory.glob(f"*{session.extension}"), key=lambda p: p.stat().st_mtime)
                 if files and files[-1].stat().st_size >= session.safe_stop_bytes:
                     session.rollover_requested = True
@@ -646,12 +657,16 @@ class WorkerManager:
             self.watch_tasks.pop(session.source_id, None)
             with contextlib.suppress(OSError):
                 session.preview_path.unlink(missing_ok=True)
+            if session.manifest_path is not None:
+                with contextlib.suppress(OSError):
+                    session.manifest_path.unlink(missing_ok=True)
             total_session_bytes = 0
             with contextlib.suppress(Exception):
                 total_session_bytes = sum(
                     path.stat().st_size for path in session.directory.glob(f"*{session.extension}") if path.is_file()
                 )
             size_rollover = session.rollover_requested or total_session_bytes >= session.safe_stop_bytes
+            controlled_restart = session.restart_requested
             with db_session() as db:
                 source = db.get(Source, session.source_id)
                 if source:
@@ -660,8 +675,11 @@ class WorkerManager:
                         new_status = "archived"
                     elif not source.consent_confirmed:
                         new_status = "paused"
-                    elif not source.enabled or self._stopping or runtime().recording_paused or size_rollover:
-                        # A controlled stop (deploy/global pause/rollover) is not evidence
+                    elif (
+                        not source.enabled or self._stopping or runtime().recording_paused
+                        or size_rollover or controlled_restart
+                    ):
+                        # A controlled stop (deploy/global pause/rollover/HLS restart) is not evidence
                         # that the creator went offline. The next probe closes the session
                         # if the stream actually ended.
                         new_status = "live"
@@ -672,7 +690,7 @@ class WorkerManager:
                     source.last_status = new_status
                     source.last_checked_at = now
                     self._observe_live_state(db, source, new_status == "live", now)
-                    if size_rollover:
+                    if size_rollover or controlled_restart:
                         source.last_error = ""
             self.wake()
 

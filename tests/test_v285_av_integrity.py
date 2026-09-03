@@ -62,3 +62,15 @@ def test_integrity_guard_detects_video_timestamp_hole(monkeypatch, tmp_path):
     streams = [{"codec_type": "video", "avg_frame_rate": "30/1"}]
     error = utils._video_gap_error(tmp_path / "clip.mp4", streams)
     assert "Gap video rilevato" in error
+
+
+def test_normal_provider_does_not_enable_chaturbate_sync_mode():
+    cmd = build_ffmpeg_command(
+        [ResolvedInput("https://example.test/live.m3u8", {}, "media")],
+        Path("out_%03d.mp4"),
+        segment_minutes=10,
+        container_format="mp4",
+    )
+    joined = " ".join(cmd)
+    assert "-copyts -start_at_zero" not in joined
+    assert "-c:a aac" not in joined

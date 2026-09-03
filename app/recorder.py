@@ -35,7 +35,12 @@ class RecorderSession:
     max_file_bytes: int
     safe_stop_bytes: int
     preview_path: Path
+    manifest_path: Path | None = None
+    synchronized_hls: bool = False
+    transport_guard: bool = False
     rollover_requested: bool = False
+    restart_requested: bool = False
+    restart_reason: str = ""
 
 
 def _ffmpeg_headers(headers: dict[str, str]) -> str:
@@ -45,6 +50,94 @@ def _ffmpeg_headers(headers: dict[str, str]) -> str:
         if key.lower() in allowed and "\n" not in value and "\r" not in value:
             lines.append(f"{key}: {value}")
     return "\r\n".join(lines) + ("\r\n" if lines else "")
+
+
+def _llhls_role(item: ResolvedInput) -> str:
+    if item.kind in {"video", "audio", "media"}:
+        return item.kind
+    lowered = item.url.lower()
+    if "_video_" in lowered or "chunklist_video" in lowered:
+        return "video"
+    if "_audio_" in lowered or "chunklist_audio" in lowered:
+        return "audio"
+    return item.kind
+
+
+def is_chaturbate_split_llhls(platform: str, inputs: list[ResolvedInput]) -> bool:
+    """Detect the 2026 Chaturbate LL-HLS topology without consuming playlists.
+
+    The split child playlists can carry short-lived session state.  We must not
+    ffprobe each child and then open it again for recording: the recorder gets
+    the first real read of the selected rendition pair.
+    """
+    if platform != "chaturbate" or any(_llhls_role(item) == "media" for item in inputs):
+        return False
+    video = next((item for item in inputs if _llhls_role(item) == "video"), None)
+    audio = next((item for item in inputs if _llhls_role(item) == "audio"), None)
+    if not video or not audio:
+        return False
+    return all(
+        item.url.lower().startswith(("http://", "https://"))
+        and ".m3u8" in item.url.lower()
+        and "llhls" in item.url.lower()
+        for item in (video, audio)
+    )
+
+
+def _safe_manifest_url(value: str) -> str:
+    value = str(value or "").strip()
+    if not value.lower().startswith(("http://", "https://")):
+        raise RuntimeError("LL-HLS URL non HTTP(S)")
+    if any(char in value for char in ('\r', '\n', '"')):
+        raise RuntimeError("LL-HLS URL non valida per il master locale")
+    return value
+
+
+def build_chaturbate_synced_master(
+    inputs: list[ResolvedInput],
+    manifest_path: Path,
+) -> tuple[list[ResolvedInput], Path]:
+    """Put the selected video/audio renditions under one HLS demuxer clock.
+
+    Chaturbate's split LL-HLS child playlists expose PROGRAM-DATE-TIME.  A
+    single master lets FFmpeg correlate them; opening them as two independent
+    -i inputs loses that relationship and can mux unrelated sequence numbers.
+    """
+    video = next((item for item in inputs if _llhls_role(item) == "video"), None)
+    audio = next((item for item in inputs if _llhls_role(item) == "audio"), None)
+    if not video or not audio:
+        raise RuntimeError("LL-HLS split senza coppia video/audio")
+    video_url = _safe_manifest_url(video.url)
+    audio_url = _safe_manifest_url(audio.url)
+    headers = dict(video.http_headers)
+    for key, value in audio.http_headers.items():
+        headers.setdefault(key, value)
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    manifest_path.write_text(
+        "#EXTM3U\n"
+        "#EXT-X-VERSION:6\n"
+        "#EXT-X-INDEPENDENT-SEGMENTS\n"
+        '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="livevault_audio",NAME="LiveVault Audio",'
+        f'DEFAULT=YES,AUTOSELECT=YES,FORCED=NO,URI="{audio_url}"\n'
+        '#EXT-X-STREAM-INF:BANDWIDTH=20000000,AUDIO="livevault_audio"\n'
+        f"{video_url}\n",
+        encoding="utf-8",
+    )
+    return [ResolvedInput(str(manifest_path.resolve()), headers, "media")], manifest_path
+
+
+def stream_transport_fault(line: str) -> str:
+    """Return a reason only for faults that invalidate the current HLS capture."""
+    lowered = str(line or "").lower()
+    if "skipping " in lowered and " segments ahead" in lowered:
+        return "segmenti video scaduti"
+    if "session has been invalidated" in lowered:
+        return "sessione HLS invalidata"
+    if "invalid nal unit size" in lowered:
+        return "segmento video corrotto"
+    if "missing picture in access unit" in lowered:
+        return "frame video mancante"
+    return ""
 
 
 def max_output_bytes(segment_max_gb: float) -> int:
@@ -67,19 +160,25 @@ def build_ffmpeg_command(
     container_format: str | None = None,
     preview_path: Path | None = None,
     preview_interval_seconds: int = LIVE_PREVIEW_INTERVAL_SECONDS,
+    synchronized_hls: bool = False,
 ) -> list[str]:
     cfg = runtime()
     segment_minutes = int(segment_minutes or cfg.segment_minutes)
     segment_max_gb = float(segment_max_gb or cfg.segment_max_gb)
     container_format = (container_format or cfg.container_format).lower()
     cmd = ["ffmpeg", "-hide_banner", "-loglevel", "warning", "-nostdin", "-y"]
+    if synchronized_hls:
+        cmd += ["-copyts", "-start_at_zero"]
     for item in inputs:
         cmd += [
             "-fflags", "+genpts+discardcorrupt",
             "-dts_delta_threshold", "1",
             "-thread_queue_size", "8192",
+            "-rw_timeout", "15000000",
             "-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "5",
         ]
+        if synchronized_hls:
+            cmd += ["-protocol_whitelist", "file,http,https,tcp,tls,crypto,data"]
         headers = _ffmpeg_headers(item.http_headers)
         if headers:
             cmd += ["-headers", headers]
@@ -99,13 +198,22 @@ def build_ffmpeg_command(
         audio_map = f"{audio_idx}:a:0" if audio_idx is not None else "0:a:0"
     cmd += ["-map", video_map, "-map", audio_map]
 
-    # Keep the live capture on the source timeline. v2.8.5 re-encoded only
-    # audio while stream-copying video, which could create two independent
-    # clocks and turn normal source discontinuities into large A/V drift.
-    # Any genuinely broken timeline is repaired atomically after the segment
-    # closes, with both streams rebuilt together.
+    # Normal providers remain pure stream-copy.  Chaturbate split LL-HLS is
+    # different: the selected A/V renditions are read by one HLS demuxer so
+    # PROGRAM-DATE-TIME remains correlated.  Only audio is encoded to AAC and
+    # allowed tiny async compensation; video remains untouched.
+    if synchronized_hls:
+        cmd += [
+            "-c:v", "copy",
+            "-c:a", "aac",
+            "-b:a", "192k",
+            "-ar", "48000",
+            "-af", "aresample=async=1",
+            "-max_muxing_queue_size", "4096",
+        ]
+    else:
+        cmd += ["-c", "copy"]
     cmd += [
-        "-c", "copy",
         "-copytb", "1",
         "-max_interleave_delta", "1000000",
         "-avoid_negative_ts", "make_zero",
@@ -141,15 +249,22 @@ def build_ffmpeg_command(
 async def start_recorder(source: Source) -> RecorderSession:
     cfg = runtime()
     inputs = await resolve_inputs(source.platform, source.slug, source.quality)
-    audit = await audit_inputs(inputs)
-    if not audit.has_video or not audit.has_audio:
-        raise RuntimeError(f"Audio Guard ha bloccato l'avvio: {audit.error}")
-    inputs = [item for item in inputs if item.kind in {"media", "video", "audio"}]
+    split_llhls = is_chaturbate_split_llhls(source.platform, inputs)
+    if not split_llhls:
+        audit = await audit_inputs(inputs)
+        if not audit.has_video or not audit.has_audio:
+            raise RuntimeError(f"Audio Guard ha bloccato l'avvio: {audit.error}")
+    inputs = [item for item in inputs if _llhls_role(item) in {"media", "video", "audio"}]
     local_now = datetime.now(ZoneInfo(settings.timezone))
     source_name = safe_name(source.name)
     session_id = f"{source_name}_{local_now:%Y-%m-%d_%H-%M-%S}"
     directory = settings.recordings_dir / source_name / session_id
     directory.mkdir(parents=True, exist_ok=True)
+    manifest_path: Path | None = None
+    if split_llhls:
+        inputs, manifest_path = build_chaturbate_synced_master(
+            inputs, directory / ".livevault-synced-master.m3u8"
+        )
     extension = ".mp4" if cfg.container_format == "mp4" else ".mkv"
     output_pattern = directory / f"{session_id}_part%03d{extension}"
     preview_path = live_preview_path(source.id)
@@ -163,6 +278,7 @@ async def start_recorder(source: Source) -> RecorderSession:
         container_format=cfg.container_format,
         preview_path=preview_path,
         preview_interval_seconds=LIVE_PREVIEW_INTERVAL_SECONDS,
+        synchronized_hls=split_llhls,
     )
     process = await asyncio.create_subprocess_exec(
         *cmd,
@@ -171,16 +287,19 @@ async def start_recorder(source: Source) -> RecorderSession:
         start_new_session=True,
     )
     return RecorderSession(
-        source.id,
-        source.name,
-        session_id,
-        directory,
-        process,
-        utcnow(),
-        extension,
-        max_output_bytes(cfg.segment_max_gb),
-        safe_output_limit_bytes(cfg.segment_max_gb),
-        preview_path,
+        source_id=source.id,
+        source_name=source.name,
+        session_id=session_id,
+        directory=directory,
+        process=process,
+        started_at=utcnow(),
+        extension=extension,
+        max_file_bytes=max_output_bytes(cfg.segment_max_gb),
+        safe_stop_bytes=safe_output_limit_bytes(cfg.segment_max_gb),
+        preview_path=preview_path,
+        manifest_path=manifest_path,
+        synchronized_hls=split_llhls,
+        transport_guard=split_llhls,
     )
 
 
@@ -287,6 +406,23 @@ def _is_av_timing_error(message: str) -> bool:
     return "a/v fuori sync" in str(message or "").lower()
 
 
+def _common_av_duration(path: Path) -> float | None:
+    media = probe_media(path, require_audio=True)
+    durations: list[float] = []
+    for stream_type in ("video", "audio"):
+        stream = next(
+            (row for row in (media.streams or []) if row.get("codec_type") == stream_type),
+            None,
+        )
+        try:
+            value = float(stream.get("duration")) if stream else 0.0
+        except (TypeError, ValueError):
+            value = 0.0
+        if value > 0:
+            durations.append(value)
+    return min(durations) if len(durations) == 2 else None
+
+
 async def _rebuild_av_timeline(source: Path, output: Path) -> None:
     """Rebuild both streams on one zero-based timeline and trim the bad tail.
 
@@ -295,17 +431,30 @@ async def _rebuild_av_timeline(source: Path, output: Path) -> None:
     already inconsistent. Re-encoding both streams avoids repeating the
     v2.8.5 mistake of changing only the audio clock.
     """
-    proc = await asyncio.create_subprocess_exec(
+    common_duration = await asyncio.to_thread(_common_av_duration, source)
+    video_filter = "setpts=PTS-STARTPTS"
+    audio_filter = "asetpts=PTS-STARTPTS,aresample=async=1:first_pts=0"
+    if common_duration is not None and common_duration > 0.25:
+        limit = f"{common_duration:.6f}"
+        video_filter = f"trim=start=0:duration={limit},setpts=PTS-STARTPTS"
+        audio_filter = f"atrim=start=0:duration={limit},asetpts=PTS-STARTPTS,aresample=async=1:first_pts=0"
+    command = [
         "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
         "-fflags", "+genpts+discardcorrupt", "-i", str(source),
         "-map", "0:v:0", "-map", "0:a:0", "-dn", "-ignore_unknown",
-        "-vf", "setpts=PTS-STARTPTS",
-        "-af", "aresample=async=1:first_pts=0,asetpts=PTS-STARTPTS",
+        "-vf", video_filter,
+        "-af", audio_filter,
         "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
         "-pix_fmt", "yuv420p", "-fps_mode", "vfr",
         "-c:a", "aac", "-b:a", "192k", "-ar", "48000",
         "-shortest", "-max_muxing_queue_size", "4096",
-        "-movflags", "+faststart", str(output),
+        "-movflags", "+faststart",
+    ]
+    if common_duration is not None and common_duration > 0.25:
+        command += ["-t", f"{common_duration:.6f}"]
+    command += [str(output)]
+    proc = await asyncio.create_subprocess_exec(
+        *command,
         stdout=asyncio.subprocess.DEVNULL,
         stderr=asyncio.subprocess.PIPE,
     )
@@ -363,9 +512,13 @@ async def _finalize_with_av_fallback(source: Path, output: Path, source_size: in
 
 
 async def finalize_mp4_for_streaming(path: Path, *, require_space: bool = True) -> bool:
-    """Atomically turn a crash-resistant fragmented MP4 into a seekable final MP4."""
-    if path.suffix.lower() != ".mp4" or mp4_is_streaming_ready(path):
+    """Atomically normalize MP4, including already-seekable files with A/V drift."""
+    if path.suffix.lower() != ".mp4":
         return False
+    if mp4_is_streaming_ready(path):
+        existing = await asyncio.to_thread(probe_media, path, require_audio=True)
+        if existing.ok or not _is_av_timing_error(existing.error):
+            return False
     original = path.stat()
     free = shutil.disk_usage(path.parent).free
     if require_space and free < original.st_size + 256 * 1024 * 1024:

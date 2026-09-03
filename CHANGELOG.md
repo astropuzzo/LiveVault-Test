@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.8.7 — Chaturbate LL-HLS sync
+
+- Chaturbate split LL-HLS: video e audio passano a FFmpeg tramite un unico master sincronizzato.
+- Nessun pre-probe dei child playlist LL-HLS prima della registrazione.
+- Restart immediato se la sessione HLS perde segmenti o produce frame corrotti.
+- Recupero MP4 A/V: trim deterministico alla durata comune e pulizia degli errori di repair risolti.
+
 ## 2.8.6 — Daily cloud
 
 - Cartelle Gofile giornaliere per creator: `NOME CREATOR - YYYY-MM-DD`.
