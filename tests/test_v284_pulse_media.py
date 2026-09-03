@@ -27,6 +27,6 @@ def test_pulse_exposes_exact_recording_media():
 
 
 def test_release_tracks_current_version():
-    assert (ROOT / "VERSION").read_text(encoding="utf-8").strip() == "2.8.8"
-    assert 'VERSION = "2.8.8"' in (ROOT / "app/main.py").read_text(encoding="utf-8")
-    assert "livevault-shell-v2.8.8" in (ROOT / "app/static/sw.js").read_text(encoding="utf-8")
+    assert (ROOT / "VERSION").read_text(encoding="utf-8").strip() == "2.8.9"
+    assert 'VERSION = "2.8.9"' in (ROOT / "app/main.py").read_text(encoding="utf-8")
+    assert "livevault-shell-v2.8.9" in (ROOT / "app/static/sw.js").read_text(encoding="utf-8")

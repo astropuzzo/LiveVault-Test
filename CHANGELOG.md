@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.8.9 — FFmpeg HLS compatibility
+
+- Il master HLS sincronizzato locale non riceve più opzioni `reconnect*` HTTP incompatibili con alcune build FFmpeg.
+- Gli input HTTP(S) diretti mantengono reconnect e retry di rete.
+- Il percorso LL-HLS sincronizzato continua a usare il transport guard di LiveVault per riavviare la cattura in caso di sessione/segmenti invalidati.
+
 ## 2.8.8 — Session stitching
 
 - Una registrazione logica resta aperta per 20 minuti dopo una temporanea uscita dalla live pubblica.
