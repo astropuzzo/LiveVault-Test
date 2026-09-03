@@ -111,9 +111,6 @@ def build_chaturbate_synced_master(
         raise RuntimeError("LL-HLS split senza coppia video/audio")
     video_url = _safe_manifest_url(video.url)
     audio_url = _safe_manifest_url(audio.url)
-    headers = dict(video.http_headers)
-    for key, value in audio.http_headers.items():
-        headers.setdefault(key, value)
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
     manifest_path.write_text(
         "#EXTM3U\n"
@@ -125,7 +122,10 @@ def build_chaturbate_synced_master(
         f"{video_url}\n",
         encoding="utf-8",
     )
-    return [ResolvedInput(str(manifest_path.resolve()), headers, "media")], manifest_path
+    # The child URLs are signed. Keep transport headers off the local
+    # synthetic master itself: FFmpeg associates input AVOptions with the
+    # top-level file: protocol and some distro builds reject HTTP-only options.
+    return [ResolvedInput(str(manifest_path.resolve()), {}, "media")], manifest_path
 
 
 def stream_transport_fault(line: str) -> str:
@@ -178,19 +178,19 @@ def build_ffmpeg_command(
             "-thread_queue_size", "8192",
             "-rw_timeout", "15000000",
         ]
-        # reconnect* are HTTP protocol options. Some distro FFmpeg builds
-        # reject them when the top-level input is our local synchronized HLS
-        # master ("Option reconnect not found") before opening its remote
-        # child playlists. Direct HTTP(S) inputs still keep the reconnect
-        # policy; synchronized local HLS relies on FFmpeg's HLS reload logic
-        # plus LiveVault's transport guard/restart path.
-        if item.url.lower().startswith(("http://", "https://")):
+        # HTTP AVOptions must only be attached to a top-level HTTP(S)
+        # input. Our synchronized Chaturbate master is a local file containing
+        # signed remote child URLs; binding -headers/-reconnect to that file can
+        # make FFmpeg abort before recording starts (Option ... not found).
+        is_http_input = item.url.lower().startswith(("http://", "https://"))
+        if is_http_input:
             cmd += ["-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "5"]
         if synchronized_hls:
             cmd += ["-protocol_whitelist", "file,http,https,tcp,tls,crypto,data"]
-        headers = _ffmpeg_headers(item.http_headers)
-        if headers:
-            cmd += ["-headers", headers]
+        if is_http_input:
+            headers = _ffmpeg_headers(item.http_headers)
+            if headers:
+                cmd += ["-headers", headers]
         cmd += ["-i", item.url]
 
     video_idx = next((i for i, item in enumerate(inputs) if item.kind == "video"), None)
