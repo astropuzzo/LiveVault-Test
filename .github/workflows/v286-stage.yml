@@ -30,7 +30,9 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements-dev.txt
       - name: Apply v2.8.6
-        run: python scripts/apply_v286_daily_cloud.py
+        run: |
+          python scripts/apply_v286_daily_cloud.py
+          python scripts/refine_v286_daily_cloud.py
       - name: Compile Python
         run: python -m compileall -q app tests
       - name: Run tests
@@ -41,7 +43,7 @@ jobs:
         run: bash -n scripts/*.sh
       - name: Publish clean branch
         run: |
-          rm -f scripts/apply_v286_daily_cloud.py .github/workflows/v286-stage.yml
+          rm -f scripts/apply_v286_daily_cloud.py scripts/refine_v286_daily_cloud.py .github/workflows/v286-stage.yml
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
