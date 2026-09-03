@@ -581,42 +581,42 @@ class WorkerManager:
             )
             if ready_seconds < SESSION_STITCH_READY_SECONDS and stitch_gap_open(latest, now):
                 continue
-            lock = self._source_check_locks.setdefault(source_id, asyncio.Lock())
-            async with lock:
-                with db_session() as db:
-                    current = list(db.scalars(
-                        select(RecordingFragment)
-                        .where(
-                            RecordingFragment.source_id == source_id,
-                            RecordingFragment.session_id == session_id,
-                        )
-                        .order_by(RecordingFragment.started_at, RecordingFragment.id)
-                    ).all())
-                    for row in current:
-                        db.expunge(row)
-                if not current:
-                    continue
-                latest = max(item.finalized_at for item in current)
-                ready_seconds = sum(
-                    float(item.duration_seconds or 0)
-                    for item in current
-                    if fragment_usable_for_stitch(item)
-                )
-                if ready_seconds < SESSION_STITCH_READY_SECONDS and stitch_gap_open(latest, utcnow()):
-                    continue
-                try:
-                    active = self.active.get(source_id)
-                    await self._stitch_fragment_group(
-                        current,
-                        allow_transcode=not (active and active.session_id == session_id),
+            # Stitching may scan gigabytes. It must not own the source probe lock:
+            # capture should resume immediately while an older immutable batch closes.
+            with db_session() as db:
+                current = list(db.scalars(
+                    select(RecordingFragment)
+                    .where(
+                        RecordingFragment.source_id == source_id,
+                        RecordingFragment.session_id == session_id,
                     )
-                    self._stitch_retry_after.pop(retry_key, None)
-                    self.last_errors.pop(f"stitch:{source_id}:{session_id}", None)
-                except asyncio.CancelledError:
-                    raise
-                except Exception as exc:
-                    self._stitch_retry_after[retry_key] = time.monotonic() + 300
-                    self.last_errors[f"stitch:{source_id}:{session_id}"] = str(exc)[-1400:]
+                    .order_by(RecordingFragment.started_at, RecordingFragment.id)
+                ).all())
+                for row in current:
+                    db.expunge(row)
+            if not current:
+                continue
+            latest = max(item.finalized_at for item in current)
+            ready_seconds = sum(
+                float(item.duration_seconds or 0)
+                for item in current
+                if fragment_usable_for_stitch(item)
+            )
+            if ready_seconds < SESSION_STITCH_READY_SECONDS and stitch_gap_open(latest, utcnow()):
+                continue
+            try:
+                active = self.active.get(source_id)
+                await self._stitch_fragment_group(
+                    current,
+                    allow_transcode=not (active and active.session_id == session_id),
+                )
+                self._stitch_retry_after.pop(retry_key, None)
+                self.last_errors.pop(f"stitch:{source_id}:{session_id}", None)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                self._stitch_retry_after[retry_key] = time.monotonic() + 300
+                self.last_errors[f"stitch:{source_id}:{session_id}"] = str(exc)[-1400:]
 
     async def _stitch_fragment_group(
         self,

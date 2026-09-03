@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.8.11 — Cattura concorrente
+
+- Il consolidamento dei batch non blocca più il probe e la ripartenza della registrazione della stessa creator.
+
 ## 2.8.10 — Live recovery e stabilità media
 
 - Le sessioni con privato/tip-jar consolidano i frammenti in batch stabili, senza decine di micro-upload né attese indefinite mentre la creator resta online.
