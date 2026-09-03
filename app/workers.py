@@ -14,9 +14,12 @@ from sqlalchemy import func, select
 from .config import settings
 from .db import CloudDay, LiveSession, Profile, Recording, RecordingFragment, Source, db_session
 from .recorder import (
+    LIVE_PREVIEW_INTERVAL_SECONDS,
+    LIVE_PREVIEW_MAX_AGE_SECONDS,
     RecorderSession,
     STITCH_MARKER_NAME,
     finalize_mp4_for_streaming,
+    live_preview_path,
     mp4_is_streaming_ready,
     start_recorder,
     stitch_recording_parts,
@@ -27,7 +30,7 @@ from .settings_store import runtime
 from .source_providers import probe
 from .storage import disk_state
 from .uploaders import UploadCancelled, create_gofile_folder, create_pixeldrain_list, provider_available, upload
-from .utils import generate_thumbnail, human_bytes, safe_name, sha256_file, utcnow, verify_media
+from .utils import generate_live_preview, generate_thumbnail, human_bytes, safe_name, sha256_file, utcnow, verify_media
 
 try:
     import fcntl as _fcntl
@@ -84,6 +87,7 @@ class WorkerManager:
     def __init__(self) -> None:
         self.active: dict[int, RecorderSession] = {}
         self.watch_tasks: dict[int, asyncio.Task] = {}
+        self.finalizing_tasks: set[asyncio.Task] = set()
         self.tasks: list[asyncio.Task] = []
         self._leader_task: asyncio.Task | None = None
         self._leader_file = None
@@ -95,6 +99,9 @@ class WorkerManager:
         self._retry_after: dict[int, float] = {}
         self._stitch_retry_after: dict[tuple[int, str], float] = {}
         self._source_check_locks: dict[int, asyncio.Lock] = {}
+        self._session_continuations: dict[int, tuple[str, float]] = {}
+        self._preview_locks: dict[int, asyncio.Lock] = {}
+        self._preview_semaphore = asyncio.Semaphore(1)
         self._mp4_finalize_lock = asyncio.Lock()
         self.backfill_task: asyncio.Task | None = None
 
@@ -167,6 +174,8 @@ class WorkerManager:
             task.cancel()
         for task in list(self.watch_tasks.values()):
             task.cancel()
+        for task in list(self.finalizing_tasks):
+            task.cancel()
         if self.backfill_task and not self.backfill_task.done():
             self.backfill_task.cancel()
         with contextlib.suppress(Exception):
@@ -174,6 +183,9 @@ class WorkerManager:
         if self.backfill_task:
             with contextlib.suppress(Exception):
                 await asyncio.gather(self.backfill_task, return_exceptions=True)
+        if self.finalizing_tasks:
+            with contextlib.suppress(Exception):
+                await asyncio.gather(*self.finalizing_tasks, return_exceptions=True)
         if self._leader_task:
             with contextlib.suppress(Exception):
                 await asyncio.gather(self._leader_task, return_exceptions=True)
@@ -294,6 +306,39 @@ class WorkerManager:
             "upload_paused": cfg.upload_paused,
             "buffer_bytes": self.local_buffer_bytes(),
         }
+
+    async def live_preview_for(self, source_id: int) -> Path | None:
+        """Refresh a live JPEG only when an authenticated browser requests it."""
+        session = self.active.get(int(source_id))
+        if session is None:
+            return None
+        output = live_preview_path(source_id)
+
+        def fresh(max_age: int) -> bool:
+            try:
+                stat = output.stat()
+                return stat.st_size > 0 and time.time() - stat.st_mtime <= max_age
+            except OSError:
+                return False
+
+        if fresh(LIVE_PREVIEW_INTERVAL_SECONDS):
+            return output
+        lock = self._preview_locks.setdefault(int(source_id), asyncio.Lock())
+        async with lock:
+            if fresh(LIVE_PREVIEW_INTERVAL_SECONDS):
+                return output
+            current = self.active.get(int(source_id))
+            if current is None or current is not session:
+                return None
+            try:
+                candidates = list(reversed(capture_output_files(current)))
+            except OSError:
+                candidates = []
+            async with self._preview_semaphore:
+                for candidate in candidates[:2]:
+                    if await asyncio.to_thread(generate_live_preview, candidate, output):
+                        return output
+            return output if fresh(LIVE_PREVIEW_MAX_AGE_SECONDS) else None
 
     async def _maintenance_backfill(self) -> None:
         while not self._stopping:
@@ -494,12 +539,11 @@ class WorkerManager:
         if not await self._wait_until_stable(path):
             self.last_errors[f"fragment:{source_id}"] = f"Frammento ancora in scrittura: {path.name}"
             return False
-        normalization_error = ""
-        try:
-            await self._prepare_mp4(path)
-        except Exception as exc:
-            normalization_error = f"Finalizzazione frammento fallita: {exc}"[-1500:]
-        integrity = None if normalization_error else await asyncio.to_thread(verify_media, path, cfg.integrity_mode)
+        # Capture parts are private inputs to the stitcher, not browser-facing
+        # files. Rewriting every fragmented MP4 with +faststart doubles disk I/O
+        # and can time out under load. Validate the original part in place; the
+        # single consolidated output is normalized and verified below.
+        integrity = await asyncio.to_thread(verify_media, path, cfg.integrity_mode)
         finalized = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc)
         if integrity and integrity.duration:
             start = finalized - timedelta(seconds=integrity.duration)
@@ -519,24 +563,68 @@ class WorkerManager:
                 filename=path.name,
                 started_at=start,
                 finalized_at=finalized,
-                duration_seconds=integrity.duration if integrity else None,
+                duration_seconds=integrity.duration,
                 size_bytes=path.stat().st_size,
                 container_format=path.suffix.lower().lstrip("."),
-                has_video=integrity.has_video if integrity else None,
-                has_audio=integrity.has_audio if integrity else None,
-                video_codec=integrity.codec("video") if integrity else "",
-                audio_codec=integrity.codec("audio") if integrity else "",
-                integrity_status="passed" if integrity and integrity.ok else "failed",
-                integrity_error=normalization_error or (integrity.error if integrity else "Frammento non valido"),
+                has_video=integrity.has_video,
+                has_audio=integrity.has_audio,
+                video_codec=integrity.codec("video"),
+                audio_codec=integrity.codec("audio"),
+                integrity_status="passed" if integrity.ok else "failed",
+                integrity_error=integrity.error,
             ))
-        if integrity and integrity.ok:
+        if integrity.ok:
             self.last_errors.pop(f"fragment:{source_id}", None)
         else:
-            self.last_errors[f"fragment:{source_id}"] = normalization_error or (integrity.error if integrity else "Frammento non valido")
+            self.last_errors[f"fragment:{source_id}"] = integrity.error or "Frammento non valido"
         return True
+
+    async def _revalidate_retryable_fragments(self, fragments: list[RecordingFragment]) -> None:
+        """Recover parts rejected by older builds after a remux timeout."""
+        mode = runtime().integrity_mode
+        for fragment in fragments:
+            if fragment_usable_for_stitch(fragment):
+                continue
+            error = str(fragment.integrity_error or "").lower()
+            retryable = "finalizzazione frammento fallita" in error or any(
+                marker in error for marker in RETRYABLE_MEDIA_ERRORS
+            )
+            path = Path(fragment.local_path)
+            if not retryable or not path.is_file():
+                continue
+            integrity = await asyncio.to_thread(verify_media, path, mode)
+            if not integrity.ok:
+                continue
+            fragment.duration_seconds = integrity.duration
+            fragment.size_bytes = path.stat().st_size
+            fragment.has_video = integrity.has_video
+            fragment.has_audio = integrity.has_audio
+            fragment.video_codec = integrity.codec("video")
+            fragment.audio_codec = integrity.codec("audio")
+            fragment.integrity_status = "passed"
+            fragment.integrity_error = ""
+            with db_session() as db:
+                current = db.get(RecordingFragment, fragment.id)
+                if current:
+                    current.duration_seconds = fragment.duration_seconds
+                    current.size_bytes = fragment.size_bytes
+                    current.has_video = fragment.has_video
+                    current.has_audio = fragment.has_audio
+                    current.video_codec = fragment.video_codec
+                    current.audio_codec = fragment.audio_codec
+                    current.integrity_status = "passed"
+                    current.integrity_error = ""
+        if all(fragment_usable_for_stitch(item) for item in fragments):
+            self.last_errors.pop(f"fragment:{fragments[0].source_id}", None)
 
     def _logical_session_id_for(self, source: Source, now: datetime) -> str:
         """Reuse the latest logical session only inside the same Frankfurt day and 20-minute gap."""
+        continuation = self._session_continuations.get(source.id)
+        if continuation:
+            session_id, expires_at = continuation
+            if time.monotonic() <= expires_at:
+                return session_id
+            self._session_continuations.pop(source.id, None)
         with db_session() as db:
             latest = db.scalar(
                 select(RecordingFragment)
@@ -573,6 +661,7 @@ class WorkerManager:
             retry_key = (source_id, session_id)
             if self._stitch_retry_after.get(retry_key, 0) > time.monotonic():
                 continue
+            await self._revalidate_retryable_fragments(items)
             latest = max(item.finalized_at for item in items)
             ready_seconds = sum(
                 float(item.duration_seconds or 0)
@@ -833,6 +922,9 @@ class WorkerManager:
                     await stop_recorder(session)
                     return
                 self.active[source.id] = session
+                continuation = self._session_continuations.get(source.id)
+                if continuation and continuation[0] == session.session_id:
+                    self._session_continuations.pop(source.id, None)
                 with db_session() as db:
                     current = db.get(Source, source.id)
                     if current:
@@ -899,6 +991,7 @@ class WorkerManager:
     async def _watch_session(self, session: RecorderSession) -> None:
         processed: set[Path] = set()
         stderr_task = asyncio.create_task(self._drain_stderr(session))
+        slot_released = False
         try:
             while session.process.returncode is None:
                 await asyncio.sleep(1)
@@ -920,6 +1013,31 @@ class WorkerManager:
                             processed.add(path)
             await session.process.wait()
             files = capture_output_files(session)
+            # FFmpeg may satisfy -fs and exit between one-second size samples.
+            # Treat a clean exit very close to the cap as a rollover as well.
+            if session.process.returncode == 0 and any(
+                path.stat().st_size >= int(session.safe_stop_bytes * 0.98)
+                for path in files
+            ):
+                session.rollover_requested = True
+
+            # Media validation can scan gigabytes. Release the recorder slot
+            # first so a live source resumes while its immutable part is checked.
+            if self.active.get(session.source_id) is session:
+                self.active.pop(session.source_id, None)
+                current_task = asyncio.current_task()
+                if self.watch_tasks.get(session.source_id) is current_task:
+                    self.watch_tasks.pop(session.source_id, None)
+                if current_task is not None:
+                    self.finalizing_tasks.add(current_task)
+                    current_task.add_done_callback(self.finalizing_tasks.discard)
+                if not self._stopping:
+                    self._session_continuations[session.source_id] = (
+                        session.session_id,
+                        time.monotonic() + SESSION_STITCH_GAP_SECONDS,
+                    )
+                slot_released = True
+                self.wake()
             for path in files:
                 if path not in processed and path.exists() and path.stat().st_size > 0:
                     if await self._finalize_segment(session, path):
@@ -933,10 +1051,15 @@ class WorkerManager:
                 await stop_recorder(session)
             with contextlib.suppress(Exception):
                 await asyncio.wait_for(stderr_task, timeout=2)
-            self.active.pop(session.source_id, None)
-            self.watch_tasks.pop(session.source_id, None)
-            with contextlib.suppress(OSError):
-                session.preview_path.unlink(missing_ok=True)
+            if self.active.get(session.source_id) is session:
+                self.active.pop(session.source_id, None)
+            current_task = asyncio.current_task()
+            if self.watch_tasks.get(session.source_id) is current_task:
+                self.watch_tasks.pop(session.source_id, None)
+            replacement = self.active.get(session.source_id)
+            if replacement is None or replacement is session:
+                with contextlib.suppress(OSError):
+                    session.preview_path.unlink(missing_ok=True)
             if session.manifest_path is not None:
                 with contextlib.suppress(OSError):
                     session.manifest_path.unlink(missing_ok=True)
@@ -951,7 +1074,10 @@ class WorkerManager:
                 source = db.get(Source, session.source_id)
                 if source:
                     now = utcnow()
-                    if source.archived:
+                    replacement = self.active.get(session.source_id)
+                    if replacement is not None and replacement is not session:
+                        new_status = "recording"
+                    elif source.archived:
                         new_status = "archived"
                     elif not source.consent_confirmed:
                         new_status = "paused"
@@ -969,10 +1095,11 @@ class WorkerManager:
                         source.status_changed_at = now
                     source.last_status = new_status
                     source.last_checked_at = now
-                    self._observe_live_state(db, source, new_status == "live", now)
+                    self._observe_live_state(db, source, new_status in {"live", "recording"}, now)
                     if size_rollover or controlled_restart:
                         source.last_error = ""
-            self.wake()
+            if not slot_released:
+                self.wake()
 
     async def _finalize_segment(self, session: RecorderSession, path: Path) -> bool:
         try:

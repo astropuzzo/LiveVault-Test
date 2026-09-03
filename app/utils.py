@@ -291,6 +291,51 @@ def generate_thumbnail(path: Path, output: Path, duration: float | None = None) 
     return False
 
 
+def generate_live_preview(path: Path, output: Path) -> bool:
+    """Extract one small frame on demand without touching the capture process."""
+    if not path.is_file() or path.stat().st_size <= 0:
+        return False
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(
+        dir=output.parent,
+        prefix=f".{output.stem}-",
+        suffix=output.suffix or ".jpg",
+        delete=False,
+    ) as temporary:
+        candidate = Path(temporary.name)
+
+    video_args = [
+        "-map", "0:v:0", "-frames:v", "1", "-an",
+        "-vf", "scale=640:-2:force_original_aspect_ratio=decrease",
+        "-update", "1", "-q:v", "6", str(candidate),
+    ]
+    try:
+        # Prefer a recent frame. The second attempt also works with unusual
+        # fragmented MP4s whose duration is unavailable while they are growing.
+        for seek_args in (["-sseof", "-6"], ["-ss", "0.5"]):
+            candidate.unlink(missing_ok=True)
+            try:
+                result = subprocess.run(
+                    [
+                        "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+                        *seek_args, "-i", str(path), *video_args,
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=12,
+                    check=False,
+                )
+            except subprocess.TimeoutExpired:
+                continue
+            if result.returncode == 0 and candidate.is_file() and candidate.stat().st_size > 0:
+                candidate.replace(output)
+                return True
+    except OSError:
+        pass
+    candidate.unlink(missing_ok=True)
+    return False
+
+
 def human_bytes(n: int | float) -> str:
     value = float(n)
     for unit in ("B", "KB", "MB", "GB", "TB"):

@@ -52,7 +52,7 @@ BASE = Path(__file__).parent
 LOGIN_FAILURES: dict[str, deque[float]] = defaultdict(deque)
 LOGIN_WINDOW = 10 * 60
 LOGIN_MAX_FAILURES = 6
-VERSION = "2.8.11"
+VERSION = "2.8.12"
 
 
 class LoginBody(BaseModel):
@@ -1378,6 +1378,11 @@ def list_sources(request: Request):
                     preview_updated_at = preview_time
             except OSError:
                 pass
+            # An active recorder always exposes the authenticated lazy endpoint.
+            # The first visible <img> request creates the JPEG; no viewer means
+            # no decode process and no preview work at all.
+            if active:
+                preview_url = f"/api/sources/{source.id}/preview"
             result.append({
                 "id": source.id, "name": source.name, "platform": source.platform,
                 "provider_label": provider_label(source.platform), "slug": source.slug,
@@ -1439,6 +1444,10 @@ def control_room_pulse(request: Request, hours: int = 12):
     hours = max(1, min(int(hours), 48))
     now = utcnow()
     window_start = now - timedelta(hours=hours)
+    active_started = {
+        int(source_id): _pulse_aware(session.started_at)
+        for source_id, session in list(manager.active.items())
+    }
     with db_session() as db:
         source_rows = list(db.scalars(
             select(Source).where(Source.archived.is_(False)).order_by(Source.id)
@@ -1520,8 +1529,21 @@ def control_room_pulse(request: Request, hours: int = 12):
                     if clipped_start < clipped_end:
                         overlapping.append((recording, clipped_start, clipped_end))
 
+                recording_intervals = [(rec_start, rec_end) for _recording, rec_start, rec_end in overlapping]
+                recording_active = False
+                active_intervals: list[tuple[datetime, datetime]] = []
+                for source_id in linked_ids:
+                    active_start = active_started.get(source_id)
+                    if active_start is None:
+                        continue
+                    clipped_start = max(started, active_start)
+                    if clipped_start < ended:
+                        recording_intervals.append((clipped_start, ended))
+                        active_intervals.append((clipped_start, ended))
+                        recording_active = True
+
                 merged_recordings: list[dict] = []
-                for _recording, rec_start, rec_end in sorted(overlapping, key=lambda row: row[1]):
+                for rec_start, rec_end in sorted(recording_intervals, key=lambda row: row[0]):
                     if merged_recordings and rec_start <= merged_recordings[-1]["ended"] + timedelta(seconds=12):
                         merged_recordings[-1]["ended"] = max(merged_recordings[-1]["ended"], rec_end)
                     else:
@@ -1540,6 +1562,16 @@ def control_room_pulse(request: Request, hours: int = 12):
                     }
                     for recording, rec_start, rec_end in overlapping
                 ]
+                recording_segments.extend({
+                    "id": None,
+                    "started_at": _iso_utc(rec_start),
+                    "ended_at": _iso_utc(rec_end),
+                    "filename": "Registrazione in corso",
+                    "upload_provider": "",
+                    "remote_url": "",
+                    "thumbnail_url": "",
+                    "active": True,
+                } for rec_start, rec_end in active_intervals)
                 live_seconds = max(0.0, (ended - started).total_seconds())
                 recorded_seconds = sum(
                     max(0.0, (row["ended"] - row["started"]).total_seconds())
@@ -1569,6 +1601,7 @@ def control_room_pulse(request: Request, hours: int = 12):
                     "recorded_seconds": round(recorded_seconds, 2),
                     "recording_started_at": _iso_utc(merged_recordings[0]["started"]) if merged_recordings else None,
                     "recording_ended_at": _iso_utc(merged_recordings[-1]["ended"]) if merged_recordings else None,
+                    "recording_active": recording_active,
                     "recording_intervals": [
                         {"started_at": _iso_utc(row["started"]), "ended_at": _iso_utc(row["ended"])}
                         for row in merged_recordings
@@ -1593,13 +1626,15 @@ def control_room_pulse(request: Request, hours: int = 12):
 
 
 @app.get("/api/sources/{source_id}/preview")
-def source_live_preview(source_id: int, request: Request):
+async def source_live_preview(source_id: int, request: Request):
     require_auth(request)
     with db_session() as db:
         source = db.get(Source, source_id)
         if not source or source.archived:
             raise HTTPException(404, "Preview non disponibile")
-    path = live_preview_path(source_id)
+    path = await manager.live_preview_for(source_id)
+    if path is None:
+        raise HTTPException(404, "Preview non ancora disponibile")
     try:
         stat = path.stat()
         updated = datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc)

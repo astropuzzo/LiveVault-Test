@@ -299,8 +299,10 @@ async def start_recorder(source: Source, *, session_id: str | None = None) -> Re
         segment_minutes=cfg.segment_minutes,
         segment_max_gb=cfg.segment_max_gb,
         container_format=cfg.container_format,
-        preview_path=preview_path,
-        preview_interval_seconds=LIVE_PREVIEW_INTERVAL_SECONDS,
+        # Live previews are generated lazily by the authenticated preview
+        # endpoint. Keeping the JPEG output attached here would decode video
+        # continuously even when nobody has the dashboard open.
+        preview_path=None,
         synchronized_hls=split_llhls,
     )
     process = await asyncio.create_subprocess_exec(
@@ -462,7 +464,10 @@ async def _copy_remux(source: Path, output: Path) -> None:
         stdout=asyncio.subprocess.DEVNULL,
         stderr=asyncio.subprocess.PIPE,
     )
-    timeout = max(120, min(900, int(source.stat().st_size / (8 * 1024**2))))
+    # Remuxing competes with capture and upload I/O on production storage.
+    # Budget for a conservative 4 MiB/s instead of declaring healthy large
+    # files dead while the disk is busy.
+    timeout = max(180, min(3600, int(source.stat().st_size / (4 * 1024**2))))
     try:
         _, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
     except asyncio.CancelledError:

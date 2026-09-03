@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.8.12 — Control Room e rollover continuo
+
+- Stati LIVE/REC leggibili, colori coerenti e timeline in ora locale, ridisegnata anche per mobile.
+- La timeline include la registrazione ancora attiva: il rollover non appare più come un falso intervallo perso.
+- Dopo il limite file, la nuova cattura riparte prima della verifica del frammento chiuso, senza vuoti causati dalla finalizzazione MP4.
+- I frammenti privati non vengono più rimuxati prima dello stitching; gli errori storici di timeout vengono rivalidati automaticamente.
+- Preview live generate solo su richiesta mentre la dashboard è visibile; Archivio, Pulse e lista completa non lavorano in background senza necessità.
+
 ## 2.8.11 — Cattura concorrente
 
 - Il consolidamento dei batch non blocca più il probe e la ripartenza della registrazione della stessa creator.

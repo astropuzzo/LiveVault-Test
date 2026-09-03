@@ -30,13 +30,17 @@ def test_live_pulse_is_csp_safe_and_shows_live_and_recording_geometry():
     assert 'viewBox="0 0 1000 16"' in pulse
     assert 'const maxProfiles = compact ? 5 : 8' in pulse
 
-    assert "const DISPLAY_TIME_ZONE = 'Europe/Berlin'" in js
-    assert "const DISPLAY_TIME_ZONE_LABEL = 'Frankfurt'" in js
     assert 'timeZone: DISPLAY_TIME_ZONE' in js
     assert 'recording_intervals' in main
     assert 'recording_started_at' in main
     assert 'recording_ended_at' in main
-    assert 'LiveVault Pulse timing + Frankfurt timezone v2.8.3' in css
+    assert 'recording_active' in main
+    assert 'pulseMissingIntervals' in js
+    assert 'cr-pulse-missed-span' in js
+    assert '.cr-pulse-missed-span' in css
+    assert "Intl.DateTimeFormat().resolvedOptions().timeZone" in js
+    assert "const DISPLAY_TIME_ZONE_LABEL = 'ora locale'" in js
+    assert 'truthful pulse colors and mobile control room' in css
     assert '.cr-pulse-rec-span{fill:' in css
 
     assert "style-src 'self'" in main
