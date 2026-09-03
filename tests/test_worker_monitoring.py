@@ -86,3 +86,20 @@ def test_inflight_probe_cannot_start_after_source_is_paused(tmp_path, monkeypatc
         assert live.origin == "probe"
 
     engine.dispose()
+
+
+def test_legacy_gap_only_fragment_remains_stitchable(tmp_path):
+    from types import SimpleNamespace
+    from app.workers import fragment_usable_for_stitch
+
+    path = tmp_path / "part.mp4"
+    path.write_bytes(b"media")
+    fragment = SimpleNamespace(
+        local_path=str(path),
+        integrity_status="failed",
+        integrity_error="Gap video rilevato: 0.94s senza frame continui",
+    )
+    assert fragment_usable_for_stitch(fragment) is True
+
+    fragment.integrity_error = "Packet scan failed"
+    assert fragment_usable_for_stitch(fragment) is False
