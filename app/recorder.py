@@ -99,13 +99,14 @@ def build_ffmpeg_command(
         audio_map = f"{audio_idx}:a:0" if audio_idx is not None else "0:a:0"
     cmd += ["-map", video_map, "-map", audio_map]
 
+    # Keep the live capture on the source timeline. v2.8.5 re-encoded only
+    # audio while stream-copying video, which could create two independent
+    # clocks and turn normal source discontinuities into large A/V drift.
+    # Any genuinely broken timeline is repaired atomically after the segment
+    # closes, with both streams rebuilt together.
     cmd += [
-        "-c:v", "copy",
+        "-c", "copy",
         "-copytb", "1",
-        "-c:a", "aac",
-        "-b:a", "192k",
-        "-ar", "48000",
-        "-af", "aresample=async=1000:first_pts=0:min_hard_comp=0.100",
         "-max_interleave_delta", "1000000",
         "-avoid_negative_ts", "make_zero",
         "-f", "segment",
@@ -282,14 +283,83 @@ async def _copy_remux(source: Path, output: Path) -> None:
         raise RuntimeError(detail or "FFmpeg remux failed")
 
 
-async def _validate_final_mp4(path: Path, source_size: int) -> None:
+def _is_av_timing_error(message: str) -> bool:
+    return "a/v fuori sync" in str(message or "").lower()
+
+
+async def _rebuild_av_timeline(source: Path, output: Path) -> None:
+    """Rebuild both streams on one zero-based timeline and trim the bad tail.
+
+    This is intentionally a fallback, not the normal recording path. It costs
+    CPU, but it is only used when a copy-remux proves the source timeline is
+    already inconsistent. Re-encoding both streams avoids repeating the
+    v2.8.5 mistake of changing only the audio clock.
+    """
+    proc = await asyncio.create_subprocess_exec(
+        "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+        "-fflags", "+genpts+discardcorrupt", "-i", str(source),
+        "-map", "0:v:0", "-map", "0:a:0", "-dn", "-ignore_unknown",
+        "-vf", "setpts=PTS-STARTPTS",
+        "-af", "aresample=async=1:first_pts=0,asetpts=PTS-STARTPTS",
+        "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
+        "-pix_fmt", "yuv420p", "-fps_mode", "vfr",
+        "-c:a", "aac", "-b:a", "192k", "-ar", "48000",
+        "-shortest", "-max_muxing_queue_size", "4096",
+        "-movflags", "+faststart", str(output),
+        stdout=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    # A repair may need a full video transcode, so allow substantially more
+    # time than the copy-remux path while still bounding stuck processes.
+    timeout = max(300, min(3600, int(source.stat().st_size / (1024**2)) * 3))
+    try:
+        _, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+    except asyncio.CancelledError:
+        try:
+            proc.terminate()
+        except ProcessLookupError:
+            pass
+        try:
+            await asyncio.wait_for(proc.wait(), timeout=3)
+        except asyncio.TimeoutError:
+            try:
+                proc.kill()
+            except ProcessLookupError:
+                pass
+            await proc.wait()
+        raise
+    except asyncio.TimeoutError as exc:
+        proc.kill()
+        await proc.wait()
+        raise RuntimeError("Riparazione A/V scaduta") from exc
+    if proc.returncode != 0 or not output.exists() or output.stat().st_size <= 0:
+        detail = (stderr or b"").decode(errors="replace")[-1500:]
+        raise RuntimeError(detail or "Ricostruzione A/V fallita")
+
+
+async def _validate_final_mp4(path: Path, source_size: int | None = None) -> None:
     if not mp4_is_streaming_ready(path):
         raise RuntimeError("Indice MP4 finale non valido")
-    if path.stat().st_size < max(1, int(source_size * 0.8)):
+    if source_size is not None and path.stat().st_size < max(1, int(source_size * 0.8)):
         raise RuntimeError("MP4 finale troppo piccolo rispetto all'originale")
     media = await asyncio.to_thread(probe_media, path, require_audio=True)
     if not media.ok:
         raise RuntimeError(f"MP4 finale non valido: {media.error}")
+
+
+async def _finalize_with_av_fallback(source: Path, output: Path, source_size: int) -> None:
+    await _copy_remux(source, output)
+    try:
+        await _validate_final_mp4(output, source_size)
+        return
+    except RuntimeError as exc:
+        if not _is_av_timing_error(str(exc)):
+            raise
+    output.unlink(missing_ok=True)
+    await _rebuild_av_timeline(source, output)
+    # A deliberate transcode can legitimately be far smaller than the source;
+    # media validity and timing are the acceptance criteria here.
+    await _validate_final_mp4(output, None)
 
 
 async def finalize_mp4_for_streaming(path: Path, *, require_space: bool = True) -> bool:
@@ -303,8 +373,7 @@ async def finalize_mp4_for_streaming(path: Path, *, require_space: bool = True) 
     tmp = path.with_name(f".{path.stem}.finalizing.mp4")
     tmp.unlink(missing_ok=True)
     try:
-        await _copy_remux(path, tmp)
-        await _validate_final_mp4(tmp, original.st_size)
+        await _finalize_with_av_fallback(path, tmp, original.st_size)
         os.utime(tmp, ns=(original.st_atime_ns, original.st_mtime_ns))
         tmp.replace(path)
         return True
@@ -327,8 +396,7 @@ async def remux_to_mp4(path: Path, *, require_space: bool = True) -> Path:
     output = path.with_suffix(".mp4")
     tmp = path.with_suffix(".tmp.mp4")
     try:
-        await _copy_remux(path, tmp)
-        await _validate_final_mp4(tmp, path.stat().st_size)
+        await _finalize_with_av_fallback(path, tmp, path.stat().st_size)
         tmp.replace(output)
         path.unlink(missing_ok=True)
         return output
