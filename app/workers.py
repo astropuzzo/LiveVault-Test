@@ -50,6 +50,15 @@ def cloud_day_key(value: datetime) -> str:
     return value.astimezone(CLOUD_TIME_ZONE).date().isoformat()
 
 
+def public_recording_filename(source_name: str, started_at: datetime, sequence: int, suffix: str) -> str:
+    """Build a stable filename whose lexical order matches capture chronology."""
+    if started_at.tzinfo is None:
+        started_at = started_at.replace(tzinfo=timezone.utc)
+    local_started = started_at.astimezone(CLOUD_TIME_ZONE)
+    clean_source = safe_name(source_name) or "recording"
+    extension = suffix if suffix.startswith(".") else f".{suffix}"
+    return f"{max(1, int(sequence)):03d}_{clean_source}_{local_started:%Y-%m-%d_%H-%M-%S}{extension}"
+
 
 def stitch_gap_open(last_at: datetime, now: datetime, gap_seconds: int = SESSION_STITCH_GAP_SECONDS) -> bool:
     if last_at.tzinfo is None:
@@ -74,10 +83,15 @@ def fragment_usable_for_stitch(fragment: RecordingFragment) -> bool:
 
 def capture_output_files(session: RecorderSession) -> list[Path]:
     """Return FFmpeg parts only; consolidated outputs must never be re-indexed."""
+    def capture_part(path: Path) -> bool:
+        stem = path.stem
+        suffix = stem.rsplit("_part", 1)[1] if "_part" in stem else (stem[4:] if stem.startswith("part") else "")
+        return bool(suffix) and suffix.isdigit()
+
     return sorted(
         (
             path for path in session.directory.glob(f"*{session.extension}")
-            if path.is_file() and not path.name.startswith(".") and "_complete" not in path.stem
+            if path.is_file() and not path.name.startswith(".") and capture_part(path)
         ),
         key=lambda path: path.stat().st_mtime,
     )
@@ -99,10 +113,13 @@ class WorkerManager:
         self._retry_after: dict[int, float] = {}
         self._stitch_retry_after: dict[tuple[int, str], float] = {}
         self._source_check_locks: dict[int, asyncio.Lock] = {}
+        self._fragment_index_locks: dict[int, asyncio.Lock] = {}
         self._session_continuations: dict[int, tuple[str, float]] = {}
         self._preview_locks: dict[int, asyncio.Lock] = {}
         self._preview_semaphore = asyncio.Semaphore(1)
         self._mp4_finalize_lock = asyncio.Lock()
+        self._recovery_lock = asyncio.Lock()
+        self.recovery_task: asyncio.Task | None = None
         self.backfill_task: asyncio.Task | None = None
 
     async def start(self) -> None:
@@ -143,14 +160,14 @@ class WorkerManager:
                     await asyncio.sleep(1)
                     continue
                 self._recover_interrupted_uploads()
-                await self._recover_orphans()
-                if self._stopping:
-                    return
                 self.tasks = [
                     asyncio.create_task(self._poll_loop(), name="source-poller"),
                     asyncio.create_task(self._upload_loop(), name="uploader"),
                     asyncio.create_task(self._cleanup_loop(), name="storage-guard"),
                 ]
+                # Recording must resume immediately after a reboot. Multi-GB
+                # orphan inspection runs beside the poller, never in front of it.
+                self._start_recovery_task()
                 self.backfill_task = asyncio.create_task(self._maintenance_backfill(), name="maintenance-backfill")
                 await asyncio.gather(*self.tasks)
                 return
@@ -176,6 +193,8 @@ class WorkerManager:
             task.cancel()
         for task in list(self.finalizing_tasks):
             task.cancel()
+        if self.recovery_task and not self.recovery_task.done():
+            self.recovery_task.cancel()
         if self.backfill_task and not self.backfill_task.done():
             self.backfill_task.cancel()
         with contextlib.suppress(Exception):
@@ -186,6 +205,9 @@ class WorkerManager:
         if self.finalizing_tasks:
             with contextlib.suppress(Exception):
                 await asyncio.gather(*self.finalizing_tasks, return_exceptions=True)
+        if self.recovery_task:
+            with contextlib.suppress(Exception):
+                await asyncio.gather(self.recovery_task, return_exceptions=True)
         if self._leader_task:
             with contextlib.suppress(Exception):
                 await asyncio.gather(self._leader_task, return_exceptions=True)
@@ -196,6 +218,30 @@ class WorkerManager:
 
     def clear_retry_backoff(self) -> None:
         self._retry_after.clear()
+
+    def _start_recovery_task(self) -> bool:
+        if self._stopping or (self.recovery_task and not self.recovery_task.done()):
+            return False
+        task = asyncio.create_task(self._run_recovery_pass(), name="media-recovery")
+        self.recovery_task = task
+        task.add_done_callback(self._recovery_done)
+        return True
+
+    def _recovery_done(self, task: asyncio.Task) -> None:
+        if self.recovery_task is task:
+            self.recovery_task = None
+        if task.cancelled():
+            return
+        error = task.exception()
+        if error is not None:
+            self.last_errors["recovery"] = str(error)[-1400:]
+
+    def request_recovery(self) -> bool:
+        """Schedule one recovery pass only in the process owning the worker lock."""
+        if self._leader_file is None:
+            return False
+        self._stitch_retry_after.clear()
+        return self._start_recovery_task()
 
     async def check_source_now(self, source_id: int) -> bool:
         """Probe one source immediately, even while automatic recording is paused."""
@@ -218,6 +264,7 @@ class WorkerManager:
             "mode": "leader" if self._leader_file is not None else "standby",
             "active_recorders": len(self.active),
             "thumbnail_backfill": "done" if self.backfill_task and self.backfill_task.done() else "running" if self.backfill_task else "idle",
+            "recovery": "running" if self.recovery_task and not self.recovery_task.done() else "idle",
         }
 
     def _recover_interrupted_uploads(self) -> None:
@@ -307,6 +354,16 @@ class WorkerManager:
             "buffer_bytes": self.local_buffer_bytes(),
         }
 
+    def active_capture_path(self, source_id: int) -> Path | None:
+        session = self.active.get(int(source_id))
+        if session is None:
+            return None
+        try:
+            files = capture_output_files(session)
+        except OSError:
+            return None
+        return files[-1] if files and files[-1].stat().st_size > 0 else None
+
     async def live_preview_for(self, source_id: int) -> Path | None:
         """Refresh a live JPEG only when an authenticated browser requests it."""
         session = self.active.get(int(source_id))
@@ -341,8 +398,13 @@ class WorkerManager:
             return output if fresh(LIVE_PREVIEW_MAX_AGE_SECONDS) else None
 
     async def _maintenance_backfill(self) -> None:
+        recovery = self.recovery_task
+        if recovery and recovery is not asyncio.current_task():
+            with contextlib.suppress(Exception):
+                await asyncio.shield(recovery)
         while not self._stopping:
-            await self._finalize_closed_stitch_sessions()
+            async with self._recovery_lock:
+                await self._finalize_closed_stitch_sessions()
             await self._repair_local_mp4s()
             await self._backfill_thumbnails()
             await self._finalize_closed_pixeldrain_days()
@@ -464,13 +526,51 @@ class WorkerManager:
         except Exception as exc:
             self.last_errors["thumbnail-backfill"] = str(exc)[-1000:]
 
+    async def _run_recovery_pass(self) -> None:
+        async with self._recovery_lock:
+            await self._recover_stale_finalizing_files()
+            await self._recover_orphans()
+            await self._finalize_closed_stitch_sessions()
+        self.last_errors.pop("recovery", None)
+
+    async def _recover_stale_finalizing_files(self) -> None:
+        """Resolve remux leftovers without ever deleting the original capture."""
+        cutoff = time.time() - 30 * 60
+        for temporary in sorted(settings.recordings_dir.rglob(".*.finalizing.mp4")):
+            if self._stopping:
+                return
+            if not temporary.is_file():
+                continue
+            try:
+                if temporary.stat().st_mtime > cutoff:
+                    continue
+            except OSError:
+                continue
+            stem = temporary.name[1:-len(".finalizing.mp4")]
+            original = temporary.with_name(f"{stem}.mp4")
+            if original.is_file() and original.stat().st_size > 0:
+                temporary.unlink(missing_ok=True)
+                continue
+            integrity = await asyncio.to_thread(verify_media, temporary, "quick")
+            if integrity.ok:
+                temporary.replace(original)
+                self.last_errors.pop(f"recovery-temp:{temporary}", None)
+            else:
+                self.last_errors[f"recovery-temp:{temporary}"] = (
+                    f"Copia temporanea conservata: {integrity.error or temporary.name}"
+                )[-1400:]
+
     async def _recover_orphans(self) -> None:
         candidates = sorted(settings.recordings_dir.rglob("*.mkv")) + sorted(settings.recordings_dir.rglob("*.mp4"))
         for path in candidates:
+            active_directories = {session.directory.resolve() for session in self.active.values()}
             if path.name.startswith(".") or path.name.endswith(".tmp.mp4") or "_complete" in path.stem:
                 continue
             if not path.is_file() or path.stat().st_size <= 0:
                 continue
+            with contextlib.suppress(OSError):
+                if path.parent.resolve() in active_directories:
+                    continue
             with db_session() as db:
                 if db.scalar(select(Recording).where(Recording.local_path == str(path))):
                     continue
@@ -534,45 +634,66 @@ class WorkerManager:
             return await finalize_mp4_for_streaming(path)
 
     async def _index_fragment(self, *, source_id: int, source_name: str, session_id: str, path: Path, started_at: datetime | None) -> bool:
-        """Validate a capture part but keep it out of Archive/upload until the 20-minute session closes."""
-        cfg = runtime()
+        lock = self._fragment_index_locks.setdefault(int(source_id), asyncio.Lock())
+        async with lock:
+            return await self._index_fragment_unlocked(
+                source_id=source_id,
+                source_name=source_name,
+                session_id=session_id,
+                path=path,
+                started_at=started_at,
+            )
+
+    async def _index_fragment_unlocked(self, *, source_id: int, source_name: str, session_id: str, path: Path, started_at: datetime | None) -> bool:
+        """Expose a stable local part immediately, then validate it in place."""
         if not await self._wait_until_stable(path):
             self.last_errors[f"fragment:{source_id}"] = f"Frammento ancora in scrittura: {path.name}"
             return False
-        # Capture parts are private inputs to the stitcher, not browser-facing
-        # files. Rewriting every fragmented MP4 with +faststart doubles disk I/O
-        # and can time out under load. Validate the original part in place; the
-        # single consolidated output is normalized and verified below.
-        integrity = await asyncio.to_thread(verify_media, path, cfg.integrity_mode)
         finalized = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc)
-        if integrity and integrity.duration:
-            start = finalized - timedelta(seconds=integrity.duration)
-        elif started_at:
+        if started_at:
             start = started_at if started_at.tzinfo else started_at.replace(tzinfo=timezone.utc)
             start = start.astimezone(timezone.utc)
         else:
             start = finalized
         with db_session() as db:
-            if db.scalar(select(RecordingFragment).where(RecordingFragment.local_path == str(path))):
+            existing = db.scalar(select(RecordingFragment).where(RecordingFragment.local_path == str(path)))
+            if existing and existing.integrity_status != "checking":
                 return True
-            db.add(RecordingFragment(
-                source_id=source_id,
-                source_name=source_name,
-                session_id=session_id,
-                local_path=str(path),
-                filename=path.name,
-                started_at=start,
-                finalized_at=finalized,
-                duration_seconds=integrity.duration,
-                size_bytes=path.stat().st_size,
-                container_format=path.suffix.lower().lstrip("."),
-                has_video=integrity.has_video,
-                has_audio=integrity.has_audio,
-                video_codec=integrity.codec("video"),
-                audio_codec=integrity.codec("audio"),
-                integrity_status="passed" if integrity.ok else "failed",
-                integrity_error=integrity.error,
-            ))
+            if existing is None:
+                existing = RecordingFragment(
+                    source_id=source_id,
+                    source_name=source_name,
+                    session_id=session_id,
+                    local_path=str(path),
+                    filename=path.name,
+                    started_at=start,
+                    finalized_at=finalized,
+                    duration_seconds=max(0.0, (finalized - start).total_seconds()),
+                    size_bytes=path.stat().st_size,
+                    container_format=path.suffix.lower().lstrip("."),
+                    integrity_status="checking",
+                    integrity_error="",
+                )
+                db.add(existing)
+        self.wake()
+        # A short head probe makes the part available in seconds. The complete
+        # stitched output still receives the configured full integrity scan.
+        integrity = await asyncio.to_thread(verify_media, path, "quick")
+        start = finalized - timedelta(seconds=integrity.duration) if integrity.duration else start
+        with db_session() as db:
+            current = db.scalar(select(RecordingFragment).where(RecordingFragment.local_path == str(path)))
+            if current is None:
+                return False
+            current.started_at = start
+            current.finalized_at = finalized
+            current.duration_seconds = integrity.duration
+            current.size_bytes = path.stat().st_size
+            current.has_video = integrity.has_video
+            current.has_audio = integrity.has_audio
+            current.video_codec = integrity.codec("video")
+            current.audio_codec = integrity.codec("audio")
+            current.integrity_status = "passed" if integrity.ok else "failed"
+            current.integrity_error = integrity.error
         if integrity.ok:
             self.last_errors.pop(f"fragment:{source_id}", None)
         else:
@@ -581,18 +702,24 @@ class WorkerManager:
 
     async def _revalidate_retryable_fragments(self, fragments: list[RecordingFragment]) -> None:
         """Recover parts rejected by older builds after a remux timeout."""
-        mode = runtime().integrity_mode
         for fragment in fragments:
             if fragment_usable_for_stitch(fragment):
                 continue
             error = str(fragment.integrity_error or "").lower()
-            retryable = "finalizzazione frammento fallita" in error or any(
+            retryable = fragment.integrity_status in {"checking", "failed"} or "finalizzazione frammento fallita" in error or any(
                 marker in error for marker in RETRYABLE_MEDIA_ERRORS
             )
             path = Path(fragment.local_path)
             if not retryable or not path.is_file():
                 continue
-            integrity = await asyncio.to_thread(verify_media, path, mode)
+            integrity = await asyncio.to_thread(verify_media, path, "quick")
+            if not integrity.ok and path.suffix.lower() == ".mp4":
+                # Power loss can leave an incomplete final MP4 box. FFmpeg can
+                # often rebuild the index while keeping the original untouched
+                # unless the atomic replacement succeeds.
+                with contextlib.suppress(Exception):
+                    await self._prepare_mp4(path)
+                    integrity = await asyncio.to_thread(verify_media, path, "quick")
             if not integrity.ok:
                 continue
             fragment.duration_seconds = integrity.duration
@@ -707,6 +834,55 @@ class WorkerManager:
                 self._stitch_retry_after[retry_key] = time.monotonic() + 300
                 self.last_errors[f"stitch:{source_id}:{session_id}"] = str(exc)[-1400:]
 
+    def _recording_day_sequence(
+        self, source_id: int, started_at: datetime, recording_id: int | None = None
+    ) -> tuple[int, str]:
+        """Return a creator/day ordinal and the public creator label."""
+        day_key = cloud_day_key(started_at)
+        with db_session() as db:
+            source = db.get(Source, source_id)
+            profile = db.get(Profile, source.profile_id) if source and source.profile_id is not None else None
+            display_name = profile.display_name if profile else (source.name if source else "recording")
+            if profile is not None:
+                rows = db.execute(
+                    select(Recording.id, Recording.started_at)
+                    .join(Source, Source.id == Recording.source_id)
+                    .where(Source.profile_id == profile.id)
+                    .order_by(Recording.started_at.asc(), Recording.id.asc())
+                ).all()
+            else:
+                rows = db.execute(
+                    select(Recording.id, Recording.started_at)
+                    .where(Recording.source_id == source_id)
+                    .order_by(Recording.started_at.asc(), Recording.id.asc())
+                ).all()
+        same_day = [(int(row_id), value) for row_id, value in rows if cloud_day_key(value) == day_key]
+        if recording_id is not None:
+            for index, (row_id, _value) in enumerate(same_day, start=1):
+                if row_id == int(recording_id):
+                    return index, display_name
+        return len(same_day) + 1, display_name
+
+    def _normalize_generated_recording_filename(self, rec: Recording, path: Path) -> Path:
+        """Upgrade pending legacy batch names before they become public cloud names."""
+        if "_batch" not in rec.filename or "_complete" not in rec.filename or not path.is_file():
+            return path
+        sequence, display_name = self._recording_day_sequence(rec.source_id, rec.started_at, rec.id)
+        expected = public_recording_filename(display_name, rec.started_at, sequence, path.suffix)
+        target = path.with_name(expected)
+        if target != path:
+            if target.exists():
+                raise RuntimeError(f"Impossibile normalizzare il nome: {target.name} esiste già")
+            path.replace(target)
+            with db_session() as db:
+                current = db.get(Recording, rec.id)
+                if current:
+                    current.local_path = str(target)
+                    current.filename = expected
+            rec.local_path = str(target)
+            rec.filename = expected
+        return target
+
     async def _stitch_fragment_group(
         self,
         fragments: list[RecordingFragment],
@@ -718,6 +894,7 @@ class WorkerManager:
         if not good:
             raise RuntimeError("Nessun frammento integro nella sessione")
         first = good[0]
+        started = min(item.started_at for item in good)
         paths = [Path(item.local_path) for item in good]
         total_bytes = sum(path.stat().st_size for path in paths)
         free = shutil.disk_usage(paths[0].parent).free
@@ -725,8 +902,11 @@ class WorkerManager:
             raise RuntimeError("Spazio insufficiente per consolidare la sessione")
         suffixes = {path.suffix.lower() for path in paths}
         suffix = next(iter(suffixes)) if len(suffixes) == 1 else ".mp4"
-        batch = f"{good[0].id:06d}-{good[-1].id:06d}"
-        output = paths[0].parent / f"{first.session_id}_batch{batch}_complete{suffix}"
+        sequence, display_name = self._recording_day_sequence(first.source_id, started)
+        output = paths[0].parent / public_recording_filename(display_name, started, sequence, suffix)
+        # A stale file from a previously interrupted finalize may exist, but a
+        # validated Recording row is what reserves an ordinal. Replace only the
+        # unindexed stale path for the same chronological slot.
         output.unlink(missing_ok=True)
         await stitch_recording_parts(paths, output, allow_transcode=allow_transcode)
         if output.suffix.lower() == ".mp4":
@@ -741,7 +921,6 @@ class WorkerManager:
             candidate = settings.data_dir / "thumbnails" / f"{digest[:24]}-sheet-v2.jpg"
             if await asyncio.to_thread(generate_thumbnail, output, candidate, integrity.duration):
                 thumb_path = str(candidate)
-        started = min(item.started_at for item in good)
         finalized = max(item.finalized_at for item in good)
         with db_session() as db:
             existing = db.scalar(select(Recording).where(Recording.local_path == str(output)))
@@ -1127,7 +1306,7 @@ class WorkerManager:
             rec = db.scalar(
                 select(Recording)
                 .where(Recording.local_deleted.is_(False), Recording.upload_status == "pending", Recording.integrity_status == "passed")
-                .order_by(Recording.upload_priority.desc(), Recording.finalized_at.asc())
+                .order_by(Recording.upload_priority.desc(), Recording.started_at.asc(), Recording.id.asc())
                 .limit(1)
             )
             if not rec:
@@ -1137,7 +1316,7 @@ class WorkerManager:
                     .where(Recording.integrity_status == "passed")
                     .where(Recording.upload_status.in_(["failed", "waiting_config"]))
                     .where(Recording.upload_attempts < cfg.max_upload_attempts)
-                    .order_by(Recording.upload_priority.desc(), Recording.finalized_at.asc())
+                    .order_by(Recording.upload_priority.desc(), Recording.started_at.asc(), Recording.id.asc())
                     .limit(100)
                 ).all())
                 rec = next((r for r in candidates if self._retry_after.get(r.id, 0) <= now), None)
@@ -1345,6 +1524,7 @@ class WorkerManager:
                     await self._sleep_or_wake(2)
                     continue
                 path = Path(rec.local_path)
+                path = self._normalize_generated_recording_filename(rec, path)
                 self.upload_current = {
                     "recording_id": rec.id,
                     "filename": rec.filename,

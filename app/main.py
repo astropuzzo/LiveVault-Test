@@ -28,6 +28,7 @@ from .db import (
     Profile,
     ProfileCategory,
     Recording,
+    RecordingFragment,
     Source,
     db_session,
     init_db,
@@ -637,6 +638,23 @@ def status(request: Request):
     }
 
 
+@app.post("/api/recovery/run")
+async def run_recovery(request: Request):
+    require_auth(request)
+    started = manager.request_recovery()
+    if not started and manager.health().get("mode") != "leader":
+        raise HTTPException(503, "Recupero disponibile solo sul worker attivo")
+    return {"ok": True, "started": started, "running": not started}
+
+
+@app.delete("/api/status/errors")
+def clear_status_errors(request: Request):
+    require_auth(request)
+    cleared = len(manager.last_errors)
+    manager.last_errors.clear()
+    return {"ok": True, "cleared": cleared}
+
+
 @app.get("/api/settings")
 def get_settings(request: Request):
     require_auth(request)
@@ -1234,6 +1252,40 @@ def source_profile(source_id: int, request: Request):
         ).all())
         recent = profile_recordings[:20]
         recent_payload = [_recording_json(recording) for recording in recent]
+        fragment_rows = list(db.scalars(
+            select(RecordingFragment)
+            .where(RecordingFragment.source_id.in_(linked_source_ids))
+            .order_by(RecordingFragment.finalized_at.desc(), RecordingFragment.id.desc())
+        ).all())
+        local_captures = [_fragment_json(fragment) for fragment in fragment_rows if Path(fragment.local_path).is_file()]
+        for linked_source in linked_rows:
+            active_session = manager.active.get(int(linked_source.id))
+            active_path = manager.active_capture_path(int(linked_source.id))
+            if active_session is None or active_path is None:
+                continue
+            try:
+                active_size = active_path.stat().st_size
+            except OSError:
+                continue
+            local_captures.append({
+                "kind": "active",
+                "id": None,
+                "source_id": int(linked_source.id),
+                "source_name": linked_source.name,
+                "session_id": active_session.session_id,
+                "filename": active_path.name,
+                "started_at": _iso_utc(active_session.started_at),
+                "finalized_at": None,
+                "duration_seconds": max(0.0, (utcnow() - _pulse_aware(active_session.started_at)).total_seconds()),
+                "size_bytes": active_size,
+                "size_human": human_bytes(active_size),
+                "integrity_status": "recording",
+                "integrity_error": "",
+                "state": "recording",
+                "local_available": True,
+                "view_url": f"/api/sources/{linked_source.id}/capture",
+            })
+        local_captures.sort(key=lambda row: str(row.get("started_at") or ""), reverse=True)
         cloud_days = list(db.scalars(
             select(CloudDay).where(CloudDay.profile_id == profile.id).order_by(CloudDay.day_key.desc())
         ).all())
@@ -1304,6 +1356,7 @@ def source_profile(source_id: int, request: Request):
         return {
             "source": source_payload,
             "recent_recordings": recent_payload,
+            "local_captures": local_captures,
             "recording_days": recording_days,
             "recording_day_count": recording_day_count,
             "timeline": timeline,
@@ -1472,6 +1525,13 @@ def control_room_pulse(request: Request, hours: int = 12):
                 Recording.finalized_at >= window_start - timedelta(hours=2),
             ).order_by(Recording.started_at.asc())
         ).all()) if source_ids else []
+        fragment_rows = list(db.scalars(
+            select(RecordingFragment).where(
+                RecordingFragment.source_id.in_(source_ids),
+                RecordingFragment.finalized_at >= window_start - timedelta(hours=2),
+            ).order_by(RecordingFragment.started_at.asc())
+        ).all()) if source_ids else []
+        fragment_rows = [row for row in fragment_rows if Path(row.local_path).is_file()]
 
         by_profile: dict[int, list[dict]] = defaultdict(list)
         sources_by_profile: dict[int, list[Source]] = defaultdict(list)
@@ -1529,9 +1589,25 @@ def control_room_pulse(request: Request, hours: int = 12):
                     if clipped_start < clipped_end:
                         overlapping.append((recording, clipped_start, clipped_end))
 
+                overlapping_fragments: list[tuple[RecordingFragment, datetime, datetime]] = []
+                for fragment in fragment_rows:
+                    if int(fragment.source_id) not in linked_ids:
+                        continue
+                    rec_start = _pulse_aware(fragment.started_at)
+                    rec_end = _pulse_aware(fragment.finalized_at)
+                    if rec_start is None or rec_end is None:
+                        continue
+                    clipped_start = max(started, rec_start)
+                    clipped_end = min(ended, rec_end)
+                    if clipped_start < clipped_end:
+                        overlapping_fragments.append((fragment, clipped_start, clipped_end))
+
                 recording_intervals = [(rec_start, rec_end) for _recording, rec_start, rec_end in overlapping]
+                recording_intervals.extend(
+                    (rec_start, rec_end) for _fragment, rec_start, rec_end in overlapping_fragments
+                )
                 recording_active = False
-                active_intervals: list[tuple[datetime, datetime]] = []
+                active_intervals: list[tuple[int, datetime, datetime]] = []
                 for source_id in linked_ids:
                     active_start = active_started.get(source_id)
                     if active_start is None:
@@ -1539,7 +1615,7 @@ def control_room_pulse(request: Request, hours: int = 12):
                     clipped_start = max(started, active_start)
                     if clipped_start < ended:
                         recording_intervals.append((clipped_start, ended))
-                        active_intervals.append((clipped_start, ended))
+                        active_intervals.append((source_id, clipped_start, ended))
                         recording_active = True
 
                 merged_recordings: list[dict] = []
@@ -1558,10 +1634,25 @@ def control_room_pulse(request: Request, hours: int = 12):
                         "filename": str(recording.filename or ""),
                         "upload_provider": str(recording.upload_provider or ""),
                         "remote_url": str(recording.remote_url or ""),
+                        "local_url": f"/api/recordings/{recording.id}/view" if not recording.local_deleted and Path(recording.local_path).is_file() else "",
                         "thumbnail_url": _safe_thumbnail_url(int(recording.id), str(recording.thumbnail_path or "")),
+                        "kind": "recording",
                     }
                     for recording, rec_start, rec_end in overlapping
                 ]
+                recording_segments.extend({
+                    "id": int(fragment.id),
+                    "started_at": _iso_utc(rec_start),
+                    "ended_at": _iso_utc(rec_end),
+                    "filename": str(fragment.filename or ""),
+                    "upload_provider": "",
+                    "remote_url": "",
+                    "local_url": f"/api/fragments/{fragment.id}/view",
+                    "thumbnail_url": "",
+                    "kind": "fragment",
+                    "integrity_status": str(fragment.integrity_status or "checking"),
+                    "processing": True,
+                } for fragment, rec_start, rec_end in overlapping_fragments)
                 recording_segments.extend({
                     "id": None,
                     "started_at": _iso_utc(rec_start),
@@ -1569,21 +1660,29 @@ def control_room_pulse(request: Request, hours: int = 12):
                     "filename": "Registrazione in corso",
                     "upload_provider": "",
                     "remote_url": "",
+                    "local_url": f"/api/sources/{source_id}/capture",
                     "thumbnail_url": "",
+                    "kind": "active",
                     "active": True,
-                } for rec_start, rec_end in active_intervals)
+                } for source_id, rec_start, rec_end in active_intervals)
                 live_seconds = max(0.0, (ended - started).total_seconds())
                 recorded_seconds = sum(
                     max(0.0, (row["ended"] - row["started"]).total_seconds())
                     for row in merged_recordings
                 )
                 file_count = len(recording_items)
+                processing_count = len(overlapping_fragments)
+                visible_file_count = file_count + processing_count
                 uploaded_count = sum(1 for row in recording_items if row.upload_status == "uploaded")
                 failed_count = sum(1 for row in recording_items if row.upload_status in {"failed", "integrity_failed"})
-                total_bytes = sum(int(row.size_bytes or 0) for row in recording_items)
+                total_bytes = sum(int(row.size_bytes or 0) for row in recording_items) + sum(
+                    int(row.size_bytes or 0) for row, _start, _end in overlapping_fragments
+                )
                 coverage = min(100.0, recorded_seconds / live_seconds * 100.0) if live_seconds > 0 else 0.0
                 if interval["open"]:
                     state = "live"
+                elif processing_count:
+                    state = "processing"
                 elif file_count == 0:
                     state = "missed"
                 elif uploaded_count == file_count:
@@ -1608,7 +1707,9 @@ def control_room_pulse(request: Request, hours: int = 12):
                     ],
                     "recordings": recording_segments,
                     "coverage_percent": round(coverage, 1),
-                    "file_count": file_count,
+                    "file_count": visible_file_count,
+                    "final_file_count": file_count,
+                    "processing_count": processing_count,
                     "uploaded_count": uploaded_count,
                     "failed_count": failed_count,
                     "total_bytes": total_bytes,
@@ -1843,6 +1944,42 @@ def _recording_day_key(value: datetime | None) -> str:
     return value.astimezone(DISPLAY_TIME_ZONE).date().isoformat()
 
 
+def _local_media_path(value: str | Path) -> Path:
+    try:
+        root = settings.recordings_dir.resolve()
+        path = Path(value).resolve(strict=True)
+    except OSError as exc:
+        raise HTTPException(404, "Copia locale non disponibile") from exc
+    if not path.is_file() or not path.is_relative_to(root):
+        raise HTTPException(404, "Copia locale non disponibile")
+    return path
+
+
+def _fragment_json(fragment: RecordingFragment) -> dict:
+    local_available = Path(fragment.local_path).is_file()
+    state = "ready" if fragment.integrity_status == "passed" else (
+        "checking" if fragment.integrity_status == "checking" else "recovery"
+    )
+    return {
+        "kind": "fragment",
+        "id": int(fragment.id),
+        "source_id": int(fragment.source_id),
+        "source_name": fragment.source_name,
+        "session_id": fragment.session_id,
+        "filename": fragment.filename,
+        "started_at": _iso_utc(fragment.started_at),
+        "finalized_at": _iso_utc(fragment.finalized_at),
+        "duration_seconds": fragment.duration_seconds,
+        "size_bytes": int(fragment.size_bytes or 0),
+        "size_human": human_bytes(fragment.size_bytes),
+        "integrity_status": fragment.integrity_status,
+        "integrity_error": fragment.integrity_error,
+        "state": state,
+        "local_available": local_available,
+        "view_url": f"/api/fragments/{fragment.id}/view" if local_available else "",
+    }
+
+
 def _recording_json(r: Recording) -> dict:
     local_available = (not r.local_deleted) and Path(r.local_path).exists()
     thumbnail_url = _safe_thumbnail_url(r.id, r.thumbnail_path)
@@ -1898,11 +2035,32 @@ def view_recording(recording_id: int, request: Request):
         rec = db.get(Recording, recording_id)
         if not rec:
             raise HTTPException(404, "Registrazione non trovata")
-        path = Path(rec.local_path)
-    if not path.exists():
-        raise HTTPException(404, "Copia locale non disponibile")
+        path = _local_media_path(rec.local_path)
     media_type = "video/mp4" if path.suffix.lower() == ".mp4" else "video/x-matroska"
     return FileResponse(path, media_type=media_type)
+
+
+@app.get("/api/fragments/{fragment_id}/view")
+def view_recording_fragment(fragment_id: int, request: Request):
+    require_auth(request)
+    with db_session() as db:
+        fragment = db.get(RecordingFragment, fragment_id)
+        if not fragment:
+            raise HTTPException(404, "Parte locale non trovata")
+        path = _local_media_path(fragment.local_path)
+    media_type = "video/mp4" if path.suffix.lower() == ".mp4" else "video/x-matroska"
+    return FileResponse(path, media_type=media_type, headers={"Cache-Control": "private, no-store"})
+
+
+@app.get("/api/sources/{source_id}/capture")
+def view_active_capture(source_id: int, request: Request):
+    require_auth(request)
+    path = manager.active_capture_path(source_id)
+    if path is None:
+        raise HTTPException(404, "Registrazione attiva non ancora disponibile")
+    path = _local_media_path(path)
+    media_type = "video/mp4" if path.suffix.lower() == ".mp4" else "video/x-matroska"
+    return FileResponse(path, media_type=media_type, headers={"Cache-Control": "private, no-store"})
 
 
 @app.get("/api/recordings/{recording_id}/download")

@@ -19,7 +19,8 @@ def test_live_pulse_is_csp_safe_and_shows_live_and_recording_geometry():
     assert 'const labelRatios = [0, .25, .5, .75, 1]' in pulse
     assert 'pulseRecordingFiles(session)' in pulse
     assert '<rect class="cr-pulse-live-span' in pulse
-    assert "cr-pulse-rec-span ${remoteUrl ? 'remote' : ''}" in pulse
+    assert "const localUrl = safeUrl(rec.local_url || '')" in pulse
+    assert "cr-pulse-rec-span ${remoteUrl ? 'remote' : localUrl ? 'local' : ''}" in pulse
     assert 'cr-pulse-rec-media' in pulse
     assert 'data-preview-url' in pulse
     assert 'target="_blank"' in pulse
@@ -35,6 +36,8 @@ def test_live_pulse_is_csp_safe_and_shows_live_and_recording_geometry():
     assert 'recording_started_at' in main
     assert 'recording_ended_at' in main
     assert 'recording_active' in main
+    assert 'processing_count' in main
+    assert '/api/fragments/{fragment_id}/view' in main
     assert 'pulseMissingIntervals' in js
     assert 'cr-pulse-missed-span' in js
     assert '.cr-pulse-missed-span' in css

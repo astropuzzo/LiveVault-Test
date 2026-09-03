@@ -13,6 +13,7 @@ from app.workers import (
     SESSION_STITCH_GAP_SECONDS,
     SESSION_STITCH_READY_SECONDS,
     capture_output_files,
+    public_recording_filename,
     stitch_gap_open,
 )
 from app.utils import probe_media
@@ -32,13 +33,29 @@ def test_long_live_session_is_flushed_every_fifteen_minutes():
 
 def test_consolidated_outputs_are_not_seen_as_capture_parts(tmp_path):
     (tmp_path / "creator_part000.mp4").write_bytes(b"part")
-    (tmp_path / "creator_batch000001-000002_complete.mp4").write_bytes(b"complete")
+    (tmp_path / "001_creator_2026-09-03_10-00-00.mp4").write_bytes(b"complete")
 
     class Session:
         directory = tmp_path
         extension = ".mp4"
 
     assert [path.name for path in capture_output_files(Session())] == ["creator_part000.mp4"]
+
+
+def test_public_recording_filename_is_consecutive_and_chronological():
+    started = datetime(2026, 9, 3, 10, 5, 7, tzinfo=timezone.utc)
+    first = public_recording_filename("Creator Name", started, 1, ".mp4")
+    second = public_recording_filename("Creator Name", started + timedelta(minutes=15), 2, "mp4")
+    assert first == "001_Creator_Name_2026-09-03_12-05-07.mp4"
+    assert second == "002_Creator_Name_2026-09-03_12-20-07.mp4"
+    assert [first, second] == sorted([second, first])
+
+
+def test_upload_queue_orders_equal_priority_by_capture_start():
+    workers = Path("app/workers.py").read_text(encoding="utf-8")
+    assert workers.count("Recording.started_at.asc(), Recording.id.asc()") >= 2
+    assert "_batch{batch}_complete" not in workers
+    assert "_normalize_generated_recording_filename(rec, path)" in workers
 
 
 def test_stitch_marker_and_fragment_table_are_persistent():

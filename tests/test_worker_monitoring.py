@@ -106,12 +106,21 @@ def test_legacy_gap_only_fragment_remains_stitchable(tmp_path):
 
 
 def test_capture_fragments_are_validated_without_rewriting_mp4():
-    fragment_indexer = inspect.getsource(WorkerManager._index_fragment)
+    fragment_indexer = inspect.getsource(WorkerManager._index_fragment_unlocked)
     recovery = inspect.getsource(WorkerManager._revalidate_retryable_fragments)
 
     assert "_prepare_mp4" not in fragment_indexer
     assert "verify_media" in fragment_indexer
     assert "finalizzazione frammento fallita" in recovery
+
+
+def test_startup_recovery_does_not_block_source_poller():
+    leader = inspect.getsource(WorkerManager._leader_loop)
+    poller = leader.index('asyncio.create_task(self._poll_loop()')
+    recovery = leader.index('self._start_recovery_task()')
+
+    assert poller < recovery
+    assert 'await self._recover_orphans()' not in leader
 
 
 def test_recorder_slot_is_released_before_large_fragment_validation():

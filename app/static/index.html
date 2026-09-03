@@ -36,7 +36,7 @@
           <button class="nav-link" type="button" data-view="statistics">Statistiche</button>
         </nav>
         <div class="top-actions">
-          <span id="healthPill" class="pill good">Online</span>
+          <button id="healthPill" class="pill good" type="button">Online</button>
           <button id="settingsBtn" class="btn quiet" type="button">Impostazioni</button>
           <button id="logoutBtn" class="btn quiet" type="button">Esci</button>
         </div>
@@ -53,7 +53,7 @@
         <section id="systemOverview" class="system-overview panel" data-tone="neutral" aria-live="polite">
           <span class="system-signal" aria-hidden="true"><i></i></span>
           <div class="system-overview-copy"><span>STATO GENERALE</span><h2 id="systemOverviewTitle">Controllo del sistema…</h2><p id="systemOverviewText">Verifico registrazioni, upload e spazio disponibile.</p></div>
-          <div class="system-overview-side"><span>AZIONE RICHIESTA</span><strong id="systemOverviewAction">Nessuna</strong></div>
+          <div class="system-overview-side"><span>AZIONE RICHIESTA</span><button id="systemOverviewAction" type="button">Nessuna</button></div>
         </section>
 
         <section class="control-center panel" aria-label="Controlli registrazione e upload">
@@ -89,7 +89,7 @@
         </section>
 
         <section id="errorsPanel" class="panel section hidden">
-          <div class="section-head"><div><h2>Errori recenti</h2></div><span id="diagnosticCount" class="count danger">0</span></div>
+          <div class="section-head"><div><h2>Errori recenti</h2><p>I file restano conservati. Riprova il recupero oppure pulisci solo gli avvisi mostrati.</p></div><div class="diagnostic-actions"><button id="retryRecoveryBtn" class="btn soft" type="button">Recupera file</button><button id="clearErrorsBtn" class="btn quiet" type="button">Pulisci avvisi</button><span id="diagnosticCount" class="count danger">0</span></div></div>
           <pre id="errors"></pre>
         </section>
       </div>

@@ -219,6 +219,14 @@ function closeModal(id) {
   if (id === 'profileModal') profileData = null;
 }
 
+function openLocalVideo(url, title = 'Copia locale') {
+  const localUrl = safeUrl(url);
+  if (!localUrl) return toast('Copia locale non disponibile', 'bad');
+  $('#videoTitle').textContent = title;
+  $('#videoPlayer').src = localUrl;
+  openModal('videoModal');
+}
+
 function statusLabel(value) {
   return ({
     recording: 'REC', live: 'LIVE', offline: 'Offline', paused: 'In pausa', archived: 'Archiviata',
@@ -622,10 +630,18 @@ function renderProfile() {
     }).join('');
     return `<details class="profile-day" ${index === 0 ? 'open' : ''}><summary><div><strong>${esc(day.date)}</strong><small>${day.file_count || 0} file · ${esc(humanBytes(day.total_bytes || 0))} · ${esc(duration(day.total_duration_seconds || 0))}</small></div><div class="profile-day-links">${cloudLinks}</div></summary><div class="profile-day-videos">${videos}</div></details>`;
   }).join('') || '<div class="empty compact">Nessuna registrazione.</div>';
+  const localCaptures = (profileData.local_captures || []).filter(item => item.local_available);
+  const localCaptureCards = localCaptures.map(item => {
+    const state = item.state === 'recording' ? '● REC IN CORSO' : item.state === 'ready' ? 'PRONTA · CONSOLIDAMENTO' : item.state === 'checking' ? 'CONTROLLO IN CORSO' : 'RECUPERO DISPONIBILE';
+    const tone = item.state === 'recording' ? 'recording' : item.state === 'recovery' ? 'warning' : 'ready';
+    return `<article class="local-capture" data-tone="${tone}"><div><strong>${esc(item.source_name)}</strong><small>${esc(item.filename)} · ${esc(item.size_human || humanBytes(item.size_bytes || 0))} · ${esc(duration(item.duration_seconds || 0))}</small></div><span>${esc(state)}</span><button class="btn soft" data-profile-action="local-capture" data-url="${esc(item.view_url)}" data-title="${esc(`${item.source_name} · copia locale`)}" type="button">Anteprima locale</button></article>`;
+  }).join('');
+  const localCaptureSection = localCaptureCards ? `<section class="profile-section local-captures"><div class="profile-section-head"><div><h3>Sul server adesso</h3><span>Disponibile prima del caricamento cloud</span></div><span class="count">${localCaptures.length}</span></div><div class="local-capture-list">${localCaptureCards}</div></section>` : '';
   $('#profileContent').innerHTML = `<div class="profile-overview">
       <div class="profile-cover ${cover ? '' : 'empty'}">${cover ? `<img src="${esc(cover)}" alt="Copertina di ${esc(profile.display_name)}">` : `<span>${esc(profile.display_name.slice(0, 2).toUpperCase())}</span>`}</div>
-      <div class="profile-summary"><button class="favorite-toggle ${profile.favorite ? 'active' : ''}" data-profile-action="favorite" data-id="${profile.id}" type="button" aria-pressed="${profile.favorite}">★ ${profile.favorite ? 'Preferita' : 'Preferiti'}</button><div class="profile-metrics"><span><strong>${stats.recording_count || 0}</strong> file</span><span><strong>${stats.session_count || 0}</strong> sessioni</span><span><strong>${humanBytes(stats.total_bytes || 0)}</strong> registrati</span><span><strong>${duration(stats.total_duration_seconds || 0)}</strong> durata</span><span><strong>${stats.uploaded_count || 0}</strong> cloud</span><span class="${stats.failed_count ? 'danger-text' : ''}"><strong>${stats.failed_count || 0}</strong> problemi</span></div></div>
+      <div class="profile-summary"><button class="favorite-toggle ${profile.favorite ? 'active' : ''}" data-profile-action="favorite" data-id="${profile.id}" type="button" aria-pressed="${profile.favorite}">★ ${profile.favorite ? 'Preferita' : 'Preferiti'}</button><div class="profile-metrics"><span><strong>${stats.recording_count || 0}</strong> completati</span><span><strong>${localCaptures.length}</strong> locali ora</span><span><strong>${humanBytes(stats.total_bytes || 0)}</strong> archiviati</span><span><strong>${duration(stats.total_duration_seconds || 0)}</strong> durata</span><span><strong>${stats.uploaded_count || 0}</strong> cloud</span><span class="${stats.failed_count ? 'danger-text' : ''}"><strong>${stats.failed_count || 0}</strong> problemi</span></div></div>
     </div>
+    ${localCaptureSection}
     <section class="profile-section profile-statistics"><div class="profile-section-head"><div><h3>Statistiche</h3></div><label class="stats-range compact"><span>Periodo</span><select id="profileStatisticsRange"><option value="7" ${profileStatisticsDays === 7 ? 'selected' : ''}>7g</option><option value="30" ${profileStatisticsDays === 30 ? 'selected' : ''}>30g</option><option value="90" ${profileStatisticsDays === 90 ? 'selected' : ''}>90g</option><option value="365" ${profileStatisticsDays === 365 ? 'selected' : ''}>365g</option></select></label></div>${activity ? `<div class="stats-summary-grid compact">${statisticsSummaryMarkup(activity, true)}</div><div class="stats-chart-grid profile"><div class="stats-mini-chart"><div class="chart-title">Online vs registrato</div>${activityChartSvg(activity.daily)}</div><div class="stats-mini-chart"><div class="chart-title">Orari più frequenti</div>${hourlyChartSvg(activity.hourly)}</div></div>${statisticsHistoryNote(activity) ? `<p class="stats-note">${esc(statisticsHistoryNote(activity))}</p>` : ''}` : '<div class="empty compact">Statistiche non disponibili.</div>'}</section>
     <section class="profile-section"><div class="profile-section-head"><h3>Identità e note</h3></div><label class="field"><span>Nome profilo</span><input id="profileDisplayName" maxlength="120" value="${esc(profile.display_name)}"></label><label class="field"><span>Note private</span><textarea id="profileNotes" maxlength="20000" rows="4" placeholder="Note, preferenze, riferimenti…">${esc(profile.notes)}</textarea></label></section>
     <section class="profile-section"><div class="profile-section-head"><h3>Categorie</h3><button class="btn quiet" data-profile-action="manage-taxonomy" type="button">Gestisci</button></div><div class="choice-grid">${categoryChecks}</div></section>
@@ -881,21 +897,29 @@ function renderStatus(status) {
   const overviewText = $('#systemOverviewText');
   const overviewAction = $('#systemOverviewAction');
   const issueCount = errorCount + Number(status.queue.integrity_failed || 0) + Number(history.audio_missing || 0);
+  overviewAction.dataset.action = 'none';
+  overviewAction.disabled = true;
   if (status.disk.pressure === 'critical') {
     overview.dataset.tone = 'danger';
     overviewTitle.textContent = 'Spazio quasi esaurito';
     overviewText.textContent = `${status.disk.free_human} liberi: le nuove registrazioni potrebbero fermarsi.`;
     overviewAction.textContent = 'Libera il disco';
+    overviewAction.dataset.action = 'settings';
+    overviewAction.disabled = false;
   } else if (status.config.recording_paused) {
     overview.dataset.tone = 'warning';
     overviewTitle.textContent = 'Registrazioni in pausa';
     overviewText.textContent = 'Il monitoraggio continua, ma nessuna nuova live verrà salvata.';
     overviewAction.textContent = 'Riattiva REC';
+    overviewAction.dataset.action = 'resume';
+    overviewAction.disabled = false;
   } else if (issueCount) {
     overview.dataset.tone = 'warning';
     overviewTitle.textContent = `${issueCount} ${issueCount === 1 ? 'elemento richiede' : 'elementi richiedono'} attenzione`;
     overviewText.textContent = 'Le automazioni restano operative; controlla i dettagli evidenziati in ambra o rosso.';
     overviewAction.textContent = 'Controlla errori';
+    overviewAction.dataset.action = 'attention';
+    overviewAction.disabled = false;
   } else if (active.length) {
     overview.dataset.tone = 'recording';
     overviewTitle.textContent = `${active.length} ${active.length === 1 ? 'registrazione in corso' : 'registrazioni in corso'}`;
@@ -923,12 +947,55 @@ function renderStatus(status) {
   const health = $('#healthPill');
   if (status.disk.pressure === 'critical') {
     health.className = 'pill bad'; health.textContent = 'Disco critico';
+    health.dataset.action = 'settings'; health.disabled = false;
   } else if (errorCount || status.queue.integrity_failed || history.audio_missing) {
     health.className = 'pill warn'; health.textContent = 'Da controllare';
+    health.dataset.action = 'attention'; health.disabled = false;
   } else {
     health.className = 'pill good'; health.textContent = 'Online';
+    health.dataset.action = 'none'; health.disabled = true;
   }
 }
+
+function openSystemAttention() {
+  if (!$('#errorsPanel').classList.contains('hidden')) {
+    $('#errorsPanel').scrollIntoView({behavior: 'smooth', block: 'start'});
+    return;
+  }
+  showView('archive');
+  if (Number(statusData?.queue?.integrity_failed || 0)) $('#recordingStatus').value = 'integrity_failed';
+  else if (Number(statusData?.queue?.failed || 0)) $('#recordingStatus').value = 'failed';
+  renderRecordings();
+}
+
+function runSystemAction(action) {
+  if (action === 'attention') return openSystemAttention();
+  if (action === 'settings') return $('#settingsBtn').click();
+  if (action === 'resume') return $('#pauseRecordingsBtn').click();
+}
+
+$('#healthPill').addEventListener('click', event => runSystemAction(event.currentTarget.dataset.action));
+$('#systemOverviewAction').addEventListener('click', event => runSystemAction(event.currentTarget.dataset.action));
+$('#retryRecoveryBtn').addEventListener('click', async event => {
+  const button = event.currentTarget;
+  setBusy(button, true, 'Recupero…');
+  try {
+    const result = await api('/api/recovery/run', {method: 'POST'});
+    toast(result.started ? 'Recupero avviato: le registrazioni continuano' : 'Recupero già in corso');
+    await refresh({includeRecordings: false});
+  } catch (error) { toast(error.message, 'bad'); }
+  finally { setBusy(button, false); }
+});
+$('#clearErrorsBtn').addEventListener('click', async event => {
+  const button = event.currentTarget;
+  setBusy(button, true, 'Pulizia…');
+  try {
+    const result = await api('/api/status/errors', {method: 'DELETE'});
+    toast(`${result.cleared || 0} avvisi rimossi`);
+    await refresh({includeRecordings: false});
+  } catch (error) { toast(error.message, 'bad'); }
+  finally { setBusy(button, false); }
+});
 
 function renderLivePauseAlert() {
   const root = $('#livePauseAlert');
@@ -1042,6 +1109,12 @@ async function bulkAction(action, button) {
 }
 
 document.addEventListener('click', event => {
+  const localVideo = event.target.closest('[data-local-video]');
+  if (localVideo) {
+    event.preventDefault();
+    openLocalVideo(localVideo.dataset.localVideo, localVideo.dataset.localTitle || 'Copia locale');
+    return;
+  }
   const profileLink = event.target.closest('[data-profile-link]');
   if (profileLink) {
     event.preventDefault();
@@ -1481,6 +1554,9 @@ $('#profileContent').addEventListener('click', async event => {
     $('#videoPlayer').src = recording.view_url;
     return openModal('videoModal');
   }
+  if (action === 'local-capture') {
+    return openLocalVideo(button.dataset.url, button.dataset.title || 'Copia locale');
+  }
   setBusy(button, true);
   try {
     if (action === 'favorite') {
@@ -1717,10 +1793,12 @@ function controlRoomStatusText(profile) {
 function controlRoomLiveCard(profile, wall = false) {
   const source = profile.source;
   const publicUrl = safeUrl(source.source_url);
+  const captureSourceId = Number(profile.active?.source_id || 0);
   const multi = profile.rows.length > 1 ? `<span class="cr-account-count">${profile.rows.length} account</span>` : '';
   const controls = wall ? '' : `<div class="cr-card-actions">
       <button class="btn ${profile.focus ? 'accent' : 'soft'}" data-focus-toggle="${source.id}" type="button" aria-pressed="${profile.focus}">★ Focus</button>
       <button class="btn soft" data-action="profile" data-id="${source.id}" type="button">Profilo</button>
+      ${captureSourceId ? `<button class="btn soft" data-local-video="/api/sources/${captureSourceId}/capture" data-local-title="${esc(`${profile.display_name} · REC locale`)}" type="button">REC locale</button>` : ''}
       ${profile.blocked && source.pause_reason === 'global' ? '<button class="btn primary" data-cr-resume-global type="button">Riprendi REC</button>' : profile.blocked && source.pause_reason === 'source' ? `<button class="btn primary" data-action="toggle" data-id="${source.id}" type="button">Avvia REC</button>` : ''}
       ${publicUrl ? `<a class="btn soft" href="${esc(publicUrl)}" target="_blank" rel="noopener">Sorgente ↗</a>` : ''}
     </div>`;
@@ -1954,7 +2032,8 @@ controlRoomStatusText = function controlRoomStatusTextV280(profile) {
 
 function pulseSessionMeta(session) {
   const bits = [];
-  if (session.file_count) bits.push(`${session.file_count} file`);
+  if (session.processing_count) bits.push(`${session.processing_count} ${session.processing_count === 1 ? 'parte locale' : 'parti locali'}`);
+  else if (session.file_count) bits.push(`${session.file_count} file`);
   if (session.total_bytes) bits.push(humanBytes(session.total_bytes));
   if (session.file_count) bits.push(`${Math.round(Number(session.coverage_percent) || 0)}%`);
   return bits.join(' · ');
@@ -1975,6 +2054,7 @@ controlRoomLiveCard = function controlRoomLiveCardV280(profile, wall = false) {
 function pulseBlockClass(session) {
   if (session.state === 'live') return session.file_count || Number(session.recorded_seconds) > 0 ? 'live rec' : 'live';
   if (session.state === 'missed' || Number(session.coverage_percent) < 55) return 'missed';
+  if (session.state === 'processing') return 'processing';
   if (session.state === 'saved') return 'saved';
   return 'ended';
 }
@@ -2121,13 +2201,16 @@ function controlRoomPulseMarkup() {
         const recX = xFor(recStart);
         const recWidth = widthFor(recStart, recEnd, compact ? 12 : 4);
         const remoteUrl = safeUrl(rec.remote_url || '');
+        const localUrl = safeUrl(rec.local_url || '');
+        const targetUrl = remoteUrl || localUrl;
         const previewUrl = safeUrl(rec.thumbnail_url || '');
         const provider = String(rec.upload_provider || '').toUpperCase();
         const filename = String(rec.filename || 'REC');
-        const meta = `${provider || 'REC'} · ${pulseRangeLabel(rec.started_at, rec.ended_at, false)}`;
-        const rect = `<rect class="cr-pulse-rec-span ${remoteUrl ? 'remote' : ''}" x="${recX.toFixed(3)}" y="4" width="${recWidth.toFixed(3)}" height="8" rx="4" ry="4"></rect>`;
+        const storage = provider || (rec.active ? 'REC LOCALE' : rec.processing ? 'PARTE LOCALE' : 'LOCALE');
+        const meta = `${storage} · ${pulseRangeLabel(rec.started_at, rec.ended_at, !!rec.active)}`;
+        const rect = `<rect class="cr-pulse-rec-span ${remoteUrl ? 'remote' : localUrl ? 'local' : ''} ${rec.processing ? 'processing' : ''}" x="${recX.toFixed(3)}" y="4" width="${recWidth.toFixed(3)}" height="8" rx="4" ry="4"></rect>`;
         const attrs = `class="cr-pulse-rec-media" data-preview-url="${esc(previewUrl)}" data-preview-title="${esc(filename)}" data-preview-meta="${esc(meta)}"`;
-        if (remoteUrl) return `<a ${attrs} href="${esc(remoteUrl)}" target="_blank" rel="noopener noreferrer">${rect}<title>${esc(filename)} · ${esc(meta)}</title></a>`;
+        if (targetUrl) return `<a ${attrs} href="${esc(targetUrl)}" target="_blank" rel="noopener noreferrer">${rect}<title>${esc(filename)} · ${esc(meta)}</title></a>`;
         return `<g ${attrs}>${rect}<title>${esc(filename)} · ${esc(meta)}</title></g>`;
       }).join('');
       const firstRec = recordingFiles[0];
@@ -2137,7 +2220,7 @@ function controlRoomPulseMarkup() {
     return `<div class="cr-pulse-row"><div class="cr-pulse-who">${creatorLinkMarkup(representative.representative_source_id, representative.display_name, 'cr-pulse-name')}${pulseSessionTimingMarkup(representative)}</div><div class="cr-pulse-track"><svg class="cr-pulse-svg" viewBox="0 0 1000 16" preserveAspectRatio="none" role="img" aria-label="Timeline ${esc(representative.display_name)}">${graphics}</svg></div></div>`;
   }).join('');
   const hidden = Math.max(0, profileOrder.length - recentProfiles.length);
-  return `<section class="cr-pulse"><div class="cr-pulse-head"><div><strong>Cronologia live</strong><small>Online e copertura della registrazione</small></div><div class="cr-pulse-head-right"><span class="cr-pulse-legend"><i class="live"></i>ONLINE <i class="rec"></i>REC <i class="missed"></i>NON REC</span><span>Ultime ${controlRoomPulseData.hours || 12} ore · ${DISPLAY_TIME_ZONE_LABEL}${hidden ? ` · +${hidden}` : ''}</span></div></div><div class="cr-pulse-scale"><span></span><div>${labels}</div></div>${rows || '<div class="cr-pulse-empty">Nessuna attività nel periodo.</div>'}</section>`;
+  return `<section class="cr-pulse"><div class="cr-pulse-head"><div><strong>Cronologia live</strong><small>Online e copertura della registrazione</small></div><div class="cr-pulse-head-right"><span class="cr-pulse-legend"><i class="live"></i>ONLINE <i class="rec"></i>REC <i class="processing"></i>RECUPERO <i class="missed"></i>NON REC</span><span>Ultime ${controlRoomPulseData.hours || 12} ore · ${DISPLAY_TIME_ZONE_LABEL}${hidden ? ` · +${hidden}` : ''}</span></div></div><div class="cr-pulse-scale"><span></span><div>${labels}</div></div>${rows || '<div class="cr-pulse-empty">Nessuna attività nel periodo.</div>'}</section>`;
 }
 
 function controlRoomRecentEnded(profiles) {
@@ -2155,11 +2238,13 @@ function controlRoomEndedCard(session) {
   const source = sources.find(row => Number(row.id) === Number(session.representative_source_id)) || sources.find(row => Number(row.profile_id) === Number(session.profile_id));
   const cover = safeUrl(source?.cover_thumbnail_url || '');
   const saved = session.state === 'saved';
-  const state = saved ? '✓ SALVATA' : session.state === 'missed' ? 'NON REC' : session.file_count ? `UPLOAD ${session.uploaded_count}/${session.file_count}` : 'TERMINATA';
+  const processing = session.state === 'processing';
+  const state = saved ? '✓ SALVATA' : processing ? 'IN RECUPERO' : session.state === 'missed' ? 'NON REC' : session.file_count ? `UPLOAD ${session.uploaded_count}/${session.file_count}` : 'TERMINATA';
   const meta = [duration(session.duration_seconds), session.file_count ? `${session.file_count} file` : '', session.total_bytes ? humanBytes(session.total_bytes) : '', session.file_count ? `${Math.round(Number(session.coverage_percent) || 0)}% REC` : ''].filter(Boolean).join(' · ');
-  return `<article class="cr-ended-card ${saved ? 'saved' : ''} ${session.state === 'missed' ? 'missed' : ''}">
+  const local = (session.recordings || []).find(item => item.local_url);
+  return `<article class="cr-ended-card ${saved ? 'saved' : ''} ${processing ? 'processing' : ''} ${session.state === 'missed' ? 'missed' : ''}">
     <div class="cr-ended-cover">${cover ? `<img src="${esc(cover)}" alt="">` : `<span>${esc(controlRoomInitials(session.display_name))}</span>`}</div>
-    <div class="cr-ended-main"><div>${creatorLinkMarkup(session.representative_source_id, session.display_name, 'cr-ended-name')}<small>${esc(meta)}</small></div><div class="cr-ended-state"><strong>${esc(state)}</strong><span>${esc(ago(session.ended_at))}</span></div></div>
+    <div class="cr-ended-main"><div>${creatorLinkMarkup(session.representative_source_id, session.display_name, 'cr-ended-name')}<small>${esc(meta)}</small></div><div class="cr-ended-state"><strong>${esc(state)}</strong><span>${esc(ago(session.ended_at))}</span>${local ? `<button class="btn quiet" data-local-video="${esc(local.local_url)}" data-local-title="${esc(`${session.display_name} · copia locale`)}" type="button">Anteprima</button>` : ''}</div></div>
   </article>`;
 }
 
