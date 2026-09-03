@@ -177,8 +177,15 @@ def build_ffmpeg_command(
             "-dts_delta_threshold", "1",
             "-thread_queue_size", "8192",
             "-rw_timeout", "15000000",
-            "-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "5",
         ]
+        # reconnect* are HTTP protocol options. Some distro FFmpeg builds
+        # reject them when the top-level input is our local synchronized HLS
+        # master ("Option reconnect not found") before opening its remote
+        # child playlists. Direct HTTP(S) inputs still keep the reconnect
+        # policy; synchronized local HLS relies on FFmpeg's HLS reload logic
+        # plus LiveVault's transport guard/restart path.
+        if item.url.lower().startswith(("http://", "https://")):
+            cmd += ["-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "5"]
         if synchronized_hls:
             cmd += ["-protocol_whitelist", "file,http,https,tcp,tls,crypto,data"]
         headers = _ffmpeg_headers(item.http_headers)
