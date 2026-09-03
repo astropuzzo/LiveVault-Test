@@ -15,7 +15,8 @@ def test_ffmpeg_single_input_mapping_mkv():
     assert "-map 0:v:0" in joined
     assert "-map 0:a:0" in joined
     assert "0:a:0?" not in joined
-    assert "-c copy" in joined
+    assert "-c:v copy" in joined
+    assert "-c:a aac" in joined
     assert "-f segment" in joined
     assert "-segment_format matroska" in joined
 
@@ -50,9 +51,15 @@ def test_ffmpeg_direct_mp4_is_fragmented_stream_copy():
         container_format="mp4",
     )
     joined = " ".join(cmd)
-    assert "-c copy" in joined
+    assert "-c:v copy" in joined
+    assert "-c:a aac" in joined
     assert "-segment_format mp4" in joined
     assert "frag_keyframe" in joined
+    assert "-fflags +genpts+discardcorrupt" in joined
+    assert "-dts_delta_threshold 1" in joined
+    assert "-thread_queue_size 8192" in joined
+    assert "aresample=async=1000:first_pts=0:min_hard_comp=0.100" in joined
+    assert "-max_interleave_delta 1000000" in joined
     assert "empty_moov" in joined
     assert "-segment_time 600" in joined
 
@@ -83,7 +90,8 @@ def test_ffmpeg_live_preview_uses_same_process():
     )
     joined = " ".join(cmd)
     assert joined.count("-map 0:v:0") == 2
-    assert "-c copy" in joined
+    assert "-c:v copy" in joined
+    assert "-c:a aac" in joined
     assert "-vf fps=1/20,scale=640:-2:force_original_aspect_ratio=decrease" in joined
     assert "-c:v mjpeg" in joined
     assert "-update 1" in joined

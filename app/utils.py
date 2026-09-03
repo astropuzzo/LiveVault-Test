@@ -52,6 +52,83 @@ def sha256_file(path: Path, chunk_size: int = 1024 * 1024) -> str:
     return h.hexdigest()
 
 
+def _finite_float(value) -> float | None:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if math.isfinite(parsed) else None
+
+
+def _rate_seconds(value) -> float | None:
+    text = str(value or "").strip()
+    if not text or text in {"0/0", "N/A"}:
+        return None
+    try:
+        if "/" in text:
+            numerator, denominator = text.split("/", 1)
+            rate = float(numerator) / float(denominator)
+        else:
+            rate = float(text)
+        return 1.0 / rate if math.isfinite(rate) and rate > 0 else None
+    except (TypeError, ValueError, ZeroDivisionError):
+        return None
+
+
+def _stream_timing_error(streams: list[dict]) -> str:
+    video = next((row for row in streams if row.get("codec_type") == "video"), None)
+    audio = next((row for row in streams if row.get("codec_type") == "audio"), None)
+    if not video or not audio:
+        return ""
+    video_start = _finite_float(video.get("start_time"))
+    audio_start = _finite_float(audio.get("start_time"))
+    if video_start is not None and audio_start is not None:
+        offset = abs(video_start - audio_start)
+        if offset > 1.5:
+            return f"A/V fuori sync all'avvio: {offset:.2f}s"
+    video_duration = _finite_float(video.get("duration"))
+    audio_duration = _finite_float(audio.get("duration"))
+    if video_duration is not None and audio_duration is not None:
+        delta = abs(video_duration - audio_duration)
+        tolerance = max(2.0, min(video_duration, audio_duration) * 0.001)
+        if delta > tolerance:
+            return f"A/V fuori sync a fine file: differenza {delta:.2f}s"
+    return ""
+
+
+def _video_gap_error(path: Path, streams: list[dict]) -> str:
+    video = next((row for row in streams if row.get("codec_type") == "video"), None)
+    expected = _rate_seconds(video.get("avg_frame_rate")) if video else None
+    threshold = max(0.75, (expected or (1 / 30)) * 12)
+    try:
+        probe = subprocess.run(
+            [
+                "ffprobe", "-v", "error", "-select_streams", "v:0",
+                "-show_entries", "packet=dts_time,pts_time", "-of", "csv=p=0", str(path),
+            ],
+            capture_output=True, text=True, timeout=180, check=False,
+        )
+        if probe.returncode != 0:
+            return (probe.stderr or "Analisi timestamp video fallita")[-1200:]
+        previous = None
+        maximum = 0.0
+        for line in (probe.stdout or "").splitlines():
+            parts = [part.strip() for part in line.split(",")]
+            current = next((_finite_float(part) for part in parts if _finite_float(part) is not None), None)
+            if current is None:
+                continue
+            if previous is not None and current > previous:
+                maximum = max(maximum, current - previous)
+            previous = current
+        if maximum > threshold:
+            return f"Gap video rilevato: {maximum:.2f}s senza frame continui"
+        return ""
+    except subprocess.TimeoutExpired:
+        return "Analisi timestamp video scaduta"
+    except Exception as exc:
+        return f"Analisi timestamp video fallita: {exc}"[-1200:]
+
+
 def _probe_duration(path: Path) -> float | None:
     """Duration is useful metadata, but it must never block file recovery."""
     try:
@@ -77,7 +154,7 @@ def probe_media(path: Path, *, require_audio: bool = True) -> IntegrityResult:
             [
                 "ffprobe", "-v", "error", "-probesize", "32M", "-analyzeduration", "20M",
                 "-read_intervals", "%+15", "-show_entries",
-                "format=format_name:stream=index,codec_type,codec_name",
+                "format=format_name:stream=index,codec_type,codec_name,start_time,duration,avg_frame_rate",
                 "-of", "json", str(path),
             ],
             capture_output=True,
@@ -96,6 +173,9 @@ def probe_media(path: Path, *, require_audio: bool = True) -> IntegrityResult:
             return IntegrityResult(False, duration, "Nessuno stream audio/video valido trovato", streams)
         if require_audio and not has_audio:
             return IntegrityResult(False, duration, "Traccia audio assente: il file non verrà caricato come video muto", streams)
+        timing_error = _stream_timing_error(streams)
+        if timing_error:
+            return IntegrityResult(False, duration, timing_error, streams)
         if path.suffix.lower() == ".mp4" and (duration is None or not math.isfinite(duration) or duration <= 0):
             return IntegrityResult(False, duration, "Durata MP4 finale assente: file non pronto per lo streaming", streams)
         if path.stat().st_size <= 0:
@@ -121,6 +201,9 @@ def verify_media(path: Path, mode: str = "packet", *, require_audio: bool = True
         )
         if p.returncode != 0:
             return IntegrityResult(False, quick.duration, (p.stderr or "Packet scan failed")[-1600:], quick.streams)
+        gap_error = _video_gap_error(path, quick.streams or [])
+        if gap_error:
+            return IntegrityResult(False, quick.duration, gap_error, quick.streams)
         return quick
     except Exception as exc:
         return IntegrityResult(False, quick.duration, str(exc)[-1200:], quick.streams)
