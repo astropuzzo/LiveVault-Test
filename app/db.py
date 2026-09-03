@@ -140,6 +140,33 @@ class Recording(Base):
     audio_codec: Mapped[str] = mapped_column(String(40), default="")
 
 
+class RecordingFragment(Base):
+    """Validated local capture part waiting for logical-session stitching."""
+    __tablename__ = "recording_fragments"
+    __table_args__ = (
+        Index("ix_recording_fragments_source_session", "source_id", "session_id"),
+        Index("ix_recording_fragments_finalized", "finalized_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    source_id: Mapped[int] = mapped_column(Integer, index=True)
+    source_name: Mapped[str] = mapped_column(String(120), index=True)
+    session_id: Mapped[str] = mapped_column(String(80), index=True)
+    local_path: Mapped[str] = mapped_column(Text, unique=True)
+    filename: Mapped[str] = mapped_column(String(255))
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    finalized_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    duration_seconds: Mapped[float | None] = mapped_column(Float, nullable=True)
+    size_bytes: Mapped[int] = mapped_column(Integer, default=0)
+    container_format: Mapped[str] = mapped_column(String(16), default="")
+    has_video: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    has_audio: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    video_codec: Mapped[str] = mapped_column(String(40), default="")
+    audio_codec: Mapped[str] = mapped_column(String(40), default="")
+    integrity_status: Mapped[str] = mapped_column(String(30), default="passed", index=True)
+    integrity_error: Mapped[str] = mapped_column(Text, default="")
+
+
 class LiveSession(Base):
     __tablename__ = "live_sessions"
     __table_args__ = (

@@ -10,7 +10,7 @@ def test_storyboard_is_nine_frame_v2():
     assert "for index in range(9)" in utils
     assert "[v6][v7][v8]hstack=inputs=3[row2]" in utils
     assert "[row0][row1][row2]vstack=inputs=3[sheet]" in utils
-    assert workers.count("-sheet-v2.jpg") == 2
+    assert workers.count("-sheet-v2.jpg") == 3
     assert "-sheet-v1.jpg" not in workers
 
 
@@ -27,6 +27,6 @@ def test_pulse_exposes_exact_recording_media():
 
 
 def test_release_tracks_current_version():
-    assert (ROOT / "VERSION").read_text(encoding="utf-8").strip() == "2.8.7"
-    assert 'VERSION = "2.8.7"' in (ROOT / "app/main.py").read_text(encoding="utf-8")
-    assert "livevault-shell-v2.8.7" in (ROOT / "app/static/sw.js").read_text(encoding="utf-8")
+    assert (ROOT / "VERSION").read_text(encoding="utf-8").strip() == "2.8.8"
+    assert 'VERSION = "2.8.8"' in (ROOT / "app/main.py").read_text(encoding="utf-8")
+    assert "livevault-shell-v2.8.8" in (ROOT / "app/static/sw.js").read_text(encoding="utf-8")

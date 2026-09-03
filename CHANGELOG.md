@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.8.8 — Session stitching
+
+- Una registrazione logica resta aperta per 20 minuti dopo una temporanea uscita dalla live pubblica.
+- I reconnect entro 20 minuti vengono uniti in un solo video, senza riempire i gap privati/offline.
+- I frammenti intermedi restano locali e invisibili ad Archivio/upload finché la sessione non viene consolidata.
+- Stream-copy per lo stitching quando possibile; transcode A/V solo come fallback di compatibilità.
+- Rollover automatico a mezzanotte Europe/Berlin per mantenere la separazione cloud giornaliera.
+- Recovery dopo riavvio tramite marker persistente della sessione logica.
+
 ## 2.8.7 — Chaturbate LL-HLS sync
 
 - Chaturbate split LL-HLS: video e audio passano a FFmpeg tramite un unico master sincronizzato.

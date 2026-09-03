@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import signal
 import shutil
@@ -17,6 +18,7 @@ from .utils import probe_media, safe_name, utcnow
 
 LIVE_PREVIEW_INTERVAL_SECONDS = 20
 LIVE_PREVIEW_MAX_AGE_SECONDS = 90
+STITCH_MARKER_NAME = ".livevault-stitch-session.json"
 
 
 def live_preview_path(source_id: int) -> Path:
@@ -246,7 +248,7 @@ def build_ffmpeg_command(
     return cmd
 
 
-async def start_recorder(source: Source) -> RecorderSession:
+async def start_recorder(source: Source, *, session_id: str | None = None) -> RecorderSession:
     cfg = runtime()
     inputs = await resolve_inputs(source.platform, source.slug, source.quality)
     split_llhls = is_chaturbate_split_llhls(source.platform, inputs)
@@ -257,16 +259,25 @@ async def start_recorder(source: Source) -> RecorderSession:
     inputs = [item for item in inputs if _llhls_role(item) in {"media", "video", "audio"}]
     local_now = datetime.now(ZoneInfo(settings.timezone))
     source_name = safe_name(source.name)
-    session_id = f"{source_name}_{local_now:%Y-%m-%d_%H-%M-%S}"
+    session_id = session_id or f"{source_name}_{local_now:%Y-%m-%d_%H-%M-%S}"
     directory = settings.recordings_dir / source_name / session_id
     directory.mkdir(parents=True, exist_ok=True)
+    # Persist enough state for crash recovery before FFmpeg writes the first part.
+    (directory / STITCH_MARKER_NAME).write_text(json.dumps({
+        "source_id": int(source.id),
+        "source_name": source.name,
+        "session_id": session_id,
+        "started_at": utcnow().isoformat(),
+    }, ensure_ascii=False), encoding="utf-8")
+    capture_id = local_now.strftime("%Y%m%d_%H%M%S_%f")
     manifest_path: Path | None = None
     if split_llhls:
         inputs, manifest_path = build_chaturbate_synced_master(
-            inputs, directory / ".livevault-synced-master.m3u8"
+            inputs, directory / f".livevault-synced-master-{capture_id}.m3u8"
         )
     extension = ".mp4" if cfg.container_format == "mp4" else ".mkv"
-    output_pattern = directory / f"{session_id}_part%03d{extension}"
+    # A reconnect within the logical 20-minute session must never overwrite part000.
+    output_pattern = directory / f"{session_id}_{capture_id}_part%03d{extension}"
     preview_path = live_preview_path(source.id)
     preview_path.parent.mkdir(parents=True, exist_ok=True)
     preview_path.unlink(missing_ok=True)
@@ -321,6 +332,67 @@ async def stop_recorder(session: RecorderSession) -> None:
                 os.killpg(session.process.pid, signal.SIGKILL)
             except Exception:
                 pass
+
+
+async def stitch_recording_parts(parts: list[Path], output: Path) -> None:
+    """Join public-live capture parts back-to-back, deliberately removing offline gaps.
+
+    Stream-copy is attempted first so normal sessions keep original video quality.  A
+    full A/V transcode is only the compatibility fallback when the upstream changed
+    codec parameters between reconnects.
+    """
+    parts = [Path(path) for path in parts if Path(path).is_file()]
+    if not parts:
+        raise RuntimeError("Nessun frammento valido da unire")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.unlink(missing_ok=True)
+    concat_file = output.with_name(f".{output.stem}.concat.txt")
+
+    def quote(path: Path) -> str:
+        value = str(path.resolve()).replace("'", "'\\''")
+        return f"file '{value}'"
+
+    concat_file.write_text("\n".join(quote(path) for path in parts) + "\n", encoding="utf-8")
+
+    async def run(args: list[str], timeout: int) -> tuple[int, str]:
+        proc = await asyncio.create_subprocess_exec(
+            *args,
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        try:
+            _stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+        except asyncio.TimeoutError as exc:
+            proc.kill()
+            await proc.wait()
+            raise RuntimeError("Stitching sessione scaduto") from exc
+        return proc.returncode, (stderr or b"").decode(errors="replace")[-1800:]
+
+    total_bytes = sum(path.stat().st_size for path in parts)
+    timeout = max(180, min(3600, int(total_bytes / (4 * 1024**2))))
+    base = [
+        "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+        "-fflags", "+genpts+discardcorrupt",
+        "-f", "concat", "-safe", "0", "-i", str(concat_file),
+        "-map", "0:v:0", "-map", "0:a:0", "-dn", "-ignore_unknown",
+    ]
+    trailer = ["-movflags", "+faststart"] if output.suffix.lower() == ".mp4" else []
+    try:
+        code, detail = await run(base + ["-c", "copy", *trailer, str(output)], timeout)
+        if code == 0 and output.is_file() and output.stat().st_size > 0:
+            return
+        output.unlink(missing_ok=True)
+        code, fallback_detail = await run(base + [
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
+            "-pix_fmt", "yuv420p", "-fps_mode", "vfr",
+            "-c:a", "aac", "-b:a", "192k", "-ar", "48000",
+            "-af", "aresample=async=1",
+            *trailer, str(output),
+        ], max(timeout, 600))
+        if code != 0 or not output.is_file() or output.stat().st_size <= 0:
+            raise RuntimeError(fallback_detail or detail or "Stitching FFmpeg fallito")
+    finally:
+        concat_file.unlink(missing_ok=True)
 
 
 def mp4_is_streaming_ready(path: Path) -> bool:
