@@ -14,7 +14,7 @@ def test_live_pulse_endpoint_and_session_evolution_are_wired():
     assert '✓ SALVATA' in js
     assert 'recording_intervals' in main
     assert 'recording_started_at' in main
-    assert "Europe/Berlin" in js
+    assert "Intl.DateTimeFormat().resolvedOptions().timeZone" in js
 
 
 def test_live_dna_uses_existing_activity_statistics():
