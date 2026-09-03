@@ -11,6 +11,14 @@ def replace(path: str, old: str, new: str) -> None:
     target.write_text(text.replace(old, new, 1), encoding="utf-8")
 
 
+def replace_all(path: str, old: str, new: str) -> None:
+    target = ROOT / path
+    text = target.read_text(encoding="utf-8")
+    if old not in text:
+        raise SystemExit(f"expected text not found in {path}: {old[:120]!r}")
+    target.write_text(text.replace(old, new), encoding="utf-8")
+
+
 # FFmpeg builds differ in how protocol-private options are accepted when the
 # top-level input is a local HLS master. Applying HTTP reconnect options to
 # that local file can fail before the nested HTTP playlists are opened.
@@ -51,8 +59,8 @@ replace("app/static/sw.js", "livevault-shell-v2.8.8", "livevault-shell-v2.8.9")
 replace("README.md", "# LiveVault v2.8.8", "# LiveVault v2.8.9")
 replace("START_HERE.md", "# LiveVault v2.8.8 — START HERE", "# LiveVault v2.8.9 — START HERE")
 replace("tests/test_version_consistency.py", 'assert version == "2.8.8"', 'assert version == "2.8.9"')
-replace("tests/test_v284_pulse_media.py", '== "2.8.8"', '== "2.8.9"')
-replace("tests/test_v286_daily_cloud.py", '== "2.8.8"', '== "2.8.9"')
+replace_all("tests/test_v284_pulse_media.py", "2.8.8", "2.8.9")
+replace_all("tests/test_v286_daily_cloud.py", "2.8.8", "2.8.9")
 
 changelog = ROOT / "CHANGELOG.md"
 text = changelog.read_text(encoding="utf-8")
