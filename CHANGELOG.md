@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.8.23 — Stitching atomico
+
+- Il file consolidato diventa visibile solo dopo completamento e verifica, quindi un deploy non può lasciare un MP4 pubblico privo di indice `moov`.
+- Il recupero scarta le vecchie righe frammento create per errore da output di stitching interrotti e rimuove il relativo falso allarme.
+
 ## 2.8.22 — Stabilità recorder LL-HLS
 
 - Chaturbate parte dall'ultimo segmento LL-HLS completo, evitando init e primi segmenti già scaduti.

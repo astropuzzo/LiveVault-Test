@@ -83,6 +83,12 @@ def fragment_usable_for_stitch(fragment: RecordingFragment) -> bool:
     return fragment.integrity_status == "failed" and error.startswith("gap video rilevato:")
 
 
+def is_capture_part(path: Path) -> bool:
+    stem = path.stem
+    suffix = stem.rsplit("_part", 1)[1] if "_part" in stem else (stem[4:] if stem.startswith("part") else "")
+    return bool(suffix) and suffix.isdigit()
+
+
 def capture_output_files(session: RecorderSession) -> list[Path]:
     """Return FFmpeg parts only; consolidated outputs must never be re-indexed."""
     def capture_part(path: Path) -> bool:
@@ -90,8 +96,7 @@ def capture_output_files(session: RecorderSession) -> list[Path]:
         capture_prefix = str(getattr(session, "capture_prefix", "") or "")
         if capture_prefix and not stem.startswith(capture_prefix):
             return False
-        suffix = stem.rsplit("_part", 1)[1] if "_part" in stem else (stem[4:] if stem.startswith("part") else "")
-        return bool(suffix) and suffix.isdigit()
+        return is_capture_part(path)
 
     return sorted(
         (
@@ -580,10 +585,24 @@ class WorkerManager:
 
     async def _run_recovery_pass(self) -> None:
         async with self._recovery_lock:
+            self._discard_misindexed_stitch_outputs()
             await self._recover_stale_finalizing_files()
             await self._recover_orphans()
             await self._finalize_closed_stitch_sessions()
         self.last_errors.pop("recovery", None)
+
+    def _discard_misindexed_stitch_outputs(self) -> None:
+        """Remove stale DB fragment rows created from interrupted public outputs."""
+        cleared_sources: set[int] = set()
+        with db_session() as db:
+            rows = list(db.scalars(select(RecordingFragment)).all())
+            for row in rows:
+                if is_capture_part(Path(row.local_path)):
+                    continue
+                cleared_sources.add(int(row.source_id))
+                db.delete(row)
+        for source_id in cleared_sources:
+            self.last_errors.pop(f"fragment:{source_id}", None)
 
     async def _recover_stale_finalizing_files(self) -> None:
         """Resolve remux leftovers without ever deleting the original capture."""
@@ -634,6 +653,11 @@ class WorkerManager:
             if marker.is_file():
                 with contextlib.suppress(Exception):
                     marker_data = json.loads(marker.read_text(encoding="utf-8"))
+                # A public numbered output can be present if a deploy stopped
+                # an older non-atomic stitch. It is not a capture fragment and
+                # must never be fed back into the next stitch batch.
+                if not is_capture_part(path):
+                    continue
             source_folder = path.parent.parent.name if path.parent.parent else "recovered"
             source = next((s for s in sources if int(marker_data.get("source_id") or 0) == s.id), None)
             if source is None:
@@ -956,17 +980,16 @@ class WorkerManager:
         suffix = next(iter(suffixes)) if len(suffixes) == 1 else ".mp4"
         sequence, display_name = self._recording_day_sequence(first.source_id, started)
         output = paths[0].parent / public_recording_filename(display_name, started, sequence, suffix)
-        # A stale file from a previously interrupted finalize may exist, but a
-        # validated Recording row is what reserves an ordinal. Replace only the
-        # unindexed stale path for the same chronological slot.
-        output.unlink(missing_ok=True)
-        await stitch_recording_parts(paths, output, allow_transcode=allow_transcode)
-        if output.suffix.lower() == ".mp4":
-            await self._prepare_mp4(output)
-        integrity = await asyncio.to_thread(verify_media, output, runtime().integrity_mode)
+        temporary = output.with_name(f".{output.stem}.finalizing{output.suffix}")
+        temporary.unlink(missing_ok=True)
+        await stitch_recording_parts(paths, temporary, allow_transcode=allow_transcode)
+        if temporary.suffix.lower() == ".mp4":
+            await self._prepare_mp4(temporary)
+        integrity = await asyncio.to_thread(verify_media, temporary, runtime().integrity_mode)
         if not integrity.ok:
-            output.unlink(missing_ok=True)
+            temporary.unlink(missing_ok=True)
             raise RuntimeError(f"Sessione consolidata non valida: {integrity.error}")
+        temporary.replace(output)
         digest = await asyncio.to_thread(sha256_file, output)
         thumb_path = ""
         if runtime().generate_thumbnails:
@@ -1016,6 +1039,7 @@ class WorkerManager:
             (output.parent / STITCH_MARKER_NAME).unlink(missing_ok=True)
             for manifest in output.parent.glob(".livevault-synced-master-*.m3u8"):
                 manifest.unlink(missing_ok=True)
+        self.last_errors.pop(f"fragment:{first.source_id}", None)
         self.wake()
 
     async def _index_file(self, *, source_id: int, source_name: str, session_id: str, path: Path, started_at: datetime | None) -> bool:

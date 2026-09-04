@@ -13,6 +13,7 @@ from app.workers import (
     SESSION_STITCH_GAP_SECONDS,
     SESSION_STITCH_READY_SECONDS,
     capture_output_files,
+    is_capture_part,
     public_recording_filename,
     stitch_gap_open,
 )
@@ -52,6 +53,19 @@ def test_reconnect_only_sees_files_from_its_own_capture(tmp_path):
         capture_prefix = "creator_new_part"
 
     assert [path.name for path in capture_output_files(Session())] == ["creator_new_part000.mp4"]
+
+
+def test_public_or_interrupted_stitch_output_is_not_a_capture_part():
+    assert is_capture_part(Path("creator_capture_part000.mp4"))
+    assert not is_capture_part(Path("002_creator_2026-09-04_16-49-09.mp4"))
+    assert not is_capture_part(Path(".002_creator_2026-09-04_16-49-09.finalizing.mp4"))
+
+
+def test_stitch_publishes_only_after_verified_temporary_output():
+    workers = Path("app/workers.py").read_text(encoding="utf-8")
+    assert 'temporary = output.with_name(f".{output.stem}.finalizing{output.suffix}")' in workers
+    assert "temporary.replace(output)" in workers
+    assert "self._discard_misindexed_stitch_outputs()" in workers
 
 
 def test_public_recording_filename_is_consecutive_and_chronological():
