@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.8.21 — Autoripristino registrazioni LL-HLS
+
+- Gli init segment e i primi segmenti LL-HLS scaduti causano subito un nuovo resolve della sorgente.
+- Un watchdog riavvia le registrazioni che non scrivono dati per 35 secondi, evitando falsi stati REC.
+- Le sessioni senza frammenti recuperabili non generano più errori di stitching permanenti.
+
 ## 2.8.20 — Acquisizione Stripchat alleggerita
 
 - La registrazione mantiene la risoluzione massima ma limita la ricodifica a 30 fps stabili.

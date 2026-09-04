@@ -169,6 +169,13 @@ class WorkerManager(_legacy.WorkerManager):
                     db.expunge(row)
             if not current:
                 continue
+            if not any(_legacy.fragment_usable_for_stitch(item) for item in current):
+                # Preserve failed parts for diagnostics/recovery, but do not
+                # retry an impossible stitch forever or expose it as a live
+                # system fault.
+                self._stitch_retry_after.pop(retry_key, None)
+                self.last_errors.pop(f"stitch:{source_id}:{session_id}", None)
+                continue
             latest = max(item.finalized_at for item in current)
             if not forced and stitch_gap_open(latest, _legacy.utcnow()):
                 continue

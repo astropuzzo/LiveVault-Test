@@ -162,6 +162,12 @@ def stream_transport_fault(line: str) -> str:
         return "segmento video corrotto"
     if "missing picture in access unit" in lowered:
         return "frame video mancante"
+    if "failed to open an initialization section" in lowered:
+        return "segmento iniziale HLS scaduto"
+    if "error when loading first segment" in lowered:
+        return "primo segmento HLS non disponibile"
+    if "error opening input file" in lowered and "livevault-synced-master" in lowered:
+        return "master LL-HLS non più valido"
     return ""
 
 

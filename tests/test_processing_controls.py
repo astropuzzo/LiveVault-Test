@@ -82,3 +82,5 @@ def test_automatic_finalization_respects_window_but_manual_can_bypass():
     assert "if not forced and stitch_gap_open(latest, now):" in source
     assert "if forced:" in source
     assert "Never consolidate the exact session that is still being written" in source
+    assert "not any(_legacy.fragment_usable_for_stitch(item) for item in current)" in source
+    assert 'self.last_errors.pop(f"stitch:{source_id}:{session_id}", None)' in source

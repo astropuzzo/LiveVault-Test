@@ -42,6 +42,7 @@ CLOUD_TIME_ZONE = ZoneInfo("Europe/Berlin")
 SESSION_STITCH_GAP_SECONDS = 20 * 60
 SESSION_STITCH_READY_SECONDS = 15 * 60
 NONFATAL_FFMPEG_NOISE = ("found duplicated moov atom. skipped it",)
+HLS_CAPTURE_STALL_SECONDS = 35
 
 
 def cloud_day_key(value: datetime) -> str:
@@ -1232,6 +1233,8 @@ class WorkerManager:
         processed: set[Path] = set()
         stderr_task = asyncio.create_task(self._drain_stderr(session))
         slot_released = False
+        last_capture_bytes = -1
+        last_capture_growth = time.monotonic()
         try:
             while session.process.returncode is None:
                 await asyncio.sleep(1)
@@ -1243,6 +1246,21 @@ class WorkerManager:
                     await stop_recorder(session)
                     continue
                 files = capture_output_files(session)
+                capture_bytes = sum(path.stat().st_size for path in files)
+                if capture_bytes > last_capture_bytes:
+                    last_capture_bytes = capture_bytes
+                    last_capture_growth = time.monotonic()
+                elif (
+                    session.transport_guard
+                    and time.monotonic() - last_capture_growth >= HLS_CAPTURE_STALL_SECONDS
+                ):
+                    session.restart_requested = True
+                    session.restart_reason = "nessun dato HLS scritto"
+                    self.last_errors[f"ffmpeg:{session.source_id}"] = (
+                        "Registrazione HLS bloccata: nessun nuovo dato scritto; riavvio automatico"
+                    )
+                    await stop_recorder(session)
+                    continue
                 if files and files[-1].stat().st_size >= session.safe_stop_bytes:
                     session.rollover_requested = True
                     await stop_recorder(session)

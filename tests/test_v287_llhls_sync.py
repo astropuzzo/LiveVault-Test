@@ -130,6 +130,9 @@ def test_transport_guard_restarts_only_on_destructive_hls_faults():
     assert stream_transport_fault("The specified session has been invalidated for some reason")
     assert stream_transport_fault("Invalid NAL unit size (123 > 45)")
     assert stream_transport_fault("missing picture in access unit with size 22123")
+    assert stream_transport_fault("Failed to open an initialization section in playlist 1")
+    assert stream_transport_fault("Error when loading first segment 'https://edge.example/seg.m4s'")
+    assert stream_transport_fault("Error opening input file /data/recordings/demo/.livevault-synced-master-x.m3u8")
     assert stream_transport_fault("Opening next HLS segment") == ""
 
 
@@ -138,5 +141,7 @@ def test_worker_has_immediate_transport_restart_and_repair_cleanup():
     assert "session.transport_guard and not session.restart_requested" in source
     assert "if session.restart_requested:" in source
     assert "controlled_restart = session.restart_requested" in source
+    assert "HLS_CAPTURE_STALL_SECONDS = 35" in source
+    assert "nessun nuovo dato scritto; riavvio automatico" in source
     assert 'self.last_errors.pop(f"mp4-repair:{rec.id}", None)' in source
     assert 'or "a/v fuori sync" in error_text' in source
