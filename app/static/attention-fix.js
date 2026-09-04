@@ -131,9 +131,6 @@
       + Number(statusData?.queue?.waiting_config || 0)
       + Number(statusData?.history?.audio_missing || 0);
 
-    // Worker/runtime errors live in their own diagnostic panel. If there are also
-    // recording problems, prefer the actionable recording rows and keep the panel
-    // available when the user returns to Dashboard.
     if (!statusHints && workerErrors && !$('#errorsPanel').classList.contains('hidden')) {
       $('#errorsPanel').scrollIntoView({behavior: 'smooth', block: 'start'});
       $('#errorsPanel').classList.add('lv-attention-focus');
@@ -143,10 +140,6 @@
 
     clearArchiveNarrowing();
     ensureAttentionFilters();
-
-    // Dashboard normally does not keep the Archive payload loaded. Fetch the latest
-    // recordings explicitly before switching view so the very first Archive render
-    // is already filtered to the actual problem rows (no unfiltered-list flash).
     recordings = await api('/api/recordings?limit=2000');
     recordingsLoaded = true;
     lastRecordingLoad = Date.now();
@@ -162,8 +155,6 @@
       return;
     }
 
-    // If the aggregate status was newer than the archive payload, fall back to the
-    // most specific filter instead of dumping the user into an unfiltered archive.
     if (Number(statusData?.history?.audio_missing || 0)) $('#recordingStatus').value = 'audio_missing';
     else if (Number(statusData?.queue?.integrity_failed || 0)) $('#recordingStatus').value = 'integrity_failed';
     else if (Number(statusData?.queue?.failed || 0)) $('#recordingStatus').value = 'failed';
@@ -174,8 +165,6 @@
     $('#archive')?.scrollIntoView({behavior: 'smooth', block: 'start'});
   };
 
-  // The original overview did not escalate upload failures/configuration blocks when
-  // they were the only issue. Keep the Dashboard action consistent with the queue.
   const baseRenderStatusAttention = renderStatus;
   renderStatus = function renderStatusAttention(status) {
     const result = baseRenderStatusAttention(status);
@@ -213,4 +202,192 @@
     renderRecordings();
     decorateAttentionCards();
   }
+})();
+
+/* LiveVault processing/finalization UX */
+(() => {
+  function ensureSessionGapField() {
+    if ($('#setSessionGap')) return;
+    const segment = $('#setSegment')?.closest('label');
+    if (!segment) return;
+    const field = document.createElement('label');
+    field.className = 'field';
+    field.innerHTML = '<span>Finestra ricongiungimento (min)</span><input id="setSessionGap" type="number" min="1" max="120" step="1"><small>Attende questo intervallo dopo l’ultimo frammento prima di chiudere la sessione. “Finalizza + upload ora” la salta manualmente.</small>';
+    segment.insertAdjacentElement('afterend', field);
+  }
+
+  ensureSessionGapField();
+
+  const baseLoadSettingsProcessing = loadSettings;
+  loadSettings = async function loadSettingsProcessing() {
+    const result = await baseLoadSettingsProcessing();
+    ensureSessionGapField();
+    if ($('#setSessionGap')) $('#setSessionGap').value = Number(settingsData?.session_stitch_gap_minutes || 20);
+    return result;
+  };
+
+  $('#settingsForm')?.addEventListener('submit', async () => {
+    const value = Math.max(1, Math.min(120, Number($('#setSessionGap')?.value || 20)));
+    try {
+      await api('/api/session-processing/settings', {
+        method: 'PATCH',
+        body: JSON.stringify({session_stitch_gap_minutes: value})
+      });
+      if (settingsData) settingsData.session_stitch_gap_minutes = value;
+    } catch (error) {
+      const target = $('#settingsError');
+      if (target) target.textContent = `Finestra ricongiungimento: ${error.message}`;
+      toast(`Finestra ricongiungimento: ${error.message}`, 'bad');
+    }
+  });
+
+  function ensureProcessingCard() {
+    let card = $('#processingNowCard');
+    if (card) return card;
+    const uploadCard = $('#uploadNowCard');
+    if (!uploadCard) return null;
+    card = document.createElement('section');
+    card.id = 'processingNowCard';
+    card.className = 'upload-card panel hidden lv-processing-card';
+    card.setAttribute('aria-live', 'polite');
+    card.innerHTML = '<div><span class="lv-processing-dot"></span><strong id="processingNowTitle">Elaborazione in corso</strong><small id="processingNowMeta">—</small></div><div class="upload-progress"><div class="meter big"><i id="processingProgressBar"></i></div><span id="processingProgressText">0%</span></div>';
+    uploadCard.insertAdjacentElement('afterend', card);
+    return card;
+  }
+
+  function renderProcessingProgress(status) {
+    const card = ensureProcessingCard();
+    if (!card) return;
+    const current = status?.worker?.processing_current;
+    card.classList.toggle('hidden', !current);
+    if (!current) return;
+    const percent = Math.max(0, Math.min(100, Number(current.percent) || 0));
+    $('#processingNowTitle').textContent = `${current.source_name || 'Sessione'} · ${current.stage || 'Elaborazione'}`;
+    $('#processingNowMeta').textContent = `${current.parts || 0} ${Number(current.parts) === 1 ? 'parte' : 'parti'} · ${humanBytes(current.processed_bytes || 0)} / ${humanBytes(current.total_bytes || 0)}`;
+    $('#processingProgressBar').style.width = `${percent}%`;
+    $('#processingProgressText').textContent = `${percent.toFixed(percent % 1 ? 1 : 0)}%`;
+    card.dataset.stage = String(current.stage || '').toLowerCase();
+  }
+
+  const baseRenderStatusProcessing = renderStatus;
+  renderStatus = function renderStatusProcessing(status) {
+    const result = baseRenderStatusProcessing(status);
+    renderProcessingProgress(status);
+    return result;
+  };
+
+  function processingForSource(sourceId) {
+    const current = statusData?.worker?.processing_current;
+    return current && Number(current.source_id) === Number(sourceId) ? current : null;
+  }
+
+  function processingCandidateForProfile(profile) {
+    const session = profile?.pulse_session;
+    if (!session) return false;
+    return Number(session.processing_count || 0) > 0
+      || (Number(session.file_count || 0) > Number(session.uploaded_count || 0));
+  }
+
+  function decorateProcessButtons() {
+    const root = $('#sources');
+    if (!root) return;
+    const profiles = typeof controlRoomProfileRows === 'function' ? controlRoomProfileRows() : [];
+    for (const card of root.querySelectorAll('.cr-live-card')) {
+      if (card.querySelector('[data-process-now]')) continue;
+      const idNode = card.querySelector('[data-id]');
+      const sourceId = Number(idNode?.dataset.id || 0);
+      if (!sourceId) continue;
+      const profile = profiles.find(row => row.rows?.some(source => Number(source.id) === sourceId));
+      if (!profile || !processingCandidateForProfile(profile)) continue;
+      const actions = card.querySelector('.cr-card-actions');
+      if (!actions) continue;
+      const button = document.createElement('button');
+      button.className = 'btn accent lv-process-now';
+      button.type = 'button';
+      button.dataset.processNow = String(profile.source?.id || sourceId);
+      button.textContent = processingForSource(profile.source?.id || sourceId) ? 'Elaborazione…' : 'Finalizza + upload ora';
+      actions.append(button);
+    }
+
+    for (const card of root.querySelectorAll('.cr-ended-card')) {
+      if (card.querySelector('[data-process-now]')) continue;
+      const creator = card.querySelector('[data-profile-link]');
+      const sourceId = Number(creator?.dataset.profileLink || 0);
+      if (!sourceId) continue;
+      const profile = profiles.find(row => row.rows?.some(source => Number(source.id) === sourceId));
+      const session = profile?.pulse_session;
+      if (!session || !processingCandidateForProfile(profile)) continue;
+      const state = card.querySelector('.cr-ended-state');
+      if (!state) continue;
+      const button = document.createElement('button');
+      button.className = 'btn quiet lv-process-now';
+      button.type = 'button';
+      button.dataset.processNow = String(profile.source?.id || sourceId);
+      button.textContent = 'Finalizza ora';
+      state.append(button);
+    }
+  }
+
+  const baseRenderSourcesProcessing = renderSources;
+  renderSources = function renderSourcesProcessing() {
+    const result = baseRenderSourcesProcessing();
+    decorateProcessButtons();
+    return result;
+  };
+
+  if (typeof controlRoomEndedCard === 'function') {
+    const baseEndedCardProcessing = controlRoomEndedCard;
+    controlRoomEndedCard = function controlRoomEndedCardProcessing(session) {
+      let html = baseEndedCardProcessing(session);
+      if (session?.state === 'processing') {
+        const sourceId = Number(session.representative_source_id || 0);
+        const current = processingForSource(sourceId);
+        const label = current ? `ELABORAZIONE ${Math.round(Number(current.percent) || 0)}%` : 'IN ATTESA DI FINALIZZAZIONE';
+        html = html.replace('IN RECUPERO', label);
+      }
+      return html;
+    };
+  }
+
+  if (typeof controlRoomPulseMarkup === 'function') {
+    const basePulseMarkupProcessing = controlRoomPulseMarkup;
+    controlRoomPulseMarkup = function controlRoomPulseMarkupProcessing() {
+      return String(basePulseMarkupProcessing()).replaceAll('RECUPERO', 'ELABORAZIONE');
+    };
+  }
+
+  const baseRenderProfileProcessing = renderProfile;
+  renderProfile = function renderProfileProcessing() {
+    const result = baseRenderProfileProcessing();
+    for (const state of $$('#profileContent .local-capture > span')) {
+      if (state.textContent === 'PRONTA · CONSOLIDAMENTO') state.textContent = 'PRONTA · IN ATTESA';
+      else if (state.textContent === 'RECUPERO DISPONIBILE') state.textContent = 'RIPRISTINO DISPONIBILE';
+    }
+    return result;
+  };
+
+  document.addEventListener('click', async event => {
+    const button = event.target.closest('[data-process-now]');
+    if (!button) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const sourceId = Number(button.dataset.processNow || 0);
+    if (!sourceId) return;
+    setBusy(button, true, 'Avvio…');
+    try {
+      const result = await api(`/api/sources/${sourceId}/process-now`, {method: 'POST'});
+      const bits = [];
+      if (result.finalized) bits.push(`${result.finalized} parti finalizzate`);
+      if (result.uploads_prioritized) bits.push(`${result.uploads_prioritized} upload prioritizzati`);
+      if (result.upload_paused) bits.push('upload globale in pausa');
+      toast(bits.length ? bits.join(' · ') : 'Elaborazione richiesta');
+      await refresh({includeRecordings: false});
+    } catch (error) {
+      toast(error.message, 'bad');
+    } finally {
+      setBusy(button, false);
+    }
+  }, true);
+
+  renderProcessingProgress(statusData || {});
 })();
