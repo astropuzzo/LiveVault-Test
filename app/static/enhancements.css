@@ -151,9 +151,11 @@ button.pill{background:transparent;cursor:pointer;font-family:inherit}button.pil
 .dashboard-metrics .metric-card>small{font-size:.61rem}
 .dashboard-metrics .metric-card>p{display:none}
 .dashboard-metrics .metric-card .meter{margin-top:9px}
-@media(max-width:1180px){.dashboard-commandbar{grid-template-columns:1fr}.dashboard-commandbar .control-center{grid-template-columns:repeat(2,minmax(0,1fr)) auto}.dashboard-metrics{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:1180px){.dashboard-metrics{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:900px){.dashboard-commandbar{grid-template-columns:1fr}.dashboard-commandbar .control-center{grid-template-columns:repeat(2,minmax(0,1fr)) auto}}
 @media(max-width:700px){.dashboard-head{margin-bottom:10px}.dashboard-commandbar{gap:8px}.dashboard-commandbar .system-overview{grid-template-columns:24px minmax(0,1fr);padding:10px}.dashboard-commandbar .system-overview-side{grid-column:2;display:flex;gap:7px;align-items:center;min-width:0;padding:4px 0 0;border:0;text-align:left}.dashboard-commandbar .system-overview-side button{margin:0}.dashboard-commandbar .control-center{grid-template-columns:1fr 1fr;padding:6px}.dashboard-commandbar .control-quick-actions{grid-column:1/-1;display:grid;grid-template-columns:1fr 1fr}.dashboard-commandbar .control-module{display:grid;align-items:start}.dashboard-commandbar .control-module .btn{width:100%;margin-top:4px}.dashboard-sources{padding:12px}.dashboard-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.dashboard-metrics .metric-card{min-height:104px}}
 @media(max-width:420px){.dashboard-commandbar .control-center{grid-template-columns:1fr}.dashboard-commandbar .control-quick-actions{grid-column:auto}.dashboard-metrics{grid-template-columns:1fr 1fr}.dashboard-metrics .metric-card{padding:10px}.dashboard-metrics .metric-card>strong{font-size:1.2rem}}
+.dashboard-sources .cr-live-section:has(.cr-live-empty){display:none}
 
 /* Archive 2.0: calm information hierarchy and genuinely fluid cards. */
 #archive{padding:clamp(14px,2vw,24px);border-radius:18px;background:linear-gradient(180deg,rgba(23,27,29,.98),rgba(15,18,20,.99))}
