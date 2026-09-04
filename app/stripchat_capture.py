@@ -154,6 +154,28 @@ window.capture = async args => {
 
   const types = ['video/mp4;codecs=avc1.42E01E,mp4a.40.2','video/mp4','video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm'];
   const mime = types.find(type => MediaRecorder.isTypeSupported(type)) || '';
+  const previewLoop = async () => {
+    let first = true;
+    while (!stopping && !ended) {
+      try {
+        const chunks = [];
+        const recorder = new MediaRecorder(remote, mime ? {mimeType:mime,videoBitsPerSecond:1200000,audioBitsPerSecond:96000} : undefined);
+        recorder.ondataavailable = event => { if (event.data?.size) chunks.push(event.data); };
+        const stopped = new Promise(resolve => recorder.onstop = resolve);
+        recorder.start(1000);
+        const deadline = Date.now() + (first ? 4000 : 10000);
+        while (!stopping && !ended && Date.now() < deadline) await sleep(200);
+        recorder.stop(); await stopped;
+        if (chunks.length) {
+          const data = new Uint8Array(await new Blob(chunks,{type:mime}).arrayBuffer());
+          let binary = ''; for (let i=0;i<data.length;i+=32768) binary += String.fromCharCode(...data.subarray(i,i+32768));
+          await window.writeVideoPreview(btoa(binary),mime);
+        }
+        first = false;
+      } catch (_) { await sleep(1000); }
+    }
+  };
+  const previewTask = previewLoop();
   let part = 0;
   let total = 0;
   const video = document.querySelector('#v');
@@ -188,6 +210,7 @@ window.capture = async args => {
     recorder.stop(); await stopped; await chain; await window.finishPart(part,mime);
     total += bytes;
   }
+  await previewTask;
   try { socket.close(); } catch (_) {} try { peer.close(); } catch (_) {}
   return {parts:part,bytes:total,reason:stopping?'stopped':'stream_ended'};
 };
@@ -256,9 +279,21 @@ async def capture(args: argparse.Namespace) -> None:
             temporary.write_bytes(data)
             os.replace(temporary, target)
 
+        async def write_video_preview(encoded: str, mime: str) -> None:
+            suffix = ".mp4" if str(mime).lower().startswith("video/mp4") else ".webm"
+            base = Path(args.video_preview_base)
+            target = base.with_suffix(suffix)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            temporary = target.with_name(f"{target.name}.tmp")
+            temporary.write_bytes(base64.b64decode(encoded))
+            os.replace(temporary, target)
+            for stale_suffix in ({".mp4", ".webm"} - {suffix}):
+                base.with_suffix(stale_suffix).unlink(missing_ok=True)
+
         await page.expose_function("writeChunk", write_chunk)
         await page.expose_function("finishPart", finish_part)
         await page.expose_function("writePreview", write_preview)
+        await page.expose_function("writeVideoPreview", write_video_preview)
         await page.set_content(CLIENT_HTML, wait_until="domcontentloaded")
         task = asyncio.create_task(page.evaluate(
             "args => window.capture(args)",
@@ -288,6 +323,7 @@ def main() -> None:
     parser.add_argument("--slug", required=True)
     parser.add_argument("--output-pattern", required=True)
     parser.add_argument("--preview", required=True)
+    parser.add_argument("--video-preview-base", required=True)
     parser.add_argument("--segment-seconds", required=True, type=int)
     parser.add_argument("--max-bytes", required=True, type=int)
     parser.add_argument("--container", choices=("mp4", "mkv"), required=True)

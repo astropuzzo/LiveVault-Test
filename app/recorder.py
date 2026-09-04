@@ -191,6 +191,7 @@ def build_stripchat_capture_command(
         "--slug", source.slug,
         "--output-pattern", str(output_pattern),
         "--preview", str(preview_path),
+        "--video-preview-base", str(output_pattern.parent / ".active-preview"),
         "--segment-seconds", str(max(60, int(segment_minutes) * 60)),
         "--max-bytes", str(safe_output_limit_bytes(segment_max_gb)),
         "--container", container_format,

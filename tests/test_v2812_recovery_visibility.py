@@ -66,9 +66,11 @@ def test_misnamed_media_recorder_mp4_is_detected_from_signature(tmp_path):
     assert _video_media_type(capture) == "video/mp4"
 
 
-def test_active_capture_is_finalized_for_browser_without_touching_source(tmp_path, monkeypatch):
+def test_active_capture_prefers_independently_finalized_browser_preview(tmp_path):
     source = tmp_path / "creator_part001.capture.mp4"
     source.write_bytes(b"fragmented-mp4")
+    preview = tmp_path / ".active-preview.mp4"
+    preview.write_bytes(b"finalized-preview")
     manager = WorkerManager()
     manager.active[9] = SimpleNamespace(
         directory=tmp_path,
@@ -76,16 +78,9 @@ def test_active_capture_is_finalized_for_browser_without_touching_source(tmp_pat
         started_at=datetime.now(timezone.utc) - timedelta(seconds=10),
     )
 
-    def fake_run(command, **_kwargs):
-        Path(command[-1]).write_bytes(b"finalized-preview")
-        return SimpleNamespace(returncode=0)
+    selected = manager.playable_active_capture_path(9)
 
-    monkeypatch.setattr("app.workers.subprocess.run", fake_run)
-    preview = manager.playable_active_capture_path(9)
-
-    assert preview is not None
-    assert preview != source
-    assert preview.read_bytes() == b"finalized-preview"
+    assert selected == preview
     assert source.read_bytes() == b"fragmented-mp4"
 
 

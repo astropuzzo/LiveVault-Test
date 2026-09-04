@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.8.19 — Clip preview locale Stripchat
+
+- Il recorder mantiene un breve clip locale indipendente, completo e riproducibile mentre la registrazione principale resta aperta.
+- Il player usa il clip finalizzato più recente anziché il contenitore principale ancora incompleto.
+
 ## 2.8.18 — Player della registrazione attiva
 
 - `REC locale` crea al primo accesso una breve copia MP4 finalizzata e riproducibile.
