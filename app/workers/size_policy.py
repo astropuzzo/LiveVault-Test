@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import math
-import os
 import shutil
 import time
 import types
@@ -31,7 +30,7 @@ def configured_max_bytes() -> int:
 
 
 def configured_stitch_target_bytes() -> int:
-    """Aim slightly below the hard limit so MP4 mux overhead cannot cross it."""
+    """Aim below the hard limit so mux/keyframe overhead cannot cross it."""
     try:
         value = float(runtime().segment_max_gb)
     except (AttributeError, TypeError, ValueError):
@@ -53,15 +52,14 @@ def bounded_fragment_batch(
     target_bytes: int | None = None,
     maximum_bytes: int | None = None,
 ) -> list[Any]:
-    """Return the oldest stitchable prefix that fits one final recording.
+    """Return the oldest stitchable prefix that fits one physical recording.
 
-    The join window is a logical-session rule; it must never imply one giant
-    physical file.  We therefore preserve chronological order and stop before
-    the next fragment would push the stream-copy stitch over the configured
-    size budget.
+    The reconnect window defines a logical session, not a single giant file.
+    Fragments stay chronological and are consumed until the configured target
+    is reached; the next fragment is left for the following output.
     """
-    target = max(1, int(target_bytes or configured_stitch_target_bytes()))
-    maximum = max(target, int(maximum_bytes or configured_max_bytes()))
+    maximum = max(1, int(maximum_bytes or configured_max_bytes()))
+    target = min(maximum, max(1, int(target_bytes or configured_stitch_target_bytes())))
     usable = [
         item
         for item in sorted(fragments, key=lambda row: (row.started_at, row.id))
@@ -98,6 +96,7 @@ def _fragment_count(source_id: int | None = None) -> int:
 
 
 async def _run_segment_copy(source: Path, staging: Path, segment_seconds: float) -> list[Path]:
+    """Losslessly split one already-finalized recording on media keyframes."""
     staging.mkdir(parents=True, exist_ok=True)
     for child in staging.iterdir():
         if child.is_file():
@@ -165,8 +164,9 @@ async def _split_file_bounded(source: Path, maximum_bytes: int) -> tuple[Path, l
     if free < size + 256 * 1024 * 1024:
         raise RuntimeError("Spazio insufficiente per suddividere il file grande")
 
-    # 90% of the hard cap leaves room for VBR/keyframe variance.  If a chunk
-    # still crosses the hard limit, repeat with a shorter segment duration.
+    # Aim at 90% of the hard cap because VBR/keyframe placement can make a
+    # time-based segment larger than the average estimate. Retry shorter until
+    # every produced chunk is physically below the configured maximum.
     target = max(64 * 1024**2, int(maximum_bytes * 0.90))
     estimated_parts = max(2, math.ceil(size / target))
     segment_seconds = max(2.0, float(quick.duration) / estimated_parts * 0.90)
@@ -242,6 +242,7 @@ def _apply_split_metadata(row: Any, info: dict[str, Any], started_at: Any, uploa
 
 
 async def _split_oversized_recording(manager: Any, recording: Any) -> bool:
+    """Repair a legacy >limit Recording without ever destroying the original first."""
     path = Path(recording.local_path)
     maximum = configured_max_bytes()
     previous_status = str(recording.upload_status or "integrity_failed")
@@ -275,6 +276,7 @@ async def _split_oversized_recording(manager: Any, recording: Any) -> bool:
 
     staging: Path | None = None
     finals: list[Path] = []
+    generated_thumbnails: list[Path] = []
     backup = path.with_name(f".{path.name}.oversized-{recording.id}.bak")
     committed = False
     old_thumbnail = Path(recording.thumbnail_path) if str(recording.thumbnail_path or "").strip() else None
@@ -282,11 +284,7 @@ async def _split_oversized_recording(manager: Any, recording: Any) -> bool:
         if backup.exists():
             raise RuntimeError(f"Backup oversized già presente: {backup.name}")
         staging, chunks = await _split_file_bounded(path, maximum)
-        manager._set_processing(
-            stage="Verifica parti",
-            percent=42.0,
-            parts=len(chunks),
-        )
+        manager._set_processing(stage="Verifica parti", percent=42.0, parts=len(chunks))
         manager.wake()
 
         verified: list[dict[str, Any]] = []
@@ -307,6 +305,7 @@ async def _split_oversized_recording(manager: Any, recording: Any) -> bool:
                 candidate = _legacy.settings.data_dir / "thumbnails" / f"{digest[:24]}-sheet-v2.jpg"
                 if await asyncio.to_thread(_legacy.generate_thumbnail, chunk, candidate, integrity.duration):
                     thumbnail = str(candidate)
+                    generated_thumbnails.append(candidate)
             verified.append({
                 "staging": chunk,
                 "integrity": integrity,
@@ -389,6 +388,9 @@ async def _split_oversized_recording(manager: Any, recording: Any) -> bool:
                 backup.replace(path)
             if staging is not None:
                 shutil.rmtree(staging, ignore_errors=True)
+            for thumbnail in generated_thumbnails:
+                if old_thumbnail is None or thumbnail != old_thumbnail:
+                    thumbnail.unlink(missing_ok=True)
             with _legacy.db_session() as db:
                 current = db.get(_legacy.Recording, int(recording.id))
                 if current is not None and current.upload_status == "converting":
@@ -398,11 +400,7 @@ async def _split_oversized_recording(manager: Any, recording: Any) -> bool:
         manager.last_errors[f"oversize:{recording.id}"] = detail
         manager._retry_after[int(recording.id)] = time.monotonic() + 300
         if manager.processing_current and str(manager.processing_current.get("session_id") or "") == session_key:
-            manager._set_processing(
-                stage="Errore",
-                error=detail,
-                completed_at=_legacy.utcnow().isoformat(),
-            )
+            manager._set_processing(stage="Errore", error=detail, completed_at=_legacy.utcnow().isoformat())
             manager.wake()
             manager._schedule_processing_clear(session_key, delay=8.0)
         return False
@@ -425,17 +423,9 @@ def install_size_policy(manager: Any) -> None:
         clear_task = getattr(self, "_processing_clear_task", None)
         if clear_task is not None and not clear_task.done():
             clear_task.cancel()
-        result = await original_stitch(batch, allow_transcode=allow_transcode)
-        maximum = configured_max_bytes()
-        current = getattr(self, "processing_current", None)
-        if current and int(current.get("processed_bytes") or 0) > maximum:
-            raise RuntimeError("Output di stitching oltre il limite massimo configurato")
-        return result
+        return await original_stitch(batch, allow_transcode=allow_transcode)
 
     async def bounded_finalize(self, force_source_id: int | None = None):
-        # The underlying finalizer visits each logical session once.  Repeat only
-        # while fragment rows are actually consumed, so a quiet 9 GB backlog is
-        # drained into several <=2 GB recordings in the same maintenance pass.
         for _ in range(128):
             before = _fragment_count(force_source_id)
             await original_finalize(force_source_id=force_source_id)
@@ -449,8 +439,9 @@ def install_size_policy(manager: Any) -> None:
         if candidate is not None:
             if candidate.source_id in self.active:
                 self._retry_after[int(candidate.id)] = time.monotonic() + 120
-            else:
-                await _split_oversized_recording(self, candidate)
+                return None
+            if not await _split_oversized_recording(self, candidate):
+                return None
         return await original_repair()
 
     manager._stitch_fragment_group = types.MethodType(bounded_stitch, manager)
