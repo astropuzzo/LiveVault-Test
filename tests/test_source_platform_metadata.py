@@ -4,18 +4,40 @@ from datetime import datetime, timezone
 from app import source_providers as providers
 
 
-def test_private_webcam_session_is_online_but_not_recordable(monkeypatch):
+def test_stripchat_ignores_historical_ended_show():
+    data = {
+        "viewCam": {
+            "model": {"id": 12, "isLive": True, "isOnline": True, "status": "public"},
+            "show": {"id": 99, "endedAt": "2026-09-04T09:19:15Z", "isDeleted": False},
+        }
+    }
+    assert providers._stripchat_room_state(data) == (True, False, "public", 12)
+
+
+def test_stripchat_offline_wins_over_historical_show():
+    data = {
+        "viewCam": {
+            "model": {"id": 13, "isLive": False, "isOnline": False, "status": "off"},
+            "show": {"id": 98, "endedAt": "2026-09-03T20:41:46Z", "isDeleted": False},
+        }
+    }
+    assert providers._stripchat_room_state(data) == (False, False, "off", 13)
+
+
+def test_stripchat_public_probe_is_recordable(monkeypatch):
+    data = {"viewCam": {"model": {"id": 12, "isLive": True, "isOnline": True, "status": "public"}}}
+    monkeypatch.setattr(providers, "_stripchat_snapshot", lambda _slug: data)
     monkeypatch.setattr(
         providers,
-        "_extract",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("Model is in a private show")),
+        "_stripchat_master",
+        lambda *_args: providers.ResolvedInput("https://media.example/live.m3u8", {}, "media"),
     )
 
     result = asyncio.run(providers.probe("stripchat", "example", "best"))
 
     assert result.live is True
-    assert result.status == "private"
-    assert result.recordable is False
+    assert result.status == "live"
+    assert result.recordable is True
     assert result.error == ""
 
 

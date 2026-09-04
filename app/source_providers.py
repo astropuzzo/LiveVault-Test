@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from functools import lru_cache
 from typing import Any
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, urljoin, urlparse
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import requests
@@ -351,6 +351,133 @@ def _extract(url: str, quality: str, *, quiet: bool = True) -> dict[str, Any]:
         return ydl.extract_info(url, download=False)
 
 
+def _stripchat_snapshot(slug: str) -> dict[str, Any]:
+    """Read Stripchat's current room state without trusting stale show history.
+
+    yt-dlp currently treats any ``viewCam.show`` object as an active private
+    show. Stripchat retains the last ended show in that field, so an offline or
+    public room can be misclassified. The model flags are the authoritative
+    current state.
+    """
+    from yt_dlp import YoutubeDL
+    from yt_dlp.extractor.stripchat import StripchatIE
+    from yt_dlp.utils import lowercase_escape
+
+    username = slug.strip("/")
+    url = source_url("stripchat", username)
+    with YoutubeDL({"quiet": True, "no_warnings": True, "socket_timeout": 20}) as ydl:
+        extractor = StripchatIE(ydl)
+        webpage = extractor._download_webpage(url, username)
+        data = extractor._search_json(
+            r"<script\b[^>]*>\s*window\.__PRELOADED_STATE__\s*=",
+            webpage,
+            "data",
+            username,
+            transform_source=lowercase_escape,
+        )
+    if not isinstance(data, dict):
+        raise RuntimeError("Stripchat room state is not available")
+    return data
+
+
+def _stripchat_room_state(data: dict[str, Any]) -> tuple[bool, bool, str, int | None]:
+    view = data.get("viewCam") if isinstance(data.get("viewCam"), dict) else {}
+    model = view.get("model") if isinstance(view.get("model"), dict) else {}
+    live = model.get("isLive") is True and model.get("isOnline") is not False
+    status = str(model.get("status") or "").strip().lower()
+    show = view.get("show") if isinstance(view.get("show"), dict) else {}
+    active_show = bool(show and not show.get("endedAt") and show.get("isDeleted") is not True)
+    private = live and (active_show or status in {"private", "p2p", "group", "ticket"})
+    try:
+        model_id = int(model.get("id"))
+    except (TypeError, ValueError):
+        model_id = None
+    return live, private, status, model_id
+
+
+def _stripchat_hls_hosts(data: dict[str, Any]) -> list[str]:
+    hosts: list[str] = []
+
+    def add(value: object) -> None:
+        if isinstance(value, str):
+            host = value.strip().lower().rstrip(".")
+            if re.fullmatch(r"[a-z0-9.-]+", host) and "." in host and host not in hosts:
+                hosts.append(host)
+        elif isinstance(value, list):
+            for item in value:
+                add(item)
+
+    config_v3 = data.get("configV3") if isinstance(data.get("configV3"), dict) else {}
+    initial = config_v3.get("initialCommon") if isinstance(config_v3.get("initialCommon"), dict) else {}
+    add(initial.get("hlsStreamHost"))
+    static = config_v3.get("static") if isinstance(config_v3.get("static"), dict) else {}
+    settings = static.get("featureSettings") if isinstance(static.get("featureSettings"), dict) else {}
+    fallback = settings.get("hlsFallback") if isinstance(settings.get("hlsFallback"), dict) else {}
+    add(fallback.get("fallbackDomains"))
+    return hosts
+
+
+def _stripchat_master(data: dict[str, Any], slug: str, quality: str) -> ResolvedInput:
+    live, private, _status, model_id = _stripchat_room_state(data)
+    if not live:
+        raise RuntimeError("Stripchat room is offline")
+    if private:
+        raise RuntimeError("Stripchat room is private")
+    if not model_id:
+        raise RuntimeError("Stripchat model id is missing")
+
+    headers = {
+        "User-Agent": CHATURBATE_HEADERS["User-Agent"],
+        "Referer": source_url("stripchat", slug),
+        "Origin": "https://stripchat.com",
+    }
+    response = None
+    master_url = ""
+    for host in _stripchat_hls_hosts(data):
+        candidate = f"https://edge-hls.{host}/hls/{model_id}/master/{model_id}_auto.m3u8"
+        try:
+            current = _browser_get(candidate, headers=headers, timeout=15)
+            if current.status_code < 400 and "#EXTM3U" in current.text:
+                response, master_url = current, candidate
+                break
+        except Exception:
+            continue
+    if response is None:
+        raise RuntimeError("Stripchat HLS manifest is unavailable")
+
+    limit = {"1080p": 1080, "720p": 720, "480p": 480}.get(quality)
+    variants: list[tuple[int, int, str]] = []
+    lines = [line.strip() for line in response.text.splitlines() if line.strip()]
+    for index, line in enumerate(lines[:-1]):
+        if not line.startswith("#EXT-X-STREAM-INF:") or lines[index + 1].startswith("#"):
+            continue
+        height_match = re.search(r"RESOLUTION=\d+x(\d+)", line, flags=re.IGNORECASE)
+        bandwidth_match = re.search(r"BANDWIDTH=(\d+)", line, flags=re.IGNORECASE)
+        height = int(height_match.group(1)) if height_match else 0
+        bandwidth = int(bandwidth_match.group(1)) if bandwidth_match else 0
+        if limit is None or not height or height <= limit:
+            variants.append((height, bandwidth, urljoin(master_url, lines[index + 1])))
+    media_url = max(variants, default=(0, 0, master_url), key=lambda item: (item[0], item[1]))[2]
+    parsed = urlparse(media_url)
+    if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password:
+        raise RuntimeError("Stripchat returned an unsafe media URL")
+    return ResolvedInput(media_url, headers, "media")
+
+
+async def _probe_stripchat(slug: str, quality: str) -> ProbeResult:
+    try:
+        data = await asyncio.to_thread(_stripchat_snapshot, slug)
+        live, private, _status, _model_id = _stripchat_room_state(data)
+        if not live:
+            return ProbeResult(False, "offline", metadata_status="unsupported")
+        if private:
+            return ProbeResult(True, "private", recordable=False, metadata_status="unsupported")
+        await asyncio.to_thread(_stripchat_master, data, slug, quality)
+        return ProbeResult(True, "live", recordable=True, title=slug, metadata_status="unsupported")
+    except Exception as exc:
+        return ProbeResult(False, "error", error=str(exc)[-700:], metadata_status="unsupported")
+
+
 def _parse_last_broadcast(value: Any) -> datetime | None:
     """Parse CB last_broadcast to UTC. Naive values are Pacific time."""
     if value is None or value == -1:
@@ -566,22 +693,14 @@ def _yt_dlp_live_state(info: dict[str, Any]) -> tuple[bool, str]:
 
 
 async def _probe_ytdlp(platform: str, slug: str, quality: str) -> ProbeResult:
+    if platform == "stripchat":
+        return await _probe_stripchat(slug, quality)
     url = source_url(platform, slug)
     try:
         info = await asyncio.to_thread(_extract, url, quality)
     except Exception as exc:
         message = str(exc)
         lowered = message.lower()
-        # Webcam extractors report private sessions as extraction errors even
-        # though the creator is online. Keep presence tracking accurate without
-        # repeatedly trying to start a recorder for an unavailable stream.
-        if any(token in lowered for token in ("private show", "private chat")):
-            return ProbeResult(
-                live=True,
-                status="private",
-                recordable=False,
-                metadata_status="unsupported",
-            )
         expected_offline = (
             "offline",
             "not currently broadcasting",
@@ -738,6 +857,9 @@ async def probe(platform: str, slug: str, quality: str = "best") -> ProbeResult:
 
 
 async def resolve_inputs(platform: str, slug: str, quality: str = "best") -> list[ResolvedInput]:
+    if platform == "stripchat":
+        data = await asyncio.to_thread(_stripchat_snapshot, slug)
+        return [await asyncio.to_thread(_stripchat_master, data, slug, quality)]
     url = source_url(platform, slug)
     info = await asyncio.to_thread(_extract, url, quality, quiet=False)
     formats = info.get("requested_formats") or []
