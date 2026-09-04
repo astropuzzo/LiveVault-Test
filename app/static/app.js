@@ -924,46 +924,6 @@ function renderStatus(status) {
   setTone('#recordingControl', status.config.recording_paused ? 'warning' : 'good');
   setTone('#uploadControl', status.config.upload_paused ? 'warning' : 'good');
 
-  const overview = $('#systemOverview');
-  const overviewTitle = $('#systemOverviewTitle');
-  const overviewText = $('#systemOverviewText');
-  const overviewAction = $('#systemOverviewAction');
-  const issueCount = errorCount + Number(status.queue.integrity_failed || 0) + Number(history.audio_missing || 0);
-  overviewAction.dataset.action = 'none';
-  overviewAction.disabled = true;
-  if (status.disk.pressure === 'critical') {
-    overview.dataset.tone = 'danger';
-    overviewTitle.textContent = 'Spazio quasi esaurito';
-    overviewText.textContent = `${status.disk.free_human} liberi: le nuove registrazioni potrebbero fermarsi.`;
-    overviewAction.textContent = 'Libera il disco';
-    overviewAction.dataset.action = 'settings';
-    overviewAction.disabled = false;
-  } else if (status.config.recording_paused) {
-    overview.dataset.tone = 'warning';
-    overviewTitle.textContent = 'Registrazioni in pausa';
-    overviewText.textContent = 'Il monitoraggio continua, ma nessuna nuova live verrà salvata.';
-    overviewAction.textContent = 'Riattiva REC';
-    overviewAction.dataset.action = 'resume';
-    overviewAction.disabled = false;
-  } else if (issueCount) {
-    overview.dataset.tone = 'warning';
-    overviewTitle.textContent = `${issueCount} ${issueCount === 1 ? 'elemento richiede' : 'elementi richiedono'} attenzione`;
-    overviewText.textContent = 'Le automazioni restano operative; controlla i dettagli evidenziati in ambra o rosso.';
-    overviewAction.textContent = 'Controlla errori';
-    overviewAction.dataset.action = 'attention';
-    overviewAction.disabled = false;
-  } else if (active.length) {
-    overview.dataset.tone = 'recording';
-    overviewTitle.textContent = `${active.length} ${active.length === 1 ? 'registrazione in corso' : 'registrazioni in corso'}`;
-    overviewText.textContent = status.queue.pending ? `${status.queue.pending} file ${status.queue.pending === 1 ? 'attende' : 'attendono'} anche il caricamento cloud.` : 'Acquisizione attiva; la coda cloud è libera.';
-    overviewAction.textContent = 'Nessuna';
-  } else {
-    overview.dataset.tone = 'good';
-    overviewTitle.textContent = 'Sistema pronto';
-    overviewText.textContent = status.config.upload_paused ? 'Il monitoraggio è attivo; il caricamento cloud è in pausa.' : 'Monitoraggio e caricamento sono attivi. LiveVault avvierà la REC alla prossima live.';
-    overviewAction.textContent = status.config.upload_paused ? 'Upload in pausa' : 'Nessuna';
-  }
-
   const current = status.worker.upload_current;
   $('#uploadNowCard').classList.toggle('hidden', !current);
   if (current) {
@@ -977,14 +937,18 @@ function renderStatus(status) {
   $('#diagnosticCount').textContent = errorCount;
   $('#errors').textContent = Object.entries(errors).map(([name, message]) => `${name}\n${message}`).join('\n\n');
   const health = $('#healthPill');
+  const issueCount = errorCount + Number(status.queue.integrity_failed || 0) + Number(history.audio_missing || 0);
   if (status.disk.pressure === 'critical') {
-    health.className = 'pill bad'; health.textContent = 'Disco critico';
+    health.className = 'status-alert'; health.innerHTML = '<span aria-hidden="true">!</span>';
+    health.setAttribute('aria-label', `Disco critico: ${status.disk.free_human} liberi`);
     health.dataset.action = 'settings'; health.disabled = false;
-  } else if (errorCount || status.queue.integrity_failed || history.audio_missing) {
-    health.className = 'pill warn'; health.textContent = 'Da controllare';
+  } else if (issueCount) {
+    health.className = 'status-alert'; health.innerHTML = `<span aria-hidden="true">!</span><b>${issueCount}</b>`;
+    health.setAttribute('aria-label', `${issueCount} elementi da controllare`);
     health.dataset.action = 'attention'; health.disabled = false;
   } else {
-    health.className = 'pill good'; health.textContent = 'Online';
+    health.className = 'status-alert hidden'; health.replaceChildren();
+    health.setAttribute('aria-label', 'Nessun problema');
     health.dataset.action = 'none'; health.disabled = true;
   }
 }
@@ -1007,7 +971,6 @@ function runSystemAction(action) {
 }
 
 $('#healthPill').addEventListener('click', event => runSystemAction(event.currentTarget.dataset.action));
-$('#systemOverviewAction').addEventListener('click', event => runSystemAction(event.currentTarget.dataset.action));
 $('#retryRecoveryBtn').addEventListener('click', async event => {
   const button = event.currentTarget;
   setBusy(button, true, 'Recupero…');

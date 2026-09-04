@@ -37,7 +37,7 @@
           <button class="nav-link" type="button" data-view="statistics">Statistiche</button>
         </nav>
         <div class="top-actions">
-          <button id="healthPill" class="pill good" type="button">Online</button>
+          <button id="healthPill" class="status-alert hidden" type="button" aria-label="Problemi di sistema"></button>
           <button id="settingsBtn" class="btn quiet" type="button">Impostazioni</button>
           <button id="logoutBtn" class="btn quiet" type="button">Esci</button>
         </div>
@@ -52,11 +52,6 @@
         </section>
 
         <section class="dashboard-commandbar" aria-label="Stato e automazioni">
-          <div id="systemOverview" class="system-overview panel" data-tone="neutral" aria-live="polite">
-            <span class="system-signal" aria-hidden="true"><i></i></span>
-            <div class="system-overview-copy"><span>SISTEMA</span><h2 id="systemOverviewTitle">Controllo…</h2><p id="systemOverviewText">Verifico lo stato operativo.</p></div>
-            <div class="system-overview-side"><span>AZIONE</span><button id="systemOverviewAction" type="button">Nessuna</button></div>
-          </div>
           <div class="control-center panel">
             <article id="recordingControl" class="control-module" data-tone="good"><div><span>REC AUTOMATICA</span><strong id="recordingControlState">Attiva</strong><small id="recordingControlHint">Nuove live registrate automaticamente.</small></div><button id="pauseRecordingsBtn" class="btn soft" type="button">Pausa</button></article>
             <article id="uploadControl" class="control-module" data-tone="good"><div><span>UPLOAD CLOUD</span><strong id="uploadControlState">Attivo</strong><small id="uploadControlHint">Coda automatica attiva.</small></div><button id="pauseUploadsBtn" class="btn soft" type="button">Pausa</button></article>
