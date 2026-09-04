@@ -349,7 +349,7 @@ def decode_v1_name(encoded: str, pdkey: str) -> str:
     return _xor_decode(encoded.strip(), pdkey)
 
 
-_V2_SEGMENT_RE = re.compile(r"_([^_/?#]+)_(\d+(?:_part\d+)?)\.mp4(?:[?#].*)?$")
+_V2_SEGMENT_RE = re.compile(r"_([^_?#]+)_(\d+(?:_part\d+)?)\.mp4(?:[?#].*)?$")
 
 
 def decode_v2_url(encoded_url: str, pdkey: str) -> str:
