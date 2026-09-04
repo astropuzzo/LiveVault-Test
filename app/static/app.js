@@ -257,6 +257,7 @@ function openLocalVideo(url, title = 'Copia locale') {
 function statusLabel(value) {
   return ({
     recording: 'REC', live: 'LIVE', offline: 'Offline', paused: 'In pausa', archived: 'Archiviata',
+    private: 'Privata', tipjar: 'Tip-jar', restricted: 'Non accessibile',
     error: 'Errore', unknown: '—', is_upcoming: 'Programmata', post_live: 'Appena terminata',
     was_live: 'Terminata', not_live: 'Non live'
   })[value] || value;
@@ -315,10 +316,11 @@ function buildLibraryProfiles() {
   libraryProfiles = [...profileGroups()].map(([profileId, rows]) => {
     const representative = rows.find(row => !row.archived) || rows[0];
     const statuses = rows.map(row => row.last_status);
-    const live = statuses.some(status => ['recording', 'live'].includes(status));
+    const live = statuses.some(status => ['recording', 'live', 'private', 'tipjar', 'restricted'].includes(status));
     const error = rows.some(row => row.last_status === 'error' || String(row.last_error || '').trim());
     const enabled = rows.some(row => row.enabled && !row.archived);
-    const status = live ? (statuses.includes('recording') ? 'recording' : 'live') : error ? 'error' : enabled ? 'offline' : 'paused';
+    const accessStatus = ['private', 'tipjar', 'restricted'].find(value => statuses.includes(value));
+    const status = live ? (statuses.includes('recording') ? 'recording' : accessStatus || 'live') : error ? 'error' : enabled ? 'offline' : 'paused';
     const categories = representative.categories || [];
     const collections = representative.collections || [];
     const lastRecordingAt = newestValue(rows, 'last_recording_at');
@@ -413,7 +415,7 @@ function renderSources() {
     return;
   }
   root.innerHTML = rows.map(source => {
-    const live = ['recording', 'live'].includes(source.last_status);
+    const live = ['recording', 'live', 'private', 'tipjar', 'restricted'].includes(source.last_status);
     const publicUrl = safeUrl(source.source_url);
     const cloudUrl = safeUrl(source.latest_cloud_url);
     const folderUrl = safeUrl(source.gofile_folder_url);
@@ -459,7 +461,7 @@ function tagMarkup(items, className = 'library-tag') {
 }
 
 function smartMatch(profile) {
-  if (librarySmart === 'live') return ['recording', 'live'].includes(profile.status);
+  if (librarySmart === 'live') return ['recording', 'live', 'private', 'tipjar', 'restricted'].includes(profile.status);
   if (librarySmart === 'favorites') return profile.favorite;
   if (librarySmart === 'attention') return profile.attention;
   if (librarySmart === 'paused') return !profile.enabled;
@@ -496,7 +498,7 @@ function libraryCover(profile) {
 function renderLibraryCounts() {
   const counts = {
     all: libraryProfiles.length,
-    live: libraryProfiles.filter(profile => ['recording', 'live'].includes(profile.status)).length,
+    live: libraryProfiles.filter(profile => ['recording', 'live', 'private', 'tipjar', 'restricted'].includes(profile.status)).length,
     favorites: libraryProfiles.filter(profile => profile.favorite).length,
     attention: libraryProfiles.filter(profile => profile.attention).length,
     paused: libraryProfiles.filter(profile => !profile.enabled).length,
@@ -1720,6 +1722,7 @@ function controlRoomProfileRows() {
     const previewSource = recordingRows.find(row => row.preview_url) || recordingRows[0] || liveRows[0] || rows[0];
     const actionSource = blockedRows[0] || recordingRows[0] || liveRows[0] || rows.find(row => row.enabled) || rows[0];
     const newest = field => rows.reduce((best, row) => timestamp(row[field]) > timestamp(best) ? row[field] : best, null);
+    const unavailable = ['private', 'tipjar', 'restricted'].includes(actionSource.pause_reason);
     return {
       profile_id: profileId,
       source: actionSource,
@@ -1731,6 +1734,7 @@ function controlRoomProfileRows() {
       live: liveRows.length > 0,
       recording: recordingRows.length > 0,
       blocked: blockedRows.length > 0,
+      unavailable,
       blocked_count: blockedRows.length,
       live_count: liveRows.length,
       recording_count: recordingRows.length,
@@ -1767,7 +1771,7 @@ function controlRoomPreviewMarkup(profile, wall = false) {
   const unavailableLabel = {private: 'PRIVATA', tipjar: 'TIP-JAR', restricted: 'LIMITATA'}[source?.pause_reason] || '';
   const alertLabel = unavailableLabel || (profile.blocked ? 'NON REGISTRATA' : '');
   const freshness = updated ? ago(updated) : '';
-  return `<div class="cr-preview ${profile.blocked ? 'attention' : ''} ${wall ? 'wall' : ''}">
+  return `<div class="cr-preview ${profile.blocked && !profile.unavailable ? 'attention' : ''} ${wall ? 'wall' : ''}">
     ${previewUrl ? `<img data-live-preview src="${esc(previewUrl)}" alt="Preview live di ${esc(profile.display_name)}" loading="lazy" decoding="async" fetchpriority="low">` : cover ? `<img class="cr-preview-cover" src="${esc(cover)}" alt="Copertina di ${esc(profile.display_name)}" loading="lazy" decoding="async">` : `<div class="cr-preview-placeholder"><span>${esc(controlRoomInitials(profile.display_name))}</span></div>`}
     <div class="cr-preview-shade"></div>
     <div class="cr-preview-badges"><span class="cr-live-badge">● ${esc(recordingLabel)}</span>${alertLabel ? `<span class="cr-alert-badge">${esc(alertLabel)}</span>` : ''}${profile.focus ? '<span class="cr-focus-badge">★ FOCUS</span>' : ''}</div>
@@ -1776,13 +1780,13 @@ function controlRoomPreviewMarkup(profile, wall = false) {
 }
 
 function controlRoomStatusText(profile) {
+  const source = profile.source;
+  if (source.pause_reason === 'private') return 'ONLINE · PRIVATA';
+  if (source.pause_reason === 'tipjar') return 'ONLINE · TIP-JAR';
+  if (source.pause_reason === 'restricted') return 'ONLINE · NON ACCESSIBILE';
   if (profile.blocked) {
-    const source = profile.source;
     if (source.pause_reason === 'global') return 'LIVE · PAUSA GLOBALE';
     if (source.pause_reason === 'source') return 'LIVE · IN PAUSA';
-    if (source.pause_reason === 'private') return 'ONLINE · PRIVATA';
-    if (source.pause_reason === 'tipjar') return 'ONLINE · TIP-JAR';
-    if (source.pause_reason === 'restricted') return 'ONLINE · NON ACCESSIBILE';
     return 'LIVE · NON REC';
   }
   if (profile.recording) {
@@ -1804,7 +1808,7 @@ function controlRoomLiveCard(profile, wall = false) {
       ${profile.blocked && source.pause_reason === 'global' ? '<button class="btn primary" data-cr-resume-global type="button">Riprendi REC</button>' : profile.blocked && source.pause_reason === 'source' ? `<button class="btn primary" data-action="toggle" data-id="${source.id}" type="button">Avvia REC</button>` : ''}
       ${publicUrl ? `<a class="btn soft" href="${esc(publicUrl)}" target="_blank" rel="noopener">Sorgente ↗</a>` : ''}
     </div>`;
-  return `<article class="cr-live-card ${profile.blocked ? 'blocked' : ''} ${profile.focus ? 'focus' : ''}">
+  return `<article class="cr-live-card ${profile.blocked && !profile.unavailable ? 'blocked' : ''} ${profile.focus ? 'focus' : ''}">
     ${controlRoomPreviewMarkup(profile, wall)}
     <div class="cr-live-body">
       <div class="cr-live-head"><div>${creatorLinkMarkup(source.id, profile.display_name, 'cr-live-name')}<div class="cr-live-provider">${esc(profile.providers.join(' · '))} ${multi}</div></div><strong class="cr-live-state">${esc(controlRoomStatusText(profile))}</strong></div>
@@ -1856,9 +1860,10 @@ renderSources = function renderSourcesControlRoom() {
   const live = profiles.filter(profile => profile.live).sort((a, b) => controlRoomPriority(b) - controlRoomPriority(a) || timestamp(b.last_seen_live_at) - timestamp(a.last_seen_live_at) || a.display_name.localeCompare(b.display_name, 'it'));
   const offlineFocus = profiles.filter(profile => !profile.live && profile.focus).sort((a, b) => timestamp(b.last_seen_live_at) - timestamp(a.last_seen_live_at) || a.display_name.localeCompare(b.display_name, 'it'));
   const offline = profiles.filter(profile => !profile.live && !profile.focus).sort((a, b) => Number(!!b.last_error) - Number(!!a.last_error) || timestamp(b.last_seen_live_at) - timestamp(a.last_seen_live_at) || a.display_name.localeCompare(b.display_name, 'it'));
-  const blockedCount = live.filter(profile => profile.blocked).length;
-  const summaryTone = blockedCount ? 'danger' : live.length ? 'recording' : 'neutral';
-  const coverageLabel = blockedCount ? `${blockedCount} DA CONTROLLARE` : live.length ? 'REC COPERTA' : 'IN ATTESA';
+  const blockedCount = live.filter(profile => profile.blocked && !profile.unavailable).length;
+  const unavailableCount = live.filter(profile => profile.unavailable).length;
+  const summaryTone = blockedCount ? 'danger' : unavailableCount ? 'warning' : live.length ? 'recording' : 'neutral';
+  const coverageLabel = blockedCount ? `${blockedCount} DA CONTROLLARE` : unavailableCount ? `${unavailableCount} NON ACCESSIBILE` : live.length ? 'REC COPERTA' : 'IN ATTESA';
   $('#sourceCount').textContent = profiles.length;
   const panelHead = root.closest('.section')?.querySelector('.section-head');
   if (panelHead) {
@@ -1877,7 +1882,7 @@ renderSources = function renderSourcesControlRoom() {
       <button class="btn accent" data-live-wall type="button" ${live.length ? '' : 'disabled'}>▦ Live Wall</button>
     </div>
     <section class="cr-live-section">
-      <div class="cr-section-head"><div><h3>Live</h3></div>${blockedCount ? `<span class="cr-attention-count">⚠ ${blockedCount} ${blockedCount === 1 ? 'non registrata' : 'non registrate'}</span>` : ''}</div>
+      <div class="cr-section-head"><div><h3>Live</h3></div>${blockedCount ? `<span class="cr-attention-count">⚠ ${blockedCount} ${blockedCount === 1 ? 'non registrata' : 'non registrate'}</span>` : unavailableCount ? `<span class="cr-access-count">${unavailableCount} privata/tip-jar</span>` : ''}</div>
       ${live.length ? `<div class="cr-live-grid">${live.map(profile => controlRoomLiveCard(profile)).join('')}</div>` : '<div class="cr-live-empty">Nessuna live.</div>'}
     </section>
     ${offlineFocus.length ? `<section class="cr-focus-section"><div class="cr-section-head"><div><h3>Focus</h3></div><span class="count">${offlineFocus.length}</span></div><div class="cr-compact-list">${offlineFocus.map(profile => controlRoomCompactRow(profile, true)).join('')}</div></section>` : ''}

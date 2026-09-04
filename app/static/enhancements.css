@@ -94,6 +94,7 @@
 @media(max-width:400px){.cr-pulse-head-right>span:last-child{font-size:.66rem}.cr-pulse-times{display:grid;gap:1px}.cr-card-actions{grid-template-columns:1fr}.control-quick-actions{grid-template-columns:1fr}}
 .cr-pulse-missed-span{fill:#c94e5a;opacity:1}
 .cr-pulse-access-span.private{fill:#a56ae8;opacity:1}.cr-pulse-access-span.tipjar{fill:#e2a84f;opacity:1}.cr-pulse-access-span.restricted{fill:#8d718e;opacity:1}.cr-pulse-legend i.private{background:#a56ae8}.cr-pulse-legend i.tipjar{background:#e2a84f}
+.cr-access-count{color:#c9a4f2;border:1px solid rgba(165,106,232,.38);background:rgba(165,106,232,.1);border-radius:999px;padding:5px 9px;font-size:.66rem;font-weight:780}
 
 /* v2.8.12 local-capture visibility, recovery controls and crash diagnostics */
 button.pill{background:transparent;cursor:pointer;font-family:inherit}button.pill:disabled{cursor:default;opacity:1}
