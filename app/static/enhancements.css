@@ -106,6 +106,13 @@ button.pill{background:transparent;cursor:pointer;font-family:inherit}button.pil
 /* Archive 2.0: calm information hierarchy and genuinely fluid cards. */
 #archive{padding:clamp(14px,2vw,24px);border-radius:18px;background:linear-gradient(180deg,rgba(23,27,29,.98),rgba(15,18,20,.99))}
 #archive .section-head{margin-bottom:16px}
+.archive-section-head{align-items:flex-end}
+.archive-section-head>div:first-child{display:grid;gap:6px}
+.archive-section-head #providerRoute{width:max-content}
+.archive-view-options{display:flex;align-items:center;gap:5px;padding:4px;border:1px solid var(--line);border-radius:11px;background:#0c0f10}
+.archive-view-options>span{padding:0 7px;color:var(--quiet);font-size:.62rem;font-weight:800;letter-spacing:.07em;text-transform:uppercase}
+.archive-view-options .icon-btn{width:36px;height:34px;min-height:34px;border-radius:7px;color:var(--quiet);font-size:1rem}
+.archive-view-options .icon-btn.active{border-color:rgba(186,217,107,.48);background:rgba(186,217,107,.12);color:var(--accent)}
 #archive .toolbar{display:grid;grid-template-columns:minmax(260px,1fr) 180px auto;align-items:center;gap:10px;margin-bottom:16px}
 #archive .toolbar input,#archive .toolbar select{min-height:44px;border-radius:10px;background:#0c0f10}
 .archive-bulk-actions{display:flex;gap:7px;justify-content:flex-end}
@@ -119,9 +126,12 @@ button.pill{background:transparent;cursor:pointer;font-family:inherit}button.pil
 .archive-group>summary{padding:15px 17px;background:rgba(255,255,255,.028)}
 .archive-group>summary strong{font-size:1rem}
 .archive-group>summary small{margin-top:5px;font-size:.72rem}
-.archive-group-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,390px),1fr));gap:12px;padding:12px}
-.archive-group-grid .rec-card{min-height:190px;grid-template-columns:minmax(145px,42%) minmax(0,1fr);border-radius:13px;background:#0e1112;box-shadow:0 10px 24px rgba(0,0,0,.12)}
-.archive-group-grid .thumb{min-height:190px;height:100%;border-radius:0;background:linear-gradient(145deg,#111719,#070909)}
+.archive-group-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;padding:12px}
+#archive[data-columns="1"] .archive-group-grid{grid-template-columns:minmax(0,1fr)}
+#archive[data-columns="2"] .archive-group-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+#archive[data-columns="3"] .archive-group-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+.archive-group-grid .rec-card{min-height:0;display:flex;flex-direction:column;border-radius:14px;background:#0e1112;box-shadow:0 10px 24px rgba(0,0,0,.12)}
+.archive-group-grid .thumb{width:100%;height:auto;min-height:0;aspect-ratio:16/9;border-right:0;border-bottom:1px solid var(--line);border-radius:0;background:linear-gradient(145deg,#111719,#070909)}
 .archive-group-grid .rec-body{padding:13px}
 .archive-group-grid .rec-title{font-size:.9rem}
 .archive-group-grid .rec-file,.archive-group-grid .rec-date{font-size:.66rem}
@@ -134,11 +144,18 @@ button.pill{background:transparent;cursor:pointer;font-family:inherit}button.pil
 .rec-more>summary::-webkit-details-marker{display:none}
 .rec-more-menu{position:absolute;z-index:20;right:0;bottom:calc(100% + 7px);width:190px;padding:7px;display:grid;gap:5px;border:1px solid var(--line-strong);border-radius:12px;background:#171b1d;box-shadow:0 18px 45px rgba(0,0,0,.5)}
 .rec-more-menu .btn{width:100%;text-align:left}
+#archive[data-columns="1"] .archive-group-grid .thumb{aspect-ratio:21/9}
+#archive[data-columns="1"] .archive-group-grid .rec-body{display:grid;grid-template-columns:minmax(0,1fr) auto;column-gap:16px}
+#archive[data-columns="1"] .archive-group-grid .rec-title,#archive[data-columns="1"] .archive-group-grid .rec-file,#archive[data-columns="1"] .archive-group-grid .rec-date,#archive[data-columns="1"] .archive-group-grid .rec-meta,#archive[data-columns="1"] .archive-group-grid .rec-error{grid-column:1}
+#archive[data-columns="1"] .archive-group-grid .rec-actions-primary{grid-column:2;grid-row:1/6;align-self:center;min-width:250px}
+#archive[data-columns="3"] .archive-group-grid .rec-actions-primary{gap:5px}
+#archive[data-columns="3"] .archive-group-grid .rec-actions-primary>.btn{padding-inline:6px;font-size:.62rem}
 
 @media(max-width:1100px){
   #archive .toolbar{grid-template-columns:minmax(220px,1fr) 170px}
   .archive-bulk-actions{grid-column:1/-1;justify-content:flex-start}
   .archive-intel-controls{grid-template-columns:repeat(3,minmax(0,1fr))}
+  #archive[data-columns="3"] .archive-group-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
 }
 @media(max-width:700px){
   #archive{padding:12px;border-radius:14px}
@@ -149,16 +166,20 @@ button.pill{background:transparent;cursor:pointer;font-family:inherit}button.pil
   .archive-intel-controls{display:flex;grid-column:1/-1;gap:7px;margin-inline:-12px;padding:11px 12px;border-right:0;border-left:0;border-radius:0;overflow-x:auto;scroll-snap-type:x proximity}
   .archive-intel-controls label{flex:0 0 145px;scroll-snap-align:start}
   .archive-group>summary{padding:13px}
-  .archive-group-grid{grid-template-columns:1fr;padding:8px}
-  .archive-group-grid .rec-card{grid-template-columns:138px minmax(0,1fr);min-height:184px}
-  .archive-group-grid .thumb{height:100%;min-height:184px;border-right:1px solid var(--line);border-bottom:0}
+  .archive-view-options>span{display:none}
+  .archive-view-options [data-archive-columns="3"]{display:none}
+  .archive-group-grid,#archive[data-columns="1"] .archive-group-grid,#archive[data-columns="2"] .archive-group-grid,#archive[data-columns="3"] .archive-group-grid{grid-template-columns:1fr;padding:8px}
+  #archive[data-columns="1"] .archive-group-grid .thumb{aspect-ratio:16/9}
+  #archive[data-columns="1"] .archive-group-grid .rec-body{display:flex}
+  #archive[data-columns="1"] .archive-group-grid .rec-actions-primary{min-width:0;align-self:stretch}
 }
 @media(max-width:480px){
   #archive .section-head{align-items:flex-start}
   #archive .toolbar{grid-template-columns:1fr}
   #archive .toolbar>input:first-child{grid-column:auto}
-  .archive-group-grid .rec-card{display:block}
-  .archive-group-grid .thumb{width:100%;height:auto;min-height:0;aspect-ratio:16/10;border-right:0;border-bottom:1px solid var(--line)}
+  .archive-section-head{display:flex}
+  .archive-group-grid .rec-card{display:flex}
+  .archive-group-grid .thumb{aspect-ratio:16/10}
   .archive-group-grid .rec-body{padding:12px}
   .rec-actions-primary>.btn{min-height:40px}
   .rec-more>summary{min-height:40px}

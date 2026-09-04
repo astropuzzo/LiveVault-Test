@@ -2314,6 +2314,32 @@ function ensureArchiveIntelControls() {
   for (const select of host.querySelectorAll('select')) select.addEventListener('change', () => { archiveGroupLimit = 10; renderRecordings(); });
 }
 
+function setArchiveColumns(value) {
+  const columns = ['1', '2', '3'].includes(String(value)) ? String(value) : '2';
+  const archive = $('#archive');
+  if (!archive) return;
+  archive.dataset.columns = columns;
+  for (const button of archive.querySelectorAll('[data-archive-columns]')) {
+    const active = button.dataset.archiveColumns === columns;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-pressed', String(active));
+  }
+  try { localStorage.setItem('livevault.archiveColumns', columns); } catch (_) {}
+}
+
+function initArchiveColumns() {
+  let saved = '2';
+  try { saved = localStorage.getItem('livevault.archiveColumns') || '2'; } catch (_) {}
+  setArchiveColumns(saved);
+}
+
+$('#archive')?.addEventListener('click', event => {
+  const button = event.target.closest('[data-archive-columns]');
+  if (button) setArchiveColumns(button.dataset.archiveColumns);
+});
+
+initArchiveColumns();
+
 function fillArchiveIntelControls() {
   ensureArchiveIntelControls();
   const creator = $('#archiveCreator');

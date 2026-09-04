@@ -187,7 +187,15 @@
           <div><h1>Archivio</h1></div>
         </section>
         <section id="archive" class="panel section">
-          <div class="section-head"><div><h2>Registrazioni</h2></div><span id="providerRoute" class="route">—</span></div>
+          <div class="section-head archive-section-head">
+            <div><h2>Registrazioni</h2><span id="providerRoute" class="route">—</span></div>
+            <div class="archive-view-options" role="group" aria-label="Numero di colonne">
+              <span>Vista</span>
+              <button class="icon-btn" type="button" data-archive-columns="1" aria-label="Una colonna" title="Una colonna">▭</button>
+              <button class="icon-btn active" type="button" data-archive-columns="2" aria-label="Due colonne" title="Due colonne">▥</button>
+              <button class="icon-btn" type="button" data-archive-columns="3" aria-label="Tre colonne" title="Tre colonne">▦</button>
+            </div>
+          </div>
           <div class="toolbar">
             <input id="recordingSearch" type="search" placeholder="Cerca sorgente, sessione o file…">
             <select id="recordingStatus">
