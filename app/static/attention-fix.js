@@ -391,3 +391,41 @@
 
   renderProcessingProgress(statusData || {});
 })();
+
+/* Keep "Appena terminate" aligned with the configured reconnect/finalization window. */
+(() => {
+  if (typeof controlRoomRecentEnded !== 'function' || typeof pulseSessions !== 'function') return;
+
+  let recentEndedWindowMinutes = 20;
+  let settingsRequested = false;
+
+  function configuredWindowMinutes() {
+    const configured = Number(settingsData?.session_stitch_gap_minutes || recentEndedWindowMinutes || 20);
+    return Math.max(1, Math.min(120, Number.isFinite(configured) ? configured : 20));
+  }
+
+  function refreshRecentEndedSetting() {
+    if (settingsRequested || settingsData?.session_stitch_gap_minutes) return;
+    settingsRequested = true;
+    api('/api/settings').then(payload => {
+      const value = Number(payload?.settings?.session_stitch_gap_minutes);
+      if (Number.isFinite(value)) recentEndedWindowMinutes = Math.max(1, Math.min(120, value));
+      if (activeView === 'dashboard') renderSources();
+    }).catch(() => {
+      settingsRequested = false;
+    });
+  }
+
+  controlRoomRecentEnded = function controlRoomRecentEndedConfigured(profiles) {
+    refreshRecentEndedSetting();
+    const liveProfileIds = new Set(profiles.filter(row => row.live).map(row => Number(row.profile_id)));
+    const cutoff = Date.now() - configuredWindowMinutes() * 60 * 1000;
+    const latest = new Map();
+    for (const session of pulseSessions()) {
+      const profileId = Number(session.profile_id);
+      if (!session.ended_at || timestamp(session.ended_at) < cutoff || liveProfileIds.has(profileId)) continue;
+      if (!latest.has(profileId)) latest.set(profileId, session);
+    }
+    return [...latest.values()].sort((a, b) => timestamp(b.ended_at) - timestamp(a.ended_at)).slice(0, 6);
+  };
+})();
