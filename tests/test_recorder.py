@@ -1,7 +1,10 @@
-from pathlib import Path
+import base64
+import hashlib
 import inspect
+from pathlib import Path
 from types import SimpleNamespace
 
+from app import stripchat_capture
 from app.recorder import (
     build_chaturbate_synced_master,
     build_ffmpeg_command,
@@ -114,7 +117,7 @@ def test_recorder_does_not_decode_previews_without_a_viewer():
     assert "preview_path=None" in source
 
 
-def test_stripchat_uses_dedicated_webrtc_capture():
+def test_stripchat_uses_dedicated_native_hls_capture():
     source = SimpleNamespace(slug="angel")
     cmd = build_stripchat_capture_command(
         source,
@@ -131,12 +134,112 @@ def test_stripchat_uses_dedicated_webrtc_capture():
     assert "--container mp4" in joined
 
 
-def test_stripchat_capture_caps_fps_and_does_not_run_a_second_encoder_loop():
+def test_stripchat_capture_is_browserless_and_copy_only():
     capture = (Path(__file__).resolve().parents[1] / "app" / "stripchat_capture.py").read_text(encoding="utf-8")
+    lowered = capture.lower()
 
-    assert "applyConstraints({frameRate:{ideal:30,max:30}})" in capture
-    assert "const createPreview = async ()" in capture
-    assert "const previewLoop = async ()" not in capture
+    assert "playwright" not in lowered
+    assert "mediarecorder" not in lowered
+    assert "chromium" not in lowered
+    assert "libx264" not in lowered
+    assert "aresample=" not in lowered
+    assert "ThreadPoolExecutor(max_workers=1" in capture
+    assert '"-c",' in capture and '"copy"' in capture
+
+
+def _encrypt_mouflon(value: str, key: str, *, reverse: bool = False) -> str:
+    digest = hashlib.sha256(key.encode("utf-8")).digest()
+    raw = value.encode("utf-8")
+    encrypted = bytes(byte ^ digest[index % len(digest)] for index, byte in enumerate(raw))
+    encoded = base64.b64encode(encrypted).decode("ascii").rstrip("=")
+    return encoded[::-1] if reverse else encoded
+
+
+def test_stripchat_mouflon_v1_round_trip():
+    key = "ubahjae7goPoodi6"
+    filename = "segment_00123.mp4"
+    encrypted = _encrypt_mouflon(filename, key)
+
+    assert stripchat_capture.decode_v1_name(encrypted, key) == filename
+
+
+def test_stripchat_mouflon_v2_round_trip():
+    key = "anotherDecodeKey123"
+    filename = "real-segment-name"
+    encrypted = _encrypt_mouflon(filename, key, reverse=True)
+    source = f"https://media-hls.doppiocdn.org/path/chunk_{encrypted}_123_part2.mp4"
+
+    decoded = stripchat_capture.decode_v2_url(source, key)
+
+    assert decoded.endswith(f"/chunk_{filename}_123_part2.mp4")
+
+
+def test_stripchat_media_playlist_decodes_v2_and_keeps_discontinuity():
+    key = "decodeKeyForTest123"
+    plain = "camera-fragment"
+    encrypted = _encrypt_mouflon(plain, key, reverse=True)
+    selection = stripchat_capture.MasterSelection(
+        "https://media-hls.doppiocdn.org/live/playlist.m3u8?playlistType=lowLatency",
+        "v2",
+        "PkeyForUnitTest123",
+        key,
+    )
+    body = "\n".join([
+        "#EXTM3U",
+        "#EXT-X-TARGETDURATION:2",
+        '#EXT-X-MAP:URI="init.mp4"',
+        "#EXT-X-DISCONTINUITY",
+        f"#EXT-X-MOUFLON:URI:https://media-hls.doppiocdn.org/live/chunk_{encrypted}_900.mp4",
+        "media.mp4",
+    ])
+
+    parsed = stripchat_capture.parse_media_playlist(selection.media_url, body, selection)
+
+    assert parsed.init_url is not None
+    assert "psch=v2" in parsed.init_url
+    assert "pkey=PkeyForUnitTest123" in parsed.init_url
+    assert len(parsed.segments) == 1
+    assert parsed.segments[0].discontinuity is True
+    assert f"chunk_{plain}_900.mp4" in parsed.segments[0].url
+    assert "psch=v2" in parsed.segments[0].url
+
+
+def test_stripchat_status_uses_id_based_cam_endpoint():
+    calls = []
+
+    class Response:
+        def __init__(self, payload, status_code=200):
+            self._payload = payload
+            self.status_code = status_code
+
+        def raise_for_status(self):
+            if self.status_code >= 400:
+                raise RuntimeError(f"HTTP {self.status_code}")
+
+        def json(self):
+            return self._payload
+
+    class Session:
+        def get(self, url, **_kwargs):
+            calls.append(url)
+            if "/users/username/" in url:
+                return Response({"item": {"id": 4242}})
+            if "/models/4242/cam" in url:
+                return Response({
+                    "user": {"user": {"id": 4242, "status": "public"}},
+                    "cam": {"isCamActive": True, "isCamAvailable": True, "streamName": "4242"},
+                })
+            raise AssertionError(url)
+
+    session = Session()
+    user_id, payload = stripchat_capture.get_cam_state(session, "example")
+    stream_id = stripchat_capture._public_stream_id(payload, user_id)
+
+    assert user_id == 4242
+    assert stream_id == "4242"
+    assert any("/api/front/v2/users/username/example" in url for url in calls)
+    assert any("/api/front/v2/models/4242/cam" in url for url in calls)
+    assert all("/models/username/" not in url for url in calls)
 
 
 def test_local_synchronized_hls_never_receives_http_avoptions():
