@@ -43,12 +43,19 @@ class _MainFacade(types.ModuleType):
 sys.modules[__name__].__class__ = _MainFacade
 
 
+# Install the physical per-file size policy before wrapping processing errors.
+# Logical reconnect sessions can span many files, but no consolidation should
+# silently grow past Settings -> segment_max_gb (2 GB by default).
+from app.workers import manager as _processing_manager  # noqa: E402
+from app.workers.size_policy import install_size_policy as _install_size_policy  # noqa: E402
+
+_install_size_policy(_processing_manager)
+
 # A failed verification/remux must not leave the Dashboard frozen forever at
 # (for example) "Verifica audio/video · 84%".  Guard the singleton used by the
 # app and keep the error visible briefly before clearing the transient progress.
-from app.workers import manager as _processing_manager  # noqa: E402
-
 _processing_original_stitch = _processing_manager._stitch_fragment_group
+
 
 async def _guarded_processing_stitch(self, fragments, *, allow_transcode: bool = True):
     session_key = str(fragments[0].session_id) if fragments else ""
@@ -69,6 +76,7 @@ async def _guarded_processing_stitch(self, fragments, *, allow_transcode: bool =
                 if session_key:
                     self._schedule_processing_clear(session_key, delay=8.0)
         raise
+
 
 _processing_manager._stitch_fragment_group = types.MethodType(
     _guarded_processing_stitch, _processing_manager
