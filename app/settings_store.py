@@ -98,6 +98,14 @@ def _coerce(key: str, value: str):
     return value
 
 
+def _notify_runtime_change() -> None:
+    """Refresh worker constants without importing workers during module bootstrap."""
+    workers_module = sys.modules.get("app.workers")
+    refresh = getattr(workers_module, "refresh_runtime_constants", None) if workers_module else None
+    if callable(refresh):
+        refresh()
+
+
 def reload_runtime() -> RuntimeSettings:
     with db_session() as db:
         rows = list(db.scalars(select(AppSetting)).all())
@@ -109,19 +117,14 @@ def reload_runtime() -> RuntimeSettings:
             setattr(_state, row.key, _coerce(row.key, raw))
         except (ValueError, TypeError):
             continue
+    # Saved processing-window settings must also refresh legacy continuation
+    # constants after a process/container restart, not only after a live PATCH.
+    _notify_runtime_change()
     return _state
 
 
 def runtime() -> RuntimeSettings:
     return _state
-
-
-def _notify_runtime_change() -> None:
-    """Refresh worker constants without importing workers during module bootstrap."""
-    workers_module = sys.modules.get("app.workers")
-    refresh = getattr(workers_module, "refresh_runtime_constants", None) if workers_module else None
-    if callable(refresh):
-        refresh()
 
 
 def set_values(values: dict[str, object]) -> RuntimeSettings:
