@@ -41,6 +41,23 @@ STRIPCHAT_ROOT = _legacy.STRIPCHAT_ROOT
 STOP_REQUESTED = False
 CDN_TLDS = ("doppiocdn.com", "doppiocdn.org", "doppiocdn.live", "doppiocdn.net")
 
+# Publicly documented/community-maintained Mouflon pairs that are still
+# advertised by current Stripchat masters.  Keep them as bootstrap data only:
+# an on-disk or remotely refreshed value wins if the provider rotates a key.
+BUILTIN_MOUFLON_KEYS = {
+    "Zokee2OhPh9kugh4": "Quean4cai9boJa5a",
+    "Zeechoej4aleeshi": "ubahjae7goPoodi6",
+    "Ook7quaiNgiyuhai": "EQueeGh2kaewa3ch",
+    "Fq6m2TO2ZeBkRPm9": "xb6di1NF9EFXHUwb",
+    "GrRncsoByZmsiT6L": "NigHYyOD9l4rvAEb",
+    "1Dzcc6OjP73LKbtI": "Y64UVwX5RrIWnOLp",
+    "N2oLovTIXb0o28Uj": "ABE7Sj8jh3oPM2ae",
+    "NTK9aqcLmNFMWrpQ": "tOcYOap4Ty1l9Jzb",
+    "7uUnbD0jMCB9GH32": "lzCQ6QBTnLpB0zMF",
+    "Ohi7eTRBpkAuML0l": "kExe29N2sLFrHGqu",
+    "OLzu7QlySkG2fVRn": "CsovScFH9VirSJ4Z",
+}
+
 
 def __getattr__(name: str) -> Any:
     """Preserve compatibility with helpers that still live in the Mouflon module."""
@@ -51,6 +68,21 @@ def _request_stop(signum: int, frame: object) -> None:
     global STOP_REQUESTED
     STOP_REQUESTED = True
     _legacy._request_stop(signum, frame)
+
+
+def _ensure_builtin_mouflon_keys() -> None:
+    """Persist bootstrap keys without overwriting newer locally synced values."""
+    try:
+        existing = _legacy._load_key_file()
+        merged = dict(BUILTIN_MOUFLON_KEYS)
+        merged.update(existing)
+        if merged != existing:
+            _legacy._save_key_file(merged)
+    except OSError:
+        # Read-only data mounts should not block an otherwise usable direct-HLS
+        # path.  The legacy recorder will surface a key error if it later needs
+        # the Mouflon fallback and the cache truly cannot be written.
+        pass
 
 
 def _flashphoner_server(state: dict[str, Any]) -> str:
@@ -80,10 +112,16 @@ def flashphoner_candidates(state: dict[str, Any], stream_id: str) -> list[str]:
     stream_id = str(stream_id).strip()
     if not stream_id:
         return []
+
+    # Current Stripchat/yt-dlp layout.  The previous implementation accidentally
+    # omitted the /master/ directory and the _auto suffix, so every candidate
+    # returned 404 even when flashphoner-hls was healthy.
     masters = [
-        f"https://b-{server}.{tld}/hls/{stream_id}/master_{stream_id}.m3u8"
+        f"https://b-{server}.{tld}/hls/{stream_id}/master/{stream_id}_auto.m3u8"
         for tld in CDN_TLDS
     ]
+    # Keep legacy direct-media shapes as late fallbacks because older rooms and
+    # regional edges have exposed them in the past.
     media = [
         f"https://b-{server}.{tld}/hls/{stream_id}/{stream_id}.m3u8"
         for tld in CDN_TLDS
@@ -222,17 +260,24 @@ def capture(args: Any) -> None:
     user_id, state = _legacy.get_cam_state(session, args.slug)
     stream_id = _legacy._public_stream_id(state, user_id)
 
-    media_url = resolve_flashphoner_input(
-        session,
-        state,
-        stream_id,
-        args.quality,
-        headers,
-    )
-    if media_url:
-        _run_flashphoner_ffmpeg(args, media_url, headers)
-        return
+    # Flashphoner uses the numeric model id in its canonical path.  streamName is
+    # still tried second because a few historical rooms exposed a distinct id.
+    ids = [str(user_id)]
+    if stream_id not in ids:
+        ids.append(stream_id)
+    for flash_id in ids:
+        media_url = resolve_flashphoner_input(
+            session,
+            state,
+            flash_id,
+            args.quality,
+            headers,
+        )
+        if media_url:
+            _run_flashphoner_ffmpeg(args, media_url, headers)
+            return
 
+    _ensure_builtin_mouflon_keys()
     print(
         "Stripchat Flashphoner HLS unavailable; falling back to edge-hls/Mouflon",
         file=sys.stderr,
