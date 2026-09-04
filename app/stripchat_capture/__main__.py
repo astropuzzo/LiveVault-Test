@@ -1,3 +1,6 @@
 from . import main
+from app.stripchat_preview import stripchat_preview_worker
 
-raise SystemExit(main())
+
+with stripchat_preview_worker():
+    raise SystemExit(main())
