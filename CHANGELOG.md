@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.8.22 — Stabilità recorder LL-HLS
+
+- Chaturbate parte dall'ultimo segmento LL-HLS completo, evitando init e primi segmenti già scaduti.
+- Gli avvisi recuperabili ai confini fMP4 non causano più riavvii continui; resta attivo il watchdog sui byte realmente scritti.
+- Ogni reconnect indicizza soltanto i propri file e applica un breve backoff, eliminando REC fantasma e picchi CPU da rivalidazioni duplicate.
+
 ## 2.8.21 — Autoripristino registrazioni LL-HLS
 
 - Gli init segment e i primi segmenti LL-HLS scaduti causano subito un nuovo resolve della sorgente.

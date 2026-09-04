@@ -66,6 +66,7 @@ class RecorderSession:
     rollover_requested: bool = False
     restart_requested: bool = False
     restart_reason: str = ""
+    capture_prefix: str = ""
 
 
 def _ffmpeg_headers(headers: dict[str, str]) -> str:
@@ -158,10 +159,9 @@ def stream_transport_fault(line: str) -> str:
         return "segmenti video scaduti"
     if "session has been invalidated" in lowered:
         return "sessione HLS invalidata"
-    if "invalid nal unit size" in lowered:
-        return "segmento video corrotto"
-    if "missing picture in access unit" in lowered:
-        return "frame video mancante"
+    # Decoder warnings at a live fMP4 boundary are recoverable. Restarting on
+    # one warning creates a reconnect storm; the byte-growth watchdog decides
+    # whether the capture is actually stuck.
     if "failed to open an initialization section" in lowered:
         return "segmento iniziale HLS scaduto"
     if "error when loading first segment" in lowered:
@@ -241,7 +241,13 @@ def build_ffmpeg_command(
         if is_http_input:
             cmd += ["-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "5"]
         if synchronized_hls:
-            cmd += ["-protocol_whitelist", "file,http,https,tcp,tls,crypto,data"]
+            cmd += [
+                "-protocol_whitelist", "file,http,https,tcp,tls,crypto,data",
+                # The LL-HLS window is only a few seconds wide. Start from the
+                # newest complete segment instead of racing an expiring first
+                # segment while FFmpeg opens the paired audio playlist.
+                "-live_start_index", "-1",
+            ]
         if is_http_input:
             headers = _ffmpeg_headers(item.http_headers)
             if headers:
@@ -389,6 +395,7 @@ async def start_recorder(source: Source, *, session_id: str | None = None) -> Re
         manifest_path=manifest_path,
         synchronized_hls=split_llhls,
         transport_guard=split_llhls,
+        capture_prefix=f"{session_id}_{capture_id}_part",
     )
 
 

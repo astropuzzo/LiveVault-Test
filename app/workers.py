@@ -43,6 +43,7 @@ SESSION_STITCH_GAP_SECONDS = 20 * 60
 SESSION_STITCH_READY_SECONDS = 15 * 60
 NONFATAL_FFMPEG_NOISE = ("found duplicated moov atom. skipped it",)
 HLS_CAPTURE_STALL_SECONDS = 35
+HLS_RESTART_BACKOFF_SECONDS = 12
 
 
 def cloud_day_key(value: datetime) -> str:
@@ -86,6 +87,9 @@ def capture_output_files(session: RecorderSession) -> list[Path]:
     """Return FFmpeg parts only; consolidated outputs must never be re-indexed."""
     def capture_part(path: Path) -> bool:
         stem = path.stem
+        capture_prefix = str(getattr(session, "capture_prefix", "") or "")
+        if capture_prefix and not stem.startswith(capture_prefix):
+            return False
         suffix = stem.rsplit("_part", 1)[1] if "_part" in stem else (stem[4:] if stem.startswith("part") else "")
         return bool(suffix) and suffix.isdigit()
 
@@ -112,6 +116,7 @@ class WorkerManager:
         self.started_at: datetime | None = None
         self.upload_current: dict | None = None
         self._retry_after: dict[int, float] = {}
+        self._source_restart_after: dict[int, float] = {}
         self._stitch_retry_after: dict[tuple[int, str], float] = {}
         self._source_check_locks: dict[int, asyncio.Lock] = {}
         self._fragment_index_locks: dict[int, asyncio.Lock] = {}
@@ -253,6 +258,7 @@ class WorkerManager:
             db.expunge(source)
         if self._leader_task is not None and self._leader_file is None:
             return True
+        self._source_restart_after.pop(int(source_id), None)
         await self._check_source(source, asyncio.Semaphore(1))
         return True
 
@@ -1116,6 +1122,8 @@ class WorkerManager:
     async def _check_source_unlocked(self, source: Source, semaphore: asyncio.Semaphore) -> None:
         if self._stopping or (self._leader_task is not None and self._leader_file is None) or source.id in self.active:
             return
+        if self._source_restart_after.get(source.id, 0) > time.monotonic():
+            return
         async with semaphore:
             result = await probe(source.platform, source.slug, source.quality)
             checked_at = utcnow()
@@ -1199,7 +1207,15 @@ class WorkerManager:
                 semaphore = asyncio.Semaphore(max(1, cfg.max_probe_concurrency))
                 if candidates:
                     await asyncio.gather(*(self._check_source(source, semaphore) for source in candidates))
-                await self._sleep_or_wake(max(15, cfg.poll_seconds))
+                normal_delay = max(15, cfg.poll_seconds)
+                now = time.monotonic()
+                pending_restarts = [
+                    deadline - now
+                    for deadline in self._source_restart_after.values()
+                    if deadline > now
+                ]
+                retry_delay = min(pending_restarts, default=normal_delay)
+                await self._sleep_or_wake(max(1, min(normal_delay, retry_delay)))
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
@@ -1250,6 +1266,8 @@ class WorkerManager:
                 if capture_bytes > last_capture_bytes:
                     last_capture_bytes = capture_bytes
                     last_capture_growth = time.monotonic()
+                    if capture_bytes >= 1024 * 1024:
+                        self._source_restart_after.pop(session.source_id, None)
                 elif (
                     session.transport_guard
                     and time.monotonic() - last_capture_growth >= HLS_CAPTURE_STALL_SECONDS
@@ -1278,6 +1296,11 @@ class WorkerManager:
                 for path in files
             ):
                 session.rollover_requested = True
+
+            if session.restart_requested:
+                self._source_restart_after[session.source_id] = (
+                    time.monotonic() + HLS_RESTART_BACKOFF_SECONDS
+                )
 
             # Media validation can scan gigabytes. Release the recorder slot
             # first so a live source resumes while its immutable part is checked.

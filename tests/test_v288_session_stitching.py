@@ -42,6 +42,18 @@ def test_consolidated_outputs_are_not_seen_as_capture_parts(tmp_path):
     assert [path.name for path in capture_output_files(Session())] == ["creator_part000.mp4"]
 
 
+def test_reconnect_only_sees_files_from_its_own_capture(tmp_path):
+    (tmp_path / "creator_old_part000.mp4").write_bytes(b"old")
+    (tmp_path / "creator_new_part000.mp4").write_bytes(b"new")
+
+    class Session:
+        directory = tmp_path
+        extension = ".mp4"
+        capture_prefix = "creator_new_part"
+
+    assert [path.name for path in capture_output_files(Session())] == ["creator_new_part000.mp4"]
+
+
 def test_public_recording_filename_is_consecutive_and_chronological():
     started = datetime(2026, 9, 3, 10, 5, 7, tzinfo=timezone.utc)
     first = public_recording_filename("Creator Name", started, 1, ".mp4")
