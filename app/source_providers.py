@@ -18,6 +18,7 @@ import requests
 class ProbeResult:
     live: bool
     status: str
+    recordable: bool = True
     title: str = ""
     error: str = ""
     last_broadcast: datetime | None = None
@@ -571,6 +572,16 @@ async def _probe_ytdlp(platform: str, slug: str, quality: str) -> ProbeResult:
     except Exception as exc:
         message = str(exc)
         lowered = message.lower()
+        # Webcam extractors report private sessions as extraction errors even
+        # though the creator is online. Keep presence tracking accurate without
+        # repeatedly trying to start a recorder for an unavailable stream.
+        if any(token in lowered for token in ("private show", "private chat")):
+            return ProbeResult(
+                live=True,
+                status="private",
+                recordable=False,
+                metadata_status="unsupported",
+            )
         expected_offline = (
             "offline",
             "not currently broadcasting",
@@ -579,8 +590,6 @@ async def _probe_ytdlp(platform: str, slug: str, quality: str) -> ProbeResult:
             "channel is not live",
             "livestream is offline",
             "room is not available",
-            "private show",
-            "private chat",
         )
         if any(token in lowered for token in expected_offline):
             return ProbeResult(False, "offline", metadata_status="unsupported")

@@ -1779,6 +1779,7 @@ function controlRoomStatusText(profile) {
     const source = profile.source;
     if (source.pause_reason === 'global') return 'LIVE · PAUSA GLOBALE';
     if (source.pause_reason === 'source') return 'LIVE · IN PAUSA';
+    if (source.pause_reason === 'unavailable') return 'LIVE · PRIVATA';
     return 'LIVE · NON REC';
   }
   if (profile.recording) {

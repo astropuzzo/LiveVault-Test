@@ -27,7 +27,7 @@ def test_live_pulse_is_csp_safe_and_shows_live_and_recording_geometry():
     assert 'cr-pulse-live-marker' in pulse
     assert 'cr-pulse-rec-marker' in pulse
     assert 'pulseSessionTimingMarkup(representative)' in pulse
-    assert 'DISPLAY_TIME_ZONE_LABEL' in pulse
+    assert 'DISPLAY_TIME_ZONE_LABEL' not in pulse
     assert 'viewBox="0 0 1000 16"' in pulse
     assert 'const maxProfiles = compact ? 5 : 8' in pulse
 
@@ -42,7 +42,7 @@ def test_live_pulse_is_csp_safe_and_shows_live_and_recording_geometry():
     assert 'cr-pulse-missed-span' in js
     assert '.cr-pulse-missed-span' in css
     assert "Intl.DateTimeFormat().resolvedOptions().timeZone" in js
-    assert "const DISPLAY_TIME_ZONE_LABEL = 'ora locale'" in js
+    assert "const DISPLAY_TIME_ZONE_LABEL = 'ora locale'" not in js
     assert 'truthful pulse colors and mobile control room' in css
     assert '.cr-pulse-rec-span{fill:' in css
 

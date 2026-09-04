@@ -4,6 +4,21 @@ from datetime import datetime, timezone
 from app import source_providers as providers
 
 
+def test_private_webcam_session_is_online_but_not_recordable(monkeypatch):
+    monkeypatch.setattr(
+        providers,
+        "_extract",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("Model is in a private show")),
+    )
+
+    result = asyncio.run(providers.probe("stripchat", "example", "best"))
+
+    assert result.live is True
+    assert result.status == "private"
+    assert result.recordable is False
+    assert result.error == ""
+
+
 def test_parse_chaturbate_last_broadcast_iso_utc():
     parsed = providers._parse_last_broadcast("2026-09-01T17:20:31.123456Z")
     assert parsed is not None

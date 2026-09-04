@@ -1073,7 +1073,7 @@ class WorkerManager:
                     self._observe_live_state(db, current, bool(result.live), checked_at)
                     recording_allowed = bool(current.enabled and current.consent_confirmed and not current.archived)
             cfg = runtime()
-            if not result.live or self._stopping or source.id in self.active or cfg.recording_paused or not recording_allowed:
+            if not result.live or not getattr(result, "recordable", True) or self._stopping or source.id in self.active or cfg.recording_paused or not recording_allowed:
                 return
             state = disk_state()
             if state.free_gb <= cfg.critical_free_gb:

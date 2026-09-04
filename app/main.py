@@ -762,7 +762,7 @@ async def inspect_source(body: SourceInspect, request: Request):
     has_video: bool | None = None
     has_audio: bool | None = None
     input_error = ""
-    if result.live:
+    if result.live and result.recordable:
         try:
             inputs = await resolve_inputs(platform, slug, body.quality)
             audit = await audit_inputs(inputs)
@@ -778,6 +778,7 @@ async def inspect_source(body: SourceInspect, request: Request):
         "slug": slug,
         "source_url": source_url(platform, slug),
         "live": result.live,
+        "recordable": result.recordable,
         "status": result.status,
         "title": result.title,
         "has_video": has_video,
@@ -1414,11 +1415,17 @@ def list_sources(request: Request):
             )
             detected_live = bool(
                 not source.archived
-                and (active or (source.last_status in {"live", "recording"} and fresh_live))
+                and (active or (source.last_status in {"live", "private", "recording"} and fresh_live))
             )
-            blocked_by_pause = bool(
+            recording_blocked = bool(
                 detected_live and not active and source.consent_confirmed and not source.archived
-                and (cfg.recording_paused or not source.enabled)
+                and (cfg.recording_paused or not source.enabled or source.last_status == "private")
+            )
+            pause_reason = (
+                "unavailable" if recording_blocked and source.last_status == "private"
+                else "global" if recording_blocked and cfg.recording_paused
+                else "source" if recording_blocked and not source.enabled
+                else ""
             )
             preview_url = ""
             preview_updated_at = None
@@ -1452,8 +1459,8 @@ def list_sources(request: Request):
                 "enabled": source.enabled, "archived": source.archived,
                 "quality": source.quality, "consent_confirmed": source.consent_confirmed,
                 "detected_live": detected_live,
-                "recording_blocked_by_pause": blocked_by_pause,
-                "pause_reason": "global" if blocked_by_pause and cfg.recording_paused else ("source" if blocked_by_pause else ""),
+                "recording_blocked_by_pause": recording_blocked,
+                "pause_reason": pause_reason,
                 "preview_url": preview_url,
                 "preview_updated_at": _iso_utc(preview_updated_at),
                 "last_status": "recording" if active else (
