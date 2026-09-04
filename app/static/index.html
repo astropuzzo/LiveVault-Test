@@ -47,14 +47,14 @@
     <main class="shell">
       <div id="dashboardView" class="view-section" data-page="dashboard">
         <section class="page-head dashboard-head">
-          <div><span class="eyebrow">CENTRO OPERATIVO</span><h1>Panoramica</h1><p id="lastRefresh">Caricamento…</p></div>
+          <div><h1>Panoramica</h1><time id="lastRefresh">—</time></div>
           <button id="showAddBtn" class="btn primary" type="button">Aggiungi sorgente</button>
         </section>
 
         <section class="dashboard-commandbar" aria-label="Stato e automazioni">
           <div class="control-center panel">
-            <article id="recordingControl" class="control-module" data-tone="good"><div><span>REC AUTOMATICA</span><strong id="recordingControlState">Attiva</strong><small id="recordingControlHint">Nuove live registrate automaticamente.</small></div><button id="pauseRecordingsBtn" class="btn soft" type="button">Pausa</button></article>
-            <article id="uploadControl" class="control-module" data-tone="good"><div><span>UPLOAD CLOUD</span><strong id="uploadControlState">Attivo</strong><small id="uploadControlHint">Coda automatica attiva.</small></div><button id="pauseUploadsBtn" class="btn soft" type="button">Pausa</button></article>
+            <article id="recordingControl" class="control-module" data-tone="good"><div><span>REC</span><strong id="recordingControlState">Attiva</strong></div><button id="pauseRecordingsBtn" class="btn soft" type="button">Pausa</button></article>
+            <article id="uploadControl" class="control-module" data-tone="good"><div><span>UPLOAD</span><strong id="uploadControlState">Attivo</strong></div><button id="pauseUploadsBtn" class="btn soft" type="button">Pausa</button></article>
             <div class="control-quick-actions"><button id="runUploadsBtn" class="btn accent" type="button">Smaltisci coda</button><button id="refreshBtn" class="btn soft" type="button">Aggiorna</button></div>
           </div>
         </section>
@@ -65,21 +65,21 @@
         </section>
 
         <section class="panel section dashboard-sources">
-          <div class="section-head"><div><span class="eyebrow">ADESSO</span><h2>Attività e sorgenti</h2></div><span id="sourceCount" class="count">0</span></div>
+          <div class="section-head"><div><h2>Attività</h2></div><span id="sourceCount" class="count">0</span></div>
           <div id="sources" class="source-list"></div>
         </section>
 
         <section class="dashboard-metrics" aria-label="Dati principali">
-          <article id="metricActive" class="metric-card panel" data-tone="neutral"><header><span>REGISTRAZIONE ORA</span><i>REC</i></header><strong id="activeCount">0</strong><small id="activeNames">Nessuna registrazione in corso</small><p>Numero di video scritti in questo momento.</p></article>
-          <article id="metricQueue" class="metric-card panel" data-tone="good"><header><span>DA CARICARE</span><i>CODA</i></header><strong id="queueCount">0</strong><small id="queueNote">Nessun file in attesa</small><p>File locali che devono ancora arrivare nel cloud.</p></article>
-          <article id="metricHistory" class="metric-card panel" data-tone="info"><header><span>ARCHIVIO COMPLESSIVO</span><i>FILE</i></header><strong id="historyCount">0</strong><small id="historyNote">0 sessioni · 0 oggi</small><p>Tutte le registrazioni catalogate da LiveVault.</p></article>
-          <article id="metricCloud" class="metric-card panel" data-tone="good"><header><span>NEL CLOUD</span><i>OK</i></header><strong id="cloudCount">0</strong><small id="cloudNote">0 B verificati</small><p>Upload completati e verificati sul provider remoto.</p></article>
-          <article id="metricBuffer" class="metric-card panel" data-tone="neutral"><header><span>SUL SERVER</span><i>BUFFER</i></header><strong id="bufferValue">—</strong><small id="bufferNote">Calcolo spazio locale…</small><p>Video conservati localmente in attesa o come copia.</p><div class="meter"><i id="bufferBar"></i></div></article>
-          <article id="metricDisk" class="metric-card panel" data-tone="neutral"><header><span>SPAZIO NVME LIBERO</span><i>DISCO</i></header><strong id="freeSpace">—</strong><small id="diskUsage">Calcolo capacità…</small><p>Spazio realmente disponibile per nuove registrazioni.</p><div class="meter"><i id="diskBar"></i></div></article>
+          <article id="metricActive" class="metric-card panel" data-tone="neutral"><header><span>IN REGISTRAZIONE</span><i>REC</i></header><strong id="activeCount">0</strong><small id="activeNames">—</small></article>
+          <article id="metricQueue" class="metric-card panel" data-tone="good"><header><span>CODA</span><i>UPLOAD</i></header><strong id="queueCount">0</strong><small id="queueNote">—</small></article>
+          <article id="metricHistory" class="metric-card panel" data-tone="info"><header><span>ARCHIVIO</span><i>FILE</i></header><strong id="historyCount">0</strong><small id="historyNote">—</small></article>
+          <article id="metricCloud" class="metric-card panel" data-tone="good"><header><span>CLOUD</span><i>OK</i></header><strong id="cloudCount">0</strong><small id="cloudNote">—</small></article>
+          <article id="metricBuffer" class="metric-card panel" data-tone="neutral"><header><span>BUFFER LOCALE</span><i>SERVER</i></header><strong id="bufferValue">—</strong><small id="bufferNote">—</small><div class="meter"><i id="bufferBar"></i></div></article>
+          <article id="metricDisk" class="metric-card panel" data-tone="neutral"><header><span>NVME LIBERO</span><i>DISCO</i></header><strong id="freeSpace">—</strong><small id="diskUsage">—</small><div class="meter"><i id="diskBar"></i></div></article>
         </section>
 
         <section id="errorsPanel" class="panel section hidden">
-          <div class="section-head"><div><h2>Errori recenti</h2><p>I file restano conservati. Riprova il recupero oppure pulisci solo gli avvisi mostrati.</p></div><div class="diagnostic-actions"><button id="retryRecoveryBtn" class="btn soft" type="button">Recupera file</button><button id="clearErrorsBtn" class="btn quiet" type="button">Pulisci avvisi</button><span id="diagnosticCount" class="count danger">0</span></div></div>
+          <div class="section-head"><div><h2>Errori recenti</h2></div><div class="diagnostic-actions"><button id="retryRecoveryBtn" class="btn soft" type="button">Recupera file</button><button id="clearErrorsBtn" class="btn quiet" type="button">Pulisci avvisi</button><span id="diagnosticCount" class="count danger">0</span></div></div>
           <pre id="errors"></pre>
         </section>
       </div>
@@ -169,10 +169,10 @@
           <article class="panel stats-chart-card"><div class="section-head"><div><h2>Distribuzione giornaliera</h2></div></div><div id="statisticsHourlyChart" class="chart-host"></div></article>
         </section>
         <section class="stats-operations-grid">
-          <article class="panel stats-chart-card"><div class="section-head"><div><span class="eyebrow">Storage</span><h2>Movimentazione dati</h2></div><span id="statisticsDataTotal" class="route">—</span></div><div id="statisticsDataChart" class="data-flow-chart"></div></article>
-          <article class="panel stats-chart-card"><div class="section-head"><div><span class="eyebrow">Segnali</span><h2>In breve</h2></div></div><div id="statisticsInsights" class="stats-insights"></div></article>
+          <article class="panel stats-chart-card"><div class="section-head"><div><h2>Movimentazione dati</h2></div><span id="statisticsDataTotal" class="route">—</span></div><div id="statisticsDataChart" class="data-flow-chart"></div></article>
+          <article class="panel stats-chart-card"><div class="section-head"><div><h2>Riepilogo</h2></div></div><div id="statisticsInsights" class="stats-insights"></div></article>
         </section>
-        <section class="panel section"><div class="section-head stats-leader-head"><div><h2>Creator</h2><small>Confronto operativo nel periodo</small></div><label class="stats-range compact"><span>Ordina per</span><select id="statisticsCreatorSort"><option value="videos">Video</option><option value="duration">Durata</option><option value="storage">Spazio</option><option value="coverage">Copertura</option></select></label></div><div id="statisticsLeaderboard" class="stats-leaderboard"></div><p id="statisticsNote" class="stats-note"></p></section>
+        <section class="panel section"><div class="section-head stats-leader-head"><div><h2>Creator</h2></div><label class="stats-range compact"><span>Ordina per</span><select id="statisticsCreatorSort"><option value="videos">Video</option><option value="duration">Durata</option><option value="storage">Spazio</option><option value="coverage">Copertura</option></select></label></div><div id="statisticsLeaderboard" class="stats-leaderboard"></div><p id="statisticsNote" class="stats-note"></p></section>
       </div>
 
       <div id="archiveView" class="view-section hidden" data-page="archive">
@@ -181,7 +181,7 @@
         </section>
         <section id="archive" class="panel section">
           <div class="section-head archive-section-head">
-            <div><h2>Registrazioni</h2><span id="providerRoute" class="route">—</span></div>
+            <div><h2>Registrazioni</h2></div>
             <div class="archive-view-options" role="group" aria-label="Numero di colonne">
               <span>Vista</span>
               <button class="icon-btn" type="button" data-archive-columns="1" aria-label="Una colonna" title="Una colonna">▭</button>

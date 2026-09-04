@@ -25,7 +25,6 @@ let libraryMode = localStorage.getItem('livevault-library-view') === 'list' ? 'l
 let sourceFilterId = Number(new URLSearchParams(location.search).get('source')) || 0;
 const selectedProfiles = new Set();
 const DISPLAY_TIME_ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/Rome';
-const DISPLAY_TIME_ZONE_LABEL = 'ora locale';
 
 function esc(value = '') {
   return String(value).replace(/[&<>'"]/g, char => ({
@@ -639,7 +638,7 @@ function renderProfile() {
   }).join('');
   const timeline = (profileData.timeline || []).map(event =>
     `<li><time>${esc(dateText(event.at))}</time><span>${esc(event.title)}</span></li>`
-  ).join('') || '<li><span>Nessuna attività.</span></li>';
+  ).join('') || '<li><span>—</span></li>';
   const recordingDays = (profileData.recording_days || []).map((day, index) => {
     const cloudLinks = (day.cloud_links || []).map(link => {
       const url = safeUrl(link.remote_url);
@@ -893,10 +892,10 @@ function renderStatus(status) {
   $('#activeNames').innerHTML = active.length ? active.map(item => {
     const source = sources.find(row => row.id === Number(item.source_id));
     return creatorLinkMarkup(item.source_id, source?.display_name || item.source_name);
-  }).join(' · ') : 'Nessuna registrazione in corso';
+  }).join(' · ') : '—';
   setTone('#metricActive', active.length ? 'recording' : 'neutral');
   $('#queueCount').textContent = status.queue.pending;
-  $('#queueNote').textContent = status.queue.integrity_failed ? `${status.queue.integrity_failed} con integrità fallita` : status.queue.failed ? `${status.queue.failed} upload falliti` : status.queue.pending ? `${status.queue.pending === 1 ? '1 file attende' : `${status.queue.pending} file attendono`} il cloud` : 'Nessun file in attesa';
+  $('#queueNote').textContent = status.queue.integrity_failed ? `${status.queue.integrity_failed} integrità fallita` : status.queue.failed ? `${status.queue.failed} falliti` : status.queue.pending ? `${status.queue.pending} in attesa` : '—';
   setTone('#metricQueue', status.queue.integrity_failed || status.queue.failed ? 'danger' : status.queue.pending ? 'warning' : 'good');
   $('#historyCount').textContent = history.recordings || 0;
   $('#historyNote').textContent = `${history.sessions || 0} sessioni · ${history.today || 0} oggi`;
@@ -914,11 +913,8 @@ function renderStatus(status) {
   $('#diskBar').style.width = `${diskUsed}%`;
   $('#diskBar').className = status.disk.pressure === 'critical' ? 'bad' : status.disk.pressure === 'warning' ? 'warn' : '';
   setTone('#metricDisk', status.disk.pressure === 'critical' ? 'danger' : status.disk.pressure === 'warning' ? 'warning' : 'good');
-  $('#providerRoute').textContent = `${status.config.primary_uploader} → ${status.config.fallback_uploader}`;
   $('#recordingControlState').textContent = status.config.recording_paused ? 'In pausa' : 'Attiva';
   $('#uploadControlState').textContent = status.config.upload_paused ? 'In pausa' : 'Attivo';
-  $('#recordingControlHint').textContent = status.config.recording_paused ? 'Le live vengono rilevate, ma non saranno registrate.' : 'Le nuove live vengono registrate automaticamente.';
-  $('#uploadControlHint').textContent = status.config.upload_paused ? 'I file restano al sicuro sul server finché non riprendi.' : 'La coda viene smaltita automaticamente.';
   $('#pauseRecordingsBtn').textContent = status.config.recording_paused ? 'Riattiva' : 'Metti in pausa';
   $('#pauseUploadsBtn').textContent = status.config.upload_paused ? 'Riattiva' : 'Metti in pausa';
   setTone('#recordingControl', status.config.recording_paused ? 'warning' : 'good');
@@ -1073,7 +1069,7 @@ async function refresh({includeRecordings = false, deferDashboardRender = false}
     if (activeView === 'archive') renderRecordings();
     if (activeView === 'dashboard') renderLivePauseAlert();
     if (activeView === 'statistics' && Date.now() - lastStatisticsLoad > 30000) loadStatistics(statisticsDays).catch(() => {});
-    $('#lastRefresh').textContent = `Aggiornato ${new Intl.DateTimeFormat('it-IT', {hour: '2-digit', minute: '2-digit', second: '2-digit'}).format(new Date())}`;
+    $('#lastRefresh').textContent = new Intl.DateTimeFormat('it-IT', {hour: '2-digit', minute: '2-digit'}).format(new Date());
   } catch (error) {
     if (error.message !== 'auth') {
       $('#lastRefresh').textContent = `Errore: ${error.message}`;
@@ -1856,14 +1852,8 @@ renderSources = function renderSourcesControlRoom() {
   const live = profiles.filter(profile => profile.live).sort((a, b) => controlRoomPriority(b) - controlRoomPriority(a) || timestamp(b.last_seen_live_at) - timestamp(a.last_seen_live_at) || a.display_name.localeCompare(b.display_name, 'it'));
   const offlineFocus = profiles.filter(profile => !profile.live && profile.focus).sort((a, b) => timestamp(b.last_seen_live_at) - timestamp(a.last_seen_live_at) || a.display_name.localeCompare(b.display_name, 'it'));
   const offline = profiles.filter(profile => !profile.live && !profile.focus).sort((a, b) => Number(!!b.last_error) - Number(!!a.last_error) || timestamp(b.last_seen_live_at) - timestamp(a.last_seen_live_at) || a.display_name.localeCompare(b.display_name, 'it'));
-  const recCount = live.filter(profile => profile.recording).length;
   const blockedCount = live.filter(profile => profile.blocked).length;
   const summaryTone = blockedCount ? 'danger' : live.length ? 'recording' : 'neutral';
-  const summaryText = !live.length
-    ? 'Nessuna attività: il monitoraggio resta acceso.'
-    : blockedCount
-      ? `${recCount} in registrazione · ${blockedCount} ${blockedCount === 1 ? 'live non registrata' : 'live non registrate'}`
-      : live.length === 1 ? 'La live è in registrazione.' : `Tutte le ${live.length} live sono in registrazione.`;
   const coverageLabel = blockedCount ? `${blockedCount} DA CONTROLLARE` : live.length ? 'REC COPERTA' : 'IN ATTESA';
   $('#sourceCount').textContent = profiles.length;
   const panelHead = root.closest('.section')?.querySelector('.section-head');
@@ -1874,12 +1864,12 @@ renderSources = function renderSourcesControlRoom() {
     if (note) note.remove();
   }
   if (!profiles.length) {
-    root.innerHTML = '<div class="empty">Nessuna sorgente attiva. Quelle archiviate restano disponibili nella Libreria.</div>';
+    root.innerHTML = '<div class="empty">Nessuna sorgente.</div>';
     renderControlRoomWall([]);
     return;
   }
   root.innerHTML = `<div class="cr-toolbar">
-      <div class="cr-now-summary" data-tone="${summaryTone}" role="status"><span class="cr-summary-signal" aria-hidden="true"></span><div><strong>${live.length} ${live.length === 1 ? 'live adesso' : 'live adesso'}</strong><small>${esc(summaryText)}</small></div><span class="cr-coverage-label">${esc(coverageLabel)}</span></div>
+      <div class="cr-now-summary" data-tone="${summaryTone}" role="status"><span class="cr-summary-signal" aria-hidden="true"></span><div><strong>${live.length} live</strong></div><span class="cr-coverage-label">${esc(coverageLabel)}</span></div>
       <button class="btn accent" data-live-wall type="button" ${live.length ? '' : 'disabled'}>▦ Live Wall</button>
     </div>
     <section class="cr-live-section">
@@ -2222,7 +2212,7 @@ function controlRoomPulseMarkup() {
     return `<div class="cr-pulse-row"><div class="cr-pulse-who">${creatorLinkMarkup(representative.representative_source_id, representative.display_name, 'cr-pulse-name')}${pulseSessionTimingMarkup(representative)}</div><div class="cr-pulse-track"><svg class="cr-pulse-svg" viewBox="0 0 1000 16" preserveAspectRatio="none" role="img" aria-label="Timeline ${esc(representative.display_name)}">${graphics}</svg></div></div>`;
   }).join('');
   const hidden = Math.max(0, profileOrder.length - recentProfiles.length);
-  return `<section class="cr-pulse"><div class="cr-pulse-head"><div><strong>Cronologia live</strong><small>Online e copertura della registrazione</small></div><div class="cr-pulse-head-right"><span class="cr-pulse-legend"><i class="live"></i>ONLINE <i class="rec"></i>REC <i class="processing"></i>RECUPERO <i class="missed"></i>NON REC</span><span>Ultime ${controlRoomPulseData.hours || 12} ore · ${DISPLAY_TIME_ZONE_LABEL}${hidden ? ` · +${hidden}` : ''}</span></div></div><div class="cr-pulse-scale"><span></span><div>${labels}</div></div>${rows || '<div class="cr-pulse-empty">Nessuna attività nel periodo.</div>'}</section>`;
+  return `<section class="cr-pulse"><div class="cr-pulse-head"><div><strong>Cronologia</strong></div><div class="cr-pulse-head-right"><span class="cr-pulse-legend"><i class="live"></i>ONLINE <i class="rec"></i>REC <i class="processing"></i>RECUPERO <i class="missed"></i>NON REC</span><span>${controlRoomPulseData.hours || 12}h${hidden ? ` · +${hidden}` : ''}</span></div></div><div class="cr-pulse-scale"><span></span><div>${labels}</div></div>${rows || ''}</section>`;
 }
 
 function controlRoomRecentEnded(profiles) {
