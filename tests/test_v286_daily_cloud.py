@@ -41,6 +41,6 @@ def test_pixeldrain_closed_day_album_and_gofile_daily_folder_code_present():
 
 
 def test_v286_version_and_cache():
-    assert (ROOT / "VERSION").read_text(encoding="utf-8").strip() == "2.8.13"
-    assert 'VERSION = "2.8.13"' in (ROOT / "app/main.py").read_text(encoding="utf-8")
-    assert "livevault-shell-v2.8.13" in (ROOT / "app/static/sw.js").read_text(encoding="utf-8")
+    assert (ROOT / "VERSION").read_text(encoding="utf-8").strip() == "2.8.14"
+    assert 'VERSION = "2.8.14"' in (ROOT / "app/main.py").read_text(encoding="utf-8")
+    assert "livevault-shell-v2.8.14" in (ROOT / "app/static/sw.js").read_text(encoding="utf-8")

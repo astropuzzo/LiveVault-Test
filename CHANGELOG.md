@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.8.14 — Stati di accesso live
+
+- Gli stati online non accessibili vengono distinti in privata, tip-jar e limitata per tutti i provider che li espongono.
+- Chaturbate, Stripchat, CamSoda e BongaCams riconoscono direttamente i segnali di stanza non pubblica; gli altri adapter normalizzano i messaggi equivalenti restituiti dall'upstream.
+- La cronologia conserva i passaggi tra live pubblica e stanza non accessibile e li mostra con intervalli e colori dedicati, senza contarli come registrazioni mancate.
+
 ## 2.8.13 — Stripchat WebRTC
 
 - Le live pubbliche Stripchat vengono registrate dal flusso WebRTC reale, con audio e video sullo stesso clock, anziché dal playlist HLS pubblicitario.

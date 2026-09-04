@@ -26,6 +26,32 @@ class ProbeResult:
     metadata_error: str = ""
 
 
+PRIVATE_STATUS_TOKENS = {
+    "private", "p2p", "group", "password", "password protected", "exclusive",
+}
+TIPJAR_STATUS_TOKENS = {
+    "ticket", "hidden", "away", "offline_tipping", "tip_offline", "tipjar", "tip_jar",
+}
+
+
+def inaccessible_status(value: object) -> str:
+    """Normalize provider-specific non-public live states for UI and history."""
+    text = re.sub(r"[\s_-]+", " ", str(value or "").strip().lower())
+    if not text:
+        return ""
+    if any(token.replace("_", " ") in text for token in TIPJAR_STATUS_TOKENS):
+        return "tipjar"
+    if any(token in text for token in PRIVATE_STATUS_TOKENS):
+        return "private"
+    restricted = (
+        "subscriber only", "subscribers only", "members only", "login required",
+        "sign in to watch", "not available in your country", "geo restricted",
+    )
+    if any(token in text for token in restricted):
+        return "restricted"
+    return ""
+
+
 @dataclass
 class ResolvedInput:
     url: str
@@ -494,11 +520,11 @@ async def _probe_stripchat(slug: str, quality: str) -> ProbeResult:
         item = await asyncio.to_thread(stripchat_broadcast_info, slug)
         live = item.get("isLive") is True
         status = str(item.get("status") or "").strip().lower()
-        private = live and status in {"private", "p2p", "group", "ticket"}
+        unavailable = inaccessible_status(status) if live else ""
         if not live:
             return ProbeResult(False, "offline", metadata_status="unsupported")
-        if private:
-            return ProbeResult(True, "private", recordable=False, metadata_status="unsupported")
+        if unavailable:
+            return ProbeResult(True, unavailable, recordable=False, metadata_status="unsupported")
         settings = item.get("settings") if isinstance(item.get("settings"), dict) else {}
         if not item.get("streamName") or settings.get("mediaTransport") != "webrtc":
             raise RuntimeError("Stripchat public WebRTC descriptor is incomplete")
@@ -721,15 +747,56 @@ def _yt_dlp_live_state(info: dict[str, Any]) -> tuple[bool, str]:
     return False, "offline"
 
 
+def _bongacams_room_info(slug: str) -> dict[str, Any]:
+    response = requests.post(
+        "https://bongacams.com/tools/amf.php",
+        data=[("method", "getRoomData"), ("args[]", slug), ("args[]", "false")],
+        headers={
+            "Accept": "application/json",
+            "Referer": source_url("bongacams", slug),
+            "User-Agent": CHATURBATE_HEADERS["User-Agent"],
+            "X-Requested-With": "XMLHttpRequest",
+        },
+        timeout=15,
+    )
+    response.raise_for_status()
+    payload = response.json()
+    return payload if isinstance(payload, dict) else {}
+
+
 async def _probe_ytdlp(platform: str, slug: str, quality: str) -> ProbeResult:
     if platform == "stripchat":
         return await _probe_stripchat(slug, quality)
+    if platform == "bongacams":
+        try:
+            room = await asyncio.to_thread(_bongacams_room_info, slug)
+            performer = room.get("performerData") if isinstance(room.get("performerData"), dict) else {}
+            if performer:
+                if performer.get("isOnline") is not True:
+                    return ProbeResult(False, "offline", metadata_status="unsupported")
+                room_status = "away" if performer.get("isAway") is True else performer.get("showType")
+                unavailable = inaccessible_status(room_status)
+                if unavailable:
+                    return ProbeResult(
+                        True,
+                        unavailable,
+                        recordable=False,
+                        title=str(performer.get("displayName") or performer.get("username") or slug),
+                        metadata_status="unsupported",
+                    )
+        except Exception:
+            # The extractor remains the fallback when BongaCams changes or
+            # temporarily rejects its lightweight room-status endpoint.
+            pass
     url = source_url(platform, slug)
     try:
         info = await asyncio.to_thread(_extract, url, quality)
     except Exception as exc:
         message = str(exc)
         lowered = message.lower()
+        unavailable = inaccessible_status(message)
+        if unavailable:
+            return ProbeResult(True, unavailable, recordable=False, metadata_status="unsupported")
         expected_offline = (
             "offline",
             "not currently broadcasting",
@@ -774,6 +841,7 @@ async def probe(platform: str, slug: str, quality: str = "best") -> ProbeResult:
     context_data = context if isinstance(context, dict) else {}
     last_broadcast = _parse_last_broadcast(context_data.get("last_broadcast"))
     room_status = str(context_data.get("room_status") or "").strip().lower()
+    room_unavailable = inaccessible_status(room_status)
 
     profile_fallback_ok = False
     profile_error = ""
@@ -811,6 +879,16 @@ async def probe(platform: str, slug: str, quality: str = "best") -> ProbeResult:
         info = extracted
         live_status = str(info.get("live_status") or "")
         is_live = bool(info.get("is_live")) or live_status == "is_live" or room_status == "public" or online is True
+        if room_unavailable:
+            return ProbeResult(
+                live=True,
+                status=room_unavailable,
+                recordable=False,
+                title=str(info.get("title") or context_data.get("room_title") or ""),
+                last_broadcast=last_broadcast,
+                metadata_status=metadata_status,
+                metadata_error=metadata_error,
+            )
         if is_live:
             status = "live"
         else:
@@ -838,19 +916,30 @@ async def probe(platform: str, slug: str, quality: str = "best") -> ProbeResult:
                 metadata_status=metadata_status,
                 metadata_error=metadata_error,
             )
+        if room_unavailable:
+            return ProbeResult(
+                live=True,
+                status=room_unavailable,
+                recordable=False,
+                title=str(context_data.get("room_title") or ""),
+                last_broadcast=last_broadcast,
+                metadata_status=metadata_status,
+                metadata_error=metadata_error,
+            )
         return ProbeResult(
-            live=False,
-            status="offline",
+            live=False, status="offline",
             last_broadcast=last_broadcast,
             metadata_status=metadata_status,
             metadata_error=metadata_error,
         )
 
     if online is True:
+        unavailable = inaccessible_status(text)
         return ProbeResult(
             live=True,
-            status="live",
-            error=f"Stream rilevato online ma accesso video non riuscito: {text[-500:]}",
+            status=unavailable or "restricted",
+            recordable=False,
+            error="",
             last_broadcast=last_broadcast,
             metadata_status=metadata_status,
             metadata_error=metadata_error,
@@ -865,7 +954,17 @@ async def probe(platform: str, slug: str, quality: str = "best") -> ProbeResult:
             metadata_error=metadata_error,
         )
 
-    if any(k in lowered for k in ("offline", "not currently broadcasting", "private show", "room is not available", "not broadcasting")):
+    unavailable = inaccessible_status(text)
+    if unavailable:
+        return ProbeResult(
+            live=True,
+            status=unavailable,
+            recordable=False,
+            last_broadcast=last_broadcast,
+            metadata_status=metadata_status,
+            metadata_error=metadata_error,
+        )
+    if any(k in lowered for k in ("offline", "not currently broadcasting", "room is not available", "not broadcasting")):
         return ProbeResult(
             live=False,
             status="offline",

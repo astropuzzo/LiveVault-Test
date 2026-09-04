@@ -181,6 +181,7 @@ class LiveSession(Base):
     ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
     last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     origin: Mapped[str] = mapped_column(String(32), default="probe", index=True)
+    access_status: Mapped[str] = mapped_column(String(24), default="live", index=True)
 
 
 class AppSetting(Base):
@@ -314,7 +315,11 @@ def _migrate_live_sessions() -> None:
     From v2.6.0 onward workers write probe-derived sessions, including periods where
     recording is paused. Older history can only be estimated from captured sessions.
     """
+    existing = _columns("live_sessions")
     with engine.begin() as conn:
+        if "access_status" not in existing:
+            conn.execute(text("ALTER TABLE live_sessions ADD COLUMN access_status VARCHAR(24) NOT NULL DEFAULT 'live'"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_live_sessions_access_status ON live_sessions (access_status)"))
         count = int(conn.execute(text("SELECT COUNT(*) FROM live_sessions")).scalar_one() or 0)
         if count:
             return

@@ -53,7 +53,7 @@ BASE = Path(__file__).parent
 LOGIN_FAILURES: dict[str, deque[float]] = defaultdict(deque)
 LOGIN_WINDOW = 10 * 60
 LOGIN_MAX_FAILURES = 6
-VERSION = "2.8.13"
+VERSION = "2.8.14"
 
 
 class LoginBody(BaseModel):
@@ -493,7 +493,8 @@ def _smart_library_counts(db) -> dict[str, int]:
         "live": sum(
             1 for profile in profiles
             if any(
-                source.enabled and not source.archived and source.last_status in {"live", "recording"}
+                source.enabled and not source.archived
+                and source.last_status in {"live", "private", "tipjar", "restricted", "recording"}
                 for source in by_profile.get(profile.id, [])
             )
         ),
@@ -1415,14 +1416,18 @@ def list_sources(request: Request):
             )
             detected_live = bool(
                 not source.archived
-                and (active or (source.last_status in {"live", "private", "recording"} and fresh_live))
+                and (active or (source.last_status in {"live", "private", "tipjar", "restricted", "recording"} and fresh_live))
             )
             recording_blocked = bool(
                 detected_live and not active and source.consent_confirmed and not source.archived
-                and (cfg.recording_paused or not source.enabled or source.last_status == "private")
+                and (
+                    cfg.recording_paused
+                    or not source.enabled
+                    or source.last_status in {"private", "tipjar", "restricted"}
+                )
             )
             pause_reason = (
-                "unavailable" if recording_blocked and source.last_status == "private"
+                source.last_status if recording_blocked and source.last_status in {"private", "tipjar", "restricted"}
                 else "global" if recording_blocked and cfg.recording_paused
                 else "source" if recording_blocked and not source.enabled
                 else ""
@@ -1560,6 +1565,7 @@ def control_room_pulse(request: Request, hours: int = 12):
                 "ended": min(ended, now),
                 "open": ended_real is None,
                 "origin": str(session.origin or "probe"),
+                "access_status": str(session.access_status or "live"),
             })
 
         merged_by_profile: dict[int, list[dict]] = defaultdict(list)
@@ -1569,10 +1575,22 @@ def control_room_pulse(request: Request, hours: int = 12):
                 if merged and interval["started"] <= merged[-1]["ended"] + timedelta(seconds=75):
                     merged[-1]["ended"] = max(merged[-1]["ended"], interval["ended"])
                     merged[-1]["open"] = bool(merged[-1]["open"] or interval["open"])
+                    merged[-1]["access_intervals"].append({
+                        "started": interval["started"],
+                        "ended": interval["ended"],
+                        "status": interval["access_status"],
+                    })
                     if interval["origin"] != "recording_backfill":
                         merged[-1]["origin"] = interval["origin"]
                 else:
-                    merged.append(dict(interval))
+                    merged.append({
+                        **interval,
+                        "access_intervals": [{
+                            "started": interval["started"],
+                            "ended": interval["ended"],
+                            "status": interval["access_status"],
+                        }],
+                    })
 
         sessions: list[dict] = []
         for profile_id, intervals in merged_by_profile.items():
@@ -1686,6 +1704,17 @@ def control_room_pulse(request: Request, hours: int = 12):
                     int(row.size_bytes or 0) for row, _start, _end in overlapping_fragments
                 )
                 coverage = min(100.0, recorded_seconds / live_seconds * 100.0) if live_seconds > 0 else 0.0
+                access_intervals: list[dict] = []
+                for access in sorted(interval.get("access_intervals", []), key=lambda row: row["started"]):
+                    access_start = max(started, access["started"])
+                    access_end = min(ended, access["ended"])
+                    if access_end <= access_start:
+                        continue
+                    status = access["status"] if access["status"] in {"live", "private", "tipjar", "restricted"} else "live"
+                    if access_intervals and access_intervals[-1]["status"] == status and access_start <= access_intervals[-1]["ended"] + timedelta(seconds=75):
+                        access_intervals[-1]["ended"] = max(access_intervals[-1]["ended"], access_end)
+                    else:
+                        access_intervals.append({"started": access_start, "ended": access_end, "status": status})
                 if interval["open"]:
                     state = "live"
                 elif processing_count:
@@ -1711,6 +1740,14 @@ def control_room_pulse(request: Request, hours: int = 12):
                     "recording_intervals": [
                         {"started_at": _iso_utc(row["started"]), "ended_at": _iso_utc(row["ended"])}
                         for row in merged_recordings
+                    ],
+                    "access_intervals": [
+                        {
+                            "started_at": _iso_utc(row["started"]),
+                            "ended_at": _iso_utc(row["ended"]),
+                            "status": row["status"],
+                        }
+                        for row in access_intervals
                     ],
                     "recordings": recording_segments,
                     "coverage_percent": round(coverage, 1),

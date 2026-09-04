@@ -1020,13 +1020,28 @@ class WorkerManager:
         self.last_errors.pop(f"finalize:{source_id}", None)
         return True
 
-    def _observe_live_state(self, db, source: Source, live: bool, observed_at: datetime) -> None:
+    def _observe_live_state(
+        self,
+        db,
+        source: Source,
+        live: bool,
+        observed_at: datetime,
+        access_status: str = "live",
+    ) -> None:
         open_session = db.scalar(
             select(LiveSession)
             .where(LiveSession.source_id == source.id, LiveSession.ended_at.is_(None))
             .order_by(LiveSession.started_at.desc(), LiveSession.id.desc())
         )
         if live:
+            normalized_status = access_status if access_status in {"live", "private", "tipjar", "restricted"} else "live"
+            if open_session and open_session.access_status != normalized_status:
+                started_at = open_session.started_at
+                if started_at.tzinfo is None:
+                    started_at = started_at.replace(tzinfo=timezone.utc)
+                open_session.ended_at = max(observed_at, started_at.astimezone(timezone.utc))
+                open_session.last_seen_at = observed_at
+                open_session = None
             if open_session:
                 open_session.last_seen_at = observed_at
             else:
@@ -1037,6 +1052,7 @@ class WorkerManager:
                     ended_at=None,
                     last_seen_at=observed_at,
                     origin="probe",
+                    access_status=normalized_status,
                 ))
             source.last_seen_live_at = observed_at
         elif open_session:
@@ -1070,7 +1086,7 @@ class WorkerManager:
                     current.metadata_error = result.metadata_error
                     if result.last_broadcast is not None:
                         current.last_live_at = result.last_broadcast
-                    self._observe_live_state(db, current, bool(result.live), checked_at)
+                    self._observe_live_state(db, current, bool(result.live), checked_at, result.status)
                     recording_allowed = bool(current.enabled and current.consent_confirmed and not current.archived)
             cfg = runtime()
             if not result.live or not getattr(result, "recordable", True) or self._stopping or source.id in self.active or cfg.recording_paused or not recording_allowed:

@@ -1764,7 +1764,8 @@ function controlRoomPreviewMarkup(profile, wall = false) {
   const previewUrl = previewEnabled && source?.preview_url ? `${source.preview_url}?v=${timestamp(updated) || 0}` : '';
   const cover = safeUrl(source?.cover_thumbnail_url || '');
   const recordingLabel = profile.recording ? 'REC' : profile.live ? 'LIVE' : 'OFFLINE';
-  const alertLabel = profile.blocked ? 'NON REGISTRATA' : '';
+  const unavailableLabel = {private: 'PRIVATA', tipjar: 'TIP-JAR', restricted: 'LIMITATA'}[source?.pause_reason] || '';
+  const alertLabel = unavailableLabel || (profile.blocked ? 'NON REGISTRATA' : '');
   const freshness = updated ? ago(updated) : '';
   return `<div class="cr-preview ${profile.blocked ? 'attention' : ''} ${wall ? 'wall' : ''}">
     ${previewUrl ? `<img data-live-preview src="${esc(previewUrl)}" alt="Preview live di ${esc(profile.display_name)}" loading="lazy" decoding="async" fetchpriority="low">` : cover ? `<img class="cr-preview-cover" src="${esc(cover)}" alt="Copertina di ${esc(profile.display_name)}" loading="lazy" decoding="async">` : `<div class="cr-preview-placeholder"><span>${esc(controlRoomInitials(profile.display_name))}</span></div>`}
@@ -1779,7 +1780,9 @@ function controlRoomStatusText(profile) {
     const source = profile.source;
     if (source.pause_reason === 'global') return 'LIVE · PAUSA GLOBALE';
     if (source.pause_reason === 'source') return 'LIVE · IN PAUSA';
-    if (source.pause_reason === 'unavailable') return 'LIVE · PRIVATA';
+    if (source.pause_reason === 'private') return 'ONLINE · PRIVATA';
+    if (source.pause_reason === 'tipjar') return 'ONLINE · TIP-JAR';
+    if (source.pause_reason === 'restricted') return 'ONLINE · NON ACCESSIBILE';
     return 'LIVE · NON REC';
   }
   if (profile.recording) {
@@ -2070,6 +2073,15 @@ function pulseRecordingFiles(session) {
   return pulseRecordingIntervals(session);
 }
 
+function pulseUnavailableIntervals(session) {
+  return (Array.isArray(session?.access_intervals) ? session.access_intervals : [])
+    .filter(row => ['private', 'tipjar', 'restricted'].includes(row?.status) && timestamp(row?.started_at) && timestamp(row?.ended_at));
+}
+
+function accessStatusLabel(status) {
+  return {private: 'PRIVATA', tipjar: 'TIP-JAR', restricted: 'NON ACCESSIBILE'}[status] || 'ONLINE';
+}
+
 function ensurePulseMediaPreview() {
   let node = $('#crPulseMediaPreview');
   if (node) return node;
@@ -2120,9 +2132,11 @@ function pulseSessionTimingMarkup(session) {
   const recStart = session.recording_started_at || recs[0]?.started_at;
   const recEnd = session.recording_ended_at || recs[recs.length - 1]?.ended_at;
   const latest = recs[recs.length - 1];
+  const latestAccess = (session.access_intervals || []).at(-1);
+  const unavailable = latestAccess && latestAccess.status !== 'live' ? accessStatusLabel(latestAccess.status) : '';
   const recLabel = recs.length > 1
     ? `${recs.length} blocchi · ${pulseRangeLabel(latest.started_at, latest.ended_at, !!session.recording_active)}`
-    : recStart ? pulseRangeLabel(recStart, recEnd, !!session.recording_active) : '—';
+    : recStart ? pulseRangeLabel(recStart, recEnd, !!session.recording_active) : unavailable || '—';
   return `<span class="cr-pulse-times"><span><b>ONLINE</b> ${esc(pulseRangeLabel(session.started_at, session.ended_at, !session.ended_at))}</span><span><b>REC</b> ${esc(recLabel)}</span></span>`;
 }
 
@@ -2180,12 +2194,23 @@ function controlRoomPulseMarkup() {
       const x = xFor(start);
       const liveWidth = widthFor(start, end, compact ? 18 : 5);
       const recordingFiles = pulseRecordingFiles(session);
+      const unavailableIntervals = pulseUnavailableIntervals(session);
       const hasRecording = recordingFiles.length > 0 || !!session.recording_started_at || !!session.recording_active;
-      const missed = hasRecording ? pulseMissingIntervals(start, end, pulseRecordingIntervals(session)).map(gap => {
+      const unavailableCoverage = unavailableIntervals.map(row => ({started_at: row.started_at, ended_at: row.ended_at}));
+      const missed = hasRecording ? pulseMissingIntervals(start, end, [...pulseRecordingIntervals(session), ...unavailableCoverage]).map(gap => {
         const missedX = xFor(gap.start);
         const missedWidth = widthFor(gap.start, gap.end, compact ? 12 : 4);
         return `<rect class="cr-pulse-missed-span" x="${missedX.toFixed(3)}" y="4" width="${missedWidth.toFixed(3)}" height="8" rx="4" ry="4"><title>NON REC · ${esc(pulseRangeLabel(gap.start, gap.end))}</title></rect>`;
       }).join('') : '';
+      const unavailable = unavailableIntervals.map(access => {
+        const accessStart = Math.max(start, timestamp(access.started_at));
+        const accessEnd = Math.min(end, timestamp(access.ended_at));
+        if (!accessStart || accessEnd <= accessStart) return '';
+        const accessX = xFor(accessStart);
+        const accessWidth = widthFor(accessStart, accessEnd, compact ? 12 : 4);
+        const label = accessStatusLabel(access.status);
+        return `<rect class="cr-pulse-access-span ${esc(access.status)}" x="${accessX.toFixed(3)}" y="2" width="${accessWidth.toFixed(3)}" height="12" rx="6" ry="6"><title>${esc(label)} · ${esc(pulseRangeLabel(access.started_at, access.ended_at))}</title></rect>`;
+      }).join('');
       const title = `${session.display_name} · ONLINE ${pulseRangeLabel(session.started_at, session.ended_at, !session.ended_at)} · REC ${session.recording_started_at ? pulseRangeLabel(session.recording_started_at, session.recording_ended_at, !!session.recording_active) : '—'}`;
       const recs = recordingFiles.map(rec => {
         const recStart = Math.max(start, timestamp(rec.started_at));
@@ -2208,12 +2233,12 @@ function controlRoomPulseMarkup() {
       }).join('');
       const firstRec = recordingFiles[0];
       const recMarkerX = firstRec ? xFor(Math.max(start, timestamp(firstRec.started_at))) : null;
-      return `<g class="cr-pulse-session"><rect class="cr-pulse-live-span ${session.state === 'live' ? 'current' : ''} ${!hasRecording ? 'unrecorded' : ''}" x="${x.toFixed(3)}" y="2" width="${liveWidth.toFixed(3)}" height="12" rx="6" ry="6"></rect>${missed}<line class="cr-pulse-live-marker" x1="${x.toFixed(3)}" y1="0" x2="${x.toFixed(3)}" y2="16"></line>${recMarkerX === null ? '' : `<line class="cr-pulse-rec-marker" x1="${recMarkerX.toFixed(3)}" y1="1" x2="${recMarkerX.toFixed(3)}" y2="15"></line>`}${recs}<title>${esc(title)}</title></g>`;
+      return `<g class="cr-pulse-session"><rect class="cr-pulse-live-span ${session.state === 'live' ? 'current' : ''} ${!hasRecording && !unavailableIntervals.length ? 'unrecorded' : ''}" x="${x.toFixed(3)}" y="2" width="${liveWidth.toFixed(3)}" height="12" rx="6" ry="6"></rect>${unavailable}${missed}<line class="cr-pulse-live-marker" x1="${x.toFixed(3)}" y1="0" x2="${x.toFixed(3)}" y2="16"></line>${recMarkerX === null ? '' : `<line class="cr-pulse-rec-marker" x1="${recMarkerX.toFixed(3)}" y1="1" x2="${recMarkerX.toFixed(3)}" y2="15"></line>`}${recs}<title>${esc(title)}</title></g>`;
     }).join('');
     return `<div class="cr-pulse-row"><div class="cr-pulse-who">${creatorLinkMarkup(representative.representative_source_id, representative.display_name, 'cr-pulse-name')}${pulseSessionTimingMarkup(representative)}</div><div class="cr-pulse-track"><svg class="cr-pulse-svg" viewBox="0 0 1000 16" preserveAspectRatio="none" role="img" aria-label="Timeline ${esc(representative.display_name)}">${graphics}</svg></div></div>`;
   }).join('');
   const hidden = Math.max(0, profileOrder.length - recentProfiles.length);
-  return `<section class="cr-pulse"><div class="cr-pulse-head"><div><strong>Cronologia</strong></div><div class="cr-pulse-head-right"><span class="cr-pulse-legend"><i class="live"></i>ONLINE <i class="rec"></i>REC <i class="processing"></i>RECUPERO <i class="missed"></i>NON REC</span><span>${controlRoomPulseData.hours || 12}h${hidden ? ` · +${hidden}` : ''}</span></div></div><div class="cr-pulse-scale"><span></span><div>${labels}</div></div>${rows || ''}</section>`;
+  return `<section class="cr-pulse"><div class="cr-pulse-head"><div><strong>Cronologia</strong></div><div class="cr-pulse-head-right"><span class="cr-pulse-legend"><i class="live"></i>ONLINE <i class="private"></i>PRIVATA <i class="tipjar"></i>TIP-JAR <i class="rec"></i>REC <i class="processing"></i>RECUPERO <i class="missed"></i>NON REC</span><span>${controlRoomPulseData.hours || 12}h${hidden ? ` · +${hidden}` : ''}</span></div></div><div class="cr-pulse-scale"><span></span><div>${labels}</div></div>${rows || ''}</section>`;
 }
 
 function controlRoomRecentEnded(profiles) {

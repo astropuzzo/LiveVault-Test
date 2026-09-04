@@ -1,6 +1,7 @@
 import asyncio
 import inspect
 from contextlib import contextmanager
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 from sqlalchemy import create_engine
@@ -19,6 +20,35 @@ def test_global_recording_pause_does_not_pause_source_monitoring():
     assert "Source.enabled.is_(True)" not in poll_loop
     assert "cfg.recording_paused" in source_check
     assert "_observe_live_state" in source_check
+
+
+def test_live_access_change_creates_distinct_timeline_intervals(tmp_path):
+    engine = create_engine(f"sqlite:///{tmp_path / 'access-timeline.db'}")
+    Base.metadata.create_all(engine)
+    factory = sessionmaker(engine, expire_on_commit=False)
+    now = datetime(2026, 9, 4, 10, 0, tzinfo=timezone.utc)
+    with factory.begin() as session:
+        profile = Profile(display_name="Timeline", favorite=False, notes="")
+        session.add(profile)
+        session.flush()
+        source = Source(profile_id=profile.id, name="timeline", slug="timeline")
+        session.add(source)
+        session.flush()
+        source_id = source.id
+
+    manager = WorkerManager()
+    with factory.begin() as session:
+        source = session.get(Source, source_id)
+        manager._observe_live_state(session, source, True, now, "live")
+    with factory.begin() as session:
+        source = session.get(Source, source_id)
+        manager._observe_live_state(session, source, True, now + timedelta(minutes=5), "tipjar")
+    with factory.begin() as session:
+        rows = session.query(LiveSession).filter(LiveSession.source_id == source_id).order_by(LiveSession.started_at).all()
+        assert [row.access_status for row in rows] == ["live", "tipjar"]
+        assert rows[0].ended_at is not None
+        assert rows[1].ended_at is None
+    engine.dispose()
 
 
 def test_inflight_probe_cannot_start_after_source_is_paused(tmp_path, monkeypatch):

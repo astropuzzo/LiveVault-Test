@@ -64,6 +64,73 @@ def test_stripchat_hls_advert_is_rejected(monkeypatch):
         raise AssertionError("Stripchat advertising playlist was accepted")
 
 
+def test_provider_access_states_are_normalized():
+    assert providers.inaccessible_status("Model is in private show") == "private"
+    assert providers.inaccessible_status("Hidden session in progress") == "tipjar"
+    assert providers.inaccessible_status("offline_tipping") == "tipjar"
+    assert providers.inaccessible_status("Subscribers only live stream") == "restricted"
+
+
+def test_camsoda_private_show_stays_online_but_not_recordable(monkeypatch):
+    monkeypatch.setattr(
+        providers,
+        "_extract",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("Model is in private show.")),
+    )
+
+    result = asyncio.run(providers.probe("camsoda", "example", "best"))
+
+    assert result.live is True
+    assert result.status == "private"
+    assert result.recordable is False
+    assert result.error == ""
+
+
+def test_bongacams_away_state_is_tipjar_without_stream_extract(monkeypatch):
+    monkeypatch.setattr(
+        providers,
+        "_bongacams_room_info",
+        lambda _slug: {
+            "performerData": {
+                "isOnline": True,
+                "isAway": True,
+                "showType": "public",
+                "displayName": "Example",
+            },
+        },
+    )
+    monkeypatch.setattr(
+        providers,
+        "_extract",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("stream extraction must not run")),
+    )
+
+    result = asyncio.run(providers.probe("bongacams", "example", "best"))
+
+    assert result.live is True
+    assert result.status == "tipjar"
+    assert result.recordable is False
+
+
+def test_chaturbate_tipjar_is_not_flattened_to_offline(monkeypatch):
+    monkeypatch.setattr(
+        providers,
+        "_extract",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("Room is currently offline")),
+    )
+    monkeypatch.setattr(
+        providers,
+        "_fetch_biocontext",
+        lambda _slug: {"room_status": "offline_tipping", "last_broadcast": -1},
+    )
+
+    result = asyncio.run(providers.probe("chaturbate", "example", "best"))
+
+    assert result.live is True
+    assert result.status == "tipjar"
+    assert result.recordable is False
+
+
 def test_parse_chaturbate_last_broadcast_iso_utc():
     parsed = providers._parse_last_broadcast("2026-09-01T17:20:31.123456Z")
     assert parsed is not None
@@ -272,9 +339,10 @@ def test_restricted_room_online_flag_still_detects_live(monkeypatch):
     result = asyncio.run(providers.probe("chaturbate", "restricted", "best"))
 
     assert result.live is True
-    assert result.status == "live"
+    assert result.status == "restricted"
+    assert result.recordable is False
     assert result.metadata_status == "restricted"
-    assert "accesso video non riuscito" in result.error
+    assert result.error == ""
 
 
 def test_public_profile_without_last_broadcast_is_not_success(monkeypatch):
