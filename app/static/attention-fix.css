@@ -53,6 +53,34 @@
   0%, 100% { box-shadow: 0 0 0 1px rgba(222, 157, 61, .18), 0 14px 34px rgba(0, 0, 0, .24); }
   50% { box-shadow: 0 0 0 3px rgba(255, 191, 82, .72), 0 0 28px rgba(222, 157, 61, .28); }
 }
+
+/* Finalization progress: separate from upload and from actual crash recovery. */
+.lv-processing-card {
+  border-color: rgba(125, 182, 255, .34);
+  box-shadow: 0 0 0 1px rgba(125, 182, 255, .07);
+}
+.lv-processing-card .lv-processing-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  display: inline-block;
+  flex: 0 0 auto;
+  background: currentColor;
+  opacity: .9;
+  animation: lv-processing-pulse 1.1s ease-in-out infinite;
+}
+.lv-processing-card #processingProgressBar {
+  transition: width .35s ease;
+}
+.lv-process-now {
+  white-space: nowrap;
+}
+@keyframes lv-processing-pulse {
+  0%, 100% { transform: scale(.78); opacity: .45; }
+  50% { transform: scale(1); opacity: 1; }
+}
+
 @media (max-width: 620px) {
   .lv-attention-banner { align-items: flex-start; flex-direction: column; gap: 3px; }
+  .lv-process-now { width: 100%; }
 }
