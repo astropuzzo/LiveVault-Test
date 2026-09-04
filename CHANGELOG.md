@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.8.15 — Stripchat RTMP ingest
+
+- Le live pubbliche Stripchat pubblicate dalla creator via RTMP vengono acquisite correttamente dal WebRTC edge, senza scambiarle per descriptor incompleti.
+- Lo stream ID usa `modelId` come fallback quando `streamName` non è presente.
+
 ## 2.8.14 — Stati di accesso live
 
 - Gli stati online non accessibili vengono distinti in privata, tip-jar e limitata per tutti i provider che li espongono.

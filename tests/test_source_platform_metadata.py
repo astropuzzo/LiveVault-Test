@@ -44,6 +44,27 @@ def test_stripchat_public_probe_is_recordable(monkeypatch):
     assert result.error == ""
 
 
+def test_stripchat_rtmp_publisher_is_still_recordable(monkeypatch):
+    monkeypatch.setattr(
+        providers,
+        "stripchat_broadcast_info",
+        lambda _slug: {
+            "isLive": True,
+            "status": "public",
+            "modelId": 213430422,
+            "streamName": "213430422",
+            "settings": {"mediaTransport": "rtmp"},
+        },
+    )
+
+    result = asyncio.run(providers.probe("stripchat", "GwenAir", "best"))
+
+    assert result.live is True
+    assert result.status == "live"
+    assert result.recordable is True
+    assert result.error == ""
+
+
 def test_stripchat_hls_advert_is_rejected(monkeypatch):
     data = {
         "viewCam": {"model": {"id": 12, "isLive": True, "isOnline": True, "status": "public"}},

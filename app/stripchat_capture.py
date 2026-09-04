@@ -36,16 +36,16 @@ def _broadcast(slug: str) -> dict[str, Any]:
     response.raise_for_status()
     payload = response.json()
     item = payload.get("item") if isinstance(payload, dict) else None
-    settings = item.get("settings") if isinstance(item, dict) else None
     if (
         not isinstance(item, dict)
         or item.get("isLive") is not True
         or str(item.get("status") or "").lower() != "public"
-        or not item.get("streamName")
-        or not isinstance(settings, dict)
-        or settings.get("mediaTransport") != "webrtc"
+        or not (item.get("streamName") or item.get("modelId"))
     ):
-        raise RuntimeError("Stripchat stream is not a public WebRTC broadcast")
+        raise RuntimeError("Stripchat stream is not a playable public broadcast")
+    # mediaTransport describes how the performer publishes to Stripchat. RTMP
+    # rooms are still distributed to viewers by the public WebRTC edge.
+    item["streamName"] = str(item.get("streamName") or item["modelId"])
     return item
 
 

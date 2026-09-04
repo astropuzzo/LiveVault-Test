@@ -525,9 +525,8 @@ async def _probe_stripchat(slug: str, quality: str) -> ProbeResult:
             return ProbeResult(False, "offline", metadata_status="unsupported")
         if unavailable:
             return ProbeResult(True, unavailable, recordable=False, metadata_status="unsupported")
-        settings = item.get("settings") if isinstance(item.get("settings"), dict) else {}
-        if not item.get("streamName") or settings.get("mediaTransport") != "webrtc":
-            raise RuntimeError("Stripchat public WebRTC descriptor is incomplete")
+        if not (item.get("streamName") or item.get("modelId")):
+            raise RuntimeError("Stripchat public stream identifier is missing")
         return ProbeResult(True, "live", recordable=True, title=slug, metadata_status="unsupported")
     except Exception as exc:
         return ProbeResult(False, "error", error=str(exc)[-700:], metadata_status="unsupported")
