@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.8.20 — Acquisizione Stripchat alleggerita
+
+- La registrazione mantiene la risoluzione massima ma limita la ricodifica a 30 fps stabili.
+- Il clip di anteprima viene creato una sola volta invece di tenere acceso un secondo encoder.
+
 ## 2.8.19 — Clip preview locale Stripchat
 
 - Il recorder mantiene un breve clip locale indipendente, completo e riproducibile mentre la registrazione principale resta aperta.

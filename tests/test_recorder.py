@@ -131,6 +131,14 @@ def test_stripchat_uses_dedicated_webrtc_capture():
     assert "--container mp4" in joined
 
 
+def test_stripchat_capture_caps_fps_and_does_not_run_a_second_encoder_loop():
+    capture = (Path(__file__).resolve().parents[1] / "app" / "stripchat_capture.py").read_text(encoding="utf-8")
+
+    assert "applyConstraints({frameRate:{ideal:30,max:30}})" in capture
+    assert "const createPreview = async ()" in capture
+    assert "const previewLoop = async ()" not in capture
+
+
 def test_local_synchronized_hls_never_receives_http_avoptions():
     cmd = build_ffmpeg_command(
         [ResolvedInput(
