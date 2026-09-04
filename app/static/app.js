@@ -141,6 +141,34 @@ function hourlyChartSvg(rows = []) {
   return `<svg class="activity-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="Grafico distribuzione oraria"><line class="chart-axis" x1="0" y1="${top + chartHeight}" x2="${width}" y2="${top + chartHeight}"></line>${bars}</svg>`;
 }
 
+function dataFlowMarkup(rows = []) {
+  const active = rows.filter(row => Number(row.recording_count) || Number(row.recording_bytes));
+  if (!active.length) return '<div class="empty compact">Nessun dato movimentato.</div>';
+  const maxBytes = Math.max(1, ...active.map(row => Number(row.recording_bytes) || 0));
+  return active.map(row => {
+    const bytes = Number(row.recording_bytes) || 0;
+    const count = Number(row.recording_count) || 0;
+    const uploaded = Number(row.uploaded_count) || 0;
+    const width = Math.max(3, bytes / maxBytes * 100);
+    return `<div class="data-flow-row"><time>${esc(row.date.slice(5))}</time><div class="data-flow-track"><i style="width:${width.toFixed(1)}%"></i></div><strong>${esc(humanBytes(bytes))}</strong><small>${count} video · ${uploaded} cloud</small></div>`;
+  }).join('');
+}
+
+function statisticsInsightsMarkup(data) {
+  const summary = data?.summary || {};
+  const creators = data?.top_creators || [];
+  const byVideos = [...creators].sort((a,b) => Number(b.recording_count) - Number(a.recording_count))[0];
+  const byDuration = [...creators].sort((a,b) => Number(b.recorded_seconds) - Number(a.recorded_seconds))[0];
+  const peak = [...(data?.daily || [])].sort((a,b) => Number(b.recording_bytes) - Number(a.recording_bytes))[0];
+  const cloudRate = Number(summary.recording_count) ? Number(summary.uploaded_count) / Number(summary.recording_count) * 100 : 0;
+  return [
+    ['Più video', byVideos?.display_name || '—', byVideos ? `${byVideos.recording_count} file` : 'Nessun dato'],
+    ['Più registrata', byDuration?.display_name || '—', byDuration ? duration(byDuration.recorded_seconds) : 'Nessun dato'],
+    ['Giorno più pesante', peak?.date ? new Intl.DateTimeFormat('it-IT',{day:'2-digit',month:'short'}).format(new Date(`${peak.date}T12:00:00`)) : '—', peak ? humanBytes(peak.recording_bytes) : 'Nessun dato'],
+    ['Completamento cloud', statNumber(cloudRate, '%'), `${summary.failed_count || 0} con problemi`],
+  ].map(([label,value,note]) => `<article><span>${esc(label)}</span><strong>${esc(value)}</strong><small>${esc(note)}</small></article>`).join('');
+}
+
 function statisticsSummaryMarkup(data, compact = false) {
   const summary = data?.summary || {};
   const metrics = [
@@ -1022,8 +1050,14 @@ function renderStatistics() {
   $('#statisticsSummary').innerHTML = statisticsSummaryMarkup(statisticsData);
   $('#statisticsDailyChart').innerHTML = activityChartSvg(statisticsData.daily);
   $('#statisticsHourlyChart').innerHTML = hourlyChartSvg(statisticsData.hourly);
-  const rows = statisticsData.top_creators || [];
-  $('#statisticsLeaderboard').innerHTML = rows.length ? rows.map((row, index) => `<article class="leader-row"><span class="leader-rank">${index + 1}</span><div class="leader-name">${creatorLinkMarkup(row.representative_source_id, row.display_name)}${row.online_now ? '<span class="leader-live">LIVE</span>' : ''}</div><div><strong>${esc(duration(row.online_seconds))}</strong><small>online · ${row.days_online} giorni</small></div><div><strong>${esc(duration(row.recorded_seconds))}</strong><small>registrato</small></div><div><strong>${esc(statNumber(row.coverage_percent, '%'))}</strong><small>copertura</small></div></article>`).join('') : '<div class="empty">Nessun dato.</div>';
+  $('#statisticsDataChart').innerHTML = dataFlowMarkup(statisticsData.daily);
+  $('#statisticsDataTotal').textContent = humanBytes(statisticsData.summary?.recording_bytes || 0);
+  $('#statisticsInsights').innerHTML = statisticsInsightsMarkup(statisticsData);
+  const sort = $('#statisticsCreatorSort')?.value || 'videos';
+  const sortValue = row => sort === 'duration' ? Number(row.recorded_seconds) : sort === 'storage' ? Number(row.recording_bytes) : sort === 'coverage' ? Number(row.coverage_percent) : Number(row.recording_count);
+  const rows = [...(statisticsData.top_creators || [])].sort((a,b) => sortValue(b) - sortValue(a));
+  const max = Math.max(1, ...rows.map(sortValue));
+  $('#statisticsLeaderboard').innerHTML = rows.length ? rows.map((row, index) => `<article class="leader-row rich"><span class="leader-rank">${index + 1}</span><div class="leader-name">${creatorLinkMarkup(row.representative_source_id, row.display_name)}${row.online_now ? '<span class="leader-live">LIVE</span>' : ''}<i class="leader-progress" style="--progress:${(sortValue(row)/max*100).toFixed(1)}%"></i></div><div><strong>${row.recording_count || 0}</strong><small>video · ${esc(humanBytes(row.recording_bytes || 0))}</small></div><div><strong>${esc(duration(row.recorded_seconds))}</strong><small>registrato · ${row.recording_sessions || 0} sessioni</small></div><div><strong>${esc(statNumber(row.coverage_percent, '%'))}</strong><small>copertura · ${row.failed_count || 0} errori</small></div></article>`).join('') : '<div class="empty">Nessun dato.</div>';
   $('#statisticsNote').textContent = statisticsHistoryNote(statisticsData);
   $('#statisticsRange').value = String(statisticsDays);
 }
@@ -1179,6 +1213,7 @@ $('#logoutBtn').addEventListener('click', async () => {
 $('#showAddBtn').addEventListener('click', () => showSource());
 $('#libraryAddBtn').addEventListener('click', () => showSource());
 $('#statisticsRange').addEventListener('change', event => loadStatistics(Number(event.target.value)).catch(error => toast(error.message, 'bad')));
+$('#statisticsCreatorSort')?.addEventListener('change', renderStatistics);
 
 $('#settingsBtn').addEventListener('click', async () => {
   try { await loadSettings(); openModal('settingsModal'); } catch (error) { toast(error.message, 'bad'); }

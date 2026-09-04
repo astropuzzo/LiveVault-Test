@@ -103,6 +103,28 @@ button.pill{background:transparent;cursor:pointer;font-family:inherit}button.pil
 .cr-pulse-rec-span.local{stroke:#e2f4b1;stroke-width:1.1}.cr-pulse-rec-span.processing{fill:#d7b86e}.cr-pulse-legend i.processing{background:#d7b86e}
 @media(max-width:620px){.diagnostic-actions{width:100%;flex-wrap:wrap}.local-capture{grid-template-columns:minmax(0,1fr) auto}.local-capture>span{grid-column:1}.local-capture .btn{grid-column:2;grid-row:1/3}.top-actions #healthPill{display:inline-flex}.system-overview-side button{margin-left:0}}
 
+/* Statistics intelligence */
+.stats-operations-grid{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(300px,.75fr);gap:12px}
+.stats-chart-card .eyebrow{display:block;margin-bottom:4px;color:var(--quiet);font-size:.58rem;font-weight:850;letter-spacing:.1em;text-transform:uppercase}
+.data-flow-chart{display:grid;gap:9px;max-height:340px;overflow:auto;padding-right:4px}
+.data-flow-row{display:grid;grid-template-columns:44px minmax(80px,1fr) 72px 110px;align-items:center;gap:10px}
+.data-flow-row time,.data-flow-row small{color:var(--muted);font-size:.65rem}
+.data-flow-row strong{text-align:right;font-size:.72rem}
+.data-flow-track{height:8px;overflow:hidden;border-radius:999px;background:rgba(255,255,255,.055)}
+.data-flow-track i{display:block;height:100%;border-radius:inherit;background:linear-gradient(90deg,#668397,#bad96b);box-shadow:0 0 14px rgba(186,217,107,.18);animation:data-flow-in .65s ease both;transform-origin:left}
+@keyframes data-flow-in{from{transform:scaleX(0);opacity:.2}to{transform:scaleX(1);opacity:1}}
+.stats-insights{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.stats-insights article{min-width:0;padding:13px;border:1px solid var(--line);border-radius:12px;background:rgba(255,255,255,.018);display:grid;gap:4px}
+.stats-insights span{color:var(--quiet);font-size:.58rem;font-weight:800;letter-spacing:.06em;text-transform:uppercase}
+.stats-insights strong{overflow:hidden;font-size:1rem;text-overflow:ellipsis;white-space:nowrap}
+.stats-insights small,.stats-leader-head small{color:var(--muted);font-size:.65rem}
+.leader-row.rich{position:relative;overflow:hidden;border-radius:10px;background:rgba(255,255,255,.018)}
+.leader-row.rich .leader-name{position:relative;padding-bottom:8px}
+.leader-progress{position:absolute;right:0;bottom:0;left:0;height:3px;overflow:hidden;border-radius:999px;background:rgba(255,255,255,.05)}
+.leader-progress:after{content:"";display:block;width:var(--progress);height:100%;border-radius:inherit;background:var(--accent)}
+@media(max-width:980px){.stats-operations-grid{grid-template-columns:1fr}}
+@media(max-width:620px){.stats-operations-grid{gap:10px}.stats-insights{grid-template-columns:1fr 1fr}.data-flow-row{grid-template-columns:38px minmax(60px,1fr) 62px}.data-flow-row small{grid-column:2/4}.stats-leader-head{align-items:flex-end}.leader-row.rich{grid-template-columns:22px minmax(0,1fr) 74px}.leader-row.rich>div:nth-of-type(3),.leader-row.rich>div:nth-of-type(4){display:none}}
+
 /* Archive 2.0: calm information hierarchy and genuinely fluid cards. */
 #archive{padding:clamp(14px,2vw,24px);border-radius:18px;background:linear-gradient(180deg,rgba(23,27,29,.98),rgba(15,18,20,.99))}
 #archive .section-head{margin-bottom:16px}

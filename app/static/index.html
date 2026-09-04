@@ -179,7 +179,11 @@
           <article class="panel stats-chart-card"><div class="section-head"><div><h2>Online vs registrato</h2></div><div class="chart-legend"><span class="online">Online</span><span class="recorded">Registrato</span></div></div><div id="statisticsDailyChart" class="chart-host"></div></article>
           <article class="panel stats-chart-card"><div class="section-head"><div><h2>Distribuzione giornaliera</h2></div></div><div id="statisticsHourlyChart" class="chart-host"></div></article>
         </section>
-        <section class="panel section"><div class="section-head"><div><h2>Creator</h2></div></div><div id="statisticsLeaderboard" class="stats-leaderboard"></div><p id="statisticsNote" class="stats-note"></p></section>
+        <section class="stats-operations-grid">
+          <article class="panel stats-chart-card"><div class="section-head"><div><span class="eyebrow">Storage</span><h2>Movimentazione dati</h2></div><span id="statisticsDataTotal" class="route">—</span></div><div id="statisticsDataChart" class="data-flow-chart"></div></article>
+          <article class="panel stats-chart-card"><div class="section-head"><div><span class="eyebrow">Segnali</span><h2>In breve</h2></div></div><div id="statisticsInsights" class="stats-insights"></div></article>
+        </section>
+        <section class="panel section"><div class="section-head stats-leader-head"><div><h2>Creator</h2><small>Confronto operativo nel periodo</small></div><label class="stats-range compact"><span>Ordina per</span><select id="statisticsCreatorSort"><option value="videos">Video</option><option value="duration">Durata</option><option value="storage">Spazio</option><option value="coverage">Copertura</option></select></label></div><div id="statisticsLeaderboard" class="stats-leaderboard"></div><p id="statisticsNote" class="stats-note"></p></section>
       </div>
 
       <div id="archiveView" class="view-section hidden" data-page="archive">

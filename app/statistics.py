@@ -95,7 +95,7 @@ def build_activity_statistics(*, sources: Iterable, profiles: Iterable, live_ses
     daily = {}
     cursor_day = window_start
     while cursor_day.date() <= now.date():
-        daily[cursor_day.date().isoformat()] = {"online_seconds": 0.0, "recorded_seconds": 0.0}
+        daily[cursor_day.date().isoformat()] = {"online_seconds": 0.0, "recorded_seconds": 0.0, "recording_count": 0, "recording_bytes": 0, "uploaded_count": 0}
         cursor_day += timedelta(days=1)
     hourly = [{"hour": hour, "online_seconds": 0.0, "recorded_seconds": 0.0} for hour in range(24)]
 
@@ -103,6 +103,7 @@ def build_activity_statistics(*, sources: Iterable, profiles: Iterable, live_ses
     exact_intervals: dict[int, list[tuple[datetime, datetime]]] = defaultdict(list)
     recording_intervals: dict[int, list[tuple[datetime, datetime]]] = defaultdict(list)
     recording_session_keys: dict[int, set[tuple[int, str]]] = defaultdict(set)
+    recording_totals: dict[int, dict[str, int]] = defaultdict(lambda: {"count": 0, "bytes": 0, "uploaded": 0, "failed": 0, "local": 0})
     online_now_profiles: set[int] = set()
     exact_tracking_started_at: datetime | None = None
 
@@ -147,6 +148,18 @@ def build_activity_statistics(*, sources: Iterable, profiles: Iterable, live_ses
             continue
         recording_intervals[profile_id].append((clipped_start, clipped_end))
         recording_session_keys[profile_id].add((source_id, str(getattr(recording, "session_id", ""))))
+        totals = recording_totals[profile_id]
+        totals["count"] += 1
+        totals["bytes"] += max(0, int(getattr(recording, "size_bytes", 0) or 0))
+        status = str(getattr(recording, "upload_status", "") or "")
+        totals["uploaded"] += int(status == "uploaded")
+        totals["failed"] += int(status in {"failed", "integrity_failed", "waiting_config"})
+        totals["local"] += int(not bool(getattr(recording, "local_deleted", False)))
+        day_key = clipped_end.date().isoformat()
+        if day_key in daily:
+            daily[day_key]["recording_count"] += 1
+            daily[day_key]["recording_bytes"] += max(0, int(getattr(recording, "size_bytes", 0) or 0))
+            daily[day_key]["uploaded_count"] += int(status == "uploaded")
 
     per_profile: dict[int, dict] = {}
     online_seconds = 0.0
@@ -204,13 +217,18 @@ def build_activity_statistics(*, sources: Iterable, profiles: Iterable, live_ses
             "recording_sessions": int(bucket.get("recording_sessions", 0)),
             "coverage_percent": round(coverage, 1),
             "online_now": profile_id in online_now_profiles,
+            "recording_count": recording_totals[profile_id]["count"],
+            "recording_bytes": recording_totals[profile_id]["bytes"],
+            "uploaded_count": recording_totals[profile_id]["uploaded"],
+            "failed_count": recording_totals[profile_id]["failed"],
+            "local_count": recording_totals[profile_id]["local"],
         })
     top_creators.sort(key=lambda row: (row["online_seconds"], row["recorded_seconds"], row["display_name"].lower()), reverse=True)
 
     coverage = min(100.0, recorded_seconds / online_seconds * 100.0) if online_seconds > 0 else 0.0
     estimated_seconds = max(0.0, online_seconds - exact_seconds)
     daily_rows = [
-        {"date": key, "online_seconds": round(value["online_seconds"], 2), "recorded_seconds": round(value["recorded_seconds"], 2)}
+        {"date": key, "online_seconds": round(value["online_seconds"], 2), "recorded_seconds": round(value["recorded_seconds"], 2), "recording_count": value["recording_count"], "recording_bytes": value["recording_bytes"], "uploaded_count": value["uploaded_count"]}
         for key, value in daily.items()
     ]
     hourly_rows = [
@@ -234,6 +252,11 @@ def build_activity_statistics(*, sources: Iterable, profiles: Iterable, live_ses
             "exact_online_seconds": round(exact_seconds, 2),
             "estimated_online_seconds": round(estimated_seconds, 2),
             "exact_tracking_started_at": _iso(exact_tracking_started_at),
+            "recording_count": sum(row["recording_count"] for row in top_creators),
+            "recording_bytes": sum(row["recording_bytes"] for row in top_creators),
+            "uploaded_count": sum(row["uploaded_count"] for row in top_creators),
+            "failed_count": sum(row["failed_count"] for row in top_creators),
+            "local_count": sum(row["local_count"] for row in top_creators),
         },
         "daily": daily_rows,
         "hourly": hourly_rows,
