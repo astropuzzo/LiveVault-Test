@@ -728,15 +728,19 @@ function renderRecordings() {
         <div class="rec-title">${creatorLinkMarkup(recordingSource?.id || 0, creatorName)}</div><div class="rec-file">${esc(recording.filename)}</div><div class="rec-date">${esc(dateText(recording.started_at))} · ${esc(recording.session_id)}</div>
         <div class="rec-meta"><span class="chip">${esc(recording.size_human)}</span><span class="chip">${esc(duration(recording.duration_seconds))}</span><span class="chip">${esc((recording.container_format || '').toUpperCase())}</span>${recordingStreamMarkup(recording)}<span class="integrity ${esc(recording.integrity_status)}">${recording.integrity_status === 'passed' ? '✓ Integro' : recording.integrity_status === 'failed' || recording.integrity_status === 'integrity_failed' ? '✕ Fallita' : `… ${esc(recording.integrity_status)}`}</span><span class="upload-status ${esc(recording.upload_status)}">${esc(uploadLabel(recording.upload_status))}${recording.upload_provider ? ` · ${esc(recording.upload_provider)}` : ''}</span></div>
         ${error ? `<div class="rec-error" title="${esc(error)}">${esc(error)}</div>` : ''}
-        <div class="rec-actions">
-          ${recording.local_available ? `<button class="btn soft" data-rec-action="preview" data-id="${recording.id}" type="button">Vedi</button><a class="btn soft" href="/api/recordings/${recording.id}/download">Scarica</a>` : ''}
-          ${remote ? `<a class="btn soft" href="${esc(remote)}" target="_blank" rel="noopener">Apri ${esc(recording.upload_provider || 'cloud')} ↗</a><button class="btn soft" data-rec-action="copy-cloud" data-id="${recording.id}" type="button">Copia link</button>` : ''}
-          ${collection ? `<a class="btn soft" href="${esc(collection)}">Archivio camera</a>` : ''}
-          ${recording.local_available && recording.integrity_status === 'passed' ? `<button class="btn accent" data-rec-action="upload-now" data-id="${recording.id}" type="button">Upload ora</button>` : ''}
-          ${recording.local_available ? `<button class="btn soft" data-rec-action="integrity" data-id="${recording.id}" type="button">Ricontrolla</button>` : ''}
-          ${recording.local_available && recording.container_format !== 'mp4' ? `<button class="btn soft" data-rec-action="convert" data-id="${recording.id}" type="button">Converti MP4</button>` : ''}
-          ${recording.local_available ? `<button class="btn danger" data-rec-action="delete-local" data-id="${recording.id}" type="button">Elimina locale</button>` : ''}
-          <button class="btn danger" data-rec-action="delete-record" data-id="${recording.id}" type="button">Elimina voce</button>
+        <div class="rec-actions rec-actions-primary">
+          ${remote ? `<a class="btn accent" href="${esc(remote)}" target="_blank" rel="noopener">Apri ${esc(recording.upload_provider || 'cloud')} ↗</a>` : recording.local_available ? `<button class="btn accent" data-rec-action="preview" data-id="${recording.id}" type="button">▶ Riproduci</button>` : ''}
+          ${remote ? `<button class="btn soft" data-rec-action="copy-cloud" data-id="${recording.id}" type="button">Copia link</button>` : ''}
+          <details class="rec-more"><summary class="btn soft">Altro</summary><div class="rec-more-menu">
+            ${recording.local_available && remote ? `<button class="btn soft" data-rec-action="preview" data-id="${recording.id}" type="button">Anteprima locale</button>` : ''}
+            ${recording.local_available ? `<a class="btn soft" href="/api/recordings/${recording.id}/download">Scarica</a>` : ''}
+            ${collection ? `<a class="btn soft" href="${esc(collection)}">Archivio camera</a>` : ''}
+            ${recording.local_available && recording.integrity_status === 'passed' ? `<button class="btn soft" data-rec-action="upload-now" data-id="${recording.id}" type="button">Upload ora</button>` : ''}
+            ${recording.local_available ? `<button class="btn soft" data-rec-action="integrity" data-id="${recording.id}" type="button">Ricontrolla</button>` : ''}
+            ${recording.local_available && recording.container_format !== 'mp4' ? `<button class="btn soft" data-rec-action="convert" data-id="${recording.id}" type="button">Converti MP4</button>` : ''}
+            ${recording.local_available ? `<button class="btn danger" data-rec-action="delete-local" data-id="${recording.id}" type="button">Elimina locale</button>` : ''}
+            <button class="btn danger" data-rec-action="delete-record" data-id="${recording.id}" type="button">Elimina voce</button>
+          </div></details>
         </div>
       </div>
     </article>`;
@@ -2300,12 +2304,12 @@ function ensureArchiveIntelControls() {
   const host = document.createElement('div');
   host.id = 'archiveIntelControls';
   host.className = 'archive-intel-controls';
-  host.innerHTML = `<select id="archivePeriod" aria-label="Periodo"><option value="all">Tutto</option><option value="today">Oggi</option><option value="7">7 giorni</option><option value="30">30 giorni</option><option value="90">90 giorni</option></select>
-    <select id="archiveCreator" aria-label="Creator"><option value="all">Tutte le creator</option></select>
-    <select id="archiveProvider" aria-label="Provider"><option value="all">Tutti i provider</option></select>
-    <select id="archiveStorage" aria-label="Posizione"><option value="all">Locale + cloud</option><option value="local">Locale</option><option value="cloud">Cloud</option><option value="not-cloud">Non caricate</option></select>
-    <select id="archiveGroup" aria-label="Raggruppa"><option value="day">Per giorno</option><option value="creator">Per creator</option><option value="session">Per sessione</option></select>
-    <select id="archiveSort" aria-label="Ordine"><option value="newest">Più recenti</option><option value="oldest">Più vecchie</option></select>`;
+  host.innerHTML = `<label><span>Periodo</span><select id="archivePeriod"><option value="all">Tutto</option><option value="today">Oggi</option><option value="7">7 giorni</option><option value="30">30 giorni</option><option value="90">90 giorni</option></select></label>
+    <label><span>Creator</span><select id="archiveCreator"><option value="all">Tutte</option></select></label>
+    <label><span>Provider</span><select id="archiveProvider"><option value="all">Tutti</option></select></label>
+    <label><span>Posizione</span><select id="archiveStorage"><option value="all">Locale + cloud</option><option value="local">Locale</option><option value="cloud">Cloud</option><option value="not-cloud">Non caricate</option></select></label>
+    <label><span>Raggruppa</span><select id="archiveGroup"><option value="day">Per giorno</option><option value="creator">Per creator</option><option value="session">Per sessione</option></select></label>
+    <label><span>Ordine</span><select id="archiveSort"><option value="newest">Più recenti</option><option value="oldest">Più vecchie</option></select></label>`;
   toolbar.append(host);
   for (const select of host.querySelectorAll('select')) select.addEventListener('change', () => { archiveGroupLimit = 10; renderRecordings(); });
 }

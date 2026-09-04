@@ -193,9 +193,11 @@
             <select id="recordingStatus">
               <option value="all">Tutti</option><option value="uploaded">Caricati</option><option value="pending">In attesa</option><option value="uploading">Upload</option><option value="failed">Falliti</option><option value="integrity_failed">Integrità fallita</option><option value="converting">Conversione MP4</option><option value="waiting_config">Config mancante</option><option value="discarded">Locale eliminato</option>
             </select>
-            <button id="retryAllBtn" class="btn soft" type="button">Riprova falliti</button>
-            <button id="cleanupBtn" class="btn soft" type="button">Libera caricati</button>
-            <button id="purgeLocalBtn" class="btn danger" type="button">Pulisci locali</button>
+            <div class="archive-bulk-actions">
+              <button id="retryAllBtn" class="btn soft" type="button">Riprova falliti</button>
+              <button id="cleanupBtn" class="btn soft" type="button">Libera caricati</button>
+              <button id="purgeLocalBtn" class="btn danger" type="button">Pulisci locali</button>
+            </div>
           </div>
           <div id="sourceFilterBar" class="filter-bar hidden"><span id="sourceFilterNote"></span><button id="clearSourceFilter" class="btn soft" type="button">Mostra tutte</button></div>
           <div id="recordings" class="recording-grid"></div>
