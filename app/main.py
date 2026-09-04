@@ -53,7 +53,7 @@ BASE = Path(__file__).parent
 LOGIN_FAILURES: dict[str, deque[float]] = defaultdict(deque)
 LOGIN_WINDOW = 10 * 60
 LOGIN_MAX_FAILURES = 6
-VERSION = "2.8.17"
+VERSION = "2.8.18"
 
 
 class LoginBody(BaseModel):
@@ -2117,7 +2117,7 @@ def view_recording_fragment(fragment_id: int, request: Request):
 @app.get("/api/sources/{source_id}/capture")
 def view_active_capture(source_id: int, request: Request):
     require_auth(request)
-    path = manager.active_capture_path(source_id)
+    path = manager.playable_active_capture_path(source_id)
     if path is None:
         raise HTTPException(404, "Registrazione attiva non ancora disponibile")
     path = _local_media_path(path)

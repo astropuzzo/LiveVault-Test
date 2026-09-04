@@ -3,7 +3,10 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+import os
 import shutil
+import subprocess
+import threading
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -116,6 +119,7 @@ class WorkerManager:
         self._fragment_index_locks: dict[int, asyncio.Lock] = {}
         self._session_continuations: dict[int, tuple[str, float]] = {}
         self._preview_locks: dict[int, asyncio.Lock] = {}
+        self._capture_playback_locks: dict[int, threading.Lock] = {}
         self._preview_semaphore = asyncio.Semaphore(1)
         self._mp4_finalize_lock = asyncio.Lock()
         self._recovery_lock = asyncio.Lock()
@@ -388,6 +392,58 @@ class WorkerManager:
                 path.stat().st_mtime,
             ),
         )
+
+    def playable_active_capture_path(self, source_id: int) -> Path | None:
+        """Return a finalized browser preview without touching active capture."""
+        source = self.active_capture_path(source_id)
+        if source is None or ".capture." not in source.name.lower():
+            return source
+        target = source.with_name(f".{source.name}.browser.mp4")
+        try:
+            if target.is_file() and target.stat().st_size > 0:
+                return target
+        except OSError:
+            pass
+        lock = self._capture_playback_locks.setdefault(int(source_id), threading.Lock())
+        with lock:
+            try:
+                if target.is_file() and target.stat().st_size > 0:
+                    return target
+            except OSError:
+                pass
+            temporary = target.with_name(f".{target.name}.{os.getpid()}.tmp.mp4")
+            temporary.unlink(missing_ok=True)
+            common = [
+                "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+                "-i", str(source), "-t", "30", "-map", "0:v:0",
+                "-map", "0:a:0?", "-avoid_negative_ts", "make_zero",
+            ]
+            attempts = (
+                ["-c", "copy", "-movflags", "+faststart", "-f", "mp4"],
+                [
+                    "-c:v", "libx264", "-preset", "veryfast", "-crf", "24",
+                    "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart",
+                    "-f", "mp4",
+                ],
+            )
+            try:
+                for codec_args in attempts:
+                    temporary.unlink(missing_ok=True)
+                    result = subprocess.run(
+                        [*common, *codec_args, str(temporary)],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.PIPE,
+                        timeout=45,
+                        check=False,
+                    )
+                    if result.returncode == 0 and temporary.is_file() and temporary.stat().st_size > 0:
+                        os.replace(temporary, target)
+                        return target
+            except (OSError, subprocess.SubprocessError):
+                pass
+            finally:
+                temporary.unlink(missing_ok=True)
+        return source
 
     async def live_preview_for(self, source_id: int) -> Path | None:
         """Refresh a live JPEG only when an authenticated browser requests it."""

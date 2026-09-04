@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.8.18 — Player della registrazione attiva
+
+- `REC locale` crea al primo accesso una breve copia MP4 finalizzata e riproducibile.
+- La registrazione principale continua indisturbata e il risultato della preview viene riutilizzato.
+
 ## 2.8.17 — Container anteprima Stripchat
 
 - Il file MediaRecorder attivo conserva l'estensione del container realmente prodotto da Chromium.

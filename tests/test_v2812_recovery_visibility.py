@@ -66,6 +66,29 @@ def test_misnamed_media_recorder_mp4_is_detected_from_signature(tmp_path):
     assert _video_media_type(capture) == "video/mp4"
 
 
+def test_active_capture_is_finalized_for_browser_without_touching_source(tmp_path, monkeypatch):
+    source = tmp_path / "creator_part001.capture.mp4"
+    source.write_bytes(b"fragmented-mp4")
+    manager = WorkerManager()
+    manager.active[9] = SimpleNamespace(
+        directory=tmp_path,
+        extension=".mp4",
+        started_at=datetime.now(timezone.utc) - timedelta(seconds=10),
+    )
+
+    def fake_run(command, **_kwargs):
+        Path(command[-1]).write_bytes(b"finalized-preview")
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr("app.workers.subprocess.run", fake_run)
+    preview = manager.playable_active_capture_path(9)
+
+    assert preview is not None
+    assert preview != source
+    assert preview.read_bytes() == b"finalized-preview"
+    assert source.read_bytes() == b"fragmented-mp4"
+
+
 def test_recovery_and_local_preview_controls_are_wired():
     main = (ROOT / "app/main.py").read_text(encoding="utf-8")
     js = (ROOT / "app/static/app.js").read_text(encoding="utf-8")
