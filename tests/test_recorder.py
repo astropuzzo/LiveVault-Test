@@ -1,9 +1,11 @@
 from pathlib import Path
 import inspect
+from types import SimpleNamespace
 
 from app.recorder import (
     build_chaturbate_synced_master,
     build_ffmpeg_command,
+    build_stripchat_capture_command,
     max_output_bytes,
     safe_output_limit_bytes,
     start_recorder,
@@ -110,6 +112,23 @@ def test_ffmpeg_live_preview_uses_same_process():
 def test_recorder_does_not_decode_previews_without_a_viewer():
     source = inspect.getsource(start_recorder)
     assert "preview_path=None" in source
+
+
+def test_stripchat_uses_dedicated_webrtc_capture():
+    source = SimpleNamespace(slug="angel")
+    cmd = build_stripchat_capture_command(
+        source,
+        Path("capture_part%03d.mp4"),
+        Path("preview.jpg"),
+        segment_minutes=20,
+        segment_max_gb=2,
+        container_format="mp4",
+    )
+    joined = " ".join(cmd)
+    assert "-m app.stripchat_capture" in joined
+    assert "--slug angel" in joined
+    assert "--segment-seconds 1200" in joined
+    assert "--container mp4" in joined
 
 
 def test_local_synchronized_hls_never_receives_http_avoptions():

@@ -461,18 +461,47 @@ def _stripchat_master(data: dict[str, Any], slug: str, quality: str) -> Resolved
     parsed = urlparse(media_url)
     if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password:
         raise RuntimeError("Stripchat returned an unsafe media URL")
+    # Since late 2025 Stripchat can publish an apparently valid master whose
+    # child playlist is actually a short CPA/promotional VOD.  Never pass that
+    # slate to FFmpeg as if it were the performer's live camera.
+    child = _browser_get(media_url, headers=headers, timeout=15)
+    if "#EXT-X-MOUFLON-ADVERT" in str(child.text or ""):
+        raise RuntimeError("Stripchat HLS is an advertising slate; WebRTC capture is required")
     return ResolvedInput(media_url, headers, "media")
+
+
+def stripchat_broadcast_info(slug: str) -> dict[str, Any]:
+    """Return the current public WebRTC broadcast descriptor."""
+    username = slug.strip("/")
+    url = f"https://stripchat.com/api/front/v1/broadcasts/{username}"
+    headers = {
+        "Accept": "application/json",
+        "User-Agent": CHATURBATE_HEADERS["User-Agent"],
+        "Referer": source_url("stripchat", username),
+    }
+    response = _browser_get(url, headers=headers, timeout=15)
+    if response.status_code >= 400:
+        raise RuntimeError(f"Stripchat broadcast API returned HTTP {response.status_code}")
+    payload = response.json()
+    item = payload.get("item") if isinstance(payload, dict) else None
+    if not isinstance(item, dict):
+        raise RuntimeError("Stripchat broadcast descriptor is unavailable")
+    return item
 
 
 async def _probe_stripchat(slug: str, quality: str) -> ProbeResult:
     try:
-        data = await asyncio.to_thread(_stripchat_snapshot, slug)
-        live, private, _status, _model_id = _stripchat_room_state(data)
+        item = await asyncio.to_thread(stripchat_broadcast_info, slug)
+        live = item.get("isLive") is True
+        status = str(item.get("status") or "").strip().lower()
+        private = live and status in {"private", "p2p", "group", "ticket"}
         if not live:
             return ProbeResult(False, "offline", metadata_status="unsupported")
         if private:
             return ProbeResult(True, "private", recordable=False, metadata_status="unsupported")
-        await asyncio.to_thread(_stripchat_master, data, slug, quality)
+        settings = item.get("settings") if isinstance(item.get("settings"), dict) else {}
+        if not item.get("streamName") or settings.get("mediaTransport") != "webrtc":
+            raise RuntimeError("Stripchat public WebRTC descriptor is incomplete")
         return ProbeResult(True, "live", recordable=True, title=slug, metadata_status="unsupported")
     except Exception as exc:
         return ProbeResult(False, "error", error=str(exc)[-700:], metadata_status="unsupported")
@@ -728,6 +757,8 @@ async def _probe_ytdlp(platform: str, slug: str, quality: str) -> ProbeResult:
 
 
 async def probe(platform: str, slug: str, quality: str = "best") -> ProbeResult:
+    if platform == "stripchat":
+        return await _probe_stripchat(slug, quality)
     if platform != "chaturbate":
         return await _probe_ytdlp(platform, slug, quality)
     url = source_url(platform, slug)
@@ -858,8 +889,7 @@ async def probe(platform: str, slug: str, quality: str = "best") -> ProbeResult:
 
 async def resolve_inputs(platform: str, slug: str, quality: str = "best") -> list[ResolvedInput]:
     if platform == "stripchat":
-        data = await asyncio.to_thread(_stripchat_snapshot, slug)
-        return [await asyncio.to_thread(_stripchat_master, data, slug, quality)]
+        raise RuntimeError("Stripchat uses the dedicated WebRTC recorder")
     url = source_url(platform, slug)
     info = await asyncio.to_thread(_extract, url, quality, quiet=False)
     formats = info.get("requested_formats") or []

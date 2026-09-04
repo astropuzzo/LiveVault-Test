@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.8.13 — Stripchat WebRTC
+
+- Le live pubbliche Stripchat vengono registrate dal flusso WebRTC reale, con audio e video sullo stesso clock, anziché dal playlist HLS pubblicitario.
+- I playlist Stripchat marcati come pubblicità vengono rifiutati esplicitamente e non possono più produrre registrazioni false.
+- Anteprima live, segmentazione e finalizzazione MP4/MKV sono integrate nel recorder dedicato con output atomico e fallback di sincronizzazione A/V.
+
 ## 2.8.12 — Control Room e rollover continuo
 
 - Stati LIVE/REC leggibili, colori coerenti e timeline in ora locale, ridisegnata anche per mobile.

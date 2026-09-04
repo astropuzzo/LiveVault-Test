@@ -25,12 +25,15 @@ def test_stripchat_offline_wins_over_historical_show():
 
 
 def test_stripchat_public_probe_is_recordable(monkeypatch):
-    data = {"viewCam": {"model": {"id": 12, "isLive": True, "isOnline": True, "status": "public"}}}
-    monkeypatch.setattr(providers, "_stripchat_snapshot", lambda _slug: data)
     monkeypatch.setattr(
         providers,
-        "_stripchat_master",
-        lambda *_args: providers.ResolvedInput("https://media.example/live.m3u8", {}, "media"),
+        "stripchat_broadcast_info",
+        lambda _slug: {
+            "isLive": True,
+            "status": "public",
+            "streamName": "12",
+            "settings": {"mediaTransport": "webrtc"},
+        },
     )
 
     result = asyncio.run(providers.probe("stripchat", "example", "best"))
@@ -39,6 +42,26 @@ def test_stripchat_public_probe_is_recordable(monkeypatch):
     assert result.status == "live"
     assert result.recordable is True
     assert result.error == ""
+
+
+def test_stripchat_hls_advert_is_rejected(monkeypatch):
+    data = {
+        "viewCam": {"model": {"id": 12, "isLive": True, "isOnline": True, "status": "public"}},
+        "configV3": {"initialCommon": {"hlsStreamHost": "doppiocdn.media"}},
+    }
+
+    class Response:
+        status_code = 200
+        text = "#EXTM3U\n#EXT-X-MOUFLON-ADVERT\n#EXT-X-ENDLIST\n"
+
+    monkeypatch.setattr(providers, "_browser_get", lambda *_args, **_kwargs: Response())
+
+    try:
+        providers._stripchat_master(data, "example", "best")
+    except RuntimeError as exc:
+        assert "advertising slate" in str(exc)
+    else:
+        raise AssertionError("Stripchat advertising playlist was accepted")
 
 
 def test_parse_chaturbate_last_broadcast_iso_utc():

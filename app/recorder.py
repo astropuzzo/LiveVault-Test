@@ -5,6 +5,7 @@ import json
 import os
 import signal
 import shutil
+import sys
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -175,6 +176,27 @@ def safe_output_limit_bytes(segment_max_gb: float) -> int:
     return max(1, maximum - reserve)
 
 
+def build_stripchat_capture_command(
+    source: Source,
+    output_pattern: Path,
+    preview_path: Path,
+    *,
+    segment_minutes: int,
+    segment_max_gb: float,
+    container_format: str,
+) -> list[str]:
+    return [
+        sys.executable,
+        "-m", "app.stripchat_capture",
+        "--slug", source.slug,
+        "--output-pattern", str(output_pattern),
+        "--preview", str(preview_path),
+        "--segment-seconds", str(max(60, int(segment_minutes) * 60)),
+        "--max-bytes", str(safe_output_limit_bytes(segment_max_gb)),
+        "--container", container_format,
+    ]
+
+
 def build_ffmpeg_command(
     inputs: list[ResolvedInput],
     output_pattern: Path,
@@ -284,13 +306,16 @@ def build_ffmpeg_command(
 
 async def start_recorder(source: Source, *, session_id: str | None = None) -> RecorderSession:
     cfg = runtime()
-    inputs = await resolve_inputs(source.platform, source.slug, source.quality)
-    split_llhls = is_chaturbate_split_llhls(source.platform, inputs)
-    if not split_llhls:
-        audit = await audit_inputs(inputs)
-        if not audit.has_video or not audit.has_audio:
-            raise RuntimeError(f"Audio Guard ha bloccato l'avvio: {audit.error}")
-    inputs = [item for item in inputs if _llhls_role(item) in {"media", "video", "audio"}]
+    inputs: list[ResolvedInput] = []
+    split_llhls = False
+    if source.platform != "stripchat":
+        inputs = await resolve_inputs(source.platform, source.slug, source.quality)
+        split_llhls = is_chaturbate_split_llhls(source.platform, inputs)
+        if not split_llhls:
+            audit = await audit_inputs(inputs)
+            if not audit.has_video or not audit.has_audio:
+                raise RuntimeError(f"Audio Guard ha bloccato l'avvio: {audit.error}")
+        inputs = [item for item in inputs if _llhls_role(item) in {"media", "video", "audio"}]
     local_now = datetime.now(ZoneInfo(settings.timezone))
     source_name = safe_name(source.name)
     session_id = session_id or f"{source_name}_{local_now:%Y-%m-%d_%H-%M-%S}"
@@ -315,18 +340,28 @@ async def start_recorder(source: Source, *, session_id: str | None = None) -> Re
     preview_path = live_preview_path(source.id)
     preview_path.parent.mkdir(parents=True, exist_ok=True)
     preview_path.unlink(missing_ok=True)
-    cmd = build_ffmpeg_command(
-        inputs,
-        output_pattern,
-        segment_minutes=cfg.segment_minutes,
-        segment_max_gb=cfg.segment_max_gb,
-        container_format=cfg.container_format,
-        # Live previews are generated lazily by the authenticated preview
-        # endpoint. Keeping the JPEG output attached here would decode video
-        # continuously even when nobody has the dashboard open.
-        preview_path=None,
-        synchronized_hls=split_llhls,
-    )
+    if source.platform == "stripchat":
+        cmd = build_stripchat_capture_command(
+            source,
+            output_pattern,
+            preview_path,
+            segment_minutes=cfg.segment_minutes,
+            segment_max_gb=cfg.segment_max_gb,
+            container_format=cfg.container_format,
+        )
+    else:
+        cmd = build_ffmpeg_command(
+            inputs,
+            output_pattern,
+            segment_minutes=cfg.segment_minutes,
+            segment_max_gb=cfg.segment_max_gb,
+            container_format=cfg.container_format,
+            # Live previews are generated lazily by the authenticated preview
+            # endpoint. Keeping the JPEG output attached here would decode video
+            # continuously even when nobody has the dashboard open.
+            preview_path=None,
+            synchronized_hls=split_llhls,
+        )
     process = await asyncio.create_subprocess_exec(
         *cmd,
         stdout=asyncio.subprocess.DEVNULL,
