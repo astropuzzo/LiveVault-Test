@@ -992,7 +992,7 @@ function renderLivePauseAlert() {
   const root = $('#livePauseAlert');
   if (!root) return;
   const grouped = new Map();
-  for (const source of sources.filter(row => row.recording_blocked_by_pause && !row.archived)) {
+  for (const source of sources.filter(row => row.recording_blocked_by_pause && ['global', 'source'].includes(row.pause_reason) && !row.archived)) {
     const profileId = Number(source.profile_id || source.id);
     if (!grouped.has(profileId)) grouped.set(profileId, source);
   }
@@ -1874,7 +1874,7 @@ renderSources = function renderSourcesControlRoom() {
       <button class="btn accent" data-live-wall type="button" ${live.length ? '' : 'disabled'}>▦ Live Wall</button>
     </div>
     <section class="cr-live-section">
-      <div class="cr-section-head"><div><h3>Live</h3></div>${blockedCount ? `<span class="cr-attention-count">⚠ ${blockedCount} non registrata${blockedCount === 1 ? '' : 'e'}</span>` : ''}</div>
+      <div class="cr-section-head"><div><h3>Live</h3></div>${blockedCount ? `<span class="cr-attention-count">⚠ ${blockedCount} ${blockedCount === 1 ? 'non registrata' : 'non registrate'}</span>` : ''}</div>
       ${live.length ? `<div class="cr-live-grid">${live.map(profile => controlRoomLiveCard(profile)).join('')}</div>` : '<div class="cr-live-empty">Nessuna live.</div>'}
     </section>
     ${offlineFocus.length ? `<section class="cr-focus-section"><div class="cr-section-head"><div><h3>Focus</h3></div><span class="count">${offlineFocus.length}</span></div><div class="cr-compact-list">${offlineFocus.map(profile => controlRoomCompactRow(profile, true)).join('')}</div></section>` : ''}
