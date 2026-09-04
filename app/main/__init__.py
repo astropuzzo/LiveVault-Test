@@ -43,6 +43,38 @@ class _MainFacade(types.ModuleType):
 sys.modules[__name__].__class__ = _MainFacade
 
 
+# A failed verification/remux must not leave the Dashboard frozen forever at
+# (for example) "Verifica audio/video · 84%".  Guard the singleton used by the
+# app and keep the error visible briefly before clearing the transient progress.
+from app.workers import manager as _processing_manager  # noqa: E402
+
+_processing_original_stitch = _processing_manager._stitch_fragment_group
+
+async def _guarded_processing_stitch(self, fragments, *, allow_transcode: bool = True):
+    session_key = str(fragments[0].session_id) if fragments else ""
+    try:
+        return await _processing_original_stitch(fragments, allow_transcode=allow_transcode)
+    except BaseException as exc:
+        if isinstance(exc, (KeyboardInterrupt, SystemExit)):
+            raise
+        current = getattr(self, "processing_current", None)
+        if current and (not session_key or str(current.get("session_id") or "") == session_key):
+            if isinstance(exc, BaseException) and exc.__class__.__name__ == "CancelledError":
+                self.processing_current = None
+            else:
+                current["stage"] = "Errore"
+                current["error"] = str(exc)[-900:]
+                current["completed_at"] = _legacy.utcnow().isoformat()
+                self.wake()
+                if session_key:
+                    self._schedule_processing_clear(session_key, delay=8.0)
+        raise
+
+_processing_manager._stitch_fragment_group = types.MethodType(
+    _guarded_processing_stitch, _processing_manager
+)
+
+
 class SessionProcessingSettings(BaseModel):
     session_stitch_gap_minutes: int = Field(ge=1, le=120)
 
