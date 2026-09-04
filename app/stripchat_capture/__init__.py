@@ -11,6 +11,8 @@ from urllib.parse import urlsplit
 
 import requests
 
+from app.stripchat_state import StripchatExpectedState, classify_stripchat_cam
+
 
 # Keep the existing native Mouflon implementation as a fallback while this
 # package shadows app/stripchat_capture.py for ``python -m app.stripchat_capture``.
@@ -33,7 +35,6 @@ decode_v1_name = _legacy.decode_v1_name
 decode_v2_url = _legacy.decode_v2_url
 parse_media_playlist = _legacy.parse_media_playlist
 get_cam_state = _legacy.get_cam_state
-_public_stream_id = _legacy._public_stream_id
 resolve_user_id = _legacy.resolve_user_id
 
 USER_AGENT = _legacy.USER_AGENT
@@ -68,6 +69,25 @@ def _request_stop(signum: int, frame: object) -> None:
     global STOP_REQUESTED
     STOP_REQUESTED = True
     _legacy._request_stop(signum, frame)
+
+
+def _public_stream_id(payload: dict[str, Any], user_id: int) -> str:
+    """Return the stream id only for an actually public/available camera.
+
+    ``idle``/``off`` and paid/private states are normal provider states, not
+    recorder failures.  The shared classifier also makes this decision match
+    the source poller exactly.
+    """
+    state = classify_stripchat_cam(payload, user_id)
+    if not state.recordable:
+        raise StripchatExpectedState(state)
+    return state.stream_id
+
+
+# The legacy Mouflon loop resolves room state internally.  Patch that single
+# decision point so refreshes and mid-stream transitions use the same semantics
+# as this package and the source poller.
+_legacy._public_stream_id = _public_stream_id
 
 
 def _ensure_builtin_mouflon_keys() -> None:
@@ -211,6 +231,17 @@ def build_flashphoner_ffmpeg_command(
     return command
 
 
+def _current_expected_state(slug: str) -> StripchatExpectedState | None:
+    """Return a normal state transition if the cam is no longer public."""
+    try:
+        session = requests.Session()
+        user_id, payload = get_cam_state(session, slug)
+        state = classify_stripchat_cam(payload, user_id)
+    except Exception:
+        return None
+    return None if state.recordable else StripchatExpectedState(state)
+
+
 def _run_flashphoner_ffmpeg(args: Any, media_url: str, headers: dict[str, str]) -> None:
     command = build_flashphoner_ffmpeg_command(
         media_url,
@@ -251,6 +282,9 @@ def _run_flashphoner_ffmpeg(args: Any, media_url: str, headers: dict[str, str]) 
             process.kill()
             process.wait()
     if not STOP_REQUESTED and return_code != 0:
+        expected = _current_expected_state(args.slug)
+        if expected is not None:
+            raise expected
         raise RuntimeError(f"Stripchat Flashphoner FFmpeg exited with code {return_code}")
 
 
@@ -258,7 +292,7 @@ def capture(args: Any) -> None:
     session = requests.Session()
     headers = _legacy._headers(args.slug)
     user_id, state = _legacy.get_cam_state(session, args.slug)
-    stream_id = _legacy._public_stream_id(state, user_id)
+    stream_id = _public_stream_id(state, user_id)
 
     # Flashphoner uses the numeric model id in its canonical path.  streamName is
     # still tried second because a few historical rooms exposed a distinct id.
@@ -286,6 +320,41 @@ def capture(args: Any) -> None:
     _legacy.capture(args)
 
 
+def _cleanup_empty_session(args: Any) -> None:
+    """Drop crash-recovery metadata when no media was ever written.
+
+    A LIVE->idle/private race can happen between the poller and child process.
+    It must not leave an empty stitch session that later becomes
+    ``Nessun frammento integro nella sessione``.
+    """
+    directory = Path(args.output_pattern).parent
+    try:
+        parts = [
+            path
+            for path in directory.iterdir()
+            if path.is_file()
+            and not path.name.startswith(".")
+            and "_part" in path.stem
+            and path.suffix.lower() in {".mp4", ".mkv"}
+            and path.stat().st_size > 0
+        ]
+    except OSError:
+        return
+    if parts:
+        return
+    for name in (".livevault-stitch-session.json", ".active-preview.mp4", ".active-preview.webm"):
+        try:
+            (directory / name).unlink(missing_ok=True)
+        except OSError:
+            pass
+    for path in directory.glob("*.capture.mp4"):
+        try:
+            if path.stat().st_size <= 0:
+                path.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
 def main() -> int:
     for sig in (signal.SIGINT, signal.SIGTERM):
         signal.signal(sig, _request_stop)
@@ -296,6 +365,16 @@ def main() -> int:
         capture(args)
     except KeyboardInterrupt:
         return 130
+    except StripchatExpectedState as exc:
+        _cleanup_empty_session(args)
+        state = exc.state
+        raw = f"/{state.raw_status}" if state.raw_status else ""
+        print(
+            f"Stripchat capture stopped normally: {state.status}{raw}",
+            file=sys.stderr,
+            flush=True,
+        )
+        return 0
     except Exception as exc:
         print(
             f"Stripchat capture failed: {type(exc).__name__}: {exc}",
@@ -315,6 +394,7 @@ __all__ = [
     "parse_media_playlist",
     "get_cam_state",
     "resolve_user_id",
+    "_public_stream_id",
     "flashphoner_candidates",
     "resolve_flashphoner_input",
     "build_flashphoner_ffmpeg_command",
