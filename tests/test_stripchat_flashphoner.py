@@ -21,7 +21,7 @@ def test_flashphoner_candidates_use_cam_view_server_and_stream_name():
 def test_flashphoner_master_resolves_selected_media_playlist():
     state = {"cam": {"viewServers": {"flashphoner-hls": "hls-17"}}}
     master_url = "https://b-hls-17.doppiocdn.com/hls/42/master/42_auto.m3u8"
-    child_url = "https://b-hls-17.doppiocdn.com/hls/42/source.m3u8"
+    child_url = "https://b-hls-17.doppiocdn.com/hls/42/master/source.m3u8"
 
     class Response:
         def __init__(self, status_code, text):
