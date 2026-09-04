@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.8.24 — Coda elaborazione ordinata
+
+- Le live lunghe vengono elaborate in blocchi incrementali ogni 15 minuti senza attendere la fine della sessione.
+- I gruppi di frammenti pronti vengono elaborati cronologicamente prima dei normali upload, evitando sorpassi silenziosi.
+- Durante una registrazione attiva viene usato solo stream-copy: qualità originale e nessuna ricodifica pesante sulla CPU.
+- Anche il worker facade pubblica gli stitch atomicamente, senza esporre output parziali.
+
 ## 2.8.23 — Stitching atomico
 
 - Il file consolidato diventa visibile solo dopo completamento e verifica, quindi un deploy non può lasciare un MP4 pubblico privo di indice `moov`.

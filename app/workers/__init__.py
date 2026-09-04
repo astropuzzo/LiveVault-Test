@@ -109,15 +109,93 @@ class WorkerManager(_legacy.WorkerManager):
 
         self._processing_clear_task = asyncio.create_task(clear_later(), name="processing-progress-clear")
 
-    async def _finalize_closed_stitch_sessions(self, force_source_id: int | None = None) -> None:
-        """Finalize fragments after the configured quiet window, or immediately on demand.
+    @staticmethod
+    def _stitch_group_ready(items: list[Any], now: Any) -> bool:
+        """A quiet session or 15 minutes of immutable media is ready to publish."""
+        usable = [item for item in items if _legacy.fragment_usable_for_stitch(item)]
+        if not usable:
+            return False
+        ready_seconds = sum(float(item.duration_seconds or 0) for item in usable)
+        latest = max(item.finalized_at for item in items)
+        return (
+            ready_seconds >= _legacy.SESSION_STITCH_READY_SECONDS
+            or not stitch_gap_open(latest, now)
+        )
 
-        The old implementation could finalize long sessions before the nominal
-        reconnect window had elapsed.  That made the 20-minute rule misleading
-        and could split a creator that reconnected within the advertised window.
-        The configured window is now authoritative; only an explicit process-now
-        action bypasses it.
-        """
+    def _oldest_eligible_fragment(self) -> Any | None:
+        """Return the oldest batch that processing can claim immediately."""
+        now = _legacy.utcnow()
+        monotonic_now = time.monotonic()
+        with _legacy.db_session() as db:
+            rows = list(db.scalars(
+                _legacy.select(_legacy.RecordingFragment).order_by(
+                    _legacy.RecordingFragment.started_at,
+                    _legacy.RecordingFragment.id,
+                )
+            ).all())
+            for row in rows:
+                db.expunge(row)
+        groups: dict[tuple[int, str], list[Any]] = {}
+        for row in rows:
+            groups.setdefault((int(row.source_id), row.session_id), []).append(row)
+        eligible = [
+            min(items, key=lambda item: (item.started_at, item.id))
+            for key, items in groups.items()
+            if self._stitch_retry_after.get(key, 0) <= monotonic_now
+            and self._stitch_group_ready(items, now)
+        ]
+        return min(eligible, key=lambda item: (item.started_at, item.id), default=None)
+
+    def _pending_recording(self):
+        # Explicit user priorities are allowed to jump the queue. Normal uploads
+        # wait until an already-ready fragment batch has become a Recording.
+        cfg = runtime()
+        if cfg.upload_paused:
+            return None
+        monotonic_now = time.monotonic()
+        with _legacy.db_session() as db:
+            candidate = db.scalar(
+                _legacy.select(_legacy.Recording).where(
+                    _legacy.Recording.local_deleted.is_(False),
+                    _legacy.Recording.integrity_status == "passed",
+                    _legacy.Recording.upload_status == "pending",
+                ).order_by(
+                    _legacy.Recording.upload_priority.desc(),
+                    _legacy.Recording.started_at.asc(),
+                    _legacy.Recording.id.asc(),
+                ).limit(1)
+            )
+            if candidate is None:
+                retry_candidates = list(db.scalars(
+                    _legacy.select(_legacy.Recording).where(
+                        _legacy.Recording.local_deleted.is_(False),
+                        _legacy.Recording.integrity_status == "passed",
+                        _legacy.Recording.upload_status.in_(["failed", "waiting_config"]),
+                        _legacy.Recording.upload_attempts < cfg.max_upload_attempts,
+                    ).order_by(
+                        _legacy.Recording.upload_priority.desc(),
+                        _legacy.Recording.started_at.asc(),
+                        _legacy.Recording.id.asc(),
+                    ).limit(100)
+                ).all())
+                candidate = next((
+                    row for row in retry_candidates
+                    if self._retry_after.get(row.id, 0) <= monotonic_now
+                ), None)
+            if candidate is not None:
+                db.expunge(candidate)
+        fragment = self._oldest_eligible_fragment()
+        if (
+            candidate is not None
+            and int(candidate.upload_priority or 0) <= 0
+            and fragment is not None
+            and fragment.started_at <= candidate.started_at
+        ):
+            return None
+        return super()._pending_recording()
+
+    async def _finalize_closed_stitch_sessions(self, force_source_id: int | None = None) -> None:
+        """Publish quiet sessions and rolling 15-minute batches in chronological order."""
         now = _legacy.utcnow()
         with _legacy.db_session() as db:
             query = _legacy.select(_legacy.RecordingFragment).order_by(
@@ -136,7 +214,11 @@ class WorkerManager(_legacy.WorkerManager):
         for row in rows:
             groups.setdefault((int(row.source_id), row.session_id), []).append(row)
 
-        for (source_id, session_id), items in groups.items():
+        ordered_groups = sorted(
+            groups.items(),
+            key=lambda entry: min((item.started_at, item.id) for item in entry[1]),
+        )
+        for (source_id, session_id), items in ordered_groups:
             if self._stopping:
                 continue
             forced = force_source_id is not None and source_id == int(force_source_id)
@@ -147,14 +229,9 @@ class WorkerManager(_legacy.WorkerManager):
                 continue
 
             await self._revalidate_retryable_fragments(items)
-            latest = max(item.finalized_at for item in items)
-            if not forced and stitch_gap_open(latest, now):
+            if not forced and not self._stitch_group_ready(items, now):
                 continue
-
-            # Never consolidate the exact session that is still being written.
             active = self.active.get(source_id)
-            if active and active.session_id == session_id:
-                continue
 
             with _legacy.db_session() as db:
                 current = list(db.scalars(
@@ -176,12 +253,18 @@ class WorkerManager(_legacy.WorkerManager):
                 self._stitch_retry_after.pop(retry_key, None)
                 self.last_errors.pop(f"stitch:{source_id}:{session_id}", None)
                 continue
-            latest = max(item.finalized_at for item in current)
-            if not forced and stitch_gap_open(latest, _legacy.utcnow()):
+            if not forced and not self._stitch_group_ready(current, _legacy.utcnow()):
                 continue
 
             try:
-                await self._stitch_fragment_group(current, allow_transcode=True)
+                is_active_batch = bool(active and active.session_id == session_id)
+                await self._stitch_fragment_group(
+                    current,
+                    # Preserve source quality and CPU while capture is active.
+                    # An incompatible copy remains intact and retries with
+                    # transcode only after the live session has closed.
+                    allow_transcode=not is_active_batch,
+                )
                 self._stitch_retry_after.pop(retry_key, None)
                 self.last_errors.pop(f"stitch:{source_id}:{session_id}", None)
             except asyncio.CancelledError:
@@ -214,7 +297,8 @@ class WorkerManager(_legacy.WorkerManager):
         suffix = next(iter(suffixes)) if len(suffixes) == 1 else ".mp4"
         sequence, display_name = self._recording_day_sequence(first.source_id, started)
         output = paths[0].parent / _legacy.public_recording_filename(display_name, started, sequence, suffix)
-        output.unlink(missing_ok=True)
+        temporary = output.with_name(f".{output.stem}.finalizing{output.suffix}")
+        temporary.unlink(missing_ok=True)
 
         session_key = str(first.session_id)
         self.processing_current = {
@@ -236,7 +320,7 @@ class WorkerManager(_legacy.WorkerManager):
         async def monitor_output() -> None:
             while not stop_monitor.is_set():
                 try:
-                    size = output.stat().st_size if output.is_file() else 0
+                    size = temporary.stat().st_size if temporary.is_file() else 0
                 except OSError:
                     size = 0
                 ratio = min(1.0, size / total_bytes) if total_bytes else 0.0
@@ -253,23 +337,25 @@ class WorkerManager(_legacy.WorkerManager):
 
         monitor_task = asyncio.create_task(monitor_output(), name=f"stitch-progress-{first.source_id}")
         try:
-            await _legacy.stitch_recording_parts(paths, output, allow_transcode=allow_transcode)
+            await _legacy.stitch_recording_parts(paths, temporary, allow_transcode=allow_transcode)
         finally:
             stop_monitor.set()
             with contextlib.suppress(Exception):
                 await monitor_task
 
-        self._set_processing(stage="Finalizzazione MP4", percent=74.0, processed_bytes=int(output.stat().st_size))
+        self._set_processing(stage="Finalizzazione MP4", percent=74.0, processed_bytes=int(temporary.stat().st_size))
         self.wake()
-        if output.suffix.lower() == ".mp4":
-            await self._prepare_mp4(output)
+        if temporary.suffix.lower() == ".mp4":
+            await self._prepare_mp4(temporary)
 
         self._set_processing(stage="Verifica audio/video", percent=84.0)
         self.wake()
-        integrity = await asyncio.to_thread(_legacy.verify_media, output, runtime().integrity_mode)
+        integrity = await asyncio.to_thread(_legacy.verify_media, temporary, runtime().integrity_mode)
         if not integrity.ok:
-            output.unlink(missing_ok=True)
+            temporary.unlink(missing_ok=True)
             raise RuntimeError(f"Sessione consolidata non valida: {integrity.error}")
+
+        temporary.replace(output)
 
         self._set_processing(stage="Checksum", percent=91.0)
         self.wake()

@@ -77,10 +77,47 @@ def test_processing_routes_and_dashboard_controls_are_wired():
     assert "ELABORAZIONE" in js
 
 
-def test_automatic_finalization_respects_window_but_manual_can_bypass():
+def test_automatic_finalization_rolls_long_lives_and_manual_can_bypass():
     source = (ROOT / "app/workers/__init__.py").read_text(encoding="utf-8")
-    assert "if not forced and stitch_gap_open(latest, now):" in source
+    assert "ready_seconds >= _legacy.SESSION_STITCH_READY_SECONDS" in source
+    assert "if not forced and not self._stitch_group_ready(items, now):" in source
     assert "if forced:" in source
-    assert "Never consolidate the exact session that is still being written" in source
+    assert "allow_transcode=not is_active_batch" in source
+    assert "ordered_groups = sorted(" in source
+    assert "self._oldest_eligible_fragment()" in source
+    assert "fragment.started_at <= candidate.started_at" in source
     assert "not any(_legacy.fragment_usable_for_stitch(item) for item in current)" in source
     assert 'self.last_errors.pop(f"stitch:{source_id}:{session_id}", None)' in source
+
+
+def test_facade_stitch_is_published_atomically():
+    source = (ROOT / "app/workers/__init__.py").read_text(encoding="utf-8")
+    assert 'temporary = output.with_name(f".{output.stem}.finalizing{output.suffix}")' in source
+    assert "stitch_recording_parts(paths, temporary" in source
+    assert "temporary.replace(output)" in source
+
+
+def test_active_session_batch_becomes_ready_after_fifteen_minutes(tmp_path):
+    manager = workers.WorkerManager()
+    now = datetime(2026, 9, 4, 12, 0, tzinfo=timezone.utc)
+    path = tmp_path / "capture_part000.mp4"
+    path.write_bytes(b"media")
+
+    def fragment(duration: float, finalized_at: datetime):
+        return SimpleNamespace(
+            local_path=str(path),
+            integrity_status="passed",
+            integrity_error="",
+            duration_seconds=duration,
+            finalized_at=finalized_at,
+        )
+
+    assert not manager._stitch_group_ready(
+        [fragment(10 * 60, now - timedelta(minutes=1))], now
+    )
+    assert manager._stitch_group_ready(
+        [fragment(15 * 60, now - timedelta(minutes=1))], now
+    )
+    assert manager._stitch_group_ready(
+        [fragment(2 * 60, now - timedelta(minutes=21))], now
+    )
