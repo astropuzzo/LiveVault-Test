@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import sys
 from dataclasses import dataclass, asdict
 from datetime import datetime, timezone
 
@@ -21,6 +22,7 @@ class RuntimeSettings:
     max_probe_concurrency: int = 4
     segment_minutes: int = 60
     segment_max_gb: float = 2.0
+    session_stitch_gap_minutes: int = 20
     container_format: str = "mp4"
     integrity_mode: str = "packet"
     generate_thumbnails: bool = True
@@ -114,6 +116,14 @@ def runtime() -> RuntimeSettings:
     return _state
 
 
+def _notify_runtime_change() -> None:
+    """Refresh worker constants without importing workers during module bootstrap."""
+    workers_module = sys.modules.get("app.workers")
+    refresh = getattr(workers_module, "refresh_runtime_constants", None) if workers_module else None
+    if callable(refresh):
+        refresh()
+
+
 def set_values(values: dict[str, object]) -> RuntimeSettings:
     allowed = set(asdict(_state))
     now = datetime.now(timezone.utc)
@@ -132,6 +142,7 @@ def set_values(values: dict[str, object]) -> RuntimeSettings:
             else:
                 db.add(AppSetting(key=key, value=stored, is_secret=is_secret, updated_at=now))
             setattr(_state, key, value)
+    _notify_runtime_change()
     return _state
 
 
@@ -148,6 +159,7 @@ def public_settings() -> dict:
         "max_probe_concurrency": s.max_probe_concurrency,
         "segment_minutes": s.segment_minutes,
         "segment_max_gb": s.segment_max_gb,
+        "session_stitch_gap_minutes": s.session_stitch_gap_minutes,
         "container_format": s.container_format,
         "integrity_mode": s.integrity_mode,
         "generate_thumbnails": s.generate_thumbnails,
