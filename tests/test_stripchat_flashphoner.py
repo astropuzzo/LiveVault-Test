@@ -13,14 +13,14 @@ def test_flashphoner_candidates_use_cam_view_server_and_stream_name():
 
     assert candidates[0] == (
         "https://b-hls-17.doppiocdn.com/hls/213430422/"
-        "master_213430422.m3u8"
+        "master/213430422_auto.m3u8"
     )
     assert any(url.endswith("/213430422/213430422.m3u8") for url in candidates)
 
 
 def test_flashphoner_master_resolves_selected_media_playlist():
     state = {"cam": {"viewServers": {"flashphoner-hls": "hls-17"}}}
-    master_url = "https://b-hls-17.doppiocdn.com/hls/42/master_42.m3u8"
+    master_url = "https://b-hls-17.doppiocdn.com/hls/42/master/42_auto.m3u8"
     child_url = "https://b-hls-17.doppiocdn.com/hls/42/source.m3u8"
 
     class Response:
@@ -46,6 +46,22 @@ def test_flashphoner_master_resolves_selected_media_playlist():
     )
 
     assert resolved == child_url
+
+
+def test_current_mouflon_master_has_bootstrap_keys():
+    advertised = {
+        "1Dzcc6OjP73LKbtI",
+        "7uUnbD0jMCB9GH32",
+        "Fq6m2TO2ZeBkRPm9",
+        "GrRncsoByZmsiT6L",
+        "N2oLovTIXb0o28Uj",
+        "NTK9aqcLmNFMWrpQ",
+        "OLzu7QlySkG2fVRn",
+        "Ohi7eTRBpkAuML0l",
+        "Ook7quaiNgiyuhai",
+    }
+    assert advertised <= set(stripchat_capture.BUILTIN_MOUFLON_KEYS)
+    assert stripchat_capture.BUILTIN_MOUFLON_KEYS["1Dzcc6OjP73LKbtI"] == "Y64UVwX5RrIWnOLp"
 
 
 def test_flashphoner_ffmpeg_is_stream_copy_only():
