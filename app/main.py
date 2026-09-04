@@ -53,7 +53,7 @@ BASE = Path(__file__).parent
 LOGIN_FAILURES: dict[str, deque[float]] = defaultdict(deque)
 LOGIN_WINDOW = 10 * 60
 LOGIN_MAX_FAILURES = 6
-VERSION = "2.8.16"
+VERSION = "2.8.17"
 
 
 class LoginBody(BaseModel):
@@ -2000,11 +2000,21 @@ def _local_media_path(value: str | Path) -> Path:
 
 
 def _video_media_type(path: str | Path) -> str:
+    path = Path(path)
+    # Older captures named every MediaRecorder scratch file `.webm`, even when
+    # Chromium selected fragmented MP4. Detect ISO BMFF by its ftyp box.
+    try:
+        with path.open("rb") as handle:
+            signature = handle.read(12)
+        if len(signature) >= 8 and signature[4:8] == b"ftyp":
+            return "video/mp4"
+    except OSError:
+        pass
     return {
         ".mp4": "video/mp4",
         ".webm": "video/webm",
         ".mkv": "video/x-matroska",
-    }.get(Path(path).suffix.lower(), "application/octet-stream")
+    }.get(path.suffix.lower(), "application/octet-stream")
 
 
 def _fragment_json(fragment: RecordingFragment) -> dict:

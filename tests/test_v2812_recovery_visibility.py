@@ -59,6 +59,13 @@ def test_video_media_types_include_browser_playable_webm():
     assert _video_media_type(Path("capture.mkv")) == "video/x-matroska"
 
 
+def test_misnamed_media_recorder_mp4_is_detected_from_signature(tmp_path):
+    capture = tmp_path / "part001.capture.webm"
+    capture.write_bytes(b"\x00\x00\x00\x24ftypisom")
+
+    assert _video_media_type(capture) == "video/mp4"
+
+
 def test_recovery_and_local_preview_controls_are_wired():
     main = (ROOT / "app/main.py").read_text(encoding="utf-8")
     js = (ROOT / "app/static/app.js").read_text(encoding="utf-8")

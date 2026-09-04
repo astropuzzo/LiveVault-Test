@@ -371,20 +371,20 @@ class WorkerManager:
                 and path.stat().st_mtime >= started_timestamp
                 and (
                     path.suffix.lower() == session.extension.lower()
-                    or path.name.lower().endswith(".capture.webm")
+                    or path.name.lower().endswith((".capture.mp4", ".capture.webm"))
                 )
             ]
         except OSError:
             return None
         if not candidates:
             return None
-        # Stripchat writes the current MediaRecorder stream to .capture.webm
-        # before finalizing it to the configured container. Prefer that live
-        # file over a completed part from an earlier reconnect.
+        # Stripchat writes the current MediaRecorder stream to a .capture file
+        # before finalizing it. Prefer that live file over a completed part
+        # from an earlier reconnect.
         return max(
             candidates,
             key=lambda path: (
-                path.name.lower().endswith(".capture.webm"),
+                path.name.lower().endswith((".capture.mp4", ".capture.webm")),
                 path.stat().st_mtime,
             ),
         )

@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.8.17 — Container anteprima Stripchat
+
+- Il file MediaRecorder attivo conserva l'estensione del container realmente prodotto da Chromium.
+- I temporanei MP4 creati dalle versioni precedenti vengono riconosciuti dalla firma `ftyp`.
+
 ## 2.8.16 — Anteprima registrazione Stripchat
 
 - `REC locale` serve il WebM attivo con il MIME riproducibile dal browser.

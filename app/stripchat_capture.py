@@ -170,7 +170,7 @@ window.capture = async args => {
       chain = chain.then(async () => {
         const data = new Uint8Array(await event.data.arrayBuffer());
         let binary = ''; for (let i=0;i<data.length;i+=32768) binary += String.fromCharCode(...data.subarray(i,i+32768));
-        await window.writeChunk(part,myIndex,btoa(binary));
+        await window.writeChunk(part,myIndex,btoa(binary),mime);
       });
     };
     const stopped = new Promise(resolve => recorder.onstop = resolve);
@@ -229,8 +229,12 @@ async def capture(args: argparse.Namespace) -> None:
         context = await browser.new_context(user_agent=USER_AGENT)
         page: Page = await context.new_page()
 
-        async def write_chunk(part: int, _index: int, encoded: str) -> int:
-            path = raw_parts.setdefault(part, _output_for(args.output_pattern, part).with_suffix(".capture.webm"))
+        async def write_chunk(part: int, _index: int, encoded: str, mime: str) -> int:
+            capture_suffix = ".capture.mp4" if str(mime).lower().startswith("video/mp4") else ".capture.webm"
+            path = raw_parts.setdefault(
+                part,
+                _output_for(args.output_pattern, part).with_suffix(capture_suffix),
+            )
             path.parent.mkdir(parents=True, exist_ok=True)
             data = base64.b64decode(encoded)
             with path.open("ab") as handle:
