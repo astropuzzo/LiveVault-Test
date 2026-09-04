@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.8.16 — Anteprima registrazione Stripchat
+
+- `REC locale` serve il WebM attivo con il MIME riproducibile dal browser.
+- La preview seleziona il file della sessione corrente anziché un frammento precedente.
+
 ## 2.8.15 — Stripchat RTMP ingest
 
 - Le live pubbliche Stripchat pubblicate dalla creator via RTMP vengono acquisite correttamente dal WebRTC edge, senza scambiarle per descriptor incompleti.

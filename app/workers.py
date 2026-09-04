@@ -359,10 +359,35 @@ class WorkerManager:
         if session is None:
             return None
         try:
-            files = capture_output_files(session)
+            started_at = session.started_at
+            if started_at.tzinfo is None:
+                started_at = started_at.replace(tzinfo=timezone.utc)
+            started_timestamp = started_at.timestamp() - 3
+            candidates = [
+                path for path in session.directory.iterdir()
+                if path.is_file()
+                and not path.name.startswith(".")
+                and path.stat().st_size > 0
+                and path.stat().st_mtime >= started_timestamp
+                and (
+                    path.suffix.lower() == session.extension.lower()
+                    or path.name.lower().endswith(".capture.webm")
+                )
+            ]
         except OSError:
             return None
-        return files[-1] if files and files[-1].stat().st_size > 0 else None
+        if not candidates:
+            return None
+        # Stripchat writes the current MediaRecorder stream to .capture.webm
+        # before finalizing it to the configured container. Prefer that live
+        # file over a completed part from an earlier reconnect.
+        return max(
+            candidates,
+            key=lambda path: (
+                path.name.lower().endswith(".capture.webm"),
+                path.stat().st_mtime,
+            ),
+        )
 
     async def live_preview_for(self, source_id: int) -> Path | None:
         """Refresh a live JPEG only when an authenticated browser requests it."""

@@ -53,7 +53,7 @@ BASE = Path(__file__).parent
 LOGIN_FAILURES: dict[str, deque[float]] = defaultdict(deque)
 LOGIN_WINDOW = 10 * 60
 LOGIN_MAX_FAILURES = 6
-VERSION = "2.8.15"
+VERSION = "2.8.16"
 
 
 class LoginBody(BaseModel):
@@ -1999,6 +1999,14 @@ def _local_media_path(value: str | Path) -> Path:
     return path
 
 
+def _video_media_type(path: str | Path) -> str:
+    return {
+        ".mp4": "video/mp4",
+        ".webm": "video/webm",
+        ".mkv": "video/x-matroska",
+    }.get(Path(path).suffix.lower(), "application/octet-stream")
+
+
 def _fragment_json(fragment: RecordingFragment) -> dict:
     local_available = Path(fragment.local_path).is_file()
     state = "ready" if fragment.integrity_status == "passed" else (
@@ -2080,7 +2088,7 @@ def view_recording(recording_id: int, request: Request):
         if not rec:
             raise HTTPException(404, "Registrazione non trovata")
         path = _local_media_path(rec.local_path)
-    media_type = "video/mp4" if path.suffix.lower() == ".mp4" else "video/x-matroska"
+    media_type = _video_media_type(path)
     return FileResponse(path, media_type=media_type)
 
 
@@ -2092,7 +2100,7 @@ def view_recording_fragment(fragment_id: int, request: Request):
         if not fragment:
             raise HTTPException(404, "Parte locale non trovata")
         path = _local_media_path(fragment.local_path)
-    media_type = "video/mp4" if path.suffix.lower() == ".mp4" else "video/x-matroska"
+    media_type = _video_media_type(path)
     return FileResponse(path, media_type=media_type, headers={"Cache-Control": "private, no-store"})
 
 
@@ -2103,7 +2111,7 @@ def view_active_capture(source_id: int, request: Request):
     if path is None:
         raise HTTPException(404, "Registrazione attiva non ancora disponibile")
     path = _local_media_path(path)
-    media_type = "video/mp4" if path.suffix.lower() == ".mp4" else "video/x-matroska"
+    media_type = _video_media_type(path)
     return FileResponse(path, media_type=media_type, headers={"Cache-Control": "private, no-store"})
 
 
