@@ -29,7 +29,7 @@
   window.addEventListener('load', () => {
     if (document.querySelector('script[data-pulse-tuning]')) return;
     const pulseScript = document.createElement('script');
-    pulseScript.src = '/static/pulse-tuning.js?v=3.0.0-redesign6';
+    pulseScript.src = '/static/pulse-tuning.js?v=3.0.0-redesign7';
     pulseScript.dataset.pulseTuning = '1';
     document.head.appendChild(pulseScript);
   }, {once:true});

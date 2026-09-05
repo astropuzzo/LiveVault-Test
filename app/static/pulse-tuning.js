@@ -37,73 +37,44 @@
     });
     const defs = svgNode('defs');
 
-    // Pattern is secondary to hue: each tile is fully painted in the semantic
-    // color first, then receives a restrained low-contrast texture.
-    const privatePattern = svgNode('pattern', {id: 'lv-pulse-private', width: 12, height: 12, patternUnits: 'userSpaceOnUse'});
-    patternRect(privatePattern, '#9a5cff', 12, 12);
-    privatePattern.append(svgNode('path', {
-      d: 'M-2 12L12-2M5 14L14 5',
-      stroke: '#c9b7ff',
-      'stroke-width': .8,
-      opacity: .18,
-    }));
+    const privatePattern = svgNode('pattern', {id: 'lv-pulse-private', width: 11, height: 11, patternUnits: 'userSpaceOnUse'});
+    patternRect(privatePattern, '#9a5cff', 11, 11);
+    privatePattern.append(svgNode('path', {d: 'M-3 11L11-3M3 14L14 3', stroke: '#e2d4ff', 'stroke-width': 1.05, opacity: .42}));
     defs.append(privatePattern);
 
     const tipjarPattern = svgNode('pattern', {id: 'lv-pulse-tipjar', width: 12, height: 12, patternUnits: 'userSpaceOnUse'});
     patternRect(tipjarPattern, '#f1a72a', 12, 12);
-    tipjarPattern.append(svgNode('circle', {cx: 3.5, cy: 3.5, r: .85, fill: '#6f480a', opacity: .32}));
-    tipjarPattern.append(svgNode('circle', {cx: 9.5, cy: 9.5, r: .65, fill: '#ffe1a0', opacity: .20}));
+    tipjarPattern.append(svgNode('circle', {cx: 3, cy: 3, r: .95, fill: '#fff0b7', opacity: .46}));
+    tipjarPattern.append(svgNode('circle', {cx: 9, cy: 9, r: .95, fill: '#85540a', opacity: .52}));
     defs.append(tipjarPattern);
 
-    const cloudPattern = svgNode('pattern', {id: 'lv-pulse-cloud', width: 22, height: 22, patternUnits: 'userSpaceOnUse'});
-    patternRect(cloudPattern, '#32d583', 22, 22);
+    const cloudPattern = svgNode('pattern', {id: 'lv-pulse-cloud', width: 18, height: 18, patternUnits: 'userSpaceOnUse'});
+    patternRect(cloudPattern, '#32d583', 18, 18);
     cloudPattern.append(svgNode('path', {
-      d: 'M11 6L11.8 8.2L14 9L11.8 9.8L11 12L10.2 9.8L8 9L10.2 8.2Z',
-      fill: '#c7f5dc',
-      opacity: .18,
+      d: 'M9 3.2L10 8L14.8 9L10 10L9 14.8L8 10L3.2 9L8 8Z',
+      fill: '#e9fff3',
+      opacity: .36,
     }));
     defs.append(cloudPattern);
 
-    const processingPattern = svgNode('pattern', {id: 'lv-pulse-processing', width: 14, height: 14, patternUnits: 'userSpaceOnUse'});
-    patternRect(processingPattern, '#22c7ff', 14, 14);
-    processingPattern.append(svgNode('path', {
-      d: 'M4 4L10 10M10 4L4 10',
-      stroke: '#b7edf8',
-      'stroke-width': .7,
-      opacity: .17,
-    }));
+    const processingPattern = svgNode('pattern', {id: 'lv-pulse-processing', width: 12, height: 12, patternUnits: 'userSpaceOnUse'});
+    patternRect(processingPattern, '#22c7ff', 12, 12);
+    processingPattern.append(svgNode('path', {d: 'M3 3L9 9M9 3L3 9', stroke: '#d8f7ff', 'stroke-width': .85, opacity: .38}));
     defs.append(processingPattern);
 
-    const missedPattern = svgNode('pattern', {id: 'lv-pulse-missed', width: 20, height: 12, patternUnits: 'userSpaceOnUse'});
-    patternRect(missedPattern, '#ff4fc8', 20, 12);
-    missedPattern.append(svgNode('path', {
-      d: 'M0 7Q5 2 10 7T20 7',
-      stroke: '#f0a7d4',
-      'stroke-width': .75,
-      fill: 'none',
-      opacity: .20,
-    }));
+    const missedPattern = svgNode('pattern', {id: 'lv-pulse-missed', width: 14, height: 14, patternUnits: 'userSpaceOnUse'});
+    patternRect(missedPattern, '#ff4fc8', 14, 14);
+    missedPattern.append(svgNode('path', {d: 'M0 8Q3.5 3.5 7 8T14 8', stroke: '#ffd2f1', 'stroke-width': 1, fill: 'none', opacity: .42}));
     defs.append(missedPattern);
 
-    const restrictedPattern = svgNode('pattern', {id: 'lv-pulse-restricted', width: 12, height: 12, patternUnits: 'userSpaceOnUse'});
-    patternRect(restrictedPattern, '#77818c', 12, 12);
-    restrictedPattern.append(svgNode('path', {
-      d: 'M3 0V12M9 0V12',
-      stroke: '#cbd2d8',
-      'stroke-width': .7,
-      opacity: .18,
-    }));
+    const restrictedPattern = svgNode('pattern', {id: 'lv-pulse-restricted', width: 10, height: 10, patternUnits: 'userSpaceOnUse'});
+    patternRect(restrictedPattern, '#77818c', 10, 10);
+    restrictedPattern.append(svgNode('path', {d: 'M2.5 0V10M7.5 0V10', stroke: '#dce2e8', 'stroke-width': .8, opacity: .38}));
     defs.append(restrictedPattern);
 
-    const unrecordedPattern = svgNode('pattern', {id: 'lv-pulse-unrecorded', width: 14, height: 12, patternUnits: 'userSpaceOnUse'});
-    patternRect(unrecordedPattern, '#ff7a3d', 14, 12);
-    unrecordedPattern.append(svgNode('path', {
-      d: 'M-2 9L3 4L8 9L13 4L18 9',
-      stroke: '#ffd1ba',
-      'stroke-width': .75,
-      fill: 'none',
-      opacity: .20,
-    }));
+    const unrecordedPattern = svgNode('pattern', {id: 'lv-pulse-unrecorded', width: 12, height: 12, patternUnits: 'userSpaceOnUse'});
+    patternRect(unrecordedPattern, '#ff7a3d', 12, 12);
+    unrecordedPattern.append(svgNode('path', {d: 'M-3 8L2 3L7 8L12 3L17 8', stroke: '#ffe1d0', 'stroke-width': 1, fill: 'none', opacity: .4}));
     defs.append(unrecordedPattern);
 
     host.append(defs);
