@@ -1,7 +1,9 @@
 # Recording performance investigation — 2026-09-05
 
 Prepared against GitHub `origin/main` at `dfde126`, in branch
-`codex/recording-efficiency`. The sensor bus was enabled and verified on the live host; application rollout follows green CI.
+`codex/recording-efficiency`. Initial release `ecbae19` deployed successfully after
+Linux CI passed. Authenticated active-capture playback returned an uncompressed
+1024-byte HTTP 206 response. Both applications were healthy.
 
 ## Findings and changes
 
@@ -17,6 +19,13 @@ Prepared against GitHub `origin/main` at `dfde126`, in branch
 
 Recording video stream-copy, audio synchronization, camera limits, background
 processing, uploads, integrity checks, and recording quality are unchanged.
+
+After deployment, a backlog A/V repair consumed about 278% process CPU (nearly
+three cores). Background repair/stitch fallback now uses half the CPU count for
+video encoding (two threads on this host), with single-thread decoding/filtering.
+The existing preset and CRF remain unchanged. Deadlines increase proportionally
+so healthy repairs can finish with the smaller pool. This preserves repair and
+multitasking, with longer processing latency as the tradeoff.
 
 ## Measurements
 

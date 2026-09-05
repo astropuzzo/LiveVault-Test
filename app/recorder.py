@@ -19,6 +19,10 @@ from .utils import probe_media, safe_name, utcnow
 
 LIVE_PREVIEW_INTERVAL_SECONDS = 20
 LIVE_PREVIEW_MAX_AGE_SECONDS = 90
+BACKGROUND_VIDEO_THREADS = max(1, (os.cpu_count() or 2) // 2)
+# Background repairs must leave room for live capture. Account for the smaller
+# encoder pool in their deadline rather than timing out healthy slower repairs.
+BACKGROUND_TIMEOUT_FACTOR = max(1, (os.cpu_count() or 2) / BACKGROUND_VIDEO_THREADS)
 STITCH_MARKER_NAME = ".livevault-stitch-session.json"
 
 
@@ -457,6 +461,7 @@ async def stitch_recording_parts(parts: list[Path], output: Path, *, allow_trans
     timeout = max(180, min(3600, int(total_bytes / (4 * 1024**2))))
     base = [
         "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+        "-filter_threads", "1", "-threads:v", "1",
         "-fflags", "+genpts+discardcorrupt",
         "-f", "concat", "-safe", "0", "-i", str(concat_file),
         "-map", "0:v:0", "-map", "0:a:0", "-dn", "-ignore_unknown",
@@ -471,11 +476,12 @@ async def stitch_recording_parts(parts: list[Path], output: Path, *, allow_trans
             raise RuntimeError(detail or "Stitching stream-copy fallito; transcode rinviato")
         code, fallback_detail = await run(base + [
             "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
+            "-threads:v", str(BACKGROUND_VIDEO_THREADS),
             "-pix_fmt", "yuv420p", "-fps_mode", "vfr",
             "-c:a", "aac", "-b:a", "192k", "-ar", "48000",
             "-af", "aresample=async=1",
             *trailer, str(output),
-        ], max(timeout, 600))
+        ], int(max(timeout, 600) * BACKGROUND_TIMEOUT_FACTOR))
         if code != 0 or not output.is_file() or output.stat().st_size <= 0:
             raise RuntimeError(fallback_detail or detail or "Stitching FFmpeg fallito")
     finally:
@@ -602,11 +608,13 @@ async def _rebuild_av_timeline(source: Path, output: Path) -> None:
         audio_filter = f"atrim=start=0:duration={limit},asetpts=PTS-STARTPTS,aresample=async=1:first_pts=0"
     command = [
         "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+        "-filter_threads", "1", "-threads:v", "1",
         "-fflags", "+genpts+discardcorrupt", "-i", str(source),
         "-map", "0:v:0", "-map", "0:a:0", "-dn", "-ignore_unknown",
         "-vf", video_filter,
         "-af", audio_filter,
         "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
+        "-threads:v", str(BACKGROUND_VIDEO_THREADS),
         "-pix_fmt", "yuv420p", "-fps_mode", "vfr",
         "-c:a", "aac", "-b:a", "192k", "-ar", "48000",
         "-shortest", "-max_muxing_queue_size", "4096",
@@ -622,7 +630,7 @@ async def _rebuild_av_timeline(source: Path, output: Path) -> None:
     )
     # A repair may need a full video transcode, so allow substantially more
     # time than the copy-remux path while still bounding stuck processes.
-    timeout = max(300, min(3600, int(source.stat().st_size / (1024**2)) * 3))
+    timeout = int(max(300, min(3600, int(source.stat().st_size / (1024**2)) * 3)) * BACKGROUND_TIMEOUT_FACTOR)
     try:
         _, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
     except asyncio.CancelledError:

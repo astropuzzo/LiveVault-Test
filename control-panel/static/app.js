@@ -118,7 +118,8 @@ function renderHistory(points, energy = {}) {
   $('#wattChart').innerHTML = chartMarkup(points, [{key:'watts',className:'watt'}], 0, wattMax);
   $('#wattPeak').textContent = energy.peak_watts != null ? `${energy.peak_watts.toFixed(1)} W picco` : '—';
   $('#wattAverage').textContent = energy.average_watts != null ? `media ${energy.average_watts.toFixed(1)} W` : 'media —';
-  $('#energyMeasured').textContent = energy.wh != null ? `${energy.wh.toFixed(2)} Wh · ${duration(energy.covered_seconds)} coperti` : 'In attesa di campioni misurati';
+  const coverage = energy.covered_seconds < 60 ? `${energy.covered_seconds} s` : duration(energy.covered_seconds);
+  $('#energyMeasured').textContent = energy.wh != null ? `${energy.wh.toFixed(2)} Wh · ${coverage} coperti` : 'In attesa di campioni misurati';
 }
 async function refreshHistory() {
   if (historyBusy || document.hidden || !signedIn) return;

@@ -14,13 +14,16 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-def test_real_ffmpeg_repair_closes_large_audio_tail(tmp_path):
+def test_real_ffmpeg_repair_closes_large_audio_tail(tmp_path, monkeypatch):
     """Regression for the 11s-style failure seen in production.
 
     Build a fragmented MP4 whose video lasts ~2s while audio lasts ~5s.
     The normal copy-remux cannot make those timelines agree; LiveVault must
     therefore rebuild both streams and return a normal, seekable MP4.
     """
+    # Exercise the four-core server's reduced repair encoder pool on larger PCs.
+    monkeypatch.setattr("app.recorder.BACKGROUND_VIDEO_THREADS", 2)
+    monkeypatch.setattr("app.recorder.BACKGROUND_TIMEOUT_FACTOR", 2)
     path = tmp_path / "mismatched.mp4"
     subprocess.run(
         [
