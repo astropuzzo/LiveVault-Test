@@ -10,6 +10,14 @@
     document.head.appendChild(fixes);
   }
 
+  if (!document.querySelector('link[data-dashboard-tuning]')) {
+    const tuning = document.createElement('link');
+    tuning.rel = 'stylesheet';
+    tuning.href = '/static/dashboard-tuning.css?v=3.0.0-redesign3';
+    tuning.dataset.dashboardTuning = '1';
+    document.head.appendChild(tuning);
+  }
+
   const svg = name => `<svg class="mini-icon" aria-hidden="true"><use href="/static/icons.svg#${name}"></use></svg>`;
   const dialog = $('#commandDialog');
   const input = $('#commandSearch');

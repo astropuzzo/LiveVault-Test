@@ -1,0 +1,284 @@
+/* LiveVault dashboard tuning — single-live hero + high-contrast pulse timeline. */
+
+/* One active live should read like the primary object on the Monitor page.
+ * The compact renderer remains untouched for 2+ simultaneous lives.
+ */
+.cr-live-grid:has(> .cr-live-card:only-child) {
+  display: grid;
+  grid-template-columns: minmax(0, 1200px);
+  justify-content: center;
+  padding: 18px 20px 22px;
+}
+
+.cr-live-grid:has(> .cr-live-card:only-child) > .cr-live-card {
+  width: 100%;
+  min-height: 0;
+  grid-template-columns: minmax(440px, 2fr) minmax(300px, 1fr);
+  align-items: stretch;
+  border: 1px solid var(--line2);
+  border-radius: 14px;
+  overflow: hidden;
+  background: var(--s1);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, .30);
+}
+
+.cr-live-grid:has(> .cr-live-card:only-child) > .cr-live-card:first-child {
+  border-top: 1px solid var(--line2);
+}
+
+.cr-live-grid:has(> .cr-live-card:only-child) > .cr-live-card > .cr-preview {
+  min-height: 340px;
+  aspect-ratio: 16 / 9;
+  border-right: 1px solid var(--line);
+  background: #080b0f;
+}
+
+.cr-live-grid:has(> .cr-live-card:only-child) > .cr-live-card > .cr-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.cr-live-grid:has(> .cr-live-card:only-child) > .cr-live-card > .cr-live-body {
+  grid-template-columns: 1fr;
+  align-content: center;
+  gap: 16px;
+  padding: 26px 28px;
+}
+
+.cr-live-grid:has(> .cr-live-card:only-child) .cr-live-head {
+  gap: 7px;
+}
+
+.cr-live-grid:has(> .cr-live-card:only-child) .cr-live-name {
+  font-size: clamp(25px, 2vw, 34px);
+  line-height: 1.05;
+  font-weight: 700;
+  letter-spacing: -.035em;
+}
+
+.cr-live-grid:has(> .cr-live-card:only-child) .cr-live-provider {
+  margin-top: 5px;
+  font-size: 13px;
+}
+
+.cr-live-grid:has(> .cr-live-card:only-child) .cr-live-state {
+  font-size: 13px;
+  letter-spacing: .02em;
+}
+
+.cr-live-grid:has(> .cr-live-card:only-child) .cr-card-actions {
+  justify-content: flex-start;
+  gap: 8px;
+}
+
+.cr-live-grid:has(> .cr-live-card:only-child) .cr-card-actions .icon-button {
+  width: 40px;
+  height: 40px;
+  min-height: 40px;
+}
+
+.cr-live-grid:has(> .cr-live-card:only-child) .cr-card-actions .button,
+.cr-live-grid:has(> .cr-live-card:only-child) .cr-card-actions .btn {
+  min-height: 40px;
+  padding-inline: 12px;
+  font-size: 12px;
+}
+
+.cr-live-grid:has(> .cr-live-card:only-child) .cr-preview-state {
+  left: 10px;
+  bottom: 10px;
+  min-height: 28px;
+  padding: 5px 8px;
+  gap: 6px;
+  border-radius: 7px;
+  background: rgba(8, 10, 12, .88);
+}
+
+.cr-live-grid:has(> .cr-live-card:only-child) .cr-preview > time {
+  right: 9px;
+  top: 9px;
+  padding: 4px 6px;
+  border-radius: 6px;
+}
+
+/* Pulse timeline: states must be distinguishable at a glance, including when
+ * neighboring spans are very short. Color, outline and dash patterns all carry
+ * meaning so the timeline does not rely on hue alone.
+ */
+.cr-pulse {
+  background: #0d1217;
+}
+
+.cr-pulse-legend {
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.cr-pulse-legend i {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  border: 1px solid rgba(255, 255, 255, .22);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .24);
+}
+
+.cr-pulse-legend i.live {
+  background: #2f7cff;
+  box-shadow: 0 0 9px rgba(47, 124, 255, .32), inset 0 0 0 1px rgba(0,0,0,.24);
+}
+
+.cr-pulse-legend i.private {
+  background: repeating-linear-gradient(135deg, #a66cff 0 3px, #6738bd 3px 5px);
+  box-shadow: 0 0 9px rgba(166, 108, 255, .28), inset 0 0 0 1px rgba(0,0,0,.24);
+}
+
+.cr-pulse-legend i.tipjar {
+  background: repeating-linear-gradient(90deg, #f2ad31 0 4px, #9c6814 4px 6px);
+  box-shadow: 0 0 9px rgba(242, 173, 49, .25), inset 0 0 0 1px rgba(0,0,0,.24);
+}
+
+.cr-pulse-legend i.rec {
+  background: #ff4f62;
+  box-shadow: 0 0 9px rgba(255, 79, 98, .28), inset 0 0 0 1px rgba(0,0,0,.24);
+}
+
+.cr-pulse-legend i.processing {
+  background: #22c7ff;
+  box-shadow: 0 0 9px rgba(34, 199, 255, .28), inset 0 0 0 1px rgba(0,0,0,.24);
+}
+
+.cr-pulse-legend i.missed {
+  background: repeating-linear-gradient(135deg, #ff4fc8 0 2px, #8f276f 2px 4px);
+  box-shadow: 0 0 9px rgba(255, 79, 200, .25), inset 0 0 0 1px rgba(0,0,0,.24);
+}
+
+.cr-pulse-svg rect {
+  paint-order: stroke fill;
+  vector-effect: non-scaling-stroke;
+}
+
+.cr-pulse-live-span {
+  fill: #2f7cff;
+  stroke: #9bc1ff;
+  stroke-width: .8;
+  filter: drop-shadow(0 0 2px rgba(47, 124, 255, .32));
+}
+
+.cr-pulse-live-span.current {
+  fill: #22c7ff;
+  stroke: #c0f1ff;
+  stroke-width: .9;
+}
+
+.cr-pulse-live-span.unrecorded {
+  fill: #ff7a3d;
+  stroke: #ffd0b8;
+  stroke-width: .9;
+  stroke-dasharray: 3 1.4;
+  filter: drop-shadow(0 0 2px rgba(255, 122, 61, .25));
+}
+
+.cr-pulse-access-span.private {
+  fill: #9a5cff;
+  stroke: #e0ccff;
+  stroke-width: .9;
+  stroke-dasharray: 1.4 1.1;
+  filter: drop-shadow(0 0 2px rgba(154, 92, 255, .32));
+}
+
+.cr-pulse-access-span.tipjar {
+  fill: #f1a72a;
+  stroke: #ffe1a6;
+  stroke-width: .9;
+  stroke-dasharray: 4 1.4;
+  filter: drop-shadow(0 0 2px rgba(241, 167, 42, .28));
+}
+
+.cr-pulse-access-span.restricted {
+  fill: #7d8794;
+  stroke: #e0e5eb;
+  stroke-width: .9;
+  stroke-dasharray: 1 1;
+}
+
+.cr-pulse-rec-span {
+  fill: #ff4f62;
+  stroke: #ffc0c7;
+  stroke-width: .95;
+  filter: drop-shadow(0 0 3px rgba(255, 79, 98, .30));
+}
+
+.cr-pulse-rec-span.remote {
+  fill: #32d583;
+  stroke: #bdf3d5;
+  stroke-width: .9;
+  filter: drop-shadow(0 0 2px rgba(50, 213, 131, .26));
+}
+
+.cr-pulse-rec-span.processing {
+  fill: #22c7ff;
+  stroke: #c1f2ff;
+  stroke-width: .9;
+  stroke-dasharray: 5 1.2;
+  filter: drop-shadow(0 0 3px rgba(34, 199, 255, .30));
+}
+
+.cr-pulse-missed-span {
+  fill: #ff4fc8;
+  stroke: #ffd0ee;
+  stroke-width: .95;
+  stroke-dasharray: 1.4 1.1;
+  filter: drop-shadow(0 0 3px rgba(255, 79, 200, .28));
+}
+
+.cr-pulse-live-marker {
+  stroke: #a9caff;
+  stroke-width: 1.45;
+  filter: drop-shadow(0 0 2px rgba(169, 202, 255, .28));
+}
+
+.cr-pulse-rec-marker {
+  stroke: #ffc1c8;
+  stroke-width: 1.45;
+  filter: drop-shadow(0 0 2px rgba(255, 193, 200, .28));
+}
+
+@media (max-width: 1180px) {
+  .cr-live-grid:has(> .cr-live-card:only-child) {
+    grid-template-columns: minmax(0, 1000px);
+  }
+  .cr-live-grid:has(> .cr-live-card:only-child) > .cr-live-card {
+    grid-template-columns: minmax(360px, 1.65fr) minmax(280px, 1fr);
+  }
+  .cr-live-grid:has(> .cr-live-card:only-child) > .cr-live-card > .cr-preview {
+    min-height: 300px;
+  }
+}
+
+@media (max-width: 820px) {
+  .cr-live-grid:has(> .cr-live-card:only-child) {
+    padding: 10px;
+  }
+  .cr-live-grid:has(> .cr-live-card:only-child) > .cr-live-card {
+    grid-template-columns: 1fr;
+  }
+  .cr-live-grid:has(> .cr-live-card:only-child) > .cr-live-card > .cr-preview {
+    min-height: 0;
+    aspect-ratio: 16 / 9;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .cr-live-grid:has(> .cr-live-card:only-child) > .cr-live-card > .cr-live-body {
+    padding: 18px;
+  }
+}
+
+@media (max-width: 560px) {
+  .cr-live-grid:has(> .cr-live-card:only-child) > .cr-live-card > .cr-live-body {
+    padding: 14px;
+  }
+  .cr-live-grid:has(> .cr-live-card:only-child) .cr-live-name {
+    font-size: 22px;
+  }
+}
