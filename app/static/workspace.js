@@ -18,6 +18,21 @@
     document.head.appendChild(tuning);
   }
 
+  if (!document.querySelector('link[data-pulse-axis]')) {
+    const pulseAxis = document.createElement('link');
+    pulseAxis.rel = 'stylesheet';
+    pulseAxis.href = '/static/pulse-axis.css?v=3.0.0-redesign4';
+    pulseAxis.dataset.pulseAxis = '1';
+    document.head.appendChild(pulseAxis);
+  }
+
+  window.addEventListener('load', () => {
+    if (document.querySelector('script[data-pulse-tuning]')) return;
+    const pulseScript = document.createElement('script');
+    pulseScript.src = '/static/pulse-tuning.js?v=3.0.0-redesign4';
+    pulseScript.dataset.pulseTuning = '1';
+    document.head.appendChild(pulseScript);
+  }, {once:true});
   const svg = name => `<svg class="mini-icon" aria-hidden="true"><use href="/static/icons.svg#${name}"></use></svg>`;
   const dialog = $('#commandDialog');
   const input = $('#commandSearch');
