@@ -25,6 +25,27 @@ _spec.loader.exec_module(_legacy)
 app = _legacy.app
 
 
+# The legacy Pulse endpoint intentionally clamps the query to 48 hours and the
+# response to 120 sessions. The product UI now exposes an explicit seven-day
+# history option, so extend those two constants on the already-registered route
+# without duplicating its database/query implementation.
+def _extend_pulse_history_window() -> None:
+    endpoint = getattr(_legacy, "control_room_pulse", None)
+    if endpoint is None:  # pragma: no cover
+        raise RuntimeError("Live Pulse endpoint not found")
+    constants = list(endpoint.__code__.co_consts)
+    replacements = {48: 168, 120: 1000}
+    for old, new in replacements.items():
+        matches = [index for index, value in enumerate(constants) if type(value) is int and value == old]
+        if len(matches) != 1:  # pragma: no cover - fail loudly if legacy code changes
+            raise RuntimeError(f"Unexpected Live Pulse constant layout for {old}")
+        constants[matches[0]] = new
+    endpoint.__code__ = endpoint.__code__.replace(co_consts=tuple(constants))
+
+
+_extend_pulse_history_window()
+
+
 def __getattr__(name: str) -> Any:
     return getattr(_legacy, name)
 
