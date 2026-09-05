@@ -62,7 +62,7 @@ def test_processing_routes_and_dashboard_controls_are_wired():
     main = (ROOT / "app/main/__init__.py").read_text(encoding="utf-8")
     settings = (ROOT / "app/settings_store.py").read_text(encoding="utf-8")
     workers_source = (ROOT / "app/workers/__init__.py").read_text(encoding="utf-8")
-    js = (ROOT / "app/static/attention-fix.js").read_text(encoding="utf-8")
+    js = (ROOT / "app/static/operations.js").read_text(encoding="utf-8")
 
     assert '@app.post("/api/sources/{source_id}/process-now")' in main
     assert '@app.patch("/api/session-processing/settings")' in main

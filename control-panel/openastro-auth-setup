@@ -1,0 +1,26 @@
+#!/bin/bash
+set -Eeuo pipefail
+
+auth_file=/etc/openastro-control-auth.json
+credential_file=/var/lib/openastro-control/credentials.txt
+
+if [[ -s "$auth_file" && "${1:-}" != "--force" ]]; then
+    echo "Autenticazione già configurata."
+    exit 0
+fi
+
+username=admin
+password=$(openssl rand -hex 12)
+salt=$(openssl rand -hex 16)
+digest=$(printf '%s:%s' "$salt" "$password" | sha256sum | awk '{print $1}')
+
+install -d -o astro -g astro -m 0750 /var/lib/openastro-control
+temporary=$(mktemp)
+printf '{"username":"%s","salt":"%s","hash":"%s"}\n' "$username" "$salt" "$digest" > "$temporary"
+install -o root -g astro -m 0640 "$temporary" "$auth_file"
+rm -f "$temporary"
+
+printf 'OpenAstro Control\nURL: https://openastro.tailf2871c.ts.net:8443/\nUsername: %s\nPassword: %s\n' "$username" "$password" > "$credential_file"
+chown astro:astro "$credential_file"
+chmod 0600 "$credential_file"
+echo "Credenziali create in $credential_file"

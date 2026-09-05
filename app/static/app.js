@@ -19,6 +19,7 @@ let lastStatisticsLoad = 0;
 let refreshBusy = false;
 let lastRecordingLoad = 0;
 let recordingsLoaded = false;
+let archiveLoadedLimit = 1000;
 let activeView = 'dashboard';
 let librarySmart = 'all';
 let libraryMode = localStorage.getItem('livevault-library-view') === 'list' ? 'list' : 'grid';
@@ -196,6 +197,7 @@ function toast(message, type = 'good') {
 async function api(url, options = {}) {
   const response = await fetch(url, {
     credentials: 'same-origin',
+    signal: AbortSignal.timeout(options.method && options.method !== 'GET' ? 180000 : 20000),
     ...options,
     headers: {'Content-Type': 'application/json', ...(options.headers || {})}
   });
@@ -379,10 +381,10 @@ function showView(name, updateHash = true) {
   if (updateHash) {
     const url = new URL(location.href);
     url.hash = activeView;
-    history.replaceState({}, '', url);
+    if (location.hash !== url.hash) history.pushState({}, '', url);
   }
   if (activeView === 'library') renderLibrary();
-  if (activeView === 'dashboard') renderSources();
+  if (activeView === 'dashboard') { renderSources(); loadControlRoomPulse().then(renderSources); }
   if (activeView !== 'dashboard') hidePulseMediaPreview();
   if (activeView === 'statistics') loadStatistics(statisticsDays).catch(error => toast(error.message, 'bad'));
   if (activeView === 'archive') {
@@ -411,7 +413,7 @@ function renderSources() {
   const root = $('#sources');
   $('#sourceCount').textContent = rows.length;
   if (!rows.length) {
-    root.innerHTML = '<div class="empty">Nessuna sorgente.</div>';
+    root.innerHTML = `<div class="empty">${sources.length ? 'Nessuna sorgente corrisponde ai filtri.' : 'La tua libreria inizia da qui. Aggiungi una sorgente per monitorare la prima live.'}</div>`;
     return;
   }
   root.innerHTML = rows.map(source => {
@@ -1057,7 +1059,8 @@ async function refresh({includeRecordings = false, deferDashboardRender = false}
     sources = sourceRows;
     libraryMeta = meta;
     if (recordingRows !== undefined) {
-      recordings = recordingRows;
+      const currentIds = new Set(recordingRows.map(row => row.id));
+      recordings = archiveLoadedLimit > 1000 ? [...recordingRows, ...recordings.filter(row => !currentIds.has(row.id))] : recordingRows;
       recordingsLoaded = true;
       lastRecordingLoad = Date.now();
     }
@@ -1071,11 +1074,14 @@ async function refresh({includeRecordings = false, deferDashboardRender = false}
     if (activeView === 'archive') renderRecordings();
     if (activeView === 'dashboard') renderLivePauseAlert();
     if (activeView === 'statistics' && Date.now() - lastStatisticsLoad > 30000) loadStatistics(statisticsDays).catch(() => {});
+    $('#connectionState').textContent = `Aggiornato ${new Date().toLocaleTimeString('it-IT', {hour:'2-digit',minute:'2-digit'})}`;
+    $('#connectionState').dataset.state = 'online';
     $('#lastRefresh').textContent = new Intl.DateTimeFormat('it-IT', {hour: '2-digit', minute: '2-digit'}).format(new Date());
   } catch (error) {
     if (error.message !== 'auth') {
       $('#lastRefresh').textContent = `Errore: ${error.message}`;
-      toast(`Aggiornamento fallito: ${error.message}`, 'bad');
+      $('#connectionState').textContent = 'Dati non aggiornati · nuovo tentativo automatico';
+      $('#connectionState').dataset.state = 'stale';
     }
   } finally {
     refreshBusy = false;
@@ -1145,7 +1151,7 @@ document.addEventListener('keydown', event => {
   if (open) closeModal(open.id);
 });
 
-window.addEventListener('hashchange', () => showView(location.hash.slice(1) || 'dashboard', false));
+window.addEventListener('hashchange', () => { const view = location.hash.slice(1) || 'dashboard'; if (['dashboard','library','archive','statistics'].includes(view)) showView(view, false); });
 
 $('#loginForm').addEventListener('submit', async event => {
   event.preventDefault();
@@ -1158,7 +1164,7 @@ $('#loginForm').addEventListener('submit', async event => {
     await loadProviders();
     const initialView = location.hash.slice(1) || (sourceFilterId ? 'archive' : 'dashboard');
     activeView = ['dashboard', 'library', 'archive', 'statistics'].includes(initialView) ? initialView : 'dashboard';
-    await refresh({includeRecordings: activeView === 'archive'});
+    await refresh();
     showView(activeView, false);
   } catch (error) {
     $('#loginError').textContent = error.message === 'auth' ? 'Accesso non valido' : error.message;
@@ -1577,8 +1583,6 @@ $('#profileContent').addEventListener('click', async event => {
   finally { setBusy(button, false); }
 });
 
-$('#recordingSearch').addEventListener('input', renderRecordings);
-$('#recordingStatus').addEventListener('change', renderRecordings);
 $('#clearSourceFilter').addEventListener('click', () => {
   sourceFilterId = 0;
   const url = new URL(location.href);
@@ -1684,7 +1688,7 @@ async function boot() {
     await loadProviders();
     const initialView = location.hash.slice(1) || (sourceFilterId ? 'archive' : 'dashboard');
     activeView = ['dashboard', 'library', 'archive', 'statistics'].includes(initialView) ? initialView : 'dashboard';
-    await refresh({includeRecordings: activeView === 'archive'});
+    await refresh();
     showView(activeView, false);
     if (sourceFilterId) setSourceFilter(sourceFilterId);
   } catch (error) {
@@ -1695,10 +1699,10 @@ async function boot() {
 
 boot();
 setInterval(() => {
-  if (!document.hidden && !app.classList.contains('hidden')) refresh({includeRecordings: activeView === 'archive'});
+  if (!document.hidden && !app.classList.contains('hidden')) refresh();
 }, 8000);
 document.addEventListener('visibilitychange', () => {
-  if (!document.hidden && !app.classList.contains('hidden')) refresh({includeRecordings: activeView === 'archive'});
+  if (!document.hidden && !app.classList.contains('hidden')) refresh();
 });
 if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
 
@@ -1853,10 +1857,16 @@ function renderControlRoomWall(profiles = controlRoomProfileRows()) {
 }
 
 const baseRenderSourcesV26 = renderSources;
+function dashboardProfileMatches(profile) {
+  const query = ($('#dashboardSearch')?.value || '').trim().toLocaleLowerCase('it');
+  const filter = $('#dashboardStatus')?.value || 'all';
+  const text = `${profile.display_name} ${profile.rows.map(source => source.name).join(' ')}`.toLocaleLowerCase('it');
+  return (!query || text.includes(query)) && (filter === 'all' || filter === 'live' && profile.live || filter === 'focus' && profile.focus || filter === 'attention' && (profile.blocked || profile.last_error));
+}
 renderSources = function renderSourcesControlRoom() {
   const root = $('#sources');
   if (!root) return baseRenderSourcesV26();
-  const profiles = controlRoomProfileRows();
+  const profiles = controlRoomProfileRows().filter(dashboardProfileMatches);
   const live = profiles.filter(profile => profile.live).sort((a, b) => controlRoomPriority(b) - controlRoomPriority(a) || timestamp(b.last_seen_live_at) - timestamp(a.last_seen_live_at) || a.display_name.localeCompare(b.display_name, 'it'));
   const offlineFocus = profiles.filter(profile => !profile.live && profile.focus).sort((a, b) => timestamp(b.last_seen_live_at) - timestamp(a.last_seen_live_at) || a.display_name.localeCompare(b.display_name, 'it'));
   const offline = profiles.filter(profile => !profile.live && !profile.focus).sort((a, b) => Number(!!b.last_error) - Number(!!a.last_error) || timestamp(b.last_seen_live_at) - timestamp(a.last_seen_live_at) || a.display_name.localeCompare(b.display_name, 'it'));
@@ -1869,11 +1879,11 @@ renderSources = function renderSourcesControlRoom() {
   if (panelHead) {
     const title = panelHead.querySelector('h2');
     const note = panelHead.querySelector('p');
-    if (title) title.textContent = 'Control Room';
+    if (title) title.textContent = 'Le tue sorgenti';
     if (note) note.remove();
   }
   if (!profiles.length) {
-    root.innerHTML = '<div class="empty">Nessuna sorgente.</div>';
+    root.innerHTML = `<div class="empty">${sources.length ? 'Nessuna sorgente corrisponde ai filtri.' : 'La tua libreria inizia da qui. Aggiungi una sorgente per monitorare la prima live.'}</div>`;
     renderControlRoomWall([]);
     return;
   }
@@ -2161,7 +2171,8 @@ function pulseMissingIntervals(start, end, intervals) {
 }
 
 function controlRoomPulseMarkup() {
-  const sessions = pulseSessions();
+  const visibleIds = new Set(controlRoomProfileRows().filter(dashboardProfileMatches).map(profile => Number(profile.profile_id)));
+  const sessions = pulseSessions().filter(session => visibleIds.has(Number(session.profile_id)));
   const compact = window.matchMedia('(max-width: 620px)').matches;
   const hours = Math.max(1, Number(controlRoomPulseData.hours) || 12);
   const generatedAt = timestamp(controlRoomPulseData.generated_at) || Date.now();
@@ -2279,7 +2290,8 @@ renderSources = function renderSourcesV280() {
   const toolbar = root.querySelector('.cr-toolbar');
   if (toolbar && !root.querySelector('.cr-pulse')) toolbar.insertAdjacentHTML('afterend', controlRoomPulseMarkup());
   const profiles = controlRoomProfileRows();
-  const recent = controlRoomRecentEnded(profiles);
+  const visibleIds = new Set(profiles.filter(dashboardProfileMatches).map(profile => Number(profile.profile_id)));
+  const recent = controlRoomRecentEnded(profiles).filter(session => visibleIds.has(Number(session.profile_id)));
   const liveSection = root.querySelector('.cr-live-section');
   if (liveSection && recent.length && !root.querySelector('.cr-recent-section')) {
     liveSection.insertAdjacentHTML('afterend', `<section class="cr-recent-section"><div class="cr-section-head"><h3>Appena terminate</h3><span class="count">${recent.length}</span></div><div class="cr-ended-list">${recent.map(controlRoomEndedCard).join('')}</div></section>`);
@@ -2323,6 +2335,18 @@ function ensureArchiveIntelControls() {
   const host = document.createElement('div');
   host.id = 'archiveIntelControls';
   host.className = 'archive-intel-controls';
+  const toggle = document.createElement('button');
+  toggle.type = 'button';
+  toggle.className = 'btn soft archive-filter-toggle';
+  toggle.textContent = 'Filtri avanzati';
+  toggle.setAttribute('aria-controls', host.id);
+  toggle.setAttribute('aria-expanded', 'false');
+  toggle.addEventListener('click', () => {
+    const expanded = toggle.getAttribute('aria-expanded') !== 'true';
+    toggle.setAttribute('aria-expanded', String(expanded));
+    host.classList.toggle('expanded', expanded);
+  });
+  toolbar.append(toggle);
   host.innerHTML = `<label><span>Periodo</span><select id="archivePeriod"><option value="all">Tutto</option><option value="today">Oggi</option><option value="7">7 giorni</option><option value="30">30 giorni</option><option value="90">90 giorni</option></select></label>
     <label><span>Creator</span><select id="archiveCreator"><option value="all">Tutte</option></select></label>
     <label><span>Provider</span><select id="archiveProvider"><option value="all">Tutti</option></select></label>
@@ -2491,7 +2515,9 @@ renderRecordings = function renderRecordingsV280() {
     more.textContent = `Mostra altri ${Math.min(10, groups.length - archiveGroupLimit)}`;
     root.append(more);
   }
-  $('#recordingFooter').textContent = `${visible.length} file · ${groups.length} gruppi · ${recordings.length} totali`;
+  const total = Number(statusData?.history?.recordings ?? recordings.length);
+  $('#recordingFooter').textContent = `${visible.length} file nei filtri · ${groups.length} gruppi · ${recordings.length} caricati. Ricerca ed esportazione usano i file caricati.`;
+  $('#loadOlderRecordings').hidden = recordings.length < archiveLoadedLimit || total > 0 && total <= recordings.length;
 };
 
 for (const control of ['#recordingSearch', '#recordingStatus']) {
@@ -2506,6 +2532,7 @@ $('#recordings')?.addEventListener('click', event => {
 
 const refreshV271 = refresh;
 refresh = async function refreshV280(options = {}) {
+  if (refreshBusy) return;
   const shouldLoadPulse = activeView === 'dashboard' && !document.hidden && !app.classList.contains('hidden');
   const pulsePromise = shouldLoadPulse ? loadControlRoomPulse() : Promise.resolve(controlRoomPulseData);
   await refreshV271({...options, deferDashboardRender: shouldLoadPulse});

@@ -86,6 +86,6 @@ def test_flashphoner_ffmpeg_is_stream_copy_only():
 
 
 def test_package_entrypoint_shadows_old_module_but_reexports_mouflon_helpers():
-    assert stripchat_capture.__file__.endswith("app/stripchat_capture/__init__.py")
+    assert stripchat_capture.__file__.replace("\\", "/").endswith("app/stripchat_capture/__init__.py")
     assert callable(stripchat_capture.decode_v1_name)
     assert callable(stripchat_capture.decode_v2_url)

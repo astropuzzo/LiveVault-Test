@@ -11,7 +11,7 @@ def pulse_function(js: str) -> str:
 
 def test_live_pulse_is_csp_safe_and_shows_live_and_recording_geometry():
     js = (ROOT / 'app/static/app.js').read_text(encoding='utf-8')
-    css = (ROOT / 'app/static/enhancements.css').read_text(encoding='utf-8')
+    css = (ROOT / 'app/static/style.css').read_text(encoding='utf-8')
     main = (ROOT / 'app/main.py').read_text(encoding='utf-8')
     pulse = pulse_function(js)
 
@@ -43,7 +43,7 @@ def test_live_pulse_is_csp_safe_and_shows_live_and_recording_geometry():
     assert '.cr-pulse-missed-span' in css
     assert "Intl.DateTimeFormat().resolvedOptions().timeZone" in js
     assert "const DISPLAY_TIME_ZONE_LABEL = 'ora locale'" not in js
-    assert 'truthful pulse colors and mobile control room' in css
+    assert '.cr-pulse-rec-span{fill:#087f73' in css
     assert '.cr-pulse-rec-span{fill:' in css
 
     assert "style-src 'self'" in main

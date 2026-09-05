@@ -1,4 +1,4 @@
-/* LiveVault attention navigation hotfix
+/* LiveVault processing and attention workflows
  * Makes Dashboard "Controlla errori" open the exact recordings that need attention
  * and makes those records visually unmistakable in the Archive.
  */

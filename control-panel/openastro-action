@@ -1,0 +1,62 @@
+#!/bin/bash
+set -Eeuo pipefail
+
+action=${1:-}
+log=/var/log/openastro-control-actions.log
+timestamp=$(date --iso-8601=seconds)
+
+record() {
+    printf '%s | %s | %s\n' "$timestamp" "$action" "$1" >> "$log"
+}
+
+case "$action" in
+    eject_nvme)
+        record started
+        /usr/local/sbin/livevault-storage-eject
+        record completed
+        ;;
+    attach_nvme)
+        record started
+        /usr/local/sbin/livevault-storage-attach
+        record completed
+        ;;
+    restart_livevault)
+        container=$(docker ps -a --filter name=ahul2vdjkyvjiwgzpcrmxzfe --format '{{.ID}}' | head -n1)
+        [[ -n "$container" ]] || { record not-found; echo "Container LiveVault non trovato."; exit 1; }
+        docker restart --time 120 "$container" >/dev/null
+        record completed
+        echo "LiveVault riavviato."
+        ;;
+    restart_docker)
+        systemctl restart docker.service
+        record completed
+        echo "Docker e container riavviati."
+        ;;
+    backup_now)
+        systemctl start livevault-backup.service
+        record completed
+        echo "Backup completato."
+        ;;
+    restart_pihole)
+        systemctl restart pihole-FTL.service
+        record completed
+        echo "Pi-hole riavviato."
+        ;;
+    power_profile)
+        profile=${2:-}
+        wifi=${3:-}
+        case "$profile" in eco|balanced|performance|max) ;; *) echo "Profilo energetico non consentito." >&2; exit 2 ;; esac
+        case "$wifi" in on|off) ;; *) echo "Opzione Wi-Fi non consentita." >&2; exit 2 ;; esac
+        systemd-run --quiet --wait --collect --pipe --unit="openastro-power-apply-$(date +%s)" /usr/local/sbin/openastro-power-profile "$profile" "$wifi"
+        record "$profile/$wifi"
+        ;;
+    reboot)
+        record scheduled
+        systemd-run --quiet --unit=openastro-control-reboot --on-active=3s /usr/bin/systemctl reboot
+        echo "Riavvio programmato tra 3 secondi."
+        ;;
+    *)
+        echo "Azione non consentita." >&2
+        exit 2
+        ;;
+esac

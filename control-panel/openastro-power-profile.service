@@ -1,0 +1,12 @@
+[Unit]
+Description=Restore OpenAstro performance and energy profile
+After=network-online.target NetworkManager.service tailscaled.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/openastro-power-profile --restore
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

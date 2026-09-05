@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#112e32">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="OpenAstro">
+  <title>OpenAstro Control</title>
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/icon.svg">
+  <link rel="stylesheet" href="/app.css?v=3.0.0">
+</head>
+<body>
+  <div class="noise"></div>
+  <header class="topbar">
+    <div class="brand">
+      <div class="mark" aria-hidden="true"><span></span></div>
+      <div><strong>OPENASTRO</strong><small>Il tuo server personale</small></div>
+    </div>
+    <div class="top-actions"><button class="nav-eject" data-action="eject_nvme" data-confirm="Tieni premuto per espellere in sicurezza"><i></i><span>Espelli NVMe</span></button><div class="connection"><i id="connectionDot"></i><span id="connectionText">Connessione…</span></div><button id="logoutButton" class="logout" title="Esci">Esci dal pannello</button></div>
+  </header>
+
+  <main>
+<section class="hero" id="overview">
+      <div>
+        <p class="eyebrow">PANORAMICA DEL NODO</p>
+        <h1 id="heroTitle">Controllo del nodo</h1>
+        <p id="heroSubtitle">Caricamento telemetria in corso.</p>
+      </div>
+      <div class="hero-meta">
+        <span id="hostName">openastro</span>
+        <span id="uptime">—</span>
+        <span id="lastUpdate">—</span>
+      </div>
+    </section>
+
+    <section class="metrics-grid" aria-label="Risorse del server">
+      <article class="metric-card">
+        <div class="ring" id="cpuRing"><span id="cpuValue">—</span></div>
+        <div><p>CPU</p><strong id="loadValue">—</strong><small id="coreValue">—</small></div>
+      </article>
+      <article class="metric-card">
+        <div class="ring" id="ramRing"><span id="ramValue">—</span></div>
+        <div><p>MEMORIA</p><strong id="ramUsed">—</strong><small id="ramTotal">—</small></div>
+      </article>
+      <article class="metric-card">
+        <div class="ring temp" id="tempRing"><span id="tempValue">—</span></div>
+        <div><p>TEMPERATURA</p><strong id="tempState">—</strong><small>Compute Module</small></div>
+      </article>
+      <article class="metric-card">
+        <div class="ring" id="diskRing"><span id="diskValue">—</span></div>
+        <div><p>NVME SERVER</p><strong id="diskFree">—</strong><small id="diskTotal">—</small></div>
+      </article>
+      <article class="metric-card network-card">
+        <div class="ring" id="networkRing"><span>NET</span></div>
+        <div><p>RETE LIVE</p><strong id="networkDown">↓ —</strong><small id="networkUp">↑ —</small></div>
+      </article>
+      <article class="metric-card watt-card">
+        <div class="ring power-ring" id="wattRing"><span>—</span></div>
+        <div><p>CONSUMO</p><strong id="wattValue">—</strong><small id="wattDaily">stima software</small></div>
+      </article>
+    </section>
+
+    <section class="command-deck" aria-label="Comandi rapidi">
+      <div class="command-intro"><p class="eyebrow">QUICK COMMAND</p><strong>Controlli immediati</strong><small>Sempre disponibili, protetti dalla pressione prolungata.</small></div>
+      <button class="command-tile nvme-command" data-action="eject_nvme" data-confirm="Tieni premuto per espellere in sicurezza"><span class="command-icon"><i></i></span><span><small>ARCHIVIO FISICO</small><strong id="quickNvmeTitle">Espelli NVMe</strong><em id="quickNvmeState">Smontaggio sicuro</em></span><b>→</b></button>
+      <button class="command-tile wifi-command" id="quickWifi"><span class="command-icon"><i></i><i></i><i></i></span><span><small>CONNETTIVITÀ</small><strong id="quickWifiTitle">Spegni Wi-Fi</strong><em id="quickWifiState">Hotspot attivo</em></span><b>→</b></button>
+    </section>
+
+        <section class="panel telemetry-panel" id="telemetry">
+      <div class="panel-head telemetry-head">
+        <div><p class="eyebrow">TELEMETRIA</p><h2>Andamento risorse</h2></div>
+        <div class="range-switch" role="group" aria-label="Intervallo grafici">
+          <button data-range="3600" class="active" aria-pressed="true">1H</button><button data-range="21600" aria-pressed="false">6H</button><button data-range="86400" aria-pressed="false">24H</button>
+        </div>
+      </div>
+      <div class="chart-grid">
+        <article class="chart-card chart-wide">
+          <header><div><span class="chart-kicker">COMPUTE</span><strong>CPU + memoria</strong></div><div class="legend"><i class="cpu"></i>CPU <i class="ram"></i>RAM</div></header>
+          <div class="chart-host" id="computeChart"><span class="chart-empty">Raccolta dati reali…</span></div>
+          <footer><span id="cpuAverage">CPU media —</span><span id="ramAverage">RAM media —</span></footer>
+        </article>
+        <article class="chart-card">
+          <header><div><span class="chart-kicker">THERMAL</span><strong>Temperatura</strong></div><b id="tempPeak">—</b></header>
+          <div class="chart-host" id="temperatureChart"><span class="chart-empty">Raccolta dati…</span></div>
+          <footer><span>°C</span><span id="tempAverage">media —</span></footer>
+        </article>
+        <article class="chart-card">
+          <header><div><span class="chart-kicker">TRAFFIC</span><strong>Rete</strong></div><b id="networkPeak">—</b></header>
+          <div class="chart-host" id="networkChart"><span class="chart-empty">Raccolta dati…</span></div>
+          <footer><span>↓ download</span><span>↑ upload</span></footer>
+        </article>
+        <article class="chart-card">
+          <header><div><span class="chart-kicker">CAPACITY</span><strong>Disco NVMe</strong></div><b id="diskTrend">—</b></header>
+          <div class="chart-host" id="diskChart"><span class="chart-empty">Raccolta dati…</span></div>
+          <footer><span>% utilizzato</span><span id="diskDelta">variazione —</span></footer>
+        </article>
+        <article class="chart-card">
+          <header><div><span class="chart-kicker">ENERGY ESTIMATE</span><strong>Potenza assorbita</strong></div><b id="wattPeak">—</b></header>
+          <div class="chart-host" id="wattChart"><span class="chart-empty">Raccolta dati…</span></div>
+          <footer><span>W stimati</span><span id="wattAverage">media —</span></footer>
+        </article>
+      </div>
+      <footer class="telemetry-footer"><p id="historyStatus" role="status">Caricamento dello storico…</p><div><button id="refreshAll" type="button">Aggiorna</button> <button id="exportMetrics" type="button">Esporta CSV</button></div></footer>
+    </section>
+
+    <section class="panel power-panel" id="power">
+      <div class="panel-head">
+        <div><p class="eyebrow">CPU E CONNETTIVITÀ</p><h2>Profilo energetico</h2></div>
+        <span class="profile-chip" id="currentProfile">—</span>
+      </div>
+      <div class="power-stage">
+        <div class="power-copy"><span id="profileIndex">01 / 04</span><h3 id="profileName">Bilanciato</h3><p id="profileDescription">Prestazioni elastiche per l’uso quotidiano.</p></div>
+        <div class="power-orbit" aria-hidden="true"><i></i><i></i><b id="powerGlyph">B</b></div>
+      </div>
+      <div class="profile-slider">
+        <input id="powerSlider" type="range" min="0" max="3" step="1" value="1" aria-label="Profilo energetico da ECO a MAX">
+        <div class="profile-labels"><span>ECO</span><span>BALANCE</span><span>PERFORMANCE</span><span>MAX</span></div>
+      </div>
+      <div class="power-facts">
+        <div><span>GOVERNOR</span><strong id="powerGovernor">—</strong></div>
+        <div><span>FREQUENZA</span><strong id="powerFrequency">—</strong></div>
+        <div><span>HOTSPOT</span><strong id="powerWifi">—</strong></div>
+        <div><span>ALIMENTAZIONE</span><strong id="powerHealth">—</strong></div>
+        <div><span>ASSORBIMENTO</span><strong id="powerWatts">—</strong></div>
+      </div>
+      <div class="power-controls">
+        <label class="wifi-toggle"><input type="checkbox" id="wifiKeep" checked><span></span><div><strong>Hotspot Wi-Fi indipendente</strong><small id="wifiHint">Puoi attivarlo o spegnerlo con qualsiasi profilo.</small></div></label>
+        <button class="button power-apply" id="applyPower">Applica profilo</button>
+      </div>
+      <p class="power-safety">MAX usa il limite ufficiale di 1,5 GHz: nessun overclock. NVMe e registrazioni non vengono mai sospesi.</p>
+    </section>
+
+    <section class="panel storage-panel" id="storage">
+      <div class="panel-head">
+        <div><p class="eyebrow">ARCHIVIAZIONE</p><h2>NVMe duale</h2></div>
+        <span class="status-chip" id="storageChip">Verifica…</span>
+      </div>
+      <div class="storage-map">
+        <div class="drive-visual"><i></i><span>WDS 500</span><small>USB 3 / UAS</small></div>
+        <div class="partition"><span>SERVER · EXT4</span><strong id="dataUsage">—</strong><div class="bar"><i id="dataBar"></i></div></div>
+        <div class="partition"><span>USB SHARE · EXFAT</span><strong id="shareUsage">—</strong><div class="bar"><i id="shareBar"></i></div></div>
+      </div>
+      <div class="storage-note" id="storageNote">Prima di rimuovere il disco, usa sempre Espelli NVMe.</div>
+      <div class="action-row">
+        <button class="button danger" data-action="eject_nvme" data-confirm="Tieni premuto per espellere in sicurezza">Espelli NVMe</button>
+        <button class="button" data-action="attach_nvme" data-confirm="Tieni premuto per rimontare il disco">Rimonta</button>
+        <button class="button secondary" data-action="backup_now">Backup ora</button>
+      </div>
+    </section>
+
+    <section class="panel" id="services">
+      <div class="panel-head"><div><p class="eyebrow">OPERATIVITÀ</p><h2>Servizi</h2></div><span id="serviceCount">—</span></div>
+      <div class="service-grid" id="serviceGrid"></div>
+      <div class="action-row compact">
+        <button class="button secondary" data-action="restart_livevault" data-confirm="Tieni premuto per riavviare LiveVault">Riavvia LiveVault</button>
+        <button class="button secondary" data-action="restart_docker" data-confirm="Tieni premuto per riavviare Docker e tutti i container">Riavvia Docker</button>
+      </div>
+    </section>
+
+    <section class="panel" id="interfaces">
+      <div class="panel-head"><div><p class="eyebrow">WORKSPACE</p><h2>Interfacce</h2></div></div>
+      <div class="link-grid" id="interfaceGrid"></div>
+    </section>
+
+    <section class="panel" id="containers">
+      <div class="panel-head"><div><p class="eyebrow">RUNTIME</p><h2>Container</h2></div><span id="containerCount">—</span></div>
+      <div class="container-list" id="containerList"></div>
+    </section>
+
+    <section class="panel" id="activity">
+      <div class="panel-head"><div><p class="eyebrow">REGISTRO OPERAZIONI</p><h2>Attività recenti</h2></div></div>
+      <div class="timeline" id="actionLog"><p class="muted">Nessuna azione manuale registrata.</p></div>
+      <div class="danger-zone">
+        <div><strong>Riavvio del server</strong><small>LiveVault tornerà online automaticamente.</small></div>
+        <button class="button ghost-danger" data-action="reboot" data-confirm="Tieni premuto per riavviare ASIAIR">Riavvia ASIAIR</button>
+      </div>
+    </section>
+  </main>
+
+  <nav class="bottom-nav" aria-label="Navigazione">
+    <a href="#overview" class="active">Stato</a>
+    <a href="#telemetry">Trend</a>
+    <a href="#power">Energia</a>
+    <a href="#storage">NVMe</a>
+    <a href="#services">Servizi</a><a class="external" href="https://openastro.tailf2871c.ts.net/">LiveVault ↗</a>
+  </nav>
+
+  <dialog id="confirmDialog">
+    <div class="dialog-icon">!</div>
+    <h3 id="dialogTitle">Conferma azione</h3>
+    <p id="dialogText"></p>
+    <div class="dialog-actions">
+      <button class="button secondary" id="cancelAction">Annulla</button>
+      <button class="button hold" id="holdAction"><i></i><span>Tieni premuto 2 secondi</span></button>
+    </div>
+  </dialog>
+
+  <div class="toast" id="toast" role="status"></div>
+  <div class="login-gate" id="loginGate" hidden>
+    <form class="login-card" id="loginForm">
+      <div class="login-brand"><div class="mark"><span></span></div><small>IL TUO NODO PERSONALE</small></div>
+      <p class="eyebrow">OPENASTRO CONTROL</p>
+      <h1>Accesso al nodo.</h1>
+      <p>Connessione cifrata. Inserisci le credenziali del pannello.</p>
+      <label>UTENTE<input id="loginUsername" name="username" autocomplete="username" value="admin" required></label>
+      <label>PASSWORD<input id="loginPassword" name="password" type="password" autocomplete="current-password" required></label>
+      <button class="button login-submit" type="submit">Entra nel pannello <span>→</span></button>
+      <div class="login-error" id="loginError" role="alert"></div>
+    </form>
+  </div>
+  <script src="/app.js?v=3.0.0" defer></script>
+</body>
+</html>

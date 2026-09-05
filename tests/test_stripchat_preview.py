@@ -1,4 +1,5 @@
 from pathlib import Path
+import pytest
 
 from app.stripchat_preview import newest_preview_source, preview_paths_from_argv
 
@@ -21,7 +22,12 @@ def test_stripchat_preview_uses_growing_mouflon_capture(tmp_path):
     raw = tmp_path / "example_part001.capture.mp4"
     raw.write_bytes(b"growing-fragmented-mp4")
     active = tmp_path / ".active-preview.mp4"
-    active.symlink_to(raw.name)
+    try:
+        active.symlink_to(raw.name)
+    except OSError as exc:
+        if getattr(exc, "winerror", None) == 1314:
+            pytest.skip("Windows symlink privilege unavailable; covered by Linux CI")
+        raise
 
     selected = newest_preview_source(str(tmp_path / "example_part%03d.mp4"))
 

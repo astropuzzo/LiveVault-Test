@@ -1,0 +1,57 @@
+#!/bin/bash
+set -Eeuo pipefail
+
+config=/etc/openastro-power-profile
+
+if [[ "${1:-}" == "--restore" ]]; then
+    if [[ -r "$config" ]]; then
+        read -r profile wifi < "$config"
+    else
+        profile=balanced
+        wifi=on
+    fi
+else
+    profile=${1:-}
+    wifi=${2:-}
+fi
+
+case "$profile" in
+    eco) governor=powersave; requested_min=600000; requested_max=900000 ;;
+    balanced) governor=schedutil; requested_min=600000; requested_max=1200000 ;;
+    performance) governor=schedutil; requested_min=900000; requested_max=1500000 ;;
+    max) governor=performance; requested_min=1500000; requested_max=1500000 ;;
+    *) echo "Profilo non valido." >&2; exit 2 ;;
+esac
+[[ "$wifi" == "on" || "$wifi" == "off" ]] || { echo "Opzione Wi-Fi non valida." >&2; exit 2; }
+if [[ "$wifi" == "off" ]]; then
+    ip route show default | grep -q ' dev eth0 ' || { echo "ECO Wi-Fi OFF rifiutato: Ethernet non è la route principale." >&2; exit 3; }
+    systemctl is-active --quiet tailscaled.service || { echo "ECO Wi-Fi OFF rifiutato: Tailscale non è attivo." >&2; exit 3; }
+fi
+
+for policy in /sys/devices/system/cpu/cpufreq/policy*; do
+    [[ -d "$policy" ]] || continue
+    hardware_min=$(<"$policy/cpuinfo_min_freq")
+    hardware_max=$(<"$policy/cpuinfo_max_freq")
+    target_max=$requested_max
+    (( target_max > hardware_max )) && target_max=$hardware_max
+    (( target_max < hardware_min )) && target_max=$hardware_min
+    target_min=$requested_min
+    (( target_min < hardware_min )) && target_min=$hardware_min
+    (( target_min > target_max )) && target_min=$target_max
+    printf '%s\n' "$hardware_min" > "$policy/scaling_min_freq"
+    printf '%s\n' "$target_max" > "$policy/scaling_max_freq"
+    printf '%s\n' "$target_min" > "$policy/scaling_min_freq"
+    printf '%s\n' "$governor" > "$policy/scaling_governor"
+done
+
+if [[ "$wifi" == "off" ]]; then
+    nmcli radio wifi off
+else
+    nmcli radio wifi on
+    sleep 1
+    nmcli -t -f NAME connection show | grep -qx 'OpenAstro-AP' && nmcli connection up OpenAstro-AP >/dev/null 2>&1 || true
+fi
+
+printf '%s %s\n' "$profile" "$wifi" > "$config"
+chmod 0644 "$config"
+echo "Profilo $profile applicato · CPU max $((requested_max / 1000)) MHz · Wi-Fi $wifi"

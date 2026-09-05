@@ -3,16 +3,15 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#0c0e10">
-  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#112e32">
+  <meta name="color-scheme" content="light">
   <title>LiveVault</title>
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" href="/static/icon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/static/style.css">
-  <link rel="stylesheet" href="/static/enhancements.css">
-  <link rel="stylesheet" href="/static/attention-fix.css">
 </head>
 <body>
+  <a class="skip-link" href="#mainContent">Vai al contenuto</a>
   <section id="login" class="login-shell hidden">
     <form id="loginForm" class="login-card panel">
       <div class="logo">LV</div>
@@ -31,24 +30,35 @@
           <div><strong>LiveVault</strong><small id="versionLabel">v2</small></div>
         </a>
         <nav class="main-nav" aria-label="Sezioni principali">
-          <button class="nav-link active" type="button" data-view="dashboard" aria-current="page">Dashboard</button>
-          <button class="nav-link" type="button" data-view="library">Libreria</button>
-          <button class="nav-link" type="button" data-view="archive">Archivio</button>
-          <button class="nav-link" type="button" data-view="statistics">Statistiche</button>
+          <button class="nav-link active" type="button" data-view="dashboard" aria-current="page"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3h7v7H3z M14 3h7v7h-7z M3 14h7v7H3z M14 14h7v7h-7z"/></svg>Dashboard</button>
+          <button class="nav-link" type="button" data-view="library"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h5v16H4z M11 4h4v16h-4z M17 5l3-1 4 15-3 1z"/></svg>Libreria</button>
+          <button class="nav-link" type="button" data-view="archive"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4h18v4H3z M5 8v12h14V8 M10 12h4"/></svg>Archivio</button>
+          <button class="nav-link" type="button" data-view="statistics"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10 M12 20V4 M20 20V7"/></svg>Statistiche</button>
         </nav>
         <div class="top-actions">
           <button id="healthPill" class="status-alert hidden" type="button" aria-label="Problemi di sistema"></button>
+          <a class="node-link" href="https://openastro.tailf2871c.ts.net:8443/">OpenAstro Control ↗</a>
           <button id="settingsBtn" class="btn quiet" type="button">Impostazioni</button>
           <button id="logoutBtn" class="btn quiet" type="button">Esci</button>
         </div>
       </div>
     </header>
 
-    <main class="shell">
+    <main class="shell" id="mainContent" tabindex="-1">
+      <div class="workspace-bar"><span>OPENASTRO <i>/</i> LIVEVAULT</span><div><span id="connectionState" class="connection-state" role="status">Connessione…</span><button id="commandButton" class="search-trigger" type="button">Cerca nel workspace <kbd>Ctrl K</kbd></button></div></div>
       <div id="dashboardView" class="view-section" data-page="dashboard">
         <section class="page-head dashboard-head">
-          <div><h1>Panoramica</h1><time id="lastRefresh">—</time></div>
+          <div><p class="eyebrow">IL TUO STUDIO, SEMPRE ATTIVO</p><h1>Ogni live, al suo posto.</h1><p class="page-description">Segui le sorgenti. Ritrova ogni registrazione.</p></div><time id="lastRefresh" class="sr-only">—</time>
           <button id="showAddBtn" class="btn primary" type="button">Aggiungi sorgente</button>
+        </section>
+
+        <section class="dashboard-metrics" aria-label="Dati principali">
+          <article id="metricActive" class="metric-card panel" data-tone="neutral"><header><span>IN REGISTRAZIONE</span><i>REC</i></header><strong id="activeCount">0</strong><small id="activeNames">—</small></article>
+          <article id="metricQueue" class="metric-card panel" data-tone="good"><header><span>CODA</span><i>UPLOAD</i></header><strong id="queueCount">0</strong><small id="queueNote">—</small><button class="metric-link" type="button" data-archive-shortcut="pending">Apri archivio <span aria-hidden="true">↗</span></button></article>
+          <article id="metricHistory" class="metric-card panel" data-tone="info"><header><span>ARCHIVIO</span><i>FILE</i></header><strong id="historyCount">0</strong><small id="historyNote">—</small><button class="metric-link" type="button" data-archive-shortcut="all">Apri archivio <span aria-hidden="true">↗</span></button></article>
+          <article id="metricCloud" class="metric-card panel" data-tone="good"><header><span>CLOUD</span><i>OK</i></header><strong id="cloudCount">0</strong><small id="cloudNote">—</small><button class="metric-link" type="button" data-archive-shortcut="uploaded">Apri archivio <span aria-hidden="true">↗</span></button></article>
+          <article id="metricBuffer" class="metric-card panel" data-tone="neutral"><header><span>BUFFER LOCALE</span><i>SERVER</i></header><strong id="bufferValue">—</strong><small id="bufferNote">—</small><div class="meter"><i id="bufferBar"></i></div></article>
+          <article id="metricDisk" class="metric-card panel" data-tone="neutral"><header><span>NVME LIBERO</span><i>DISCO</i></header><strong id="freeSpace">—</strong><small id="diskUsage">—</small><div class="meter"><i id="diskBar"></i></div></article>
         </section>
 
         <section class="dashboard-commandbar" aria-label="Stato e automazioni">
@@ -66,17 +76,10 @@
 
         <section class="panel section dashboard-sources">
           <div class="section-head"><div><h2>Attività</h2></div><span id="sourceCount" class="count">0</span></div>
-          <div id="sources" class="source-list"></div>
+          <div class="dashboard-filters"><label class="search-field"><span class="sr-only">Cerca sorgenti</span><input id="dashboardSearch" type="search" placeholder="Cerca una creator…"></label><label><span class="sr-only">Filtra sorgenti</span><select id="dashboardStatus"><option value="all">Tutte le sorgenti</option><option value="live">Live ora</option><option value="focus">In Focus</option><option value="attention">Da controllare</option></select></label></div><div id="sources" class="source-list"></div>
         </section>
 
-        <section class="dashboard-metrics" aria-label="Dati principali">
-          <article id="metricActive" class="metric-card panel" data-tone="neutral"><header><span>IN REGISTRAZIONE</span><i>REC</i></header><strong id="activeCount">0</strong><small id="activeNames">—</small></article>
-          <article id="metricQueue" class="metric-card panel" data-tone="good"><header><span>CODA</span><i>UPLOAD</i></header><strong id="queueCount">0</strong><small id="queueNote">—</small></article>
-          <article id="metricHistory" class="metric-card panel" data-tone="info"><header><span>ARCHIVIO</span><i>FILE</i></header><strong id="historyCount">0</strong><small id="historyNote">—</small></article>
-          <article id="metricCloud" class="metric-card panel" data-tone="good"><header><span>CLOUD</span><i>OK</i></header><strong id="cloudCount">0</strong><small id="cloudNote">—</small></article>
-          <article id="metricBuffer" class="metric-card panel" data-tone="neutral"><header><span>BUFFER LOCALE</span><i>SERVER</i></header><strong id="bufferValue">—</strong><small id="bufferNote">—</small><div class="meter"><i id="bufferBar"></i></div></article>
-          <article id="metricDisk" class="metric-card panel" data-tone="neutral"><header><span>NVME LIBERO</span><i>DISCO</i></header><strong id="freeSpace">—</strong><small id="diskUsage">—</small><div class="meter"><i id="diskBar"></i></div></article>
-        </section>
+
 
         <section id="errorsPanel" class="panel section hidden">
           <div class="section-head"><div><h2>Errori recenti</h2></div><div class="diagnostic-actions"><button id="retryRecoveryBtn" class="btn soft" type="button">Recupera file</button><button id="clearErrorsBtn" class="btn quiet" type="button">Pulisci avvisi</button><span id="diagnosticCount" class="count danger">0</span></div></div>
@@ -86,7 +89,7 @@
 
       <div id="libraryView" class="view-section hidden" data-page="library">
         <section class="page-head">
-          <div><h1>Libreria</h1></div>
+          <div><p class="eyebrow">LE TUE SORGENTI</p><h1>Libreria</h1><p class="page-description">Profili, preferiti e raccolte in un unico spazio.</p></div>
           <div class="page-actions"><button id="manageLibraryBtn" class="btn soft" type="button">Categorie e raccolte</button><button id="libraryAddBtn" class="btn primary" type="button">Aggiungi sorgente</button></div>
         </section>
 
@@ -160,7 +163,7 @@
 
       <div id="statisticsView" class="view-section hidden" data-page="statistics">
         <section class="page-head">
-          <div><h1>Statistiche</h1></div>
+          <div><p class="eyebrow">ATTIVITÀ NEL TEMPO</p><h1>Statistiche</h1><p class="page-description">Tempi online, registrazioni e copertura effettiva.</p></div>
           <label class="stats-range"><span>Periodo</span><select id="statisticsRange"><option value="7">7 giorni</option><option value="30" selected>30 giorni</option><option value="90">90 giorni</option><option value="365">365 giorni</option></select></label>
         </section>
         <section id="statisticsSummary" class="stats-summary-grid"></section>
@@ -177,7 +180,7 @@
 
       <div id="archiveView" class="view-section hidden" data-page="archive">
         <section class="page-head">
-          <div><h1>Archivio</h1></div>
+          <div><p class="eyebrow">LA TUA COLLEZIONE</p><h1>Archivio</h1><p class="page-description">Video, sessioni e copie cloud verificate.</p></div><button id="exportArchive" type="button" class="btn soft">Esporta selezione CSV</button>
         </section>
         <section id="archive" class="panel section">
           <div class="section-head archive-section-head">
@@ -190,8 +193,8 @@
             </div>
           </div>
           <div class="toolbar">
-            <input id="recordingSearch" type="search" placeholder="Cerca sorgente, sessione o file…">
-            <select id="recordingStatus">
+            <input id="recordingSearch" aria-label="Cerca registrazioni" type="search" placeholder="Cerca sorgente, sessione o file…">
+            <select id="recordingStatus" aria-label="Stato registrazione">
               <option value="all">Tutti</option><option value="uploaded">Caricati</option><option value="pending">In attesa</option><option value="uploading">Upload</option><option value="failed">Falliti</option><option value="integrity_failed">Integrità fallita</option><option value="converting">Conversione MP4</option><option value="waiting_config">Config mancante</option><option value="discarded">Locale eliminato</option>
             </select>
             <div class="archive-bulk-actions">
@@ -203,6 +206,7 @@
           <div id="sourceFilterBar" class="filter-bar hidden"><span id="sourceFilterNote"></span><button id="clearSourceFilter" class="btn soft" type="button">Mostra tutte</button></div>
           <div id="recordings" class="recording-grid"></div>
           <div id="recordingFooter" class="footer-note"></div>
+          <button id="loadOlderRecordings" class="btn soft" type="button" hidden>Carica registrazioni precedenti</button>
         </section>
       </div>
     </main>
@@ -258,7 +262,9 @@
   <div id="videoModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="videoTitle"><div class="backdrop" data-close-modal="video"></div><div class="modal-card video-card panel"><div class="modal-head"><div><h2 id="videoTitle">Video</h2></div><button class="icon-btn" type="button" data-close-modal="video" aria-label="Chiudi">×</button></div><video id="videoPlayer" controls preload="metadata"></video></div></div>
   <aside id="livePauseAlert" class="live-pause-alert hidden" aria-live="assertive" aria-label="Creator live non registrate"></aside>
   <div id="toastRegion" class="toasts" aria-live="polite"></div>
-  <script src="/static/app.js?v=2.8.24-ordered-processing1" defer></script>
-  <script src="/static/attention-fix.js" defer></script>
+  <dialog id="commandDialog" aria-labelledby="commandTitle"><div class="command-head"><h2 id="commandTitle">Trova nel workspace</h2><button id="closeCommands" class="icon-btn" type="button" aria-label="Chiudi ricerca">×</button></div><input id="commandSearch" type="search" aria-label="Cerca pagine o creator" placeholder="Nome creator o pagina…" autocomplete="off"><div id="commandResults"></div><footer>↑ ↓ per scegliere · Invio per aprire · Esc per chiudere</footer></dialog>
+  <script src="/static/app.js?v=3.0.0" defer></script>
+  <script src="/static/operations.js" defer></script>
+  <script src="/static/workspace.js" defer></script>
 </body>
 </html>

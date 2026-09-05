@@ -3,7 +3,7 @@ from pathlib import Path
 
 def test_control_room_ui_hooks_exist():
     js = Path("app/static/app.js").read_text(encoding="utf-8")
-    css = Path("app/static/enhancements.css").read_text(encoding="utf-8")
+    css = Path("app/static/style.css").read_text(encoding="utf-8")
     assert "LiveVault Control Room v2.7.1" in js
     assert "controlRoomProfileRows" in js
     assert "data-live-wall" in js

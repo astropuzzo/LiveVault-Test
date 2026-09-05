@@ -27,7 +27,7 @@ def test_live_dna_uses_existing_activity_statistics():
 
 def test_archive_is_grouped_and_filterable():
     js = (ROOT / "app/static/app.js").read_text(encoding="utf-8")
-    css = (ROOT / "app/static/enhancements.css").read_text(encoding="utf-8")
+    css = (ROOT / "app/static/style.css").read_text(encoding="utf-8")
     for token in ('archivePeriod', 'archiveCreator', 'archiveProvider', 'archiveStorage', 'archiveGroup', 'archiveSort'):
         assert token in js
     assert 'Per giorno' in js

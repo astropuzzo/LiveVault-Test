@@ -1,0 +1,26 @@
+[Unit]
+Description=OpenAstro mobile server control panel
+After=network-online.target tailscaled.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=astro
+Group=astro
+SupplementaryGroups=docker
+WorkingDirectory=/opt/openastro-control
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/usr/bin/python3 /opt/openastro-control/server.py
+Restart=always
+RestartSec=3
+TimeoutStopSec=10
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+MemoryMax=160M
+StateDirectory=openastro-control
+StateDirectoryMode=0750
+
+[Install]
+WantedBy=multi-user.target

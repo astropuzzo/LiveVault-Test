@@ -1,6 +1,11 @@
-# LiveVault v2.8.24
+# LiveVault v3.0.0
 
 LiveVault è un recorder remoto 24/7 con dashboard web/PWA. Monitora sorgenti autorizzate, registra tramite FFmpeg in stream-copy, verifica i media, crea miniature, gestisce il buffer locale e carica automaticamente su Gofile/Pixeldrain.
+
+La versione 3 include il workspace ridisegnato e il codice di OpenAstro Control
+in `control-panel/`. Ricerca rapida (`Ctrl/Cmd K`), filtri sorgenti, esportazione
+CSV e caricamento delle registrazioni precedenti sono disponibili nell'interfaccia.
+La guida aggiornata per il nodo attivo è in [HOSTING.md](HOSTING.md).
 
 > **Uso autorizzato soltanto.** Aggiungi esclusivamente trasmissioni che possiedi o per cui hai autorizzazione esplicita alla registrazione.
 
@@ -97,7 +102,7 @@ Le credenziali sono cifrate nel database tramite Fernet con chiave derivata da `
 
 Vedi **[START_HERE.md](START_HERE.md)**.
 
-Per il setup server/CapRover attualmente documentato, vedi **[HOSTING.md](HOSTING.md)**.
+Per il nodo OpenAstro/Coolify attivo, vedi **[HOSTING.md](HOSTING.md)**.
 
 Installazione base:
 
@@ -185,4 +190,6 @@ node --check app/static/app.js
 bash -n scripts/*.sh
 ```
 
-Il job **Core tests** installa anche FFmpeg e tutte le dipendenze di sviluppo. Solo dopo il verde, il job **Deploy verified main** chiede a CapRover di pubblicare l'ultima versione. I push intermedi vengono annullati per evitare riavvii a raffica e `503` temporanei.
+Il job **Core tests** installa FFmpeg e le dipendenze di sviluppo e verifica
+entrambi i siti. Il deploy del commit verificato avviene sul nodo OpenAstro tramite
+Coolify; il vecchio webhook CapRover è stato rimosso. Vedi [HOSTING.md](HOSTING.md).

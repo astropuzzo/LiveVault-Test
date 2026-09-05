@@ -34,6 +34,7 @@ from .db import (
     init_db,
 )
 from .file_cleanup import cleanup_empty_parents, cleanup_orphan_videos, safe_unlink
+from .http_compression import TextCompressionMiddleware
 from .recorder import (
     LIVE_PREVIEW_MAX_AGE_SECONDS,
     finalize_mp4_for_streaming,
@@ -53,7 +54,7 @@ BASE = Path(__file__).parent
 LOGIN_FAILURES: dict[str, deque[float]] = defaultdict(deque)
 LOGIN_WINDOW = 10 * 60
 LOGIN_MAX_FAILURES = 6
-VERSION = "2.8.24"
+VERSION = "3.0.0"
 
 
 class LoginBody(BaseModel):
@@ -518,6 +519,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="LiveVault", version=VERSION, lifespan=lifespan)
+app.add_middleware(TextCompressionMiddleware)
 app.mount("/static", StaticFiles(directory=BASE / "static"), name="static")
 
 
@@ -2068,11 +2070,12 @@ def _recording_json(r: Recording) -> dict:
 
 
 @app.get("/api/recordings")
-def recordings(request: Request, limit: int = 500):
+def recordings(request: Request, limit: int = 500, offset: int = 0):
     require_auth(request)
     limit = max(1, min(limit, 2000))
+    offset = max(0, offset)
     with db_session() as db:
-        rows = list(db.scalars(select(Recording).order_by(Recording.finalized_at.desc()).limit(limit)).all())
+        rows = list(db.scalars(select(Recording).order_by(Recording.finalized_at.desc(), Recording.id.desc()).offset(offset).limit(limit)).all())
     return [_recording_json(r) for r in rows]
 
 
