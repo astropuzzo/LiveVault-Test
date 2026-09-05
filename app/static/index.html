@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#112e32">
-  <meta name="color-scheme" content="light">
+  <meta name="theme-color" content="#0b0d10">
+  <meta name="color-scheme" content="dark">
   <title>LiveVault</title>
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" href="/static/icon.svg" type="image/svg+xml">
@@ -12,259 +12,126 @@
 </head>
 <body>
   <a class="skip-link" href="#mainContent">Vai al contenuto</a>
+
   <section id="login" class="login-shell hidden">
-    <form id="loginForm" class="login-card panel">
-      <div class="logo">LV</div>
-      <h1>LiveVault</h1>
+    <form id="loginForm" class="login-panel" autocomplete="on">
+      <div class="login-mark" aria-hidden="true"><svg class="icon icon-xl"><use href="/static/icons.svg#vault"></use></svg></div>
+      <div class="login-copy"><h1>LiveVault</h1><p>Accedi al recorder.</p></div>
       <label class="field"><span>Password</span><input id="password" type="password" autocomplete="current-password" required autofocus></label>
-      <button class="btn primary wide" type="submit">Accedi</button>
+      <button class="button primary wide" type="submit"><span>Accedi</span><svg class="icon"><use href="/static/icons.svg#arrow-right"></use></svg></button>
       <div id="loginError" class="error-text" aria-live="polite"></div>
     </form>
   </section>
 
-  <div id="app" class="hidden">
-    <header class="topbar">
-      <div class="topbar-inner">
-        <a class="brand" href="#dashboard" data-view="dashboard" aria-label="LiveVault, dashboard">
-          <div class="logo small">LV</div>
-          <div><strong>LiveVault</strong><small id="versionLabel">v2</small></div>
-        </a>
-        <nav class="main-nav" aria-label="Sezioni principali">
-          <button class="nav-link active" type="button" data-view="dashboard" aria-current="page"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3h7v7H3z M14 3h7v7h-7z M3 14h7v7H3z M14 14h7v7h-7z"/></svg>Dashboard</button>
-          <button class="nav-link" type="button" data-view="library"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h5v16H4z M11 4h4v16h-4z M17 5l3-1 4 15-3 1z"/></svg>Libreria</button>
-          <button class="nav-link" type="button" data-view="archive"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4h18v4H3z M5 8v12h14V8 M10 12h4"/></svg>Archivio</button>
-          <button class="nav-link" type="button" data-view="statistics"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10 M12 20V4 M20 20V7"/></svg>Statistiche</button>
-        </nav>
-        <div class="top-actions">
-          <button id="healthPill" class="status-alert hidden" type="button" aria-label="Problemi di sistema"></button>
-          <a class="node-link" href="https://openastro.tailf2871c.ts.net:8443/">OpenAstro Control ↗</a>
-          <button id="settingsBtn" class="btn quiet" type="button">Impostazioni</button>
-          <button id="logoutBtn" class="btn quiet" type="button">Esci</button>
-        </div>
+  <div id="app" class="hidden app-shell">
+    <aside class="navigation-rail" aria-label="Navigazione principale">
+      <a class="product-mark" href="#dashboard" data-view="dashboard" aria-label="LiveVault · Monitor"><svg class="icon icon-lg" aria-hidden="true"><use href="/static/icons.svg#vault"></use></svg><span class="product-wordmark">LiveVault</span><small id="versionLabel">v3</small></a>
+      <nav class="main-nav">
+        <button class="nav-link active" type="button" data-view="dashboard" aria-current="page" data-tooltip="Monitor"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#monitor"></use></svg><span>Monitor</span></button>
+        <button class="nav-link" type="button" data-view="library" data-tooltip="Libreria"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#users"></use></svg><span>Libreria</span></button>
+        <button class="nav-link" type="button" data-view="archive" data-tooltip="Archivio"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#archive"></use></svg><span>Archivio</span></button>
+        <button class="nav-link" type="button" data-view="statistics" data-tooltip="Analisi"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#chart"></use></svg><span>Analisi</span></button>
+      </nav>
+      <div class="rail-spacer"></div>
+      <div class="rail-actions">
+        <button id="healthPill" class="rail-icon-button health-button hidden" type="button" aria-label="Problemi di sistema" data-tooltip="Stato sistema"></button>
+        <a class="rail-icon-button node-link" href="https://openastro.tailf2871c.ts.net:8443/" aria-label="OpenAstro Control" data-tooltip="OpenAstro Control"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#server"></use></svg></a>
+        <button id="settingsBtn" class="rail-icon-button" type="button" aria-label="Impostazioni" data-tooltip="Impostazioni"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#settings"></use></svg></button>
+        <button id="logoutBtn" class="rail-icon-button" type="button" aria-label="Esci" data-tooltip="Esci"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#log-out"></use></svg></button>
+      </div>
+    </aside>
+
+    <header class="app-bar">
+      <div class="mobile-product"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#vault"></use></svg><strong>LiveVault</strong></div>
+      <div class="app-bar-context"><strong id="currentSectionTitle">Monitor</strong><span id="connectionState" class="connection-state" role="status">Connessione…</span></div>
+      <div class="app-bar-actions">
+        <button id="commandButton" class="command-trigger" type="button" aria-label="Cerca" data-tooltip="Cerca · Ctrl K"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#search"></use></svg><span>Cerca</span><kbd>Ctrl K</kbd></button>
+        <button class="mobile-settings icon-button" type="button" aria-label="Impostazioni" data-open-settings><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#settings"></use></svg></button>
       </div>
     </header>
 
-    <main class="shell" id="mainContent" tabindex="-1">
-      <div class="workspace-bar"><span>OPENASTRO <i>/</i> LIVEVAULT</span><div><span id="connectionState" class="connection-state" role="status">Connessione…</span><button id="commandButton" class="search-trigger" type="button">Cerca nel workspace <kbd>Ctrl K</kbd></button></div></div>
+    <main class="content-shell" id="mainContent" tabindex="-1">
       <div id="dashboardView" class="view-section" data-page="dashboard">
-        <section class="page-head dashboard-head">
-          <div><p class="eyebrow">IL TUO STUDIO, SEMPRE ATTIVO</p><h1>Ogni live, al suo posto.</h1><p class="page-description">Segui le sorgenti. Ritrova ogni registrazione.</p></div><time id="lastRefresh" class="sr-only">—</time>
-          <button id="showAddBtn" class="btn primary" type="button">Aggiungi sorgente</button>
-        </section>
+        <header class="page-header dashboard-head"><div><h1>Monitor</h1><p>Live, registrazioni e stato operativo.</p></div><div class="page-actions"><time id="lastRefresh" class="sr-only">—</time><button id="refreshBtn" class="icon-button" type="button" aria-label="Aggiorna sorgenti" data-tooltip="Aggiorna sorgenti"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#refresh"></use></svg></button><button id="showAddBtn" class="button primary" type="button"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#plus"></use></svg><span>Aggiungi sorgente</span></button></div></header>
 
-        <section class="dashboard-metrics" aria-label="Dati principali">
-          <article id="metricActive" class="metric-card panel" data-tone="neutral"><header><span>IN REGISTRAZIONE</span><i>REC</i></header><strong id="activeCount">0</strong><small id="activeNames">—</small></article>
-          <article id="metricQueue" class="metric-card panel" data-tone="good"><header><span>CODA</span><i>UPLOAD</i></header><strong id="queueCount">0</strong><small id="queueNote">—</small><button class="metric-link" type="button" data-archive-shortcut="pending">Apri archivio <span aria-hidden="true">↗</span></button></article>
-          <article id="metricHistory" class="metric-card panel" data-tone="info"><header><span>ARCHIVIO</span><i>FILE</i></header><strong id="historyCount">0</strong><small id="historyNote">—</small><button class="metric-link" type="button" data-archive-shortcut="all">Apri archivio <span aria-hidden="true">↗</span></button></article>
-          <article id="metricCloud" class="metric-card panel" data-tone="good"><header><span>CLOUD</span><i>OK</i></header><strong id="cloudCount">0</strong><small id="cloudNote">—</small><button class="metric-link" type="button" data-archive-shortcut="uploaded">Apri archivio <span aria-hidden="true">↗</span></button></article>
-          <article id="metricBuffer" class="metric-card panel" data-tone="neutral"><header><span>BUFFER LOCALE</span><i>SERVER</i></header><strong id="bufferValue">—</strong><small id="bufferNote">—</small><div class="meter"><i id="bufferBar"></i></div></article>
-          <article id="metricDisk" class="metric-card panel" data-tone="neutral"><header><span>NVME LIBERO</span><i>DISCO</i></header><strong id="freeSpace">—</strong><small id="diskUsage">—</small><div class="meter"><i id="diskBar"></i></div></article>
-        </section>
-
-        <section class="dashboard-commandbar" aria-label="Stato e automazioni">
-          <div class="control-center panel">
-            <article id="recordingControl" class="control-module" data-tone="good"><div><span>REC</span><strong id="recordingControlState">Attiva</strong></div><button id="pauseRecordingsBtn" class="btn soft" type="button">Pausa</button></article>
-            <article id="uploadControl" class="control-module" data-tone="good"><div><span>UPLOAD</span><strong id="uploadControlState">Attivo</strong></div><button id="pauseUploadsBtn" class="btn soft" type="button">Pausa</button></article>
-            <div class="control-quick-actions"><button id="runUploadsBtn" class="btn accent" type="button">Smaltisci coda</button><button id="refreshBtn" class="btn soft" type="button">Aggiorna</button></div>
+        <section class="status-surface panel" aria-label="Stato del recorder">
+          <div class="status-metrics">
+            <article id="metricActive" class="status-metric" data-tone="neutral"><span class="metric-label"><svg class="icon"><use href="/static/icons.svg#record"></use></svg>Registrazioni</span><strong id="activeCount">0</strong><small id="activeNames">—</small></article>
+            <article id="metricQueue" class="status-metric" data-tone="good"><span class="metric-label"><svg class="icon"><use href="/static/icons.svg#upload"></use></svg>Coda upload</span><strong id="queueCount">0</strong><small id="queueNote">—</small><button class="metric-link" type="button" data-archive-shortcut="pending" aria-label="Apri upload in attesa"><svg class="icon"><use href="/static/icons.svg#arrow-right"></use></svg></button></article>
+            <article id="metricHistory" class="status-metric" data-tone="info"><span class="metric-label"><svg class="icon"><use href="/static/icons.svg#archive"></use></svg>Archivio</span><strong id="historyCount">0</strong><small id="historyNote">—</small><button class="metric-link" type="button" data-archive-shortcut="all" aria-label="Apri archivio"><svg class="icon"><use href="/static/icons.svg#arrow-right"></use></svg></button></article>
+            <article id="metricCloud" class="status-metric" data-tone="good"><span class="metric-label"><svg class="icon"><use href="/static/icons.svg#cloud"></use></svg>Cloud</span><strong id="cloudCount">0</strong><small id="cloudNote">—</small><button class="metric-link" type="button" data-archive-shortcut="uploaded" aria-label="Apri file cloud"><svg class="icon"><use href="/static/icons.svg#arrow-right"></use></svg></button></article>
+            <article id="metricBuffer" class="status-metric" data-tone="neutral"><span class="metric-label"><svg class="icon"><use href="/static/icons.svg#database"></use></svg>Buffer</span><strong id="bufferValue">—</strong><small id="bufferNote">—</small><div class="meter"><i id="bufferBar"></i></div></article>
+            <article id="metricDisk" class="status-metric" data-tone="neutral"><span class="metric-label"><svg class="icon"><use href="/static/icons.svg#hard-drive"></use></svg>NVMe libero</span><strong id="freeSpace">—</strong><small id="diskUsage">—</small><div class="meter"><i id="diskBar"></i></div></article>
+          </div>
+          <div class="operation-strip">
+            <article id="recordingControl" class="operation-control" data-tone="good"><div class="operation-state"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#record"></use></svg><span>Recorder</span><strong id="recordingControlState">Attiva</strong></div><button id="pauseRecordingsBtn" class="button secondary compact" type="button">Pausa</button></article>
+            <article id="uploadControl" class="operation-control" data-tone="good"><div class="operation-state"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#cloud-upload"></use></svg><span>Upload</span><strong id="uploadControlState">Attivo</strong></div><button id="pauseUploadsBtn" class="button secondary compact" type="button">Pausa</button></article>
+            <button id="runUploadsBtn" class="button secondary compact operation-run" type="button"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#play"></use></svg><span>Smaltisci coda</span></button>
           </div>
         </section>
 
-        <section id="uploadNowCard" class="upload-card panel hidden" aria-live="polite">
-          <div><span class="live-dot"></span><strong id="uploadNowTitle">Upload in corso</strong><small id="uploadNowMeta">—</small></div>
-          <div class="upload-progress"><div class="meter big"><i id="uploadProgressBar"></i></div><span id="uploadProgressText">0%</span></div>
+        <section class="progress-stack" aria-label="Operazioni in corso"><section id="uploadNowCard" class="progress-row panel hidden" aria-live="polite"><svg class="icon progress-icon" aria-hidden="true"><use href="/static/icons.svg#cloud-upload"></use></svg><div class="progress-copy"><strong id="uploadNowTitle">Upload in corso</strong><small id="uploadNowMeta">—</small></div><div class="upload-progress"><div class="meter big"><i id="uploadProgressBar"></i></div><span id="uploadProgressText">0%</span></div></section></section>
+
+        <section class="monitor-surface panel section dashboard-sources">
+          <div class="surface-header section-head"><div><h2>Sorgenti</h2><span id="sourceCount" class="count">0</span></div><div class="dashboard-filters"><label class="search-control"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#search"></use></svg><span class="sr-only">Cerca sorgenti</span><input id="dashboardSearch" type="search" placeholder="Cerca creator"></label><label class="select-control"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#filter"></use></svg><span class="sr-only">Filtra sorgenti</span><select id="dashboardStatus"><option value="all">Tutte</option><option value="live">Live ora</option><option value="focus">Focus</option><option value="attention">Da controllare</option></select></label></div></div>
+          <div id="sources" class="source-list"></div>
         </section>
 
-        <section class="panel section dashboard-sources">
-          <div class="section-head"><div><h2>Attività</h2></div><span id="sourceCount" class="count">0</span></div>
-          <div class="dashboard-filters"><label class="search-field"><span class="sr-only">Cerca sorgenti</span><input id="dashboardSearch" type="search" placeholder="Cerca una creator…"></label><label><span class="sr-only">Filtra sorgenti</span><select id="dashboardStatus"><option value="all">Tutte le sorgenti</option><option value="live">Live ora</option><option value="focus">In Focus</option><option value="attention">Da controllare</option></select></label></div><div id="sources" class="source-list"></div>
-        </section>
-
-
-
-        <section id="errorsPanel" class="panel section hidden">
-          <div class="section-head"><div><h2>Errori recenti</h2></div><div class="diagnostic-actions"><button id="retryRecoveryBtn" class="btn soft" type="button">Recupera file</button><button id="clearErrorsBtn" class="btn quiet" type="button">Pulisci avvisi</button><span id="diagnosticCount" class="count danger">0</span></div></div>
-          <pre id="errors"></pre>
-        </section>
+        <section id="errorsPanel" class="attention-panel panel section hidden"><div class="surface-header section-head"><div class="attention-title"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#warning"></use></svg><h2>Errori recenti</h2><span id="diagnosticCount" class="count danger">0</span></div><div class="diagnostic-actions"><button id="retryRecoveryBtn" class="button secondary compact" type="button"><svg class="icon"><use href="/static/icons.svg#rotate-ccw"></use></svg><span>Recupera file</span></button><button id="clearErrorsBtn" class="icon-button" type="button" aria-label="Pulisci avvisi" data-tooltip="Pulisci avvisi"><svg class="icon"><use href="/static/icons.svg#trash"></use></svg></button></div></div><pre id="errors"></pre></section>
       </div>
 
       <div id="libraryView" class="view-section hidden" data-page="library">
-        <section class="page-head">
-          <div><p class="eyebrow">LE TUE SORGENTI</p><h1>Libreria</h1><p class="page-description">Profili, preferiti e raccolte in un unico spazio.</p></div>
-          <div class="page-actions"><button id="manageLibraryBtn" class="btn soft" type="button">Categorie e raccolte</button><button id="libraryAddBtn" class="btn primary" type="button">Aggiungi sorgente</button></div>
-        </section>
-
+        <header class="page-header"><div><h1>Libreria</h1><p>Creator, account, categorie e raccolte.</p></div><div class="page-actions"><button id="manageLibraryBtn" class="button secondary" type="button"><svg class="icon"><use href="/static/icons.svg#tags"></use></svg><span>Categorie</span></button><button id="libraryAddBtn" class="button primary" type="button"><svg class="icon"><use href="/static/icons.svg#plus"></use></svg><span>Aggiungi sorgente</span></button></div></header>
         <section class="library-layout">
-          <aside class="library-sidebar panel" aria-label="Viste rapide">
-            <div class="sidebar-title">Viste rapide</div>
-            <button class="smart-link active" type="button" data-smart="all"><span>Tutte</span><strong id="smartCountAll">0</strong></button>
-            <button class="smart-link" type="button" data-smart="live"><span>Live ora</span><strong id="smartCountLive">0</strong></button>
-            <button class="smart-link" type="button" data-smart="favorites"><span>Preferite</span><strong id="smartCountFavorites">0</strong></button>
-            <button class="smart-link" type="button" data-smart="attention"><span>Da controllare</span><strong id="smartCountAttention">0</strong></button>
-            <button class="smart-link" type="button" data-smart="paused"><span>In pausa</span><strong id="smartCountPaused">0</strong></button>
-            <button class="smart-link" type="button" data-smart="uncategorized"><span>Senza categoria</span><strong id="smartCountUncategorized">0</strong></button>
-            <button class="smart-link" type="button" data-smart="never"><span>Mai registrate</span><strong id="smartCountNever">0</strong></button>
-            <button class="smart-link" type="button" data-smart="recent"><span>Recenti</span><strong id="smartCountRecent">0</strong></button>
+          <aside class="library-sidebar filter-navigation panel" aria-label="Viste rapide">
+            <div class="filter-nav-title">Viste</div>
+            <button class="smart-link active" type="button" data-smart="all"><span>Tutte</span><strong id="smartCountAll">0</strong></button><button class="smart-link" type="button" data-smart="live"><span>Live ora</span><strong id="smartCountLive">0</strong></button><button class="smart-link" type="button" data-smart="favorites"><span>Preferite</span><strong id="smartCountFavorites">0</strong></button><button class="smart-link" type="button" data-smart="attention"><span>Da controllare</span><strong id="smartCountAttention">0</strong></button><button class="smart-link" type="button" data-smart="paused"><span>In pausa</span><strong id="smartCountPaused">0</strong></button><button class="smart-link" type="button" data-smart="uncategorized"><span>Senza categoria</span><strong id="smartCountUncategorized">0</strong></button><button class="smart-link" type="button" data-smart="never"><span>Mai registrate</span><strong id="smartCountNever">0</strong></button><button class="smart-link" type="button" data-smart="recent"><span>Recenti</span><strong id="smartCountRecent">0</strong></button>
           </aside>
-
           <div class="library-main">
-            <section class="library-tools panel" aria-label="Filtri libreria">
-              <label class="search-field"><span class="sr-only">Cerca nella libreria</span><input id="librarySearch" type="search" placeholder="Cerca nome, account o note…"></label>
-              <label><span class="sr-only">Provider</span><select id="libraryProvider"><option value="all">Tutti i provider</option></select></label>
-              <label><span class="sr-only">Stato</span><select id="libraryStatus"><option value="all">Tutti gli stati</option><option value="live">Live ora</option><option value="offline">Offline</option><option value="paused">In pausa</option><option value="error">Con problemi</option></select></label>
-              <label><span class="sr-only">Categoria</span><select id="libraryCategory"><option value="all">Tutte le categorie</option></select></label>
-              <label><span class="sr-only">Raccolta libreria</span><select id="libraryCollection"><option value="all">Tutte le raccolte libreria</option></select></label>
-              <div class="view-switch" role="group" aria-label="Vista libreria"><button id="libraryGridBtn" class="btn quiet active" type="button" aria-pressed="true">Griglia</button><button id="libraryListBtn" class="btn quiet" type="button" aria-pressed="false">Lista</button></div>
-            </section>
-
-            <section id="bulkBar" class="bulk-bar panel hidden" aria-live="polite">
-              <strong><span id="bulkCount">0</span> selezionate</strong>
-              <button class="btn soft" type="button" data-bulk="favorite">Preferite</button>
-              <button class="btn soft" type="button" data-bulk="unfavorite">Non preferite</button>
-              <button class="btn soft" type="button" data-bulk="enable">Riattiva</button>
-              <button class="btn soft" type="button" data-bulk="pause">Pausa</button>
-              <select id="bulkCategory" aria-label="Categoria da aggiungere"><option value="">Aggiungi categoria…</option></select>
-              <button class="btn soft" type="button" data-bulk="add_category">Applica</button>
-              <select id="bulkCollection" aria-label="Raccolta libreria da aggiungere"><option value="">Aggiungi a raccolta libreria…</option></select>
-              <button class="btn soft" type="button" data-bulk="add_collection">Applica</button>
-              <button id="clearLibrarySelection" class="btn quiet" type="button">Deseleziona</button>
-            </section>
-
-            <div class="library-result-head"><span id="libraryResultsMeta">0 profili</span><label class="select-all"><input id="selectAllLibrary" type="checkbox"> Seleziona visibili</label></div>
-            <div id="librarySources" class="library-grid" aria-live="polite"></div>
+            <section class="library-tools panel" aria-label="Filtri libreria"><label class="search-control wide-control"><svg class="icon"><use href="/static/icons.svg#search"></use></svg><span class="sr-only">Cerca nella libreria</span><input id="librarySearch" type="search" placeholder="Cerca nome, account o note"></label><label class="select-control"><span class="sr-only">Provider</span><select id="libraryProvider"><option value="all">Tutti i provider</option></select></label><label class="select-control"><span class="sr-only">Stato</span><select id="libraryStatus"><option value="all">Tutti gli stati</option><option value="live">Live ora</option><option value="offline">Offline</option><option value="paused">In pausa</option><option value="error">Con problemi</option></select></label><label class="select-control"><span class="sr-only">Categoria</span><select id="libraryCategory"><option value="all">Tutte le categorie</option></select></label><label class="select-control"><span class="sr-only">Raccolta</span><select id="libraryCollection"><option value="all">Tutte le raccolte</option></select></label><div class="view-switch" role="group" aria-label="Vista libreria"><button id="libraryListBtn" class="icon-button active" type="button" aria-pressed="true" aria-label="Vista lista" data-tooltip="Lista"><svg class="icon"><use href="/static/icons.svg#list"></use></svg></button><button id="libraryGridBtn" class="icon-button" type="button" aria-pressed="false" aria-label="Vista griglia" data-tooltip="Griglia"><svg class="icon"><use href="/static/icons.svg#grid"></use></svg></button></div></section>
+            <section id="bulkBar" class="bulk-bar panel hidden" aria-live="polite"><strong><span id="bulkCount">0</span> selezionate</strong><button class="icon-button" type="button" data-bulk="favorite" aria-label="Aggiungi ai preferiti" data-tooltip="Preferite"><svg class="icon"><use href="/static/icons.svg#star"></use></svg></button><button class="icon-button" type="button" data-bulk="unfavorite" aria-label="Rimuovi dai preferiti" data-tooltip="Rimuovi preferite"><svg class="icon"><use href="/static/icons.svg#star-off"></use></svg></button><button class="icon-button" type="button" data-bulk="enable" aria-label="Riattiva" data-tooltip="Riattiva"><svg class="icon"><use href="/static/icons.svg#play"></use></svg></button><button class="icon-button" type="button" data-bulk="pause" aria-label="Metti in pausa" data-tooltip="Pausa"><svg class="icon"><use href="/static/icons.svg#pause"></use></svg></button><select id="bulkCategory" aria-label="Categoria da aggiungere"><option value="">Aggiungi categoria…</option></select><button class="button secondary compact" type="button" data-bulk="add_category">Applica</button><select id="bulkCollection" aria-label="Raccolta da aggiungere"><option value="">Aggiungi a raccolta…</option></select><button class="button secondary compact" type="button" data-bulk="add_collection">Applica</button><button id="clearLibrarySelection" class="icon-button" type="button" aria-label="Deseleziona" data-tooltip="Deseleziona"><svg class="icon"><use href="/static/icons.svg#x"></use></svg></button></section>
+            <div class="library-result-head"><span id="libraryResultsMeta">0 profili</span><label class="select-all"><input id="selectAllLibrary" type="checkbox"> Seleziona visibili</label></div><div id="librarySources" class="library-grid list" aria-live="polite"></div>
           </div>
         </section>
+        <section id="libraryTaxonomy" class="taxonomy panel hidden"><div class="surface-header section-head"><h2>Categorie e raccolte</h2><button id="closeLibraryManager" class="icon-button" type="button" aria-label="Chiudi" data-tooltip="Chiudi"><svg class="icon"><use href="/static/icons.svg#x"></use></svg></button></div><div class="taxonomy-columns"><div><h3>Categorie</h3><form id="categoryCreateForm" class="taxonomy-create"><label><span class="sr-only">Nome categoria</span><input id="newCategoryName" maxlength="80" placeholder="Nuova categoria" required></label><label class="color-field"><span class="sr-only">Colore categoria</span><input id="newCategoryColor" type="color" value="#78958f"></label><button class="button primary compact" type="submit">Crea</button></form><div id="categoryList" class="taxonomy-list"></div></div><div><h3>Raccolte</h3><form id="collectionCreateForm" class="taxonomy-create collection-create"><label><span class="sr-only">Nome raccolta</span><input id="newCollectionName" maxlength="80" placeholder="Nuova raccolta" required></label><label><span class="sr-only">Descrizione raccolta</span><input id="newCollectionDescription" maxlength="300" placeholder="Descrizione (opzionale)"></label><label class="color-field"><span class="sr-only">Colore raccolta</span><input id="newCollectionColor" type="color" value="#7890a8"></label><label class="check compact-check"><input id="newCollectionPinned" type="checkbox"> In evidenza</label><button class="button primary compact" type="submit">Crea</button></form><div id="collectionList" class="taxonomy-list"></div></div></div></section>
+      </div>
 
-        <section id="libraryTaxonomy" class="taxonomy panel hidden">
-          <div class="section-head"><div><h2>Categorie e raccolte</h2></div><button id="closeLibraryManager" class="btn quiet" type="button">Chiudi</button></div>
-          <div class="taxonomy-columns">
-            <div>
-              <h3>Categorie</h3>
-              <form id="categoryCreateForm" class="taxonomy-create">
-                <label><span class="sr-only">Nome categoria</span><input id="newCategoryName" maxlength="80" placeholder="Nuova categoria" required></label>
-                <label class="color-field"><span class="sr-only">Colore categoria</span><input id="newCategoryColor" type="color" value="#8fa88a"></label>
-                <button class="btn primary" type="submit">Crea</button>
-              </form>
-              <div id="categoryList" class="taxonomy-list"></div>
-            </div>
-            <div>
-              <h3>Raccolte libreria</h3>
-              <form id="collectionCreateForm" class="taxonomy-create collection-create">
-                <label><span class="sr-only">Nome raccolta</span><input id="newCollectionName" maxlength="80" placeholder="Nuova raccolta" required></label>
-                <label><span class="sr-only">Descrizione raccolta</span><input id="newCollectionDescription" maxlength="300" placeholder="Descrizione (opzionale)"></label>
-                <label class="color-field"><span class="sr-only">Colore raccolta</span><input id="newCollectionColor" type="color" value="#8da7c2"></label>
-              <label class="check compact-check"><input id="newCollectionPinned" type="checkbox"> In evidenza</label>
-                <button class="btn primary" type="submit">Crea</button>
-              </form>
-              <div id="collectionList" class="taxonomy-list"></div>
-            </div>
-          </div>
+      <div id="archiveView" class="view-section hidden" data-page="archive">
+        <header class="page-header"><div><h1>Archivio</h1><p>Gestione rapida delle registrazioni locali e cloud.</p></div><button id="exportArchive" type="button" class="button secondary"><svg class="icon"><use href="/static/icons.svg#download"></use></svg><span>Esporta CSV</span></button></header>
+        <section id="archive" class="archive-surface panel section" data-columns="1">
+          <div class="archive-toolbar-row"><label class="search-control archive-search"><svg class="icon"><use href="/static/icons.svg#search"></use></svg><input id="recordingSearch" aria-label="Cerca registrazioni" type="search" placeholder="Cerca sorgente, sessione o file"></label><label class="select-control archive-status"><svg class="icon"><use href="/static/icons.svg#filter"></use></svg><select id="recordingStatus" aria-label="Stato registrazione"><option value="all">Tutti gli stati</option><option value="uploaded">Caricati</option><option value="pending">In attesa</option><option value="uploading">Upload</option><option value="failed">Falliti</option><option value="integrity_failed">Integrità fallita</option><option value="converting">Conversione MP4</option><option value="waiting_config">Config mancante</option><option value="discarded">Locale eliminato</option></select></label><div class="archive-bulk-actions"><button id="retryAllBtn" class="icon-button" type="button" aria-label="Riprova falliti" data-tooltip="Riprova falliti"><svg class="icon"><use href="/static/icons.svg#rotate-ccw"></use></svg></button><button id="cleanupBtn" class="icon-button" type="button" aria-label="Libera file caricati" data-tooltip="Libera caricati"><svg class="icon"><use href="/static/icons.svg#broom"></use></svg></button><button id="purgeLocalBtn" class="icon-button danger" type="button" aria-label="Pulisci file locali" data-tooltip="Pulisci locali"><svg class="icon"><use href="/static/icons.svg#trash"></use></svg></button></div></div>
+          <div class="section-head archive-section-head sr-only"><h2>Registrazioni</h2><div class="archive-view-options" role="group" aria-label="Numero di colonne"><button class="icon-btn active" type="button" data-archive-columns="1" aria-label="Una colonna"></button><button class="icon-btn" type="button" data-archive-columns="2" aria-label="Due colonne"></button><button class="icon-btn" type="button" data-archive-columns="3" aria-label="Tre colonne"></button></div></div>
+          <div class="toolbar archive-hooks" aria-hidden="true"></div><div id="sourceFilterBar" class="filter-bar hidden"><span id="sourceFilterNote"></span><button id="clearSourceFilter" class="icon-button" type="button" aria-label="Rimuovi filtro sorgente"><svg class="icon"><use href="/static/icons.svg#x"></use></svg></button></div><div id="recordings" class="recording-grid"></div><div class="archive-footer"><div id="recordingFooter" class="footer-note"></div><button id="loadOlderRecordings" class="button secondary compact" type="button" hidden>Carica precedenti</button></div>
         </section>
       </div>
 
       <div id="statisticsView" class="view-section hidden" data-page="statistics">
-        <section class="page-head">
-          <div><p class="eyebrow">ATTIVITÀ NEL TEMPO</p><h1>Statistiche</h1><p class="page-description">Tempi online, registrazioni e copertura effettiva.</p></div>
-          <label class="stats-range"><span>Periodo</span><select id="statisticsRange"><option value="7">7 giorni</option><option value="30" selected>30 giorni</option><option value="90">90 giorni</option><option value="365">365 giorni</option></select></label>
-        </section>
+        <header class="page-header"><div><h1>Analisi</h1><p>Copertura, attività e movimentazione dati.</p></div><label class="stats-range select-control"><svg class="icon"><use href="/static/icons.svg#calendar"></use></svg><span class="sr-only">Periodo</span><select id="statisticsRange"><option value="7">7 giorni</option><option value="30" selected>30 giorni</option><option value="90">90 giorni</option><option value="365">365 giorni</option></select></label></header>
         <section id="statisticsSummary" class="stats-summary-grid"></section>
-        <section class="stats-chart-grid">
-          <article class="panel stats-chart-card"><div class="section-head"><div><h2>Online vs registrato</h2></div><div class="chart-legend"><span class="online">Online</span><span class="recorded">Registrato</span></div></div><div id="statisticsDailyChart" class="chart-host"></div></article>
-          <article class="panel stats-chart-card"><div class="section-head"><div><h2>Distribuzione giornaliera</h2></div></div><div id="statisticsHourlyChart" class="chart-host"></div></article>
-        </section>
-        <section class="stats-operations-grid">
-          <article class="panel stats-chart-card"><div class="section-head"><div><h2>Movimentazione dati</h2></div><span id="statisticsDataTotal" class="route">—</span></div><div id="statisticsDataChart" class="data-flow-chart"></div></article>
-          <article class="panel stats-chart-card"><div class="section-head"><div><h2>Riepilogo</h2></div></div><div id="statisticsInsights" class="stats-insights"></div></article>
-        </section>
-        <section class="panel section"><div class="section-head stats-leader-head"><div><h2>Creator</h2></div><label class="stats-range compact"><span>Ordina per</span><select id="statisticsCreatorSort"><option value="videos">Video</option><option value="duration">Durata</option><option value="storage">Spazio</option><option value="coverage">Copertura</option></select></label></div><div id="statisticsLeaderboard" class="stats-leaderboard"></div><p id="statisticsNote" class="stats-note"></p></section>
-      </div>
-
-      <div id="archiveView" class="view-section hidden" data-page="archive">
-        <section class="page-head">
-          <div><p class="eyebrow">LA TUA COLLEZIONE</p><h1>Archivio</h1><p class="page-description">Video, sessioni e copie cloud verificate.</p></div><button id="exportArchive" type="button" class="btn soft">Esporta selezione CSV</button>
-        </section>
-        <section id="archive" class="panel section">
-          <div class="section-head archive-section-head">
-            <div><h2>Registrazioni</h2></div>
-            <div class="archive-view-options" role="group" aria-label="Numero di colonne">
-              <span>Vista</span>
-              <button class="icon-btn" type="button" data-archive-columns="1" aria-label="Una colonna" title="Una colonna">▭</button>
-              <button class="icon-btn active" type="button" data-archive-columns="2" aria-label="Due colonne" title="Due colonne">▥</button>
-              <button class="icon-btn" type="button" data-archive-columns="3" aria-label="Tre colonne" title="Tre colonne">▦</button>
-            </div>
-          </div>
-          <div class="toolbar">
-            <input id="recordingSearch" aria-label="Cerca registrazioni" type="search" placeholder="Cerca sorgente, sessione o file…">
-            <select id="recordingStatus" aria-label="Stato registrazione">
-              <option value="all">Tutti</option><option value="uploaded">Caricati</option><option value="pending">In attesa</option><option value="uploading">Upload</option><option value="failed">Falliti</option><option value="integrity_failed">Integrità fallita</option><option value="converting">Conversione MP4</option><option value="waiting_config">Config mancante</option><option value="discarded">Locale eliminato</option>
-            </select>
-            <div class="archive-bulk-actions">
-              <button id="retryAllBtn" class="btn soft" type="button">Riprova falliti</button>
-              <button id="cleanupBtn" class="btn soft" type="button">Libera caricati</button>
-              <button id="purgeLocalBtn" class="btn danger" type="button">Pulisci locali</button>
-            </div>
-          </div>
-          <div id="sourceFilterBar" class="filter-bar hidden"><span id="sourceFilterNote"></span><button id="clearSourceFilter" class="btn soft" type="button">Mostra tutte</button></div>
-          <div id="recordings" class="recording-grid"></div>
-          <div id="recordingFooter" class="footer-note"></div>
-          <button id="loadOlderRecordings" class="btn soft" type="button" hidden>Carica registrazioni precedenti</button>
-        </section>
+        <section class="stats-chart-grid"><article class="panel stats-chart-card wide-chart"><div class="surface-header section-head"><h2>Online e registrato</h2><div class="chart-legend"><span class="online">Online</span><span class="recorded">Registrato</span></div></div><div id="statisticsDailyChart" class="chart-host"></div></article><article class="panel stats-chart-card"><div class="surface-header section-head"><h2>Distribuzione oraria</h2></div><div id="statisticsHourlyChart" class="chart-host"></div></article><article class="panel stats-chart-card"><div class="surface-header section-head"><h2>Movimentazione dati</h2><span id="statisticsDataTotal" class="route">—</span></div><div id="statisticsDataChart" class="data-flow-chart"></div></article></section>
+        <section class="stats-operations-grid"><article class="panel stats-chart-card"><div class="surface-header section-head"><h2>Riepilogo</h2></div><div id="statisticsInsights" class="stats-insights"></div></article><article class="panel stats-chart-card creator-ranking"><div class="surface-header section-head stats-leader-head"><h2>Creator</h2><label class="stats-range compact select-control"><span class="sr-only">Ordina per</span><select id="statisticsCreatorSort"><option value="videos">Video</option><option value="duration">Durata</option><option value="storage">Spazio</option><option value="coverage">Copertura</option></select></label></div><div id="statisticsLeaderboard" class="stats-leaderboard"></div><p id="statisticsNote" class="stats-note"></p></article></section>
       </div>
     </main>
   </div>
 
-  <div id="sourceModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="sourceModalTitle">
-    <div class="backdrop" data-close-modal="source"></div>
-    <form id="sourceForm" class="modal-card panel">
-      <div class="modal-head"><div><h2 id="sourceModalTitle">Aggiungi sorgente</h2></div><button class="icon-btn" type="button" data-close-modal="source" aria-label="Chiudi">×</button></div>
-      <input id="sourceId" type="hidden">
-      <label class="field"><span>Nome</span><input id="sourceName" maxlength="120" required></label>
-      <label id="sourceProfileField" class="field"><span>Profilo (opzionale)</span><select id="sourceProfile"><option value="">Nuovo profilo</option></select></label>
-      <label class="field"><span>Provider</span><select id="sourcePlatform"><option value="auto">Rileva automaticamente</option></select></label>
-      <label class="field"><span id="sourceInputLabel">Username Chaturbate o URL della live</span><input id="sourceSlug" maxlength="1000" placeholder="Username oppure https://..." required></label>
-      <label class="field"><span>Qualità</span><select id="sourceQuality"><option value="best">Best</option><option value="1080p">1080p</option><option value="720p">720p</option><option value="480p">480p</option></select></label>
-      <div class="source-preflight"><button id="testSourceBtn" class="btn soft" type="button">Testa sorgente</button><span id="sourceTestResult" aria-live="polite"></span></div>
-      <label class="check"><input id="sourceOrganizeCloud" type="checkbox"><span>Una cartella Gofile stabile per questa sorgente</span></label>
-      <label class="field"><span>Gofile Folder ID (opzionale)</span><input id="sourceGofileFolder" maxlength="200"></label>
-      <label class="field"><span>Link cartella Gofile (opzionale)</span><input id="sourceGofileFolderUrl" type="url" maxlength="500" placeholder="https://gofile.io/d/..."></label>
-      <label class="check"><input id="sourceConsent" type="checkbox"><span>Confermo di avere l'autorizzazione alla registrazione.</span></label>
-      <div id="sourceError" class="error-text" aria-live="polite"></div>
-      <div class="modal-actions"><button class="btn soft" type="button" data-close-modal="source">Annulla</button><button class="btn primary" type="submit">Salva</button></div>
-    </form>
-  </div>
+  <div id="sourceModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="sourceModalTitle"><div class="backdrop" data-close-modal="source"></div><form id="sourceForm" class="modal-card source-editor panel"><div class="modal-head"><h2 id="sourceModalTitle">Aggiungi sorgente</h2><button class="icon-button" type="button" data-close-modal="source" aria-label="Chiudi"><svg class="icon"><use href="/static/icons.svg#x"></use></svg></button></div><input id="sourceId" type="hidden"><div class="form-grid"><label class="field"><span>Nome</span><input id="sourceName" maxlength="120" required></label><label id="sourceProfileField" class="field"><span>Profilo</span><select id="sourceProfile"><option value="">Nuovo profilo</option></select></label><label class="field"><span>Provider</span><select id="sourcePlatform"><option value="auto">Rileva automaticamente</option></select></label><label class="field span2"><span id="sourceInputLabel">Username o URL della live</span><input id="sourceSlug" maxlength="1000" placeholder="Username oppure URL" required></label><label class="field"><span>Qualità</span><select id="sourceQuality"><option value="best">Best</option><option value="1080p">1080p</option><option value="720p">720p</option><option value="480p">480p</option></select></label><div class="source-preflight"><button id="testSourceBtn" class="button secondary compact" type="button"><svg class="icon"><use href="/static/icons.svg#activity"></use></svg><span>Testa sorgente</span></button><span id="sourceTestResult" aria-live="polite"></span></div><label class="check span2"><input id="sourceOrganizeCloud" type="checkbox"><span>Usa una cartella Gofile stabile per questa sorgente</span></label><label class="field"><span>Gofile Folder ID</span><input id="sourceGofileFolder" maxlength="200"></label><label class="field"><span>Link cartella Gofile</span><input id="sourceGofileFolderUrl" type="url" maxlength="500" placeholder="https://gofile.io/d/..."></label><label class="check span2"><input id="sourceConsent" type="checkbox"><span>Confermo di avere l'autorizzazione alla registrazione.</span></label></div><div id="sourceError" class="error-text" aria-live="polite"></div><div class="modal-actions"><button class="button secondary" type="button" data-close-modal="source">Annulla</button><button class="button primary" type="submit">Salva</button></div></form></div>
 
-  <div id="profileModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="profileTitle">
-    <div class="backdrop" data-close-modal="profile"></div>
-    <div class="modal-card profile-card panel">
-      <div class="modal-head profile-head"><div><div id="profileProvider" class="eyebrow">PROFILO</div><h2 id="profileTitle">Profilo</h2><p id="profileReference"></p></div><button class="icon-btn" type="button" data-close-modal="profile" aria-label="Chiudi">×</button></div>
-      <div id="profileContent" class="profile-content"><div class="empty">Caricamento profilo…</div></div>
-    </div>
-  </div>
+  <div id="profileModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="profileTitle"><div class="backdrop" data-close-modal="profile"></div><div class="modal-card profile-card panel"><div class="modal-head profile-head"><div><span id="profileProvider" class="context-label">Profilo</span><h2 id="profileTitle">Profilo</h2><p id="profileReference"></p></div><button class="icon-button" type="button" data-close-modal="profile" aria-label="Chiudi"><svg class="icon"><use href="/static/icons.svg#x"></use></svg></button></div><div id="profileContent" class="profile-content"><div class="empty">Caricamento profilo…</div></div></div></div>
 
-  <div id="settingsModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
-    <div class="backdrop" data-close-modal="settings"></div>
-    <form id="settingsForm" class="modal-card settings-card panel">
-      <div class="modal-head sticky"><div><h2 id="settingsTitle">Impostazioni</h2></div><button class="icon-btn" type="button" data-close-modal="settings" aria-label="Chiudi">×</button></div>
-      <div class="settings-section"><h3>Registrazione</h3><div class="form-grid">
-        <label class="field"><span>Segmento (minuti)</span><input id="setSegment" type="number" min="5" max="120"></label><label class="field"><span>Dimensione massima file (GB)</span><input id="setSegmentMax" type="number" min="0.25" max="2" step="0.05"><small>Limite rigido massimo: 2 GB.</small></label><label class="field"><span>Container</span><select id="setContainer"><option value="mp4">MP4 diretto (consigliato)</option><option value="mkv">MKV</option></select></label><label class="field"><span>Polling sorgenti (sec)</span><input id="setPoll" type="number" min="15" max="600"></label><label class="field"><span>Controlli contemporanei</span><input id="setProbe" type="number" min="1" max="12"></label><label class="field"><span>Integrità</span><select id="setIntegrity"><option value="packet">Packet scan + SHA-256</option><option value="quick">FFprobe + SHA-256</option></select></label><label class="check span2"><input id="setThumbs" type="checkbox"><span>Genera miniature e mantienile dopo la rimozione del video locale</span></label>
-      </div></div>
-      <div class="settings-section"><h3>Buffer e disco</h3><div class="form-grid">
-        <label class="field"><span>Buffer locale massimo (GB)</span><input id="setBuffer" type="number" min="0" step="0.5"><small>0 = illimitato</small></label><label class="check"><input id="setHardStop" type="checkbox"><span>Hard stop controllato quando il buffer supera il limite</span></label><label class="field"><span>Warning spazio libero (GB)</span><input id="setMinFree" type="number" min="0.25" step="0.25"></label><label class="field"><span>Blocca nuove REC sotto (GB)</span><input id="setCriticalFree" type="number" min="0.1" step="0.1"></label><label class="field"><span>Stop emergenza sotto (GB)</span><input id="setEmergencyFree" type="number" min="0.05" step="0.05"></label><label class="check"><input id="setDeleteAfter" type="checkbox"><span>Elimina il video locale dopo upload verificato</span></label>
-      </div></div>
-      <div class="settings-section"><h3>Upload</h3><div class="form-grid">
-        <label class="field"><span>Provider primario</span><select id="setPrimary"><option value="gofile">Gofile</option><option value="pixeldrain">Pixeldrain</option><option value="none">Nessuno</option></select></label><label class="field"><span>Fallback</span><select id="setFallback"><option value="pixeldrain">Pixeldrain</option><option value="gofile">Gofile</option><option value="none">Nessuno</option></select></label><label class="field"><span>Retry base (sec)</span><input id="setRetry" type="number" min="30" max="3600"></label><label class="field"><span>Max tentativi</span><input id="setAttempts" type="number" min="1" max="100"></label>
-      </div></div>
-      <div class="settings-section provider-box"><div class="provider-head"><div><h3>Gofile</h3><span id="gofileState" class="provider-state">Non configurato</span></div><button id="testGofileBtn" class="btn soft" type="button">Test connessione</button></div><div class="form-grid"><label class="field span2"><span>API / Account token</span><input id="setGofileToken" type="password" autocomplete="off" placeholder="Lascia vuoto per non modificarlo"><small id="gofileHint"></small></label><label class="field"><span>Folder ID (opzionale)</span><input id="setGofileFolder"></label><label class="field"><span>Upload proxy</span><select id="setGofileRegion"><option value="auto">Auto + fallback EU</option><option value="eu-par">Europe · Paris</option><option value="na-phx">North America · Phoenix</option><option value="ap-sgp">Asia · Singapore</option><option value="ap-hkg">Asia · Hong Kong</option><option value="ap-tyo">Asia · Tokyo</option><option value="sa-sao">South America · São Paulo</option></select></label><label class="check span2"><input id="clearGofile" type="checkbox"><span>Rimuovi il token salvato</span></label></div></div>
-      <div class="settings-section provider-box"><div class="provider-head"><div><h3>Pixeldrain</h3><span id="pixeldrainState" class="provider-state">Non configurato</span></div><button id="testPixeldrainBtn" class="btn soft" type="button">Test connessione</button></div><div class="form-grid"><label class="field span2"><span>API key</span><input id="setPixeldrainKey" type="password" autocomplete="off" placeholder="Lascia vuoto per non modificarla"><small id="pixeldrainHint"></small></label><label class="check span2"><input id="clearPixeldrain" type="checkbox"><span>Rimuovi la key salvata</span></label></div></div>
-      <div id="settingsError" class="error-text" aria-live="polite"></div><div class="modal-actions sticky-bottom"><button class="btn soft" type="button" data-close-modal="settings">Chiudi</button><button class="btn primary" type="submit">Salva impostazioni</button></div>
-    </form>
-  </div>
+  <div id="settingsModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="settingsTitle"><div class="backdrop" data-close-modal="settings"></div><form id="settingsForm" class="modal-card settings-card panel"><div class="modal-head sticky"><h2 id="settingsTitle">Impostazioni</h2><button class="icon-button" type="button" data-close-modal="settings" aria-label="Chiudi"><svg class="icon"><use href="/static/icons.svg#x"></use></svg></button></div>
+    <div class="settings-section"><h3>Registrazione</h3><div class="form-grid"><label class="field"><span>Segmento (minuti)</span><input id="setSegment" type="number" min="5" max="120"></label><label class="field"><span>Dimensione massima file (GB)</span><input id="setSegmentMax" type="number" min="0.25" max="2" step="0.05"><small>Limite massimo: 2 GB.</small></label><label class="field"><span>Container</span><select id="setContainer"><option value="mp4">MP4 diretto</option><option value="mkv">MKV</option></select></label><label class="field"><span>Polling sorgenti (sec)</span><input id="setPoll" type="number" min="15" max="600"></label><label class="field"><span>Controlli contemporanei</span><input id="setProbe" type="number" min="1" max="12"></label><label class="field"><span>Integrità</span><select id="setIntegrity"><option value="packet">Packet scan + SHA-256</option><option value="quick">FFprobe + SHA-256</option></select></label><label class="check span2"><input id="setThumbs" type="checkbox"><span>Genera miniature e mantienile dopo la rimozione del video locale</span></label></div></div>
+    <div class="settings-section"><h3>Buffer e disco</h3><div class="form-grid"><label class="field"><span>Buffer locale massimo (GB)</span><input id="setBuffer" type="number" min="0" step="0.5"><small>0 = illimitato</small></label><label class="check"><input id="setHardStop" type="checkbox"><span>Hard stop controllato al superamento del limite</span></label><label class="field"><span>Warning spazio libero (GB)</span><input id="setMinFree" type="number" min="0.25" step="0.25"></label><label class="field"><span>Blocca nuove REC sotto (GB)</span><input id="setCriticalFree" type="number" min="0.1" step="0.1"></label><label class="field"><span>Stop emergenza sotto (GB)</span><input id="setEmergencyFree" type="number" min="0.05" step="0.05"></label><label class="check"><input id="setDeleteAfter" type="checkbox"><span>Elimina il video locale dopo upload verificato</span></label></div></div>
+    <div class="settings-section"><h3>Upload</h3><div class="form-grid"><label class="field"><span>Provider primario</span><select id="setPrimary"><option value="gofile">Gofile</option><option value="pixeldrain">Pixeldrain</option><option value="none">Nessuno</option></select></label><label class="field"><span>Fallback</span><select id="setFallback"><option value="pixeldrain">Pixeldrain</option><option value="gofile">Gofile</option><option value="none">Nessuno</option></select></label><label class="field"><span>Retry base (sec)</span><input id="setRetry" type="number" min="30" max="3600"></label><label class="field"><span>Max tentativi</span><input id="setAttempts" type="number" min="1" max="100"></label></div></div>
+    <div class="settings-section provider-box"><div class="provider-head"><div><h3>Gofile</h3><span id="gofileState" class="provider-state">Non configurato</span></div><button id="testGofileBtn" class="button secondary compact" type="button">Test connessione</button></div><div class="form-grid"><label class="field span2"><span>API / Account token</span><input id="setGofileToken" type="password" autocomplete="off" placeholder="Lascia vuoto per non modificarlo"><small id="gofileHint"></small></label><label class="field"><span>Folder ID</span><input id="setGofileFolder"></label><label class="field"><span>Upload proxy</span><select id="setGofileRegion"><option value="auto">Auto + fallback EU</option><option value="eu-par">Europe · Paris</option><option value="na-phx">North America · Phoenix</option><option value="ap-sgp">Asia · Singapore</option><option value="ap-hkg">Asia · Hong Kong</option><option value="ap-tyo">Asia · Tokyo</option><option value="sa-sao">South America · São Paulo</option></select></label><label class="check span2"><input id="clearGofile" type="checkbox"><span>Rimuovi il token salvato</span></label></div></div>
+    <div class="settings-section provider-box"><div class="provider-head"><div><h3>Pixeldrain</h3><span id="pixeldrainState" class="provider-state">Non configurato</span></div><button id="testPixeldrainBtn" class="button secondary compact" type="button">Test connessione</button></div><div class="form-grid"><label class="field span2"><span>API key</span><input id="setPixeldrainKey" type="password" autocomplete="off" placeholder="Lascia vuoto per non modificarla"><small id="pixeldrainHint"></small></label><label class="check span2"><input id="clearPixeldrain" type="checkbox"><span>Rimuovi la key salvata</span></label></div></div>
+    <div id="settingsError" class="error-text" aria-live="polite"></div><div class="modal-actions sticky-bottom"><button class="button secondary" type="button" data-close-modal="settings">Chiudi</button><button class="button primary" type="submit">Salva impostazioni</button></div></form></div>
 
-  <div id="videoModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="videoTitle"><div class="backdrop" data-close-modal="video"></div><div class="modal-card video-card panel"><div class="modal-head"><div><h2 id="videoTitle">Video</h2></div><button class="icon-btn" type="button" data-close-modal="video" aria-label="Chiudi">×</button></div><video id="videoPlayer" controls preload="metadata"></video></div></div>
-  <aside id="livePauseAlert" class="live-pause-alert hidden" aria-live="assertive" aria-label="Creator live non registrate"></aside>
-  <div id="toastRegion" class="toasts" aria-live="polite"></div>
-  <dialog id="commandDialog" aria-labelledby="commandTitle"><div class="command-head"><h2 id="commandTitle">Trova nel workspace</h2><button id="closeCommands" class="icon-btn" type="button" aria-label="Chiudi ricerca">×</button></div><input id="commandSearch" type="search" aria-label="Cerca pagine o creator" placeholder="Nome creator o pagina…" autocomplete="off"><div id="commandResults"></div><footer>↑ ↓ per scegliere · Invio per aprire · Esc per chiudere</footer></dialog>
+  <div id="videoModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="videoTitle"><div class="backdrop" data-close-modal="video"></div><div class="modal-card video-card panel"><div class="modal-head"><h2 id="videoTitle">Video</h2><button class="icon-button" type="button" data-close-modal="video" aria-label="Chiudi"><svg class="icon"><use href="/static/icons.svg#x"></use></svg></button></div><video id="videoPlayer" controls preload="metadata"></video></div></div>
+  <aside id="livePauseAlert" class="live-pause-alert hidden" aria-live="assertive" aria-label="Creator live non registrate"></aside><div id="toastRegion" class="toasts" aria-live="polite"></div>
+  <dialog id="commandDialog" class="command-dialog" aria-labelledby="commandTitle"><div class="command-head"><div><svg class="icon"><use href="/static/icons.svg#search"></use></svg><h2 id="commandTitle">Cerca</h2></div><button id="closeCommands" class="icon-button" type="button" aria-label="Chiudi ricerca"><svg class="icon"><use href="/static/icons.svg#x"></use></svg></button></div><label class="command-input"><svg class="icon"><use href="/static/icons.svg#search"></use></svg><input id="commandSearch" type="search" aria-label="Cerca pagine o creator" placeholder="Creator o sezione" autocomplete="off"></label><div id="commandResults" class="command-results"></div><footer><span>Freccia su/giù: seleziona</span><span>Invio: apri</span><span>Esc: chiudi</span></footer></dialog>
   <script src="/static/app.js?v=3.0.0" defer></script>
   <script src="/static/operations.js" defer></script>
-  <script src="/static/workspace.js" defer></script>
+  <script src="/static/workspace.js?v=3.0.0-redesign1" defer></script>
+  <script src="/static/ui.js?v=3.0.0-redesign1" defer></script>
 </body>
 </html>

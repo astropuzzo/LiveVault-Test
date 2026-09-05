@@ -1,9 +1,11 @@
 {
-  "name":"LiveVault",
-  "short_name":"LiveVault",
-  "start_url":"/",
-  "display":"standalone",
-  "background_color":"#070a10",
-  "theme_color":"#090d14",
-  "icons":[{"src":"/static/icon.svg","sizes":"any","type":"image/svg+xml","purpose":"any maskable"}]
+  "name": "LiveVault",
+  "short_name": "LiveVault",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0b0d10",
+  "theme_color": "#0b0d10",
+  "icons": [
+    {"src": "/static/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable"}
+  ]
 }
