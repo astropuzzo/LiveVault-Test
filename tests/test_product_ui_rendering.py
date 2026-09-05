@@ -32,14 +32,12 @@ def test_product_ui_rendering_regressions_are_pinned():
     assert '.cr-pulse-access-span.tipjar' in tuning and '#f1a72a' in tuning
     assert '.cr-pulse-rec-span' in tuning and '#ff4f62' in tuning
     assert '.cr-pulse-missed-span' in tuning and '#ff4fc8' in tuning
-    assert 'stroke-dasharray' in tuning
-    assert 'drop-shadow' in tuning
 
     assert "/static/ui-fixes.css?v=3.0.0-redesign2" in workspace
     assert "/static/dashboard-tuning.css?v=3.0.0-redesign3" in workspace
-    assert "/static/pulse-axis.css?v=3.0.0-redesign5" in workspace
-    assert "/static/pulse-tuning.js?v=3.0.0-redesign5" in workspace
-    assert "livevault-shell-v3.0.0-redesign5" in sw
+    assert "/static/pulse-axis.css?v=3.0.0-redesign6" in workspace
+    assert "/static/pulse-tuning.js?v=3.0.0-redesign6" in workspace
+    assert "livevault-shell-v3.0.0-redesign6" in sw
     assert "'/static/ui-fixes.css'" in sw
     assert "'/static/dashboard-tuning.css'" in sw
     assert "'/static/pulse-axis.css'" in sw

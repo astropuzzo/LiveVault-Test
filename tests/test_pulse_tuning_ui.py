@@ -33,12 +33,24 @@ def test_pulse_has_patterns_real_time_scale_and_selectable_window():
     assert '.cr-pulse-day-line' in css
     assert '.cr-pulse-half-hour-line' in css
 
-    # Timeline segments use real SVG paint servers, not legend-only CSS gradients.
-    for pattern in ['private', 'tipjar', 'cloud', 'processing', 'missed', 'restricted', 'unrecorded']:
-        assert f"id: 'lv-pulse-{pattern}'" in js
-        assert f'url(#lv-pulse-{pattern})' in css or f'url(#lv-pulse-{pattern})' in js
-    assert "svgNode('circle'" in js  # dotted TIP-JAR pattern
-    assert 'M6 1.2L7.1 4.9L10.8 6' in js  # four-point CLOUD sparkle/star
+    # Pattern tiles must paint their semantic base color completely. Percentage
+    # pattern backgrounds caused the previous transparent "everything blue" bug.
+    assert 'function patternRect(pattern, fill, width, height)' in js
+    assert "width: '100%'" not in js
+    assert "patternRect(privatePattern, '#9a5cff', 12, 12)" in js
+    assert "patternRect(tipjarPattern, '#f1a72a', 12, 12)" in js
+    assert "patternRect(cloudPattern, '#32d583', 22, 22)" in js
+    assert "patternRect(processingPattern, '#22c7ff', 14, 14)" in js
+    assert "patternRect(missedPattern, '#ff4fc8', 20, 12)" in js
+
+    # Textures are deliberately low contrast: hue carries state first, texture
+    # is only a secondary accessibility/detail channel.
+    assert 'opacity: .18' in js
+    assert 'opacity: .17' in js
+    assert 'opacity: .20' in js
+    assert '.cr-pulse-svg .cr-pulse-live-span' in css
+    assert 'filter:none' in css
+    assert 'stroke-dasharray:none' in css
 
     # Legend uses the same SVG paint servers and remains centered.
     assert "['remote', 'CLOUD', 'url(#lv-pulse-cloud)']" in js
