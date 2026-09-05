@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 import importlib.util
 import sys
+import time
 import types
 from pathlib import Path
 from typing import Any
@@ -71,6 +73,73 @@ from app.workers import manager as _processing_manager  # noqa: E402
 from app.workers.size_policy import install_size_policy as _install_size_policy  # noqa: E402
 
 _install_size_policy(_processing_manager)
+
+
+# A process kill can leave an interrupted FFmpeg remux as
+# .<name>.finalizing.mp4. The original recovery loop correctly waits 30 minutes,
+# but an MP4 without a moov/header can never become valid on a later retry and
+# used to remain a permanent Dashboard error. Preserve those bytes under a
+# hidden quarantine name, write the diagnostic beside them, and stop retrying
+# the same irrecoverable temporary file forever.
+from app.config import settings as _recovery_settings  # noqa: E402
+from app.recovery_policy import (  # noqa: E402
+    finalizing_error_is_unrecoverable as _finalizing_error_is_unrecoverable,
+    recovery_quarantine_path as _recovery_quarantine_path,
+)
+from app.utils import verify_media as _recovery_verify_media  # noqa: E402
+
+
+async def _recover_stale_finalizing_files_safe(self) -> None:
+    cutoff = time.time() - 30 * 60
+    for temporary in sorted(_recovery_settings.recordings_dir.rglob(".*.finalizing.mp4")):
+        if self._stopping:
+            return
+        if not temporary.is_file():
+            continue
+        key = f"recovery-temp:{temporary}"
+        try:
+            if temporary.stat().st_mtime > cutoff:
+                continue
+        except OSError:
+            continue
+        stem = temporary.name[1:-len(".finalizing.mp4")]
+        original = temporary.with_name(f"{stem}.mp4")
+        try:
+            original_ready = original.is_file() and original.stat().st_size > 0
+        except OSError:
+            original_ready = False
+        if original_ready:
+            temporary.unlink(missing_ok=True)
+            self.last_errors.pop(key, None)
+            continue
+        integrity = await asyncio.to_thread(_recovery_verify_media, temporary, "quick")
+        if integrity.ok:
+            temporary.replace(original)
+            self.last_errors.pop(key, None)
+            continue
+        detail = str(integrity.error or temporary.name)
+        if _finalizing_error_is_unrecoverable(detail):
+            quarantine = _recovery_quarantine_path(temporary)
+            try:
+                temporary.replace(quarantine)
+                note = quarantine.with_name(f"{quarantine.name}.txt")
+                note.write_text(
+                    "LiveVault recovery quarantine\n"
+                    f"temporary={temporary}\n"
+                    f"reason={detail}\n",
+                    encoding="utf-8",
+                )
+                self.last_errors.pop(key, None)
+            except OSError as exc:
+                self.last_errors[key] = f"Recovery: impossibile isolare {temporary.name}: {exc}"[-1400:]
+            continue
+        self.last_errors[key] = f"Copia temporanea conservata: {detail}"[-1400:]
+
+
+_processing_manager._recover_stale_finalizing_files = types.MethodType(
+    _recover_stale_finalizing_files_safe, _processing_manager
+)
+
 
 # A failed verification/remux must not leave the Dashboard frozen forever at
 # (for example) "Verifica audio/video · 84%".  Guard the singleton used by the

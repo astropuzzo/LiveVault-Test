@@ -26,6 +26,14 @@
     document.head.appendChild(pulseAxis);
   }
 
+  if (!document.querySelector('link[data-mobile-fixes]')) {
+    const mobileFixes = document.createElement('link');
+    mobileFixes.rel = 'stylesheet';
+    mobileFixes.href = '/static/mobile-fixes.css?v=3.0.0-redesign8';
+    mobileFixes.dataset.mobileFixes = '1';
+    document.head.appendChild(mobileFixes);
+  }
+
   window.addEventListener('load', () => {
     if (document.querySelector('script[data-pulse-tuning]')) return;
     const pulseScript = document.createElement('script');
