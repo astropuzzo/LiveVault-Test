@@ -43,8 +43,8 @@ def test_live_pulse_is_csp_safe_and_shows_live_and_recording_geometry():
     assert '.cr-pulse-missed-span' in css
     assert "Intl.DateTimeFormat().resolvedOptions().timeZone" in js
     assert "const DISPLAY_TIME_ZONE_LABEL = 'ora locale'" not in js
-    assert '.cr-pulse-rec-span{fill:#087f73' in css
-    assert '.cr-pulse-rec-span{fill:' in css
+    assert '--recording:' in css
+    assert '.cr-pulse-rec-span{fill:var(--recording)' in css
 
     assert "style-src 'self'" in main
     assert "style-src 'self' 'unsafe-inline'" not in main
