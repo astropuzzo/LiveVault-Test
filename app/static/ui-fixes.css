@@ -1,0 +1,157 @@
+/* LiveVault 3.0 — targeted rendering fixes for the product UI.
+ * Keep this separate from the base design system so regressions can be audited
+ * without reopening the full stylesheet.
+ */
+
+/* External SVG <use> does not reliably inherit the <style> block that lives
+ * inside icons.svg. Put the presentation properties on the host/use tree too.
+ */
+.icon,
+.mini-icon,
+.button-icon,
+.progress-icon,
+.icon use,
+.mini-icon use,
+.button-icon use,
+.progress-icon use {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* Recording thumbnails are intentional 3×3 storyboards. In compact product
+ * surfaces show the representative middle frame instead of squeezing all nine
+ * frames into a tiny cell. Live previews are deliberately excluded.
+ */
+.archive-thumb,
+.thumb,
+.library-cover,
+.cr-ended-cover,
+.profile-cover,
+.profile-day-thumb,
+.cr-preview {
+  overflow: hidden;
+}
+
+.archive-thumb img,
+.thumb img,
+.library-cover img,
+.cr-ended-cover img,
+.profile-cover img,
+.profile-day-thumb img,
+.cr-preview-cover {
+  transform: scale(3);
+  transform-origin: 50% 50%;
+  pointer-events: none;
+}
+
+/* Archive: reserve real space for duration, cloud state and actions. The first
+ * redesign let the flexible integrity column consume almost the entire row.
+ */
+.archive-table-head {
+  padding-left: 112px;
+  grid-template-columns: minmax(260px,1.15fr) minmax(240px,.9fr) 120px 130px 96px;
+}
+
+.rec-card {
+  grid-template-columns: 112px minmax(260px,1.15fr) minmax(240px,.9fr) 120px 130px 96px;
+}
+
+.archive-thumb,
+.thumb {
+  width: 112px;
+  height: 63px;
+}
+
+.archive-number,
+.archive-upload,
+.rec-actions {
+  min-width: 0;
+}
+
+.archive-number strong,
+.archive-number span,
+.archive-upload small {
+  white-space: nowrap;
+}
+
+/* A storyboard should read as an image, not as a tall contact-sheet strip in
+ * list view. The card content remains dense; only the media cell is corrected.
+ */
+.library-grid.list .library-card {
+  grid-template-columns: 118px minmax(0,1fr);
+}
+
+.library-grid.list .library-cover {
+  width: 118px;
+  min-height: 82px;
+}
+
+@media (max-width:1320px) {
+  .archive-table-head {
+    padding-left: 96px;
+    grid-template-columns: minmax(220px,1fr) minmax(190px,.8fr) 100px 112px 88px;
+  }
+  .rec-card {
+    grid-template-columns: 96px minmax(220px,1fr) minmax(190px,.8fr) 100px 112px 88px;
+  }
+  .archive-thumb,
+  .thumb {
+    width: 96px;
+    height: 56px;
+  }
+}
+
+@media (max-width:1050px) {
+  .rec-card {
+    grid-template-columns: 80px minmax(190px,1fr) minmax(170px,.8fr) 86px 98px 80px;
+  }
+  .archive-thumb,
+  .thumb {
+    width: 80px;
+    height: 50px;
+  }
+  .library-grid.list .library-card {
+    grid-template-columns: 104px minmax(0,1fr);
+  }
+  .library-grid.list .library-cover {
+    width: 104px;
+  }
+}
+
+@media (max-width:820px) {
+  .rec-card {
+    grid-template-columns: 72px minmax(150px,1fr) 82px 92px 74px;
+  }
+  .archive-thumb,
+  .thumb {
+    width: 72px;
+    height: 48px;
+  }
+  .library-grid.list .library-card {
+    grid-template-columns: 92px minmax(0,1fr);
+  }
+  .library-grid.list .library-cover {
+    width: 92px;
+  }
+}
+
+@media (max-width:560px) {
+  .rec-card {
+    grid-template-columns: 64px minmax(0,1fr) 86px 70px;
+  }
+  .archive-thumb,
+  .thumb {
+    width: 64px;
+    height: 44px;
+  }
+  .library-grid.list .library-card {
+    grid-template-columns: 82px minmax(0,1fr);
+  }
+  .library-grid.list .library-cover {
+    width: 82px;
+    min-height: 78px;
+  }
+}

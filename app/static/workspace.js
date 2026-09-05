@@ -1,6 +1,15 @@
 /* LiveVault workspace navigation, command search and archive export. */
 (() => {
   'use strict';
+
+  if (!document.querySelector('link[data-ui-fixes]')) {
+    const fixes = document.createElement('link');
+    fixes.rel = 'stylesheet';
+    fixes.href = '/static/ui-fixes.css?v=3.0.0-redesign2';
+    fixes.dataset.uiFixes = '1';
+    document.head.appendChild(fixes);
+  }
+
   const svg = name => `<svg class="mini-icon" aria-hidden="true"><use href="/static/icons.svg#${name}"></use></svg>`;
   const dialog = $('#commandDialog');
   const input = $('#commandSearch');
