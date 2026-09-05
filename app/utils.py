@@ -242,11 +242,15 @@ def generate_thumbnail(path: Path, output: Path, duration: float | None = None) 
 
     try:
         if seeks:
-            command = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y"]
+            # Nine auto-threaded decoders oversubscribe small recording hosts.
+            # Each input needs just one frame, not a continuing video stream.
+            command = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+                       "-filter_complex_threads", "1"]
             for position in seeks:
-                command.extend(["-ss", f"{position:.3f}", "-i", str(path)])
+                command.extend(["-threads", "1", "-ss", f"{position:.3f}", "-i", str(path)])
             cells = [
-                f"[{index}:v:0]scale=320:180:force_original_aspect_ratio=decrease,"
+                f"[{index}:v:0]trim=end_frame=1,setpts=PTS-STARTPTS,"
+                "scale=320:180:force_original_aspect_ratio=decrease,"
                 f"pad=320:180:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1[v{index}]"
                 for index in range(9)
             ]
@@ -259,7 +263,7 @@ def generate_thumbnail(path: Path, output: Path, duration: float | None = None) 
             command.extend([
                 "-filter_complex", filters, "-map", "[sheet]", "-an",
                 "-frames:v", "1", "-update", "1", "-pix_fmt", "yuvj420p",
-                "-q:v", "4", str(candidate),
+                "-threads:v", "1", "-q:v", "4", str(candidate),
             ])
             result = subprocess.run(
                 command, capture_output=True, text=True, timeout=120, check=False,
@@ -271,11 +275,12 @@ def generate_thumbnail(path: Path, output: Path, duration: float | None = None) 
         result = subprocess.run(
             [
                 "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+                "-filter_threads", "1", "-threads", "1",
                 "-ss", f"{seek:.2f}", "-i", str(path), "-frames:v", "1",
                 "-vf", "scale=960:540:force_original_aspect_ratio=decrease,"
                 "pad=960:540:(ow-iw)/2:(oh-ih)/2:color=black",
                 "-an", "-update", "1", "-pix_fmt", "yuvj420p",
-                "-q:v", "4", str(candidate),
+                "-threads:v", "1", "-q:v", "4", str(candidate),
             ],
             capture_output=True,
             text=True,
@@ -307,7 +312,7 @@ def generate_live_preview(path: Path, output: Path) -> bool:
     video_args = [
         "-map", "0:v:0", "-frames:v", "1", "-an",
         "-vf", "scale=640:-2:force_original_aspect_ratio=decrease",
-        "-update", "1", "-q:v", "6", str(candidate),
+        "-update", "1", "-threads:v", "1", "-q:v", "6", str(candidate),
     ]
     try:
         # Prefer a recent frame. The second attempt also works with unusual
@@ -318,6 +323,7 @@ def generate_live_preview(path: Path, output: Path) -> bool:
                 result = subprocess.run(
                     [
                         "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+                        "-filter_threads", "1", "-threads", "1",
                         *seek_args, "-i", str(path), *video_args,
                     ],
                     capture_output=True,

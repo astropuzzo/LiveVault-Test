@@ -60,7 +60,7 @@
       </article>
       <article class="metric-card watt-card">
         <div class="ring power-ring" id="wattRing"><span>—</span></div>
-        <div><p>CONSUMO</p><strong id="wattValue">—</strong><small id="wattDaily">stima software</small></div>
+        <div><p>POTENZA MISURATA</p><strong id="wattValue">—</strong><small id="wattDaily">Sensore ingresso ASIAIR</small></div>
       </article>
     </section>
 
@@ -99,9 +99,9 @@
           <footer><span>% utilizzato</span><span id="diskDelta">variazione —</span></footer>
         </article>
         <article class="chart-card">
-          <header><div><span class="chart-kicker">ENERGY ESTIMATE</span><strong>Potenza assorbita</strong></div><b id="wattPeak">—</b></header>
+          <header><div><span class="chart-kicker">SENSORE ASIAIR · INGRESSO DC</span><strong>Potenza assorbita</strong></div><b id="wattPeak">—</b></header>
           <div class="chart-host" id="wattChart"><span class="chart-empty">Raccolta dati…</span></div>
-          <footer><span>W stimati</span><span id="wattAverage">media —</span></footer>
+          <footer><span id="energyMeasured">In attesa di campioni misurati</span><span id="wattAverage">media —</span></footer>
         </article>
       </div>
       <footer class="telemetry-footer"><p id="historyStatus" role="status">Caricamento dello storico…</p><div><button id="refreshAll" type="button">Aggiorna</button> <button id="exportMetrics" type="button">Esporta CSV</button></div></footer>
@@ -212,6 +212,6 @@
       <div class="login-error" id="loginError" role="alert"></div>
     </form>
   </div>
-  <script src="/app.js?v=3.0.0" defer></script>
+  <script src="/app.js?v=3.0.0-power1" defer></script>
 </body>
 </html>

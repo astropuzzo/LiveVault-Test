@@ -26,7 +26,9 @@ Keep existing credentials and system configuration. Never replace the LiveVault
 
 1. Run the Python suite and JavaScript checks in `.github/workflows/ci.yml`.
 2. Push the reviewed commit and wait for **Core tests** to pass on GitHub.
-3. Use Coolify to deploy that exact commit. Retain the previous image for rollback.
+3. Promote the tested commit to `main`. The Coolify GitHub webhook queues deployment
+   automatically. Confirm its commit before starting any manual deployment. Retain
+   the previous image for rollback.
 4. Copy the versioned panel assets and `server.py` to `/opt/openastro-control`,
    keeping ownership and existing service configuration. Restart only the panel
    process; its systemd unit restarts it automatically. A panel restart invalidates
@@ -34,8 +36,8 @@ Keep existing credentials and system configuration. Never replace the LiveVault
 5. Check both `/healthz` endpoints, sign in, verify live recorder counts agree,
    check media growth and uploads, and inspect both desktop and phone layouts.
 
-GitHub CI validates both apps. Deployment to this private node is currently an
-explicit Coolify operation; a green GitHub run alone is not a deployment.
+GitHub CI validates both apps. Coolify's main webhook does not wait for CI, so test
+on a branch before promotion. A green GitHub run alone is not proof of deployment.
 
 ## Backup and rollback
 
@@ -52,5 +54,6 @@ files from that copy. Version 3.0.0 does not change the database schema.
 
 Panel telemetry is sampled every 10 seconds and retained for 24 hours. Expensive
 state probes are shared across clients for five seconds. Browsers stop polling
-when hidden. Energy readings are software estimates, not wattmeter measurements;
-the daily figure is a projection at the current load.
+when hidden. The ASIAIR Plus carrier-board ADS1015 measures input voltage/current;
+the panel derives DC watts and integrates Wh only over covered sample intervals.
+See `control-panel/README.md` for sensor setup, scope and calibration limits.

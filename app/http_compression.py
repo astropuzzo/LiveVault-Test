@@ -9,7 +9,7 @@ class TextCompressionMiddleware:
 
     async def __call__(self, scope, receive, send):
         path = scope.get("path", "")
-        media = path.endswith(("/view", "/download", "/thumbnail", "/preview", ".svg", ".png", ".jpg"))
+        media = path.endswith(("/view", "/download", "/capture", "/thumbnail", "/preview", ".svg", ".png", ".jpg"))
         text = path in {"/", "/sw.js", "/manifest.webmanifest"} or path.startswith(("/static/", "/api/"))
         handler = self.compressed if scope["type"] == "http" and text and not media else self.app
         await handler(scope, receive, send)

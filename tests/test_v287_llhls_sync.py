@@ -92,6 +92,7 @@ def test_real_ffmpeg_reads_synthetic_split_master(tmp_path):
             "-hls_segment_filename", str(tmp_path / "v%03d.m4s"), str(video),
         ],
         check=True,
+        cwd=tmp_path,
     )
     subprocess.run(
         [
@@ -102,6 +103,7 @@ def test_real_ffmpeg_reads_synthetic_split_master(tmp_path):
             "-hls_segment_filename", str(tmp_path / "a%03d.m4s"), str(audio),
         ],
         check=True,
+        cwd=tmp_path,
     )
     # Same syntax as production, with local child playlists for a hermetic CI check.
     manifest = tmp_path / "master.m3u8"

@@ -89,7 +89,10 @@ function chartMarkup(points, series, min, max) {
   const time = point => new Date(point.t * 1000).toLocaleTimeString('it-IT', {hour:'2-digit',minute:'2-digit'});
   return `<svg viewBox="0 0 600 170" preserveAspectRatio="none" role="img" aria-label="${series.map(item => item.key).join(', ')}: ${min.toFixed(0)}–${max.toFixed(0)}"><g class="chart-gridlines">${grid}</g>${paths}</svg><div class="chart-axis"><span>${time(points[0])}</span><span>${time(points.at(-1))}</span></div>`;
 }
-function renderHistory(points) {
+function measuredWatts(power) {
+  return power?.measurement === 'measured' && power.watts != null && Number.isFinite(Number(power.watts)) ? Number(power.watts) : null;
+}
+function renderHistory(points, energy = {}) {
   latestHistory = points;
   const cpuAvg = mean(points, 'cpu'), ramAvg = mean(points, 'ram');
   $('#computeChart').innerHTML = chartMarkup(points, [{key:'cpu',className:'cpu'},{key:'ram',className:'ram'}], 0, 100);
@@ -113,8 +116,9 @@ function renderHistory(points) {
   const watts = points.filter(point => point.watts != null).map(point => Number(point.watts)).filter(Number.isFinite);
   const wattMax = Math.max(10, ...watts);
   $('#wattChart').innerHTML = chartMarkup(points, [{key:'watts',className:'watt'}], 0, wattMax);
-  $('#wattPeak').textContent = watts.length ? `${Math.max(...watts).toFixed(1)} W picco` : '—';
-  $('#wattAverage').textContent = watts.length ? `media ${mean(points, 'watts').toFixed(1)} W` : 'media —';
+  $('#wattPeak').textContent = energy.peak_watts != null ? `${energy.peak_watts.toFixed(1)} W picco` : '—';
+  $('#wattAverage').textContent = energy.average_watts != null ? `media ${energy.average_watts.toFixed(1)} W` : 'media —';
+  $('#energyMeasured').textContent = energy.wh != null ? `${energy.wh.toFixed(2)} Wh · ${duration(energy.covered_seconds)} coperti` : 'In attesa di campioni misurati';
 }
 async function refreshHistory() {
   if (historyBusy || document.hidden || !signedIn) return;
@@ -125,7 +129,7 @@ async function refreshHistory() {
     if (response.status === 401) return showLogin();
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const result = await response.json();
-    if (requestedRange === historyRange) renderHistory(result.points || []);
+    if (requestedRange === historyRange) renderHistory(result.points || [], result.energy || {});
     $('#historyStatus').textContent = `Campioni ogni 10 s · ${Intl.DateTimeFormat().resolvedOptions().timeZone}`;
   } catch (_) { $('#historyStatus').textContent = 'Storico non aggiornato. Riprova con Aggiorna.'; }
   finally { historyBusy = false; if (requestedRange !== historyRange) refreshHistory(); }
@@ -160,7 +164,8 @@ function renderPower(power) {
   $('#powerWifi').textContent = power.hotspot ? 'OpenAstro-AP' : power.wifi_radio ? 'radio attiva' : 'spento';
   $('#powerHealth').textContent = power.undervoltage_now ? 'tensione bassa' : power.throttled_now ? 'limitato ora' : power.power_event_seen ? 'cali passati' : 'stabile';
   $('#powerHealth').className = power.undervoltage_now || power.throttled_now ? 'bad-text' : power.power_event_seen ? 'warn-text' : '';
-  $('#powerWatts').textContent = power.estimated_watts ? `~${power.estimated_watts.toFixed(1)} W` : '—';
+  const watts = measuredWatts(power);
+  $('#powerWatts').textContent = watts != null ? `${watts.toFixed(1)} W DC` : 'Sensore non disponibile';
   $('#quickWifiTitle').textContent = activeWifiOn ? 'Spegni Wi-Fi' : 'Attiva Wi-Fi';
   $('#quickWifiState').textContent = activeWifiOn ? 'Hotspot attivo' : 'Radio disattivata';
   $('#quickWifi').classList.toggle('is-off', !activeWifiOn);
@@ -198,10 +203,11 @@ function render(data) {
   ring('#networkRing', Math.min(100, ((network.rx_rate || 0) + (network.tx_rate || 0)) / 125000), 'NET');
   $('#networkDown').textContent = `↓ ${bytes(network.rx_rate || 0)}/s`;
   $('#networkUp').textContent = `↑ ${bytes(network.tx_rate || 0)}/s`;
-  const watts = Number(data.power?.estimated_watts) || 0;
-  ring('#wattRing', Math.min(100, watts * 10), watts ? `~${watts.toFixed(1)}W` : '—');
-  $('#wattValue').textContent = watts ? `~${watts.toFixed(1)} watt` : '—';
-  $('#wattDaily').textContent = data.power?.daily_kwh ? `${data.power.daily_kwh.toFixed(3)} kWh/24h al carico attuale · stima` : 'stima software';
+  const watts = measuredWatts(data.power);
+  ring('#wattRing', watts == null ? 0 : Math.min(100, watts), watts != null ? `${watts.toFixed(1)}W` : '—');
+  $('#wattValue').textContent = watts != null ? `${watts.toFixed(1)} watt DC` : 'Non disponibile';
+  $('#wattDaily').textContent = watts != null ? `${data.power.input_volts.toFixed(2)} V · ${data.power.input_amps.toFixed(3)} A · ingresso ASIAIR` : 'Sensore ASIAIR non raggiungibile';
+  $('#wattValue').title = 'Potenza DC dai sensori ASIAIR, inclusi i carichi collegati. Conversione del driver INDI; non calibrata con wattmetro esterno.';
   renderPower(data.power);
 
   const mounted = storage.data.mounted && storage.share.mounted;
@@ -400,8 +406,8 @@ document.addEventListener('visibilitychange', () => { if (document.hidden) stopH
 $('#refreshAll').addEventListener('click', () => { refresh(); refreshHistory(); });
 $('#exportMetrics').addEventListener('click', () => {
   if (!latestHistory.length) return toast('Nessun campione da esportare.', true);
-  const keys = ['t', 'cpu', 'ram', 'temp', 'disk', 'rx', 'tx', 'watts'];
-  const csv = ['timestamp_utc,cpu_percent,ram_percent,temperature_c,disk_percent,download_bytes_s,upload_bytes_s,estimated_watts', ...latestHistory.map(row => keys.map(key => key === 't' ? new Date(row.t * 1000).toISOString() : row[key] ?? '').join(','))].join('\r\n');
+  const keys = ['t', 'cpu', 'ram', 'temp', 'disk', 'rx', 'tx', 'watts', 'power_measurement', 'input_volts', 'input_amps', 'estimated_watts'];
+  const csv = ['timestamp_utc,cpu_percent,ram_percent,temperature_c,disk_percent,download_bytes_s,upload_bytes_s,measured_dc_watts,power_measurement,input_volts,input_amps,estimated_watts', ...latestHistory.map(row => keys.map(key => key === 't' ? new Date(row.t * 1000).toISOString() : row[key] ?? '').join(','))].join('\r\n');
   const url = URL.createObjectURL(new Blob([csv], {type:'text/csv;charset=utf-8'}));
   const link = document.createElement('a'); link.href = url; link.download = 'openastro-telemetria.csv'; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
 });

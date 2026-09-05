@@ -37,7 +37,7 @@ def test_product_ui_rendering_regressions_are_pinned():
     assert "/static/dashboard-tuning.css?v=3.0.0-redesign3" in workspace
     assert "/static/pulse-axis.css?v=3.0.0-redesign6" in workspace
     assert "/static/pulse-tuning.js?v=3.0.0-redesign7" in workspace
-    assert "livevault-shell-v3.0.0-redesign7" in sw
+    assert "livevault-shell-v3.0.0-redesign8" in sw
     assert "'/static/ui-fixes.css'" in sw
     assert "'/static/dashboard-tuning.css'" in sw
     assert "'/static/pulse-axis.css'" in sw

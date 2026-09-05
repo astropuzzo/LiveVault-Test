@@ -14,6 +14,7 @@ def test_compression_applies_to_text_and_preserves_media_ranges():
         return Response("// example\n" * 500, media_type="application/javascript")
 
     @app.get("/api/recordings/1/view")
+    @app.get("/api/sources/1/capture")
     def media():
         return Response(b"media" * 500, status_code=206, headers={"Content-Range": "bytes 0-2499/5000"}, media_type="video/mp4")
 
@@ -40,3 +41,8 @@ def test_compression_applies_to_text_and_preserves_media_ranges():
     assert "content-encoding" not in video.headers
     assert video.headers["content-range"] == "bytes 0-2499/5000"
     assert video.content == b"media" * 500
+    capture = get("/api/sources/1/capture")
+    assert capture.status_code == 206
+    assert "content-encoding" not in capture.headers
+    assert capture.headers["content-range"] == "bytes 0-2499/5000"
+    assert capture.content == b"media" * 500

@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import pytest
 
 from app.recorder import finalize_mp4_for_streaming, mp4_is_streaming_ready
-from app.utils import generate_thumbnail, sha256_file, verify_media
+from app.utils import generate_live_preview, generate_thumbnail, sha256_file, verify_media
 
 
 def test_thumbnail_storyboard_uses_nine_fast_seeks(tmp_path: Path, monkeypatch):
@@ -65,6 +65,14 @@ def test_integrity_and_thumbnail_pipeline(tmp_path: Path):
         timeout=10,
     )
     assert dimensions.stdout.strip() == "960x540"
+    preview = tmp_path / "live.jpg"
+    assert generate_live_preview(media, preview)
+    dimensions = subprocess.run(
+        ["ffprobe", "-v", "error", "-select_streams", "v:0",
+         "-show_entries", "stream=width,height", "-of", "csv=p=0:s=x", str(preview)],
+        check=True, capture_output=True, text=True, timeout=10,
+    )
+    assert dimensions.stdout.strip() == "640x360"
 
 
 @pytest.mark.skipif(not shutil.which("ffprobe"), reason="ffprobe missing")

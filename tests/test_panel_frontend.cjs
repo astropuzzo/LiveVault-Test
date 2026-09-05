@@ -8,6 +8,14 @@ vm.runInContext(source.slice(source.indexOf('function mean('), source.indexOf('f
 test('missing telemetry is excluded from averages', () => {
   assert.equal(context.mean([{temp: null}, {temp: 50}, {temp: 60}], 'temp'), 55);
 });
+test('power presentation never substitutes an estimate for a sensor', () => {
+  const power = vm.createContext({});
+  vm.runInContext(source.slice(source.indexOf('function measuredWatts('), source.indexOf('function renderHistory(')), power);
+  assert.equal(power.measuredWatts({measurement:'measured',watts:0}), 0);
+  assert.equal(power.measuredWatts({measurement:'measured',watts:8.1}), 8.1);
+  assert.equal(power.measuredWatts({measurement:'estimated',watts:6}), null);
+  assert.equal(power.measuredWatts({measurement:'unavailable',estimated_watts:6}), null);
+});
 test('chart preserves gaps rather than drawing missing samples as zero', () => {
   const result = context.linePath([{t:0,temp:50},{t:10,temp:null},{t:20,temp:60}], 'temp', 0, 100);
   assert.equal((result.match(/M/g) || []).length, 2);

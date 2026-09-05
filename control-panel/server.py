@@ -206,7 +206,7 @@ def power_state() -> dict:
 
 
 def estimated_watts(cpu_usage: float, network: dict, data_mounted: bool, wifi_active: bool) -> float:
-    """Software estimate: CM4 exposes voltage/temperature, but no current sensor."""
+    """Legacy software model, kept separate from ASIAIR carrier-board sensors."""
     policy = Path("/sys/devices/system/cpu/cpufreq/policy0")
     current = int(read_text(str(policy / "scaling_cur_freq"), "0") or 0)
     maximum = int(read_text(str(policy / "cpuinfo_max_freq"), "1500000") or 1500000)
@@ -221,6 +221,67 @@ def estimated_watts(cpu_usage: float, network: dict, data_mounted: bool, wifi_ac
     return round(board + cpu + nvme + wifi + ethernet + io_network, 2)
 
 
+def read_input_power() -> dict:
+    """Read only the ASIAIR Plus CM4 input ADC; never claim power-output GPIOs.
+
+    ADS1015 at 0x4b on the CSI I2C mux. Channel mapping and scaling follow
+    indilib/indi-3rdparty indi-asi-power/asipower.h. This is DC input power,
+    including attached loads, not AC wall power or CPU-only consumption.
+    """
+    result = {"watts": None, "input_volts": None, "input_amps": None,
+              "measurement": "unavailable", "power_source": "ASIAIR ADS1015",
+              "power_scope": "DC input", "power_sample_at": None}
+    try:
+        import fcntl
+        with open("/dev/i2c-10", "r+b", buffering=0) as bus:
+            fcntl.ioctl(bus.fileno(), 0x0703, 0x4b)
+            bus.write(b"\x01")
+            original = bus.read(2)
+            if len(original) != 2:
+                raise OSError("ADC configuration unavailable")
+            values = []
+            try:
+                for config, scale in ((0xE683, 21 / 2000), (0xF483, 1 / 200)):
+                    bus.write(bytes((1, config >> 8, config & 255)))
+                    time.sleep(0.005)
+                    bus.write(b"\x00")
+                    sample = bus.read(2)
+                    if len(sample) != 2:
+                        raise OSError("Incomplete ADC sample")
+                    word = int.from_bytes(sample, "big", signed=True)
+                    raw = word >> 4
+                    if word & 15 or raw >= 2047 or raw < -1:
+                        raise ValueError("Invalid or saturated ADC sample")
+                    values.append(max(0, raw) * scale)
+            finally:
+                bus.write(b"\x01" + original)
+        volts, amps = values
+        if not 1 <= volts <= 21 or not 0 <= amps <= 10:
+            raise ValueError("ADC input outside supported range")
+        result.update(watts=round(volts * amps, 3), input_volts=round(volts, 3),
+                      input_amps=round(amps, 3), measurement="measured",
+                      power_sample_at=time.time())
+    except (OSError, ValueError, ImportError):
+        pass
+    return result
+
+
+def measured_energy(points: list[dict]) -> dict:
+    """Integrate real samples only; missing data and gaps >30s are not zero load."""
+    watt_seconds = covered = 0.0
+    for left, right in zip(points, points[1:]):
+        if any(p.get("power_measurement") != "measured" or p.get("watts") is None
+               for p in (left, right)):
+            continue
+        elapsed = right["t"] - left["t"]
+        if 0 < elapsed <= 30:
+            watt_seconds += (left["watts"] + right["watts"]) * 0.5 * elapsed
+            covered += elapsed
+    return {"wh": round(watt_seconds / 3600, 4) if covered else None,
+            "covered_seconds": round(covered),
+            "average_watts": round(watt_seconds / covered, 3) if covered else None}
+
+
 def sample_metrics() -> dict:
     snapshot = cached_state()
     host, data = snapshot["host"], snapshot["storage"]["data"]
@@ -233,7 +294,11 @@ def sample_metrics() -> dict:
         "disk": data["percent"] if data["mounted"] else None,
         "rx": network["rx_rate"],
         "tx": network["tx_rate"],
-        "watts": snapshot["power"]["estimated_watts"],
+        "watts": snapshot["power"]["watts"],
+        "power_measurement": snapshot["power"]["measurement"],
+        "input_volts": snapshot["power"]["input_volts"],
+        "input_amps": snapshot["power"]["input_amps"],
+        "estimated_watts": snapshot["power"]["estimated_watts"],
     }
 
 
@@ -243,6 +308,11 @@ def load_history() -> None:
         loaded = json.loads(HISTORY_FILE.read_text(encoding="utf-8"))
         cutoff = int(time.time()) - 86400
         _history = [item for item in loaded if isinstance(item, dict) and item.get("t", 0) >= cutoff]
+        for item in _history:
+            if "power_measurement" not in item:
+                item["estimated_watts"] = item.get("watts")
+                item["watts"] = None
+                item["power_measurement"] = "estimated"
     except (OSError, ValueError, json.JSONDecodeError):
         _history = []
 
@@ -284,13 +354,16 @@ def history_payload(seconds: int) -> dict:
     cutoff = int(time.time()) - seconds
     with _history_lock:
         points = [item.copy() for item in _history if item.get("t", 0) >= cutoff]
+    energy = measured_energy(points)
+    measured = [p["watts"] for p in points if p.get("power_measurement") == "measured" and p.get("watts") is not None]
+    energy["peak_watts"] = max(measured) if measured else None
     if len(points) > 240:
         stride = (len(points) + 239) // 240
         latest = points[-1]
         points = points[::stride]
         if points[-1]["t"] != latest["t"]:
             points.append(latest)
-    return {"range": seconds, "points": points, "sample_seconds": 10}
+    return {"range": seconds, "points": points, "sample_seconds": 10, "energy": energy}
 
 
 def auth_config() -> dict:
@@ -363,8 +436,7 @@ def state() -> dict:
     share_disk = disk("/share")
     power = power_state()
     power["estimated_watts"] = estimated_watts(cpu, network, data_disk["mounted"], power["wifi_radio"])
-    power["daily_kwh"] = round(power["estimated_watts"] * 24 / 1000, 3)
-    power["measurement"] = "estimated"
+    power.update(read_input_power())
     return {
         "timestamp": int(time.time()),
         "host": {
