@@ -25,7 +25,7 @@ const powerProfiles = [
 
 const actionLabels = {
   eject_nvme: ['Espulsione sicura NVMe', 'Le registrazioni verranno chiuse, Docker sarà arrestato e le due partizioni saranno smontate. Scollega il cavo soltanto dopo il messaggio finale.'],
-  attach_nvme: ['Rimonta NVMe', 'Forza il mount delle partizioni e riavvia Docker, Coolify, LiveVault e i backup.'],
+  attach_nvme: ['Rimonta NVMe', 'Rimonta NVMe, trasferisce e verifica le parti nel buffer, poi riprende la registrazione su NVMe e lo stitching abituale.'],
   restart_livevault: ['Riavvia LiveVault', 'La registrazione corrente verrà chiusa correttamente e il recorder ripartirà.'],
   restart_docker: ['Riavvia Docker', 'Tutti i container, incluso Coolify, saranno indisponibili per alcuni secondi.'],
   backup_now: ['Avvia backup', 'Crea subito una copia consistente del database LiveVault sulla partizione USB SHARE.'],
@@ -222,7 +222,7 @@ function render(data) {
   $$('[data-action="eject_nvme"]').forEach(button => { button.disabled = !storage.data.mounted; });
   $('.nav-eject span').textContent = storage.data.mounted ? 'Espelli NVMe' : 'NVMe scollegato';
   $('#quickNvmeTitle').textContent = storage.data.mounted ? 'Espelli NVMe' : 'NVMe scollegato';
-  $('#quickNvmeState').textContent = storage.data.mounted ? 'Smontaggio sicuro' : 'Ricollega il supporto';
+  $('#quickNvmeState').textContent = storage.data.mounted ? 'Passa al buffer interno' : `Buffer ${bytes(storage.buffer?.used || 0)} / 2 GB`;
   $('[data-action="attach_nvme"]').disabled = mounted;
   $('[data-action="backup_now"]').disabled = !storage.share.mounted || !storage.data.mounted;
 

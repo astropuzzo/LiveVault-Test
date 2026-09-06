@@ -330,6 +330,10 @@ def build_ffmpeg_command(
 
 async def start_recorder(source: Source, *, session_id: str | None = None) -> RecorderSession:
     cfg = runtime()
+    from .storage_handoff import state
+    from dataclasses import replace
+    if state()["mode"] == "buffer":
+        cfg = replace(cfg, segment_minutes=1, segment_max_gb=0.0625)
     inputs: list[ResolvedInput] = []
     split_llhls = False
     if source.platform != "stripchat":

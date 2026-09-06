@@ -18,8 +18,8 @@ fi
 case "$profile" in
     eco) governor=powersave; requested_min=600000; requested_max=900000 ;;
     balanced) governor=schedutil; requested_min=600000; requested_max=1200000 ;;
-    performance) governor=schedutil; requested_min=900000; requested_max=1500000 ;;
-    max) governor=performance; requested_min=1500000; requested_max=1500000 ;;
+    performance) governor=schedutil; requested_min=600000; requested_max=$(cat /sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_max_freq) ;;
+    max) governor=performance; requested_max=$(cat /sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_max_freq); requested_min=$requested_max ;;
     *) echo "Profilo non valido." >&2; exit 2 ;;
 esac
 [[ "$wifi" == "on" || "$wifi" == "off" ]] || { echo "Opzione Wi-Fi non valida." >&2; exit 2; }

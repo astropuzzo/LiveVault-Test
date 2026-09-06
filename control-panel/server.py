@@ -432,7 +432,7 @@ def state() -> dict:
     docker = service_state("docker.service")
     cpu = cpu_percent()
     network = network_totals()
-    data_disk = disk("/data")
+    data_disk = disk("/mnt/livevault-nvme" if Path("/etc/openastro-internal-runtime-ready").exists() else "/data")
     share_disk = disk("/share")
     power = power_state()
     power["estimated_watts"] = estimated_watts(cpu, network, data_disk["mounted"], power["wifi_radio"])
@@ -451,6 +451,7 @@ def state() -> dict:
         },
         "storage": {
             "root": disk("/"),
+            "buffer": disk("/var/lib/livevault-buffer"),
             "data": data_disk,
             "share": share_disk,
             "data_present": Path(f"/dev/disk/by-uuid/{DATA_UUID}").exists(),
@@ -670,7 +671,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json({"ok": False, "error": "Un’operazione è già in corso."}, 409)
             return
         try:
-            code, output = run(command, 175)
+            code, output = run(command, 290)
             with _state_lock:
                 _state_cache.clear()
         finally:

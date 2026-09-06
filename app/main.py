@@ -2513,6 +2513,8 @@ def healthz():
     cfg = runtime()
     worker = manager.health()
     workers_ok = worker["started"] and all(worker["tasks"].values())
-    healthy = state.free_gb > cfg.emergency_free_gb and workers_ok
-    payload = {"ok": healthy, "disk_pressure": state.pressure, "free_gb": round(state.free_gb, 2), "worker": worker, "version": VERSION}
+    from .storage_handoff import state as handoff_state
+    handoff = handoff_state()
+    healthy = workers_ok and (handoff["mode"] in {"buffer", "quiesce"} or state.free_gb > cfg.emergency_free_gb)
+    payload = {"ok": healthy, "disk_pressure": state.pressure, "free_gb": round(state.free_gb, 2), "worker": worker, "version": VERSION, "storage_handoff": handoff}
     return JSONResponse(payload, status_code=200 if healthy else 503)

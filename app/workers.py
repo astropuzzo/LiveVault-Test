@@ -29,6 +29,7 @@ from .recorder import (
 from .settings_store import runtime
 from .source_providers import probe
 from .storage import disk_state
+from . import storage_handoff
 from .uploaders import UploadCancelled, create_gofile_folder, create_pixeldrain_list, provider_available, upload
 from .utils import generate_live_preview, generate_thumbnail, human_bytes, safe_name, sha256_file, utcnow, verify_media
 
@@ -110,6 +111,8 @@ def capture_output_files(session: RecorderSession) -> list[Path]:
 class WorkerManager:
     def __init__(self) -> None:
         self.active: dict[int, RecorderSession] = {}
+        self._storage_jobs = 0
+        self._last_storage_mode = storage_handoff.state()["mode"]
         self.watch_tasks: dict[int, asyncio.Task] = {}
         self.finalizing_tasks: set[asyncio.Task] = set()
         self.tasks: list[asyncio.Task] = []
@@ -422,6 +425,7 @@ class WorkerManager:
             return source
         return None
 
+    @storage_handoff.media_job(buffering=True)
     async def live_preview_for(self, source_id: int) -> Path | None:
         """Refresh a live JPEG only when an authenticated browser requests it."""
         session = self.active.get(int(source_id))
@@ -461,12 +465,16 @@ class WorkerManager:
             with contextlib.suppress(Exception):
                 await asyncio.shield(recovery)
         while not self._stopping:
-            async with self._recovery_lock:
-                await self._finalize_closed_stitch_sessions()
-            await self._repair_local_mp4s()
-            await self._backfill_thumbnails()
-            await self._finalize_closed_pixeldrain_days()
+            await self._maintenance_pass()
             await asyncio.sleep(60)
+
+    @storage_handoff.media_job
+    async def _maintenance_pass(self) -> None:
+        async with self._recovery_lock:
+            await self._finalize_closed_stitch_sessions()
+        await self._repair_local_mp4s()
+        await self._backfill_thumbnails()
+        await self._finalize_closed_pixeldrain_days()
 
     async def _repair_local_mp4s(self) -> None:
         """Normalize older local fMP4 files that never reached a reliable upload."""
@@ -584,6 +592,7 @@ class WorkerManager:
         except Exception as exc:
             self.last_errors["thumbnail-backfill"] = str(exc)[-1000:]
 
+    @storage_handoff.media_job
     async def _run_recovery_pass(self) -> None:
         async with self._recovery_lock:
             self._discard_misindexed_stitch_outputs()
@@ -1181,13 +1190,13 @@ class WorkerManager:
                     self._observe_live_state(db, current, bool(result.live), checked_at, result.status)
                     recording_allowed = bool(current.enabled and current.consent_confirmed and not current.archived)
             cfg = runtime()
-            if not result.live or not getattr(result, "recordable", True) or self._stopping or source.id in self.active or cfg.recording_paused or not recording_allowed:
+            if not result.live or not getattr(result, "recordable", True) or self._stopping or source.id in self.active or cfg.recording_paused or not recording_allowed or not storage_handoff.capture_allowed():
                 return
             state = disk_state()
-            if state.free_gb <= cfg.critical_free_gb:
+            if state.pressure == "critical":
                 self.last_errors["storage"] = f"Spazio critico: {state.free_gb:.2f} GB; nuove registrazioni sospese"
                 return
-            local_buffer = self.local_buffer_bytes()
+            local_buffer = self.local_buffer_bytes() if storage_handoff.media_online() else 0
             if cfg.buffer_max_gb > 0 and local_buffer >= cfg.buffer_max_gb * 1024**3:
                 self.last_errors["buffer"] = f"Buffer locale al limite ({human_bytes(local_buffer)} / {cfg.buffer_max_gb:.1f} GB)"
                 return
@@ -1203,7 +1212,7 @@ class WorkerManager:
                     latest = db.get(Source, source.id)
                     still_allowed = bool(
                         latest and latest.enabled and latest.consent_confirmed and not latest.archived
-                        and not runtime().recording_paused
+                        and not runtime().recording_paused and storage_handoff.capture_allowed()
                     )
                 if not still_allowed:
                     await stop_recorder(session)
@@ -1420,6 +1429,7 @@ class WorkerManager:
             if not slot_released:
                 self.wake()
 
+    @storage_handoff.media_job
     async def _finalize_segment(self, session: RecorderSession, path: Path) -> bool:
         try:
             part_index = int(path.stem.rsplit("part", 1)[1])
@@ -1654,7 +1664,7 @@ class WorkerManager:
             rec: Recording | None = None
             try:
                 cfg = runtime()
-                if cfg.upload_paused:
+                if cfg.upload_paused or not storage_handoff.media_online():
                     self.upload_current = None
                     await self._sleep_or_wake(2)
                     continue
@@ -1711,7 +1721,7 @@ class WorkerManager:
                         self.upload_current["percent"] = 0.0
 
                         def progress(sent: int, total: int) -> None:
-                            if self._stopping:
+                            if self._stopping or not storage_handoff.media_online():
                                 raise UploadCancelled("Upload interrotto in sicurezza per riavvio")
                             if self.upload_current and self.upload_current.get("recording_id") == rec.id:
                                 self.upload_current["sent_bytes"] = sent
@@ -1809,6 +1819,32 @@ class WorkerManager:
     async def _cleanup_loop(self) -> None:
         while not self._stopping:
             try:
+                handoff = storage_handoff.state()
+                mode = handoff["mode"]
+                if mode == "quiesce":
+                    for session in list(self.active.values()):
+                        session.rollover_requested = True
+                    await self.stop_all_recordings()
+                    # Pollers resolving an input must observe capture_allowed before
+                    # publishing a session; wait for their per-source locks as well.
+                    checking = any(lock.locked() for lock in self._source_check_locks.values())
+                    if not (self.active or self.watch_tasks or self.finalizing_tasks or
+                            self._storage_jobs or self.upload_current or checking):
+                        storage_handoff.acknowledge(str(handoff.get("token", "")))
+                    self._last_storage_mode = mode
+                    await asyncio.sleep(0.25)
+                    continue
+                if mode != self._last_storage_mode:
+                    self._last_storage_mode = mode
+                    if mode == "nvme":
+                        self.request_recovery()
+                    self.wake()
+                if mode == "buffer":
+                    if not storage_handoff.capture_allowed():
+                        self.last_errors["storage"] = "Buffer interno pieno (2 GB): registrazioni sospese fino al rientro NVMe"
+                        await self.stop_all_recordings()
+                    await asyncio.sleep(0.25)
+                    continue
                 cfg = runtime()
                 state = disk_state()
                 buffer_bytes = self.local_buffer_bytes()
