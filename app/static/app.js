@@ -881,9 +881,58 @@ async function saveSecretBeforeTest(provider) {
   await loadSettings();
 }
 
+function renderStorageRoute(status) {
+  const route = $('#storageRoute');
+  if (!route) return;
+  const handoff = status.storage_handoff || {};
+  const mode = handoff.mode || 'legacy';
+  const disk = status.disk || {};
+  const free = disk.free_human || '—';
+  route.dataset.mode = mode;
+
+  let title = 'STORAGE';
+  let detail = free !== '—' ? `${free} liberi` : 'stato sconosciuto';
+  let diskLabel = 'Storage libero';
+  let aria = `Storage: ${detail}`;
+
+  if (mode === 'nvme') {
+    title = 'NVMe';
+    diskLabel = 'NVMe libero';
+    aria = `Registrazioni su NVMe, ${detail}`;
+  } else if (mode === 'buffer') {
+    const limit = Number(handoff.limit_bytes || 4 * 1024 ** 3);
+    title = handoff.full ? 'BUFFER PIENO' : `BUFFER ${Math.round(limit / 1024 ** 3)} GB`;
+    diskLabel = 'Buffer temporaneo libero';
+    detail = handoff.full ? 'registrazioni sospese' : `${free} liberi`;
+    aria = `Registrazioni sul buffer interno temporaneo da ${Math.round(limit / 1024 ** 3)} GB, ${detail}`;
+  } else if (mode === 'quiesce') {
+    title = 'CAMBIO STORAGE';
+    detail = 'chiusura registrazioni…';
+    diskLabel = 'Storage in transizione';
+    aria = 'Cambio storage in corso, chiusura controllata delle registrazioni';
+  } else if (mode === 'legacy') {
+    title = 'STORAGE';
+    detail = 'modalità legacy';
+    diskLabel = 'Storage libero';
+    aria = 'Storage in modalità legacy';
+  } else {
+    title = 'STORAGE';
+    detail = 'stato non valido';
+    diskLabel = 'Storage libero';
+    aria = 'Stato storage non valido';
+  }
+
+  route.querySelector('strong').textContent = title;
+  route.querySelector('small').textContent = detail;
+  route.setAttribute('aria-label', aria);
+  const metricLabel = $('#diskMetricLabel');
+  if (metricLabel) metricLabel.textContent = diskLabel;
+}
+
 function renderStatus(status) {
   statusData = status;
   $('#versionLabel').textContent = `v${status.config.version}`;
+  renderStorageRoute(status);
   const active = status.worker.active || [];
   const history = status.history || {};
   const errors = status.worker.errors || {};

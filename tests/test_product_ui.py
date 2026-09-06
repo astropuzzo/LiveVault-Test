@@ -19,6 +19,9 @@ def test_product_ui_is_dark_icon_driven_and_preserves_primary_hooks():
     assert '<symbol id="search"' in icons
     assert '<symbol id="settings"' in icons
     assert '<symbol id="cloud"' in icons
+    assert 'id="storageRoute"' in html
+    assert 'id="diskMetricLabel"' in html
+    assert 'function renderStorageRoute(status)' in (STATIC / "app.js").read_text(encoding="utf-8")
 
     for hook in (
         'id="dashboardView"', 'id="libraryView"', 'id="archiveView"',

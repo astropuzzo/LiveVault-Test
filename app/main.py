@@ -609,7 +609,10 @@ def status(request: Request):
         latest_recording = db.scalar(select(func.max(Recording.finalized_at)))
     snapshot = manager.snapshot()
     buffer_bytes = snapshot["buffer_bytes"]
+    from .storage_handoff import state as storage_handoff_state
+    handoff = storage_handoff_state()
     return {
+        "storage_handoff": handoff,
         "disk": {
             "total": state.total, "used": state.used, "free": state.free,
             "total_human": human_bytes(state.total), "used_human": human_bytes(state.used), "free_human": human_bytes(state.free),
