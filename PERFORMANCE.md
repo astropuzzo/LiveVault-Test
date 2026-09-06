@@ -104,3 +104,9 @@ visible after bounded retries. No access-state restrictions are bypassed.
 
 OpenAstro Control now uses a dark palette for the page, cards, controls, charts,
 and login. Asset cache versions were changed so existing installations refresh.
+
+The actual looping fragment had 162.322 s video and 160.021 s audio. A stream-copy
+trim to their common duration passed the existing media validator in 2.98 seconds
+on the live host, using a disposable output and leaving the original untouched.
+Tail-only timing repair now tries this before any video transcode. The integration
+test asserts that a tail-only mismatch never needs the encoder when copy validates.

@@ -538,13 +538,14 @@ def mp4_is_streaming_ready(path: Path) -> bool:
         return False
 
 
-async def _copy_remux(source: Path, output: Path) -> None:
+async def _copy_remux(source: Path, output: Path, *, duration: float | None = None) -> None:
     proc = await asyncio.create_subprocess_exec(
         "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
         "-fflags", "+genpts+discardcorrupt", "-i", str(source),
         "-map", "0", "-dn", "-ignore_unknown", "-c", "copy",
         "-max_interleave_delta", "1000000", "-avoid_negative_ts", "make_zero",
-        "-movflags", "+faststart", str(output),
+        "-movflags", "+faststart",
+        *(["-t", f"{duration:.6f}"] if duration is not None else []), str(output),
         stdout=asyncio.subprocess.DEVNULL,
         stderr=asyncio.subprocess.PIPE,
     )
@@ -681,6 +682,19 @@ async def _finalize_with_av_fallback(source: Path, output: Path, source_size: in
     except RuntimeError as exc:
         if not _is_av_timing_error(str(exc)):
             raise
+        tail_only = "a/v fuori sync a fine file" in str(exc).lower()
+    if tail_only:
+        # A longer audio/video tail does not require re-encoding every frame.
+        # Try the same common-duration trim as the repair, preserving packets.
+        duration = await asyncio.to_thread(_common_av_duration, source)
+        if duration is not None and duration > 0.25:
+            output.unlink(missing_ok=True)
+            try:
+                await _copy_remux(source, output, duration=duration)
+                await _validate_final_mp4(output, None)
+                return
+            except RuntimeError:
+                pass
     output.unlink(missing_ok=True)
     await _rebuild_av_timeline(source, output)
     # A deliberate transcode can legitimately be far smaller than the source;

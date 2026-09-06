@@ -24,6 +24,9 @@ def test_real_ffmpeg_repair_closes_large_audio_tail(tmp_path, monkeypatch):
     # Exercise the four-core server's reduced repair encoder pool on larger PCs.
     monkeypatch.setattr("app.recorder.BACKGROUND_VIDEO_THREADS", 2)
     monkeypatch.setattr("app.recorder.BACKGROUND_TIMEOUT_FACTOR", 2)
+    async def unexpected_transcode(*args):
+        raise AssertionError("A simple trailing audio excess must stay stream-copy")
+    monkeypatch.setattr("app.recorder._rebuild_av_timeline", unexpected_transcode)
     path = tmp_path / "mismatched.mp4"
     subprocess.run(
         [
