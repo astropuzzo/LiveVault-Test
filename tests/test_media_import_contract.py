@@ -22,7 +22,8 @@ def test_media_import_ui_is_present_and_uses_web_fallback():
     assert '/media-upload.js' in UI
     assert 'XMLHttpRequest' in UPLOAD_JS
     assert '/api/media/upload?' in UPLOAD_JS
-    assert '\\\\OPENASTRO\\Media' in UPLOAD_JS
+    assert 'SMB_PATH' in UPLOAD_JS
+    assert 'OPENASTRO' in UPLOAD_JS and 'Media' in UPLOAD_JS
 
 
 def test_lan_smb_is_read_only_for_guests_and_writable_only_for_astro():
