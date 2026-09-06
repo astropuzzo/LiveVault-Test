@@ -64,3 +64,17 @@ Lo storico precedente resta marcato come stimato; non viene mescolato ai watt
 misurati. I Wh coprono solo coppie di campioni misurati distanti al massimo 30 s.
 Non sono una proiezione sulle 24 ore. Il modello software precedente rimane
 disponibile separatamente nell'API e nel CSV, mai come sostituto di un sensore.
+
+## Media Center USB
+
+`sudo bash scripts/install-media-center.sh` abilita supporti USB rimovibili in sola lettura.
+Il manager accetta soltanto filesystem USB con flag kernel `RM=1` e rifiuta esplicitamente
+gli UUID di `SERVER`, `SHARE`, buffer interno, root e boot. I supporti vengono montati sotto
+`/srv/openastro-media/<label>-<uuid>` e condivisi come `\\OPENASTRO\Media` via SMB e
+`OpenAstro Media` via DLNA esclusivamente sulla LAN Ethernet. Il pannello HTTPS espone invece
+un browser autenticato con streaming HTTP Range, download, refresh ed eject sicuro, quindi i
+file restano accessibili anche fuori casa senza pubblicare SMB/DLNA su Internet.
+
+`openastro-storage-watchdog.service` è separato dal Media Center e gira dalla eMMC: se un
+reset USB rende il filesystem LiveVault assente, `shutdown`, read-only o con UUID errato,
+porta LiveVault sul buffer interno da 4 GiB anziché lasciare i worker sul mount guasto.

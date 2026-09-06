@@ -42,6 +42,24 @@ case "$action" in
         record completed
         echo "Pi-hole riavviato."
         ;;
+    media_mount)
+        uuid=${2:-}
+        [[ -n "$uuid" ]] || { echo "UUID media mancante." >&2; exit 2; }
+        /usr/local/sbin/openastro-media-manager mount "$uuid"
+        record "mounted/$uuid"
+        ;;
+    media_eject)
+        uuid=${2:-}
+        [[ -n "$uuid" ]] || { echo "UUID media mancante." >&2; exit 2; }
+        record "eject-start/$uuid"
+        /usr/local/sbin/openastro-media-manager eject "$uuid"
+        record "eject-complete/$uuid"
+        ;;
+    media_rescan)
+        /usr/local/sbin/openastro-media-manager reconcile
+        record media-rescan
+        echo "Supporti media aggiornati."
+        ;;
     power_profile)
         profile=${2:-}
         wifi=${3:-}

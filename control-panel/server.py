@@ -8,6 +8,7 @@ import hashlib
 import hmac
 import mimetypes
 import os
+import re
 import secrets
 import shutil
 import subprocess
@@ -18,7 +19,17 @@ from http import HTTPStatus
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, quote, urlparse
+
+try:
+    import media_center
+except ModuleNotFoundError:
+    import importlib.util
+    _media_spec = importlib.util.spec_from_file_location("openastro_media_center", Path(__file__).resolve().with_name("media_center.py"))
+    if _media_spec is None or _media_spec.loader is None:
+        raise
+    media_center = importlib.util.module_from_spec(_media_spec)
+    _media_spec.loader.exec_module(media_center)
 
 
 ROOT = Path(__file__).resolve().parent
@@ -42,6 +53,9 @@ ALLOWED_ACTIONS = {
     "backup_now",
     "restart_pihole",
     "power_profile",
+    "media_mount",
+    "media_eject",
+    "media_rescan",
     "reboot",
 }
 
@@ -456,6 +470,7 @@ def state() -> dict:
     data_disk = disk("/mnt/livevault-nvme" if Path("/etc/openastro-internal-runtime-ready").exists() else "/data")
     share_disk = disk("/share")
     power = power_state()
+    media = media_center.status()
     power["estimated_watts"] = estimated_watts(cpu, network, data_disk["mounted"], power["wifi_radio"])
     power.update(read_input_power())
     return {
@@ -485,6 +500,7 @@ def state() -> dict:
             "pihole": pihole,
         },
         "power": power,
+        "media": media,
         "containers": containers,
         "livevault": livevault_health(),
         "interfaces": [
@@ -534,6 +550,57 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header(name, value)
         self.end_headers()
         self.wfile.write(body)
+
+    def send_media_file(self, info: dict, *, download: bool = False) -> None:
+        target = info["path"]
+        size = int(info["size"])
+        start, end = 0, max(0, size - 1)
+        status = HTTPStatus.OK
+        header = self.headers.get("Range", "").strip()
+        if header:
+            match = re.fullmatch(r"bytes=(\d*)-(\d*)", header)
+            if not match or not size:
+                self.send_response(HTTPStatus.REQUESTED_RANGE_NOT_SATISFIABLE)
+                self.send_header("Content-Range", f"bytes */{size}")
+                self.end_headers()
+                return
+            left, right = match.groups()
+            if left:
+                start = int(left); end = int(right) if right else size - 1
+            elif right:
+                length = min(size, int(right)); start, end = size - length, size - 1
+            if start < 0 or end < start or start >= size:
+                self.send_response(HTTPStatus.REQUESTED_RANGE_NOT_SATISFIABLE)
+                self.send_header("Content-Range", f"bytes */{size}")
+                self.end_headers()
+                return
+            end = min(end, size - 1); status = HTTPStatus.PARTIAL_CONTENT
+        length = 0 if size == 0 else end - start + 1
+        disposition = "attachment" if download else "inline"
+        ascii_name = re.sub(r'[^A-Za-z0-9._ -]', '_', info["name"]) or "media"
+        encoded = quote(info["name"], safe="")
+        self.send_response(status)
+        self.send_header("Content-Type", info["mime"])
+        self.send_header("Content-Length", str(length))
+        self.send_header("Accept-Ranges", "bytes")
+        if status == HTTPStatus.PARTIAL_CONTENT:
+            self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
+        self.send_header("Content-Disposition", f"{disposition}; filename=\"{ascii_name}\"; filename*=UTF-8''{encoded}")
+        self.send_header("Cache-Control", "private, no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Referrer-Policy", "no-referrer")
+        self.end_headers()
+        if not length:
+            return
+        try:
+            with target.open("rb") as handle:
+                handle.seek(start); remaining = length
+                while remaining:
+                    chunk = handle.read(min(1024 * 1024, remaining))
+                    if not chunk: break
+                    self.wfile.write(chunk); remaining -= len(chunk)
+        except (BrokenPipeError, ConnectionResetError):
+            return
 
     def read_payload(self) -> dict:
         length = int(self.headers.get("Content-Length", "0"))
@@ -586,6 +653,27 @@ class Handler(BaseHTTPRequestHandler):
             payload = cached_state()
             payload["csrf"] = session["csrf"]
             self.send_json(payload)
+            return
+        if path == "/api/media/credentials":
+            if not self.require_session(): return
+            self.send_json(media_center.credentials())
+            return
+        if path == "/api/media/list":
+            if not self.require_session(): return
+            query = parse_qs(parsed.query)
+            try:
+                self.send_json(media_center.list_directory(str(query.get("uuid", [""])[0]), str(query.get("path", [""])[0])))
+            except (ValueError, FileNotFoundError, NotADirectoryError, PermissionError) as exc:
+                self.send_json({"ok": False, "error": str(exc)}, 404)
+            return
+        if path == "/api/media/file":
+            if not self.require_session(): return
+            query = parse_qs(parsed.query)
+            try:
+                info = media_center.file_info(str(query.get("uuid", [""])[0]), str(query.get("path", [""])[0]))
+                self.send_media_file(info, download=query.get("download", ["0"])[0] == "1")
+            except (ValueError, FileNotFoundError, PermissionError) as exc:
+                self.send_json({"ok": False, "error": str(exc)}, 404)
             return
         if path == "/api/history":
             if not self.require_session():
@@ -681,6 +769,12 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json({"ok": False, "error": "Azione non consentita."}, 400)
             return
         command = ["sudo", "-n", "/usr/local/sbin/openastro-action", action]
+        if action in {"media_mount", "media_eject"}:
+            uuid = str(payload.get("uuid", ""))
+            if not media_center.valid_uuid(uuid):
+                self.send_json({"ok": False, "error": "UUID media non valido."}, 400)
+                return
+            command.append(uuid)
         if action == "power_profile":
             profile = str(payload.get("profile", ""))
             wifi = str(payload.get("wifi", ""))

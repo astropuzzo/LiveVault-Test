@@ -152,6 +152,29 @@
       </div>
     </section>
 
+    <section class="panel media-panel" id="media">
+      <div class="panel-head">
+        <div><p class="eyebrow">MEDIA CENTER</p><h2>USB condivise</h2></div>
+        <span class="status-chip" id="mediaChip">Nessun supporto</span>
+      </div>
+      <div class="media-layout">
+        <div class="media-sidebar">
+          <div id="mediaDeviceList" class="media-devices"><p class="muted">Collega una chiavetta o un disco USB rimovibile.</p></div>
+          <div class="media-access">
+            <span>PC / MAC · SMB</span><code id="mediaSmbPath">\\OPENASTRO\Media</code>
+            <span>SMART TV · DLNA</span><strong id="mediaDlnaName">OpenAstro Media</strong>
+            <div class="action-row compact"><button class="button secondary" id="mediaCredentials">Credenziali SMB</button><button class="button secondary" data-action="media_rescan">Aggiorna</button></div>
+            <small id="mediaCredentialsText">SMB e DLNA disponibili solo nella rete locale.</small>
+          </div>
+        </div>
+        <div class="media-browser">
+          <div class="media-toolbar"><button id="mediaBack" class="button secondary" disabled>← Indietro</button><div><small id="mediaDriveName">USB</small><strong id="mediaPath">/</strong></div></div>
+          <div id="mediaFiles" class="media-files"><p class="muted">Seleziona un supporto per vedere i file.</p></div>
+        </div>
+      </div>
+      <p class="media-note">I supporti vengono montati in sola lettura. Da Internet i file passano solo dal pannello HTTPS autenticato; SMB e DLNA non vengono esposti pubblicamente.</p>
+    </section>
+
     <section class="panel" id="services">
       <div class="panel-head"><div><p class="eyebrow">OPERATIVITÀ</p><h2>Servizi</h2></div><span id="serviceCount">—</span></div>
       <div class="service-grid" id="serviceGrid"></div>
@@ -186,6 +209,7 @@
     <a href="#telemetry">Trend</a>
     <a href="#power">Energia</a>
     <a href="#storage">NVMe</a>
+    <a href="#media">Media</a>
     <a href="#services">Servizi</a><a class="external" href="https://openastro.tailf2871c.ts.net/">LiveVault ↗</a>
   </nav>
 

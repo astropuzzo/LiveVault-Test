@@ -15,6 +15,10 @@ let signedIn = true;
 let actionBusy = false;
 let latestState = null;
 let latestHistory = [];
+let mediaUuid = '';
+let mediaPath = '';
+let mediaSignature = '';
+let mediaBusy = false;
 
 const powerProfiles = [
   {key:'eco', name:'ECO', glyph:'E', governor:'powersave', mhz:900, description:'Il nodo respira piano: consumi e temperatura ridotti per monitoraggio e servizi leggeri.'},
@@ -31,6 +35,8 @@ const actionLabels = {
   backup_now: ['Avvia backup', 'Crea subito una copia consistente del database LiveVault sulla partizione USB SHARE.'],
   restart_pihole: ['Riavvia Pi-hole', 'Il DNS locale sarà indisponibile per alcuni secondi.'],
   power_profile: ['Applica profilo energetico', 'La frequenza CPU e le opzioni di rete verranno aggiornate immediatamente.'],
+  media_eject: ['Espelli supporto USB', 'Chiude l’indicizzazione, smonta il supporto e scarica i buffer. Rimuovilo solo dopo il messaggio finale.'],
+  media_rescan: ['Aggiorna supporti media', 'Rileva e monta in sola lettura i dispositivi USB rimovibili consentiti.'],
   reboot: ['Riavvia ASIAIR', 'L’intero server verrà riavviato. Il pannello e LiveVault torneranno automaticamente entro circa due minuti.'],
 };
 
@@ -172,6 +178,64 @@ function renderPower(power) {
   $('#quickWifi').classList.toggle('is-off', !activeWifiOn);
 }
 
+function mediaUrl(path, download = false) {
+  const query = new URLSearchParams({uuid:mediaUuid, path});
+  if (download) query.set('download', '1');
+  return `/api/media/file?${query}`;
+}
+async function loadMediaDirectory(path = mediaPath) {
+  if (!mediaUuid || mediaBusy) return;
+  mediaBusy = true;
+  $('#mediaFiles').innerHTML = '<p class="muted">Caricamento…</p>';
+  try {
+    const query = new URLSearchParams({uuid:mediaUuid, path:path || ''});
+    const response = await fetch(`/api/media/list?${query}`, {cache:'no-store', signal:AbortSignal.timeout(15000)});
+    if (response.status === 401) return showLogin();
+    const result = await response.json();
+    if (!response.ok || !result.ok) throw new Error(result.error || `HTTP ${response.status}`);
+    mediaPath = result.path || '';
+    $('#mediaDriveName').textContent = result.label || 'USB';
+    $('#mediaPath').textContent = `/${mediaPath}`;
+    $('#mediaBack').disabled = !mediaPath;
+    $('#mediaBack').dataset.parent = result.parent || '';
+    $('#mediaFiles').innerHTML = result.items.length ? result.items.map(item => item.type === 'dir'
+      ? `<button class="media-row media-dir" data-media-path="${escapeHtml(item.path)}"><span class="media-kind">DIR</span><strong>${escapeHtml(item.name)}</strong><small>Cartella</small><b>→</b></button>`
+      : `<div class="media-row"><span class="media-kind">${item.streamable ? 'PLAY' : 'FILE'}</span><strong>${escapeHtml(item.name)}</strong><small>${bytes(item.size)} · ${escapeHtml(item.mime || '')}</small><div class="media-file-actions"><a href="${escapeHtml(mediaUrl(item.path))}" target="_blank" rel="noopener">Apri</a><a href="${escapeHtml(mediaUrl(item.path, true))}">Scarica</a></div></div>`).join('')
+      : '<p class="muted">Questa cartella è vuota.</p>';
+    $$('.media-dir').forEach(button => button.addEventListener('click', () => loadMediaDirectory(button.dataset.mediaPath)));
+  } catch (error) {
+    $('#mediaFiles').innerHTML = `<p class="muted">${escapeHtml(error.message || 'Impossibile leggere il supporto.')}</p>`;
+  } finally { mediaBusy = false; }
+}
+function renderMedia(media = {}) {
+  const devices = media.devices || [];
+  const mounted = devices.filter(device => device.mounted);
+  $('#mediaChip').textContent = mounted.length ? `${mounted.length} collegat${mounted.length === 1 ? 'o' : 'i'}` : 'Nessun supporto';
+  $('#mediaChip').className = `status-chip ${mounted.length ? 'good' : ''}`;
+  $('#mediaSmbPath').textContent = media.smb_path || '\\\\OPENASTRO\\Media';
+  $('#mediaDlnaName').textContent = media.dlna_name || 'OpenAstro Media';
+  $('#mediaDeviceList').innerHTML = devices.length ? devices.map(device => {
+    const usage = device.usage;
+    const detail = usage ? `${bytes(usage.free)} liberi · ${escapeHtml(device.fstype.toUpperCase())} · sola lettura` : `${escapeHtml(device.fstype.toUpperCase())} · non montato`;
+    return `<div class="media-device ${device.uuid === mediaUuid ? 'selected' : ''}"><button class="media-select" data-media-uuid="${escapeHtml(device.uuid)}"><strong>${escapeHtml(device.label || 'USB')}</strong><small>${escapeHtml(device.model || '')}</small><span>${detail}</span></button>${device.mounted ? `<button class="media-eject" data-media-eject="${escapeHtml(device.uuid)}" title="Espelli">⏏</button>` : ''}</div>`;
+  }).join('') : '<p class="muted">Collega una chiavetta o un disco USB rimovibile.</p>';
+  $$('.media-select').forEach(button => button.addEventListener('click', () => {
+    mediaUuid = button.dataset.mediaUuid; mediaPath = ''; mediaSignature = '';
+    renderMedia(media); loadMediaDirectory('');
+  }));
+  $$('.media-eject').forEach(button => button.addEventListener('click', event => {
+    event.stopPropagation(); openConfirm('media_eject', {uuid:button.dataset.mediaEject});
+  }));
+  if (mediaUuid && !mounted.some(device => device.uuid === mediaUuid)) { mediaUuid = ''; mediaPath = ''; }
+  if (!mediaUuid && mounted.length) { mediaUuid = mounted[0].uuid; mediaPath = ''; }
+  const signature = mounted.map(device => `${device.uuid}:${device.usage?.used || 0}`).join('|');
+  if (mediaUuid && signature !== mediaSignature) { mediaSignature = signature; loadMediaDirectory(mediaPath); }
+  if (!mounted.length) {
+    $('#mediaDriveName').textContent = 'USB'; $('#mediaPath').textContent = '/'; $('#mediaBack').disabled = true;
+    $('#mediaFiles').innerHTML = '<p class="muted">Nessun supporto media collegato.</p>';
+  }
+}
+
 function render(data) {
   latestState = data;
   document.body.classList.remove('stale');
@@ -210,6 +274,7 @@ function render(data) {
   $('#wattDaily').textContent = watts != null ? `${data.power.input_volts.toFixed(2)} V · ${data.power.input_amps.toFixed(3)} A · ingresso ASIAIR` : 'Sensore ASIAIR non raggiungibile';
   $('#wattValue').title = 'Potenza DC dai sensori ASIAIR, inclusi i carichi collegati. Conversione del driver INDI; non calibrata con wattmetro esterno.';
   renderPower(data.power);
+  renderMedia(data.media || {});
 
   const mounted = storage.data.mounted && storage.share.mounted;
   $('#storageChip').textContent = mounted ? 'Montato' : storage.data_present ? 'Rilevato · non montato' : 'Scollegato';
@@ -350,6 +415,18 @@ function stopHold() {
   $('#holdAction').style.setProperty('--hold', '0%');
 }
 
+$('#mediaBack').addEventListener('click', () => loadMediaDirectory($('#mediaBack').dataset.parent || ''));
+$('#mediaCredentials').addEventListener('click', async () => {
+  try {
+    const response = await fetch('/api/media/credentials', {cache:'no-store'});
+    if (response.status === 401) return showLogin();
+    const result = await response.json();
+    const text = result.password ? `Utente: ${result.username} · Password: ${result.password}` : `Utente: ${result.username} · password non disponibile`;
+    $('#mediaCredentialsText').textContent = text;
+    if (result.password && navigator.clipboard?.writeText) navigator.clipboard.writeText(`${result.username}
+${result.password}`).catch(() => {});
+  } catch (_) { toast('Credenziali SMB non disponibili.', true); }
+});
 $('#cancelAction').addEventListener('click', () => $('#confirmDialog').close());
 $('#confirmDialog').addEventListener('close', () => { stopHold(); pendingAction = null; pendingPayload = {}; });
 $('#confirmDialog').addEventListener('cancel', stopHold);
