@@ -674,6 +674,14 @@ HLS.js 1.7.2 is vendored locally; runtime should not require a CDN. The upload-e
 
 **QA-browser caveat:** the Playwright Chromium build cached on this CM4 reports H.264/AAC MediaSource support as false, so it can raise `bufferAddCodecError` even when the generated HLS segment is valid. For server-side validation inspect the selected stream/manifest/segment and decode or probe the MPEG-TS output; do not treat that headless-browser codec limitation as proof of a server regression.
 
+### Full-duration seek — deployed
+
+The native HTML/HLS timeline represents only the currently generated rolling HLS window and therefore grows in a few-second increments. **Do not pre-generate the whole movie to make that native timeline long**; that wastes CPU/I/O and defeats the CM4 resource governor.
+
+The player instead exposes a separate **`FILM COMPLETO`** scrubber immediately spanning `0 -> full ffprobe duration`. Releasing that scrubber at an arbitrary logical position closes/replaces the lightweight HLS session and starts a new one at the requested `position` (FFmpeg input seek via `-ss`), while preserving the selected audio and subtitle. This gives random access without decoding or preparing the preceding part of the film.
+
+Real QA with Longlegs verified a jump from about `124 s` directly to `3000 s` (`50:00`) while the full duration remained `6077.312 s` (`1:41:17`). The second HLS request carried `position: 3000`, and playback preparation completed from that point. Mobile QA also caught and fixed a long-title dialog overflow: player header flex children must keep `min-width: 0` so the filename ellipsizes instead of horizontally scrolling the whole dialog.
+
 ## Level 10 status
 
 Do **not** assume experimental “Level 10” features are deployed merely because they were discussed in chat. The stable deployed baseline documented here is Level 3 + Level 5. Verify Git before resurrecting any experimental share-link / TV-control work.
