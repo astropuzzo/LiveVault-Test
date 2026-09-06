@@ -24,7 +24,7 @@ jobs:
           python3 -m http.server 4173 >/tmp/openastro-qa-http.log 2>&1 &
           echo $! >/tmp/openastro-qa-http.pid
           cd ../..
-          cat > /tmp/media-qa.mjs <<'JS'
+          cat > media-qa.mjs <<'JS'
           import { chromium } from 'playwright-core';
           import { execFileSync } from 'node:child_process';
           import fs from 'node:fs';
@@ -77,7 +77,7 @@ jobs:
           await prepare(412,915,'qa-artifacts/media-mobile.png');
           await browser.close();
           JS
-          node /tmp/media-qa.mjs
+          node media-qa.mjs
           kill "$(cat /tmp/openastro-qa-http.pid)" || true
       - uses: actions/upload-artifact@v4
         with:
