@@ -1,0 +1,85 @@
+name: Media UI QA
+
+on:
+  push:
+    branches:
+      - probe/live-runtime-967b
+
+jobs:
+  qa:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install lightweight Playwright client
+        run: npm install --no-save playwright-core@1.55.0
+      - name: Render Media UI
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          cd control-panel/static
+          python3 -m http.server 4173 >/tmp/openastro-qa-http.log 2>&1 &
+          echo $! >/tmp/openastro-qa-http.pid
+          cd ../..
+          cat > /tmp/media-qa.mjs <<'JS'
+          import { chromium } from 'playwright-core';
+          import { execFileSync } from 'node:child_process';
+          import fs from 'node:fs';
+
+          const executable = execFileSync('bash',['-lc','command -v google-chrome || command -v chromium || command -v chromium-browser'],{encoding:'utf8'}).trim();
+          const browser = await chromium.launch({headless:true, executablePath:executable, args:['--no-sandbox']});
+          const device = {
+            uuid:'2EBE-497A', label:'LEXAR', model:'USB Flash Drive', fstype:'exfat', size:62000000000,
+            mountpoint:'/srv/openastro-media/LEXAR-2EBE497A', mounted:true, writable:true, read_only:false,
+            usage:{total:62000000000,used:2700000000,free:59300000000}, remembered:true,
+          };
+          const state = {
+            csrf:'qa-token', timestamp:1778273000,
+            host:{name:'openastro',uptime:24100,cpu_percent:24.3,cpu_count:4,load:[0.8,0.7,0.6],temperature:58.4,memory:{total:4000000000,used:1420000000,percent:35.5},network:{rx_rate:250000,tx_rate:90000}},
+            storage:{data:{mounted:true,total:210000000000,used:10000000000,free:200000000000,percent:4.8},share:{mounted:true,total:60000000000,used:8000000000,free:52000000000,percent:13.3},buffer:{used:0,total:4294967296},data_present:true},
+            livevault:{ok:true,version:'3.0.0',storage_handoff:{mode:'nvme'},worker:{active_recorders:1}},
+            power:{measurement:'measured',watts:8.4,input_volts:12.1,input_amps:0.694,profile:'balanced',governor:'schedutil',current_mhz:1200,max_mhz:1500,hardware_max_mhz:1500,wifi_policy:'on',wifi_radio:true,hotspot:true,undervoltage_now:false,throttled_now:false,power_event_seen:false},
+            services:{docker:'active',tailscale:'active',backup:'active',pihole:'not-found'},
+            interfaces:[], containers:[], actions:[],
+            media:{devices:[device],smb:'active',dlna:'active',smb_path:'\\\\OPENASTRO\\Media',dlna_name:'OpenAstro Media',upload:true,write_policy:'authenticated-import-only',guest_write:false,active_streams:0},
+          };
+          const home={ok:true,continue:[],recently_played:[],favorites:[],active_streams:[],stats:{known_files:1,known_bytes:2576495000}};
+          const item={name:'Longlegs (2024) IMAX 1080p h264 Ac3 5.1 Ita Eng Sub Ita Eng-MIRCrew.mkv',path:'Longlegs (2024) IMAX 1080p h264 Ac3 5.1 Ita Eng Sub Ita Eng-MIRCrew.mkv',type:'file',category:'video',size:2576495000,modified:1778087880,mime:'video/x-matroska',streamable:true,thumbnail:false};
+          const listing={ok:true,uuid:device.uuid,label:'LEXAR',path:'',parent:'',items:[item]};
+          const library={ok:true,uuid:device.uuid,label:'LEXAR',mounted:true,counts:{video:1,audio:0,image:0,document:0,archive:0,other:0},bytes:{video:item.size,audio:0,image:0,document:0,archive:0,other:0},total_files:1,total_bytes:item.size,recent:[item],last_scan:1778272900};
+
+          async function prepare(width,height,out) {
+            const page=await browser.newPage({viewport:{width,height}});
+            await page.route('**/api/state', r=>r.fulfill({contentType:'application/json',body:JSON.stringify(state)}));
+            await page.route('**/api/media/home', r=>r.fulfill({contentType:'application/json',body:JSON.stringify(home)}));
+            await page.route('**/api/media/list?**', r=>r.fulfill({contentType:'application/json',body:JSON.stringify(listing)}));
+            await page.route('**/api/media/library?**', r=>r.fulfill({contentType:'application/json',body:JSON.stringify(library)}));
+            await page.route('**/api/media/thumbnail?**', r=>r.fulfill({status:404,body:''}));
+            await page.goto('http://127.0.0.1:4173/index.html#media',{waitUntil:'networkidle'});
+            await page.waitForFunction(()=>document.body.dataset.view==='media');
+            await page.waitForSelector('#mediaUploadCard:not(.disabled)',{timeout:10000});
+            await page.screenshot({path:out,fullPage:true});
+            const problems=await page.evaluate(()=>({
+              upload:!!document.querySelector('#mediaUploadCard:not(.disabled)'),
+              chooseDisabled:document.querySelector('#mediaUploadChoose')?.disabled,
+              model:document.querySelector('#mediaDriveModel')?.textContent,
+              bodyWidth:document.body.scrollWidth,
+              viewport:window.innerWidth,
+            }));
+            console.log(out,JSON.stringify(problems));
+            await page.close();
+          }
+          fs.mkdirSync('qa-artifacts',{recursive:true});
+          await prepare(1440,1000,'qa-artifacts/media-desktop.png');
+          await prepare(412,915,'qa-artifacts/media-mobile.png');
+          await browser.close();
+          JS
+          node /tmp/media-qa.mjs
+          kill "$(cat /tmp/openastro-qa-http.pid)" || true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: media-ui-qa
+          path: qa-artifacts/*.png
