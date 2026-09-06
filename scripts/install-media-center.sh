@@ -33,8 +33,7 @@ cat >/etc/samba/smb.conf <<SMB
    netbios name = OPENASTRO
    server role = standalone server
    security = user
-   map to guest = Bad User
-   guest account = nobody
+   map to guest = Never
    server min protocol = SMB2_10
    client min protocol = SMB2_10
    load printers = no
@@ -53,19 +52,22 @@ cat >/etc/samba/smb.conf <<SMB
    comment = OpenAstro USB Media
    path = /srv/openastro-media
    browseable = yes
-   read only = yes
-   guest ok = yes
-   write list = astro
+   read only = no
+   guest ok = no
+   valid users = astro
+   force user = astro
    create mask = 0644
+   force create mode = 0600
    directory mask = 0755
+   force directory mode = 0700
    follow symlinks = no
    wide links = no
 SMB
 
 testparm -s /etc/samba/smb.conf >/dev/null
 
-# Keep one stable authenticated SMB credential for Windows clients. Guests can
-# browse/read, while only the astro account can import or modify media over LAN.
+# Keep one stable authenticated SMB credential for Windows clients. SMB is LAN
+# only and requires this account; DLNA remains the read-only TV/browser path.
 CRED=/etc/openastro-media-credentials.json
 if [[ ! -s "$CRED" ]]; then
   password=$(openssl rand -hex 12)
