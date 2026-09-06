@@ -7,7 +7,11 @@ target=/srv/openastro-internal
 [[ ! -e /etc/openastro-internal-runtime-ready ]] || { echo 'Already migrated'; exit 0; }
 mountpoint -q /data
 [[ $(findmnt -nro UUID --mountpoint /data) == 5fe2d0f6-b485-44e9-8e26-31fb0d217db2 ]]
+if [[ -d "$target" && -n "$(ls -A "$target")" && ! -e "$target/.openastro-migration-target" ]]; then
+    echo 'Migration destination already contains unrelated data' >&2; exit 1
+fi
 mkdir -p "$target" /mnt/livevault-nvme /var/lib/livevault-buffer
+touch "$target/.openastro-migration-target"
 backup=/var/backups/openastro-internal-migration
 mkdir -p "$backup"
 cp -an /etc/fstab "$backup/fstab"
@@ -19,12 +23,12 @@ if [[ ! -e /var/lib/livevault-buffer.img ]]; then
     fallocate -l 2G /var/lib/livevault-buffer.img
     mkfs.ext4 -q -m 0 /var/lib/livevault-buffer.img
 fi
-rsync -aHAXx --numeric-ids --exclude='/livevault/recordings/***' --exclude='/lost+found/***' --exclude='/gpt-harness/***' /data/ "$target/"
+rsync -aHAXx --numeric-ids --exclude='/livevault/recordings/***' --exclude='/lost+found/***' /data/ "$target/" || [[ $? == 24 ]]
 systemctl stop livevault-backup.timer livevault-backup.service
 systemctl stop docker.socket docker.service containerd.service
 # Final consistent copy includes SQLite WALs and Docker/Coolify state. Deletion
 # is confined to the verified new migration destination, never the NVMe.
-rsync -aHAXx --delete --numeric-ids --exclude='/livevault/recordings/***' --exclude='/lost+found/***' --exclude='/gpt-harness/***' /data/ "$target/"
+rsync -aHAXx --delete --numeric-ids --exclude='/livevault/recordings/***' --exclude='/lost+found/***' /data/ "$target/"
 sync
 umount /data
 python3 - <<'PY'
