@@ -84,3 +84,7 @@ porta LiveVault sul buffer interno da 4 GiB anziché lasciare i worker sul mount
 OpenAstro Control includes an isolated removable-media hub. Eligible USB filesystems are mounted read-only under `/srv/openastro-media` and are explicitly separated from LiveVault SERVER/SHARE storage.
 
 The Media Hub provides an authenticated remote browser, direct HTTP Range streaming/downloads, an integrated browser player with resume position, local favorites, search/sort/category filters, recent-media indexing, lazy video/image thumbnails, and ffprobe metadata. LAN clients can also use `\\OPENASTRO\\Media` over SMB and `OpenAstro Media` over DLNA. SMB/DLNA are restricted to the LAN; remote access uses the existing HTTPS control-panel authentication.
+
+### Media Hub Level 3
+
+The media panel keeps a persistent SQLite catalog on eMMC (`/var/lib/openastro-control/media.sqlite3`). Playback progress, completion state, favorites, recent history and remembered/offline libraries are server-side and shared by every authenticated browser. Direct HTTP media streams are tracked while active. USB media remains read-only and isolated from LiveVault storage.

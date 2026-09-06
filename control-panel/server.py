@@ -576,6 +576,9 @@ class Handler(BaseHTTPRequestHandler):
                 return
             end = min(end, size - 1); status = HTTPStatus.PARTIAL_CONTENT
         length = 0 if size == 0 else end - start + 1
+        stream_id = None
+        if not download and info.get("uuid") and info.get("relative"):
+            stream_id = media_center.stream_begin(info, self.client_key(), start, end)
         disposition = "attachment" if download else "inline"
         ascii_name = re.sub(r'[^A-Za-z0-9._ -]', '_', info["name"]) or "media"
         encoded = quote(info["name"], safe="")
@@ -599,8 +602,13 @@ class Handler(BaseHTTPRequestHandler):
                     chunk = handle.read(min(1024 * 1024, remaining))
                     if not chunk: break
                     self.wfile.write(chunk); remaining -= len(chunk)
+                    if stream_id:
+                        media_center.stream_touch(stream_id, len(chunk))
         except (BrokenPipeError, ConnectionResetError):
             return
+        finally:
+            if stream_id:
+                media_center.stream_end(stream_id)
 
     def read_payload(self) -> dict:
         length = int(self.headers.get("Content-Length", "0"))
@@ -699,6 +707,39 @@ class Handler(BaseHTTPRequestHandler):
             except (ValueError, FileNotFoundError, PermissionError) as exc:
                 self.send_error(HTTPStatus.NOT_FOUND, str(exc))
             return
+        if path == "/api/media/home":
+            if not self.require_session(): return
+            query = parse_qs(parsed.query)
+            uuid = str(query.get("uuid", [""])[0]).strip() or None
+            try:
+                self.send_json(media_center.home(uuid))
+            except (ValueError, FileNotFoundError, PermissionError) as exc:
+                self.send_json({"ok": False, "error": str(exc)}, 404)
+            return
+        if path == "/api/media/catalog":
+            if not self.require_session(): return
+            query = parse_qs(parsed.query)
+            try:
+                self.send_json(media_center.catalog(
+                    str(query.get("uuid", [""])[0]),
+                    category=str(query.get("category", ["all"])[0]),
+                    query=str(query.get("q", [""])[0]),
+                    sort=str(query.get("sort", ["recent"])[0]),
+                    limit=int(query.get("limit", ["200"])[0]),
+                    offset=int(query.get("offset", ["0"])[0]),
+                    favorite=query.get("favorite", ["0"])[0] == "1",
+                ))
+            except (ValueError, FileNotFoundError, PermissionError) as exc:
+                self.send_json({"ok": False, "error": str(exc)}, 404)
+            return
+        if path == "/api/media/streams":
+            if not self.require_session(): return
+            self.send_json({"ok": True, "streams": media_center.active_streams()})
+            return
+        if path == "/api/media/diagnostics":
+            if not self.require_session(): return
+            self.send_json(media_center.diagnostics())
+            return
         if path == "/api/history":
             if not self.require_session():
                 return
@@ -773,6 +814,25 @@ class Handler(BaseHTTPRequestHandler):
                 with _session_lock:
                     _sessions.pop(cookie["openastro_session"].value, None)
             self.send_json({"ok": True}, headers={"Set-Cookie": "openastro_session=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Strict"})
+            return
+        if self.path in {"/api/media/progress", "/api/media/favorite"}:
+            session = self.require_session()
+            if not session:
+                return
+            if self.headers.get("X-CSRF-Token") != session["csrf"]:
+                self.send_json({"ok": False, "error": "Sessione scaduta: ricarica la pagina."}, 403)
+                return
+            try:
+                payload = self.read_payload()
+                uuid = str(payload.get("uuid", ""))
+                path = str(payload.get("path", ""))
+                if self.path == "/api/media/progress":
+                    result = media_center.update_progress(uuid, path, float(payload.get("position", 0)), float(payload.get("duration", 0)), client=self.client_key())
+                else:
+                    result = media_center.set_favorite(uuid, path, bool(payload.get("favorite", False)))
+                self.send_json(result)
+            except (ValueError, FileNotFoundError, PermissionError) as exc:
+                self.send_json({"ok": False, "error": str(exc)}, 400)
             return
         if self.path != "/api/action":
             self.send_error(HTTPStatus.NOT_FOUND)

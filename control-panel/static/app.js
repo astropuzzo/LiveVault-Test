@@ -189,16 +189,65 @@ function mediaThumbUrl(path, uuid = mediaUuid) {
 function mediaProbeUrl(path, uuid = mediaUuid) {
   return `/api/media/probe?${new URLSearchParams({uuid, path})}`;
 }
-function mediaFavorites() {
-  try { return JSON.parse(localStorage.getItem('openastro.media.favorites') || '{}'); } catch (_) { return {}; }
+let mediaProfile = {continue:[], recently_played:[], favorites:[], active_streams:[], stats:{known_files:0,known_bytes:0}};
+let mediaFavoriteKeys = new Set();
+let mediaHomeLoadedAt = 0;
+function isMediaFavorite(path, uuid = mediaUuid) { return mediaFavoriteKeys.has(`${uuid}:${path}`); }
+async function toggleMediaFavorite(path, name = '', uuid = mediaUuid) {
+  if (!uuid || !path) return false;
+  const key = `${uuid}:${path}`, favorite = !mediaFavoriteKeys.has(key);
+  try {
+    const response = await fetch('/api/media/favorite', {method:'POST', headers:{'Content-Type':'application/json','X-CSRF-Token':csrf}, body:JSON.stringify({uuid,path,favorite}), signal:AbortSignal.timeout(10000)});
+    if (response.status === 401) { showLogin(); return !favorite; }
+    const result = await response.json(); if (!response.ok || !result.ok) throw new Error(result.error || 'Errore preferiti');
+    if (favorite) mediaFavoriteKeys.add(key); else mediaFavoriteKeys.delete(key);
+    await loadMediaHome(true); renderMediaFiles();
+    return favorite;
+  } catch (error) { toast(error.message || 'Preferito non salvato.', true); return !favorite; }
 }
-function isMediaFavorite(path, uuid = mediaUuid) { return Boolean(mediaFavorites()[`${uuid}:${path}`]); }
-function toggleMediaFavorite(path, name = '', uuid = mediaUuid) {
-  const favorites = mediaFavorites(), key = `${uuid}:${path}`;
-  if (favorites[key]) delete favorites[key]; else favorites[key] = {uuid, path, name, added:Date.now()};
-  localStorage.setItem('openastro.media.favorites', JSON.stringify(favorites));
-  renderMediaFiles();
-  return Boolean(favorites[key]);
+function mediaResumePosition(uuid, path) {
+  const rows = [...(mediaProfile.continue||[]), ...(mediaProfile.recently_played||[])];
+  const row = rows.find(item => item.uuid === uuid && item.path === path);
+  return Number(row?.position || 0);
+}
+async function saveMediaProgress(media, force = false) {
+  if (!media || !mediaPlayerUuid || !mediaPlayerPath || !Number.isFinite(media.currentTime) || !Number.isFinite(media.duration) || !media.duration) return;
+  if (!force && media.currentTime < 2) return;
+  try {
+    await fetch('/api/media/progress', {method:'POST', headers:{'Content-Type':'application/json','X-CSRF-Token':csrf}, body:JSON.stringify({uuid:mediaPlayerUuid,path:mediaPlayerPath,position:media.currentTime,duration:media.duration}), signal:AbortSignal.timeout(8000)});
+  } catch (_) {}
+}
+function mediaProfileCard(item, kind='history') {
+  const available = item.available !== false;
+  const thumb = available && ['video','image'].includes(item.category) ? `<img loading="lazy" src="${escapeHtml(mediaThumbUrl(item.path,item.uuid))}" alt="">` : `<span>${available ? mediaCategoryLabel(item.category) : 'OFFLINE'}</span>`;
+  const progress = Number(item.duration) > 0 ? Math.max(0,Math.min(100,Number(item.position||0)/Number(item.duration)*100)) : 0;
+  return `<button class="media-profile-card ${available?'':'offline'}" data-profile-play="${escapeHtml(item.path)}" data-profile-uuid="${escapeHtml(item.uuid)}" data-profile-name="${escapeHtml(item.name)}" data-profile-category="${escapeHtml(item.category)}" ${available?'':'data-offline="1"'}><div class="media-profile-art">${thumb}${progress>0?`<i style="width:${progress.toFixed(1)}%"></i>`:''}</div><strong>${escapeHtml(item.name)}</strong><small>${available ? (progress>0 ? `${Math.round(progress)}% · ${mediaDuration(item.position)} / ${mediaDuration(item.duration)}` : mediaCategoryLabel(item.category)) : 'Supporto non collegato'}</small></button>`;
+}
+function bindMediaProfileCards() {
+  $$('[data-profile-play]').forEach(button => button.addEventListener('click', () => {
+    if (button.dataset.offline) return toast('Questo contenuto è ricordato, ma il supporto USB non è collegato.', true);
+    mediaUuid = button.dataset.profileUuid; openMediaPlayer(button.dataset.profilePlay,button.dataset.profileName,button.dataset.profileCategory,button.dataset.profileUuid);
+  }));
+}
+function renderMediaHome(profile = {}) {
+  mediaProfile = profile;
+  mediaFavoriteKeys = new Set((profile.favorites||[]).map(item => `${item.uuid}:${item.path}`));
+  $('#mediaKnownFiles').textContent = profile.stats?.known_files || 0; $('#mediaKnownBytes').textContent = `${bytes(profile.stats?.known_bytes || 0)} indicizzati`;
+  $('#mediaContinueCount').textContent = (profile.continue||[]).length; $('#mediaFavoriteCount').textContent = (profile.favorites||[]).length;
+  $('#mediaStreamCount').textContent = (profile.active_streams||[]).length; $('#mediaStreamDetail').textContent = (profile.active_streams||[]).length ? 'riproduzione in corso' : 'nessuna riproduzione';
+  const sections = [['#mediaContinueWrap','#mediaContinue',profile.continue||[],'continue'],['#mediaFavoritesWrap','#mediaFavorites',profile.favorites||[],'favorite'],['#mediaPlayedWrap','#mediaPlayed',profile.recently_played||[],'played']];
+  sections.forEach(([wrap,host,rows,kind]) => { $(wrap).hidden=!rows.length; $(host).innerHTML=rows.map(item=>mediaProfileCard(item,kind)).join(''); });
+  const streams=profile.active_streams||[]; $('#mediaStreamsWrap').hidden=!streams.length;
+  $('#mediaStreams').innerHTML=streams.map(stream=>`<article><div><strong>${escapeHtml(stream.name||stream.path)}</strong><small>${escapeHtml(stream.client||'client')} · ${mediaDuration(stream.seconds||0)}</small></div><span>${bytes(stream.bytes_sent||0)}</span></article>`).join('');
+  bindMediaProfileCards(); renderMediaFiles();
+}
+async function loadMediaHome(force=false) {
+  if (!signedIn) return;
+  const now=Date.now(); if (!force && now-mediaHomeLoadedAt<10000) return; mediaHomeLoadedAt=now;
+  try {
+    const response=await fetch('/api/media/home',{cache:'no-store',signal:AbortSignal.timeout(12000)}); if(response.status===401)return showLogin();
+    const result=await response.json(); if(response.ok&&result.ok) renderMediaHome(result);
+  } catch (_) {}
 }
 function mediaCategoryLabel(category) { return ({video:'VIDEO',audio:'AUDIO',image:'FOTO',document:'DOC',archive:'ARCHIVIO',other:'FILE',dir:'CARTELLA'})[category] || 'FILE'; }
 function mediaDate(timestamp) { return timestamp ? new Date(timestamp * 1000).toLocaleDateString('it-IT',{day:'2-digit',month:'short',year:'numeric'}) : '—'; }
@@ -285,35 +334,37 @@ async function loadMediaDirectory(path = mediaPath) {
   finally { mediaBusy = false; }
 }
 function closeMediaPlayer() {
-  const stage = $('#mediaPlayerStage'); const media = stage.querySelector('video,audio');
-  if (media && mediaPlayerUuid && mediaPlayerPath && Number.isFinite(media.currentTime) && media.currentTime > 2) localStorage.setItem(`openastro.media.resume:${mediaPlayerUuid}:${mediaPlayerPath}`, String(media.currentTime));
-  if (mediaResumeTimer) clearInterval(mediaResumeTimer); mediaResumeTimer = null; stage.innerHTML = '';
+  const stage=$('#mediaPlayerStage'), media=stage.querySelector('video,audio');
+  if (media) saveMediaProgress(media,true);
+  if (mediaResumeTimer) clearInterval(mediaResumeTimer); mediaResumeTimer=null; stage.innerHTML='';
   if ($('#mediaPlayerDialog').open) $('#mediaPlayerDialog').close();
+  setTimeout(()=>loadMediaHome(true),500);
 }
-async function openMediaPlayer(path, name, category) {
-  if (!mediaUuid || !path) return;
-  mediaPlayerUuid = mediaUuid; mediaPlayerPath = path; mediaPlayerName = name || path.split('/').at(-1);
-  $('#mediaPlayerTitle').textContent = mediaPlayerName; $('#mediaPlayerType').textContent = mediaCategoryLabel(category);
-  $('#mediaPlayerDownload').href = mediaUrl(path, true, mediaPlayerUuid); $('#mediaPlayerMeta').innerHTML = '<span>Analisi file…</span>';
-  const favorite = isMediaFavorite(path, mediaPlayerUuid); $('#mediaPlayerFavorite').textContent = favorite ? '★ Preferito' : '☆ Preferito';
-  const url = mediaUrl(path, false, mediaPlayerUuid); const stage = $('#mediaPlayerStage');
-  if (category === 'image') stage.innerHTML = `<img src="${escapeHtml(url)}" alt="${escapeHtml(mediaPlayerName)}">`;
-  else if (category === 'audio') stage.innerHTML = `<audio controls preload="metadata" src="${escapeHtml(url)}"></audio>`;
-  else stage.innerHTML = `<video controls playsinline preload="metadata" src="${escapeHtml(url)}"></video>`;
-  if (!$('#mediaPlayerDialog').open) $('#mediaPlayerDialog').showModal();
-  const media = stage.querySelector('video,audio');
-  if (media) {
-    media.addEventListener('loadedmetadata', () => { const saved = Number(localStorage.getItem(`openastro.media.resume:${mediaPlayerUuid}:${path}`) || 0); if (saved > 5 && saved < media.duration - 10) media.currentTime = saved; }, {once:true});
-    mediaResumeTimer = setInterval(() => { if (!media.paused && media.currentTime > 2) localStorage.setItem(`openastro.media.resume:${mediaPlayerUuid}:${path}`, String(media.currentTime)); }, 5000);
+async function openMediaPlayer(path, name, category, uuid = mediaUuid) {
+  if (!uuid || !path) return;
+  const device=(latestState?.media?.devices||[]).find(item=>item.uuid===uuid);
+  if (!device?.mounted) return toast('Il supporto che contiene questo file non è collegato.',true);
+  mediaPlayerUuid=uuid; mediaPlayerPath=path; mediaPlayerName=name||path.split('/').at(-1);
+  $('#mediaPlayerTitle').textContent=mediaPlayerName; $('#mediaPlayerType').textContent=mediaCategoryLabel(category);
+  $('#mediaPlayerDownload').href=mediaUrl(path,true,uuid); $('#mediaPlayerMeta').innerHTML='<span>Analisi file…</span>';
+  $('#mediaPlayerFavorite').textContent=isMediaFavorite(path,uuid)?'★ Preferito':'☆ Preferito';
+  const url=mediaUrl(path,false,uuid), stage=$('#mediaPlayerStage');
+  if(category==='image') stage.innerHTML=`<img src="${escapeHtml(url)}" alt="${escapeHtml(mediaPlayerName)}">`;
+  else if(category==='audio') stage.innerHTML=`<audio controls preload="metadata" src="${escapeHtml(url)}"></audio>`;
+  else stage.innerHTML=`<video controls playsinline preload="metadata" src="${escapeHtml(url)}"></video>`;
+  if(!$('#mediaPlayerDialog').open) $('#mediaPlayerDialog').showModal();
+  const media=stage.querySelector('video,audio');
+  if(media){
+    media.addEventListener('loadedmetadata',()=>{const saved=mediaResumePosition(uuid,path); if(saved>5&&saved<media.duration-10) media.currentTime=saved;},{once:true});
+    media.addEventListener('pause',()=>saveMediaProgress(media,true)); media.addEventListener('ended',()=>saveMediaProgress(media,true));
+    mediaResumeTimer=setInterval(()=>{if(!media.paused) saveMediaProgress(media);},5000);
   }
   try {
-    const response = await fetch(mediaProbeUrl(path, mediaPlayerUuid), {cache:'no-store', signal:AbortSignal.timeout(12000)}); const data = await response.json();
-    const probe = data.probe || {}, format = probe.format || {}, streams = probe.streams || [];
-    const video = streams.find(s => s.codec_type === 'video'), audio = streams.find(s => s.codec_type === 'audio');
-    const bits = [];
-    if (format.duration) bits.push(mediaDuration(format.duration)); if (video?.width) bits.push(`${video.width}×${video.height}`); if (video?.codec_name) bits.push(video.codec_name.toUpperCase()); if (audio?.codec_name) bits.push(audio.codec_name.toUpperCase()); if (format.bit_rate) bits.push(`${(Number(format.bit_rate)/1e6).toFixed(1)} Mb/s`); bits.push(bytes(data.size));
-    $('#mediaPlayerMeta').innerHTML = bits.map(value => `<span>${escapeHtml(value)}</span>`).join('');
-  } catch (_) { $('#mediaPlayerMeta').innerHTML = `<span>${bytes(mediaItems.find(i=>i.path===path)?.size || 0)}</span>`; }
+    const response=await fetch(mediaProbeUrl(path,uuid),{cache:'no-store',signal:AbortSignal.timeout(12000)}); const data=await response.json();
+    const probe=data.probe||{}, format=probe.format||{}, streams=probe.streams||[]; const video=streams.find(x=>x.codec_type==='video'), audio=streams.find(x=>x.codec_type==='audio'); const bits=[];
+    if(format.duration)bits.push(mediaDuration(format.duration)); if(video?.width)bits.push(`${video.width}×${video.height}`); if(video?.codec_name)bits.push(video.codec_name.toUpperCase()); if(audio?.codec_name)bits.push(audio.codec_name.toUpperCase()); if(format.bit_rate)bits.push(`${(Number(format.bit_rate)/1e6).toFixed(1)} Mb/s`); bits.push(bytes(data.size));
+    $('#mediaPlayerMeta').innerHTML=bits.map(value=>`<span>${escapeHtml(value)}</span>`).join('');
+  } catch(_){$('#mediaPlayerMeta').innerHTML=`<span>${bytes(mediaItems.find(i=>i.path===path)?.size||0)}</span>`;}
 }
 function renderMedia(media = {}) {
   const devices = media.devices || [], mounted = devices.filter(device => device.mounted);
@@ -324,7 +375,7 @@ function renderMedia(media = {}) {
   $('#mediaDlnaState').textContent = media.dlna === 'active' ? 'ON' : 'OFF'; $('#mediaDlnaState').className = media.dlna === 'active' ? 'good' : 'bad';
   $('#mediaDeviceList').innerHTML = devices.length ? devices.map(device => {
     const usage = device.usage, usedPct = usage?.total ? usage.used/usage.total*100 : 0;
-    return `<div class="media-device ${device.uuid === mediaUuid ? 'selected' : ''}"><button class="media-select" data-media-uuid="${escapeHtml(device.uuid)}"><strong>${escapeHtml(device.label || 'USB')}</strong><small>${escapeHtml(device.model || '')}</small><span>${usage ? `${bytes(usage.free)} liberi · ${escapeHtml(device.fstype.toUpperCase())}` : `${escapeHtml(device.fstype.toUpperCase())} · non montato`}</span><div class="mini-capacity"><i style="width:${usedPct.toFixed(1)}%"></i></div></button>${device.mounted ? `<button class="media-eject" data-media-eject="${escapeHtml(device.uuid)}" title="Espelli in sicurezza">EJECT</button>` : ''}</div>`;
+    return `<div class="media-device ${device.uuid === mediaUuid ? 'selected' : ''} ${device.mounted?'':'offline'}"><button class="media-select" data-media-uuid="${escapeHtml(device.uuid)}" ${device.mounted?'':'disabled'}><strong>${escapeHtml(device.label || 'USB')}</strong><small>${escapeHtml(device.model || '')}</small><span>${usage ? `${bytes(usage.free)} liberi · ${escapeHtml(device.fstype.toUpperCase())}` : `${escapeHtml(device.fstype.toUpperCase())} · ricordato / offline`}</span><div class="mini-capacity"><i style="width:${usedPct.toFixed(1)}%"></i></div></button>${device.mounted ? `<button class="media-eject" data-media-eject="${escapeHtml(device.uuid)}" title="Espelli in sicurezza">EJECT</button>` : '<span class="media-offline-chip">OFFLINE</span>'}</div>`;
   }).join('') : '<div class="media-empty side"><strong>Nessuna USB</strong><small>Collega un supporto rimovibile.</small></div>';
   $$('.media-select').forEach(button => button.addEventListener('click', () => { mediaUuid = button.dataset.mediaUuid; mediaPath=''; mediaSignature=''; mediaLibrary=null; renderMedia(media); loadMediaDirectory(''); loadMediaLibrary(); }));
   $$('.media-eject').forEach(button => button.addEventListener('click', event => { event.stopPropagation(); openConfirm('media_eject',{uuid:button.dataset.mediaEject}); }));
@@ -380,6 +431,7 @@ function render(data) {
   $('#wattValue').title = 'Potenza DC dai sensori ASIAIR, inclusi i carichi collegati. Conversione del driver INDI; non calibrata con wattmetro esterno.';
   renderPower(data.power);
   renderMedia(data.media || {});
+  loadMediaHome();
 
   const mounted = storage.data.mounted && storage.share.mounted;
   $('#storageChip').textContent = mounted ? 'Montato' : storage.data_present ? 'Rilevato · non montato' : 'Scollegato';
@@ -529,8 +581,8 @@ $('#mediaGridView').addEventListener('click', () => { mediaView='grid'; $('#medi
 $('#mediaListView').addEventListener('click', () => { mediaView='list'; $('#mediaListView').classList.add('active'); $('#mediaGridView').classList.remove('active'); renderMediaFiles(); });
 $('#mediaLibraryRefresh').addEventListener('click', () => loadMediaLibrary(true));
 $('#mediaPlayerClose').addEventListener('click', closeMediaPlayer);
-$('#mediaPlayerDialog').addEventListener('close', () => { const media=$('#mediaPlayerStage').querySelector('video,audio'); if(media && mediaPlayerUuid && mediaPlayerPath && media.currentTime>2) localStorage.setItem(`openastro.media.resume:${mediaPlayerUuid}:${mediaPlayerPath}`,String(media.currentTime)); if(mediaResumeTimer) clearInterval(mediaResumeTimer); mediaResumeTimer=null; $('#mediaPlayerStage').innerHTML=''; });
-$('#mediaPlayerFavorite').addEventListener('click', () => { const state=toggleMediaFavorite(mediaPlayerPath,mediaPlayerName,mediaPlayerUuid); $('#mediaPlayerFavorite').textContent=state?'★ Preferito':'☆ Preferito'; });
+$('#mediaPlayerDialog').addEventListener('close', () => { const media=$('#mediaPlayerStage').querySelector('video,audio'); if(media) saveMediaProgress(media,true); if(mediaResumeTimer) clearInterval(mediaResumeTimer); mediaResumeTimer=null; $('#mediaPlayerStage').innerHTML=''; setTimeout(()=>loadMediaHome(true),500); });
+$('#mediaPlayerFavorite').addEventListener('click', async () => { const state=await toggleMediaFavorite(mediaPlayerPath,mediaPlayerName,mediaPlayerUuid); $('#mediaPlayerFavorite').textContent=state?'★ Preferito':'☆ Preferito'; });
 $('#mediaBack').addEventListener('click', () => loadMediaDirectory($('#mediaBack').dataset.parent || ''));
 $('#mediaCredentials').addEventListener('click', async () => {
   try {
@@ -587,6 +639,7 @@ $('#loginForm').addEventListener('submit', async event => {
     hideLogin();
     await refresh();
     await refreshHistory();
+    await loadMediaHome(true);
   } catch (error) { $('#loginError').textContent = error.message; }
   submit.disabled = false;
 });
@@ -596,7 +649,7 @@ const navObserver = new IntersectionObserver(entries => entries.forEach(entry =>
   if (entry.isIntersecting) $$('.bottom-nav a').forEach(link => link.classList.toggle('active', link.hash === `#${entry.target.id}`));
 }), {rootMargin:'-25% 0px -65%'});
 sections.forEach(section => navObserver.observe(section));
-document.addEventListener('visibilitychange', () => { if (document.hidden) stopHold(); else { refresh(); refreshHistory(); } });
+document.addEventListener('visibilitychange', () => { if (document.hidden) stopHold(); else { refresh(); refreshHistory(); loadMediaHome(true); } });
 $('#refreshAll').addEventListener('click', () => { refresh(); refreshHistory(); });
 $('#exportMetrics').addEventListener('click', () => {
   if (!latestHistory.length) return toast('Nessun campione da esportare.', true);
@@ -609,5 +662,7 @@ if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').cat
 bindActionButtons();
 refresh();
 refreshHistory();
+loadMediaHome(true);
 setInterval(refresh, 5000);
 setInterval(refreshHistory, 30000);
+setInterval(()=>loadMediaHome(), 10000);

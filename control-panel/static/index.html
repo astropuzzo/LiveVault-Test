@@ -11,7 +11,7 @@
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" href="/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="/icon.svg">
-  <link rel="stylesheet" href="/app.css?v=3.1-mediahub">
+  <link rel="stylesheet" href="/app.css?v=3.2-mediahub-l3">
 </head>
 <body>
   <div class="noise"></div>
@@ -165,6 +165,20 @@
         <button data-media-filter="all"><span>TOTALE</span><strong id="mediaStatTotal">0</strong><small id="mediaStatTotalSize">0 B</small></button>
       </div>
 
+      <div class="media-memory-grid" id="mediaMemoryGrid">
+        <article><span>LIBRERIA MEMORIZZATA</span><strong id="mediaKnownFiles">0</strong><small id="mediaKnownBytes">0 B indicizzati</small></article>
+        <article><span>CONTINUA A GUARDARE</span><strong id="mediaContinueCount">0</strong><small>sincronizzato tra dispositivi</small></article>
+        <article><span>PREFERITI</span><strong id="mediaFavoriteCount">0</strong><small>salvati su OpenAstro</small></article>
+        <article><span>STREAM ATTIVI</span><strong id="mediaStreamCount">0</strong><small id="mediaStreamDetail">nessuna riproduzione</small></article>
+      </div>
+
+      <div class="media-profile-rails" id="mediaProfileRails">
+        <section id="mediaContinueWrap" hidden><div class="media-section-title"><span>CONTINUA A GUARDARE</span><small>resume server-side</small></div><div class="media-profile-rail" id="mediaContinue"></div></section>
+        <section id="mediaFavoritesWrap" hidden><div class="media-section-title"><span>I TUOI PREFERITI</span><small>disponibili su ogni browser</small></div><div class="media-profile-rail" id="mediaFavorites"></div></section>
+        <section id="mediaPlayedWrap" hidden><div class="media-section-title"><span>VISTI DI RECENTE</span><small>cronologia OpenAstro</small></div><div class="media-profile-rail" id="mediaPlayed"></div></section>
+        <section id="mediaStreamsWrap" hidden><div class="media-section-title"><span>SESSIONI IN RIPRODUZIONE</span><small>stream HTTP attivi</small></div><div class="media-stream-list" id="mediaStreams"></div></section>
+      </div>
+
       <div class="media-layout media-layout-v2">
         <aside class="media-sidebar">
           <div class="media-section-title"><span>SUPPORTI</span><small>Read-only</small></div>
@@ -274,6 +288,6 @@
       <div class="login-error" id="loginError" role="alert"></div>
     </form>
   </div>
-  <script src="/app.js?v=3.1-mediahub" defer></script>
+  <script src="/app.js?v=3.2-mediahub-l3" defer></script>
 </body>
 </html>
