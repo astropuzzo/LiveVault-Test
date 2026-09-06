@@ -489,6 +489,7 @@ function render(data) {
     liveRings.style.setProperty('--thermal',`${Math.max(2,Math.min(100,tempLevel))}%`);
   }
   const recorderCount=Number(lv.worker?.active_recorders||0);
+  const nodeCard=$('#overview'); if(nodeCard) nodeCard.classList.toggle('is-alert',!online || handoffMode === 'buffer' || !storage.data?.mounted);
   const uptimeHero=$('#heroUptimeValue'); if(uptimeHero) uptimeHero.textContent=duration(host.uptime);
   const recorderPill=$('#heroRecorderPill'); if(recorderPill){ recorderPill.textContent=`${recorderCount} REC`; recorderPill.classList.toggle('active',recorderCount>0); }
   dashboardStatusCard('dashLiveState', online ? 'Online' : 'Problema', online ? `${recorderCount} recorder attiv${recorderCount===1?'o':'i'}` : 'LiveVault non raggiungibile', online ? '' : 'bad');
@@ -541,10 +542,17 @@ function render(data) {
   $('#storageNote').textContent = mounted ? 'Disco operativo. Prima di rimuoverlo usa sempre Espelli NVMe.' : storage.data_present ? 'Disco presente ma non montato: premi Rimonta.' : 'Puoi ricollegare l’NVMe: il ripristino sarà automatico.';
   $$('[data-action="eject_nvme"]').forEach(button => { button.disabled = !storage.data.mounted; });
   const navEject = $('.nav-eject span'); if (navEject) navEject.textContent = storage.data.mounted ? 'Espelli NVMe' : 'NVMe scollegato';
-  $('#quickNvmeTitle').textContent = storage.data.mounted ? 'Espelli NVMe' : 'NVMe scollegato';
-  $('#quickNvmeState').textContent = storage.data.mounted ? 'Passa al buffer interno' : `Buffer ${bytes(storage.buffer?.used || 0)} / ${bytes(storage.buffer?.total || 0)}`;
-  $('[data-action="attach_nvme"]').disabled = mounted;
-  $('[data-action="backup_now"]').disabled = !storage.share.mounted || !storage.data.mounted;
+  const quickNvmeAction = $('#quickNvmeAction');
+  if (quickNvmeAction) {
+    const ejecting = Boolean(storage.data.mounted);
+    quickNvmeAction.dataset.action = ejecting ? 'eject_nvme' : 'attach_nvme';
+    quickNvmeAction.dataset.confirm = ejecting ? 'Tieni premuto per espellere in sicurezza' : 'Tieni premuto per rimontare il disco';
+    quickNvmeAction.disabled = ejecting ? false : !storage.data_present;
+    $('#quickNvmeTitle').textContent = ejecting ? 'Espelli' : 'Rimonta';
+    $('#quickNvmeState').textContent = ejecting ? 'NVMe' : (storage.data_present ? 'NVMe' : 'Assente');
+  }
+  $$('[data-action="attach_nvme"]').forEach(button => { if (button !== quickNvmeAction) button.disabled = mounted || !storage.data_present; });
+  $$('[data-action="backup_now"]').forEach(button => { button.disabled = !storage.share.mounted || !storage.data.mounted; });
 
   const services = [
     ['LiveVault', online, online ? `${lv.worker?.active_recorders ?? '—'} recorder attivi` : 'non raggiungibile', 'restart_livevault'],

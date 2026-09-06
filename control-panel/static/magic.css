@@ -188,3 +188,43 @@ body::after{content:"";position:fixed;inset:-18%;pointer-events:none;z-index:-2;
 .action-bubbles button:active,.action-bubbles a:active,.mobile-nav a:active{transform:scale(.94)!important}
 .media-feature-orb::before,.media-feature-orb::after{content:"";position:absolute;border-radius:50%;pointer-events:none}.media-feature-orb::before{inset:-15px;border:1px solid rgba(255,255,255,.12)}.media-feature-orb::after{inset:-31px;border:1px solid rgba(255,255,255,.07)}
 @media(prefers-reduced-motion:no-preference){.media-feature-orb::before{animation:oa-orbit-pulse 4.8s ease-in-out infinite}.media-feature-orb::after{animation:oa-orbit-pulse 4.8s 1.1s ease-in-out infinite}@keyframes oa-orbit-pulse{50%{transform:scale(1.05);opacity:.45}}}
+
+
+/* v13.0 ops-first dashboard */
+.dashboard-mosaic{
+  grid-template-columns:repeat(3,minmax(0,1fr))!important;
+  grid-template-areas:"actions actions node" "live storage power" "media media media"!important;
+  gap:14px!important;
+}
+.node-card{grid-area:node;min-height:194px!important;padding:22px 23px!important;background:linear-gradient(145deg,#1a1b20,#15161b)!important;border-radius:31px!important}
+.node-card::after{background:var(--oa-lime);opacity:.11!important}
+.node-card .tile-heading>i{background:var(--oa-lime);box-shadow:0 0 14px rgba(124,255,35,.38)}
+.node-card.is-alert .tile-heading>i{background:var(--oa-orange);box-shadow:0 0 14px rgba(255,113,31,.35)}
+.node-summary{position:relative;z-index:2;padding-top:23px;max-width:54%}
+.node-card .hero-uptime{font-size:25px!important;line-height:1!important;letter-spacing:-1px!important;font-weight:560!important;margin:0 0 10px!important;color:#f3f4f7!important}
+.node-card .hero-state{display:flex;align-items:center;gap:6px;margin:0 0 7px}.node-card .hero-state h1{font-size:13px!important;letter-spacing:-.2px!important}.node-card .hero-state>span{font-size:6px!important;padding:4px 6px!important}
+.node-card #heroSubtitle{font-size:8px!important;line-height:1.45!important;color:#858995!important;margin:0!important;white-space:normal;max-width:170px}
+.node-meters{position:absolute;right:20px;bottom:34px;display:flex;align-items:flex-end;gap:8px;z-index:2}
+.node-meters .hero-bar{width:12px!important;height:58px!important;margin:0 0 25px!important;border-radius:9px!important;background:linear-gradient(180deg,#53555b,#45474d)!important;box-shadow:inset 0 1px 1px rgba(255,255,255,.07)!important}
+.node-meters .hero-bar i{height:9px!important;bottom:clamp(0px,calc(var(--level) - 4px),calc(100% - 9px))!important;border-radius:999px!important;transition:bottom .45s cubic-bezier(.2,.8,.2,1)!important}
+.node-meters .hero-bar span{top:67px!important;font-size:5px!important;letter-spacing:.25px!important;color:#747781!important}.node-meters .hero-bar b{display:none!important}
+
+.action-card{grid-area:actions;min-height:194px!important;padding:21px 22px 20px!important;background:radial-gradient(340px 180px at 10% 0%,rgba(151,112,255,.11),transparent 68%),linear-gradient(145deg,#1b1c22,#15161b)!important}
+.action-card::after{display:none!important}.action-heading{margin:0 0 14px!important}.action-heading>a{font-size:8px;color:#a98cff;text-decoration:none;padding:6px 9px;border-radius:999px;background:rgba(155,120,255,.10);border:1px solid rgba(155,120,255,.12)}
+.action-bubbles{grid-template-columns:repeat(6,minmax(0,1fr))!important;gap:9px!important}
+.action-bubbles button{min-height:127px!important;border-radius:21px!important;background:rgba(255,255,255,.037)!important;border:1px solid rgba(255,255,255,.035)!important;padding:13px 8px 11px!important;align-content:center!important;transition:transform .17s ease,background .17s ease,border-color .17s ease!important}
+.action-bubbles button svg{width:49px!important;height:49px!important;padding:13px!important;margin-bottom:5px!important}
+.action-bubbles button span{font-size:9px!important;font-weight:650!important;max-width:100%!important;color:#e2e4e9!important}.action-bubbles button small{display:block!important;font-size:7px!important;max-width:100%!important;color:#737781!important}
+.action-bubbles button:nth-child(1) svg{background:rgba(255,113,31,.18)!important;color:#ff7a2d!important}.action-bubbles button:nth-child(2) svg{background:rgba(124,255,35,.13)!important;color:#9bff52!important}.action-bubbles button:nth-child(3) svg{background:rgba(89,173,255,.15)!important;color:#6cc3ff!important}.action-bubbles button:nth-child(4) svg{background:rgba(255,75,89,.16)!important;color:#ff6571!important}.action-bubbles button:nth-child(5) svg{background:rgba(95,229,176,.14)!important;color:#5fe5b0!important}.action-bubbles button:nth-child(6) svg{background:rgba(155,120,255,.16)!important;color:#ad91ff!important}
+.action-bubbles button.critical-action{background:rgba(255,72,83,.045)!important;border-color:rgba(255,86,96,.08)!important}.action-bubbles button:disabled{opacity:.34!important}
+@media(hover:hover){.action-bubbles button:hover{transform:translateY(-2px);background:rgba(255,255,255,.055)!important;border-color:rgba(255,255,255,.065)!important}.action-heading>a:hover{background:rgba(155,120,255,.16)}}
+
+@media(max-width:900px){
+  .dashboard-mosaic{grid-template-columns:1fr 1fr!important;grid-template-areas:"actions actions" "node live" "storage power" "media media"!important;gap:10px!important}
+  .action-card{min-height:250px!important;padding:18px!important;border-radius:30px!important}.action-heading{margin-bottom:12px!important}.action-heading>span{font-size:12px}.action-heading>a{font-size:7px;padding:5px 8px}
+  .action-bubbles{grid-template-columns:repeat(3,1fr)!important;gap:8px!important}.action-bubbles button{min-height:91px!important;border-radius:18px!important;padding:8px 5px!important}.action-bubbles button svg{width:42px!important;height:42px!important;padding:11px!important;margin-bottom:1px!important}.action-bubbles button span{font-size:8px!important}.action-bubbles button small{font-size:6px!important}
+  .node-card{min-height:158px!important;padding:18px!important;border-radius:29px!important}.node-summary{padding-top:17px;max-width:56%}.node-card .hero-uptime{font-size:23px!important;margin-bottom:8px!important}.node-card .hero-state h1{font-size:12px!important}.node-card #heroSubtitle{font-size:7px!important;line-height:1.35!important;max-width:125px}.node-meters{right:14px;bottom:29px;gap:6px}.node-meters .hero-bar{width:10px!important;height:48px!important;margin-bottom:21px!important}.node-meters .hero-bar span{top:56px!important;font-size:4.5px!important}
+}
+@media(max-width:420px){
+  .action-card{min-height:248px!important}.action-bubbles button{min-height:90px!important}.node-card{min-height:154px!important}.node-card .hero-uptime{font-size:22px!important}
+}

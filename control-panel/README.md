@@ -92,3 +92,9 @@ The media panel keeps a persistent SQLite catalog on eMMC (`/var/lib/openastro-c
 ### Media Hub Level 5
 
 Playback is planned per file using ffprobe. Browser-safe H.264/AAC MP4 and WebM profiles use Direct Play; compatible H.264 in other containers uses an HLS remux; incompatible audio can be converted to AAC without re-encoding video; other video can fall back to H.264/AAC HLS through the CM4 V4L2 encoder. Full video transcoding is automatically denied while LiveVault is recording or when thermal/load guards trip. Sidecar SRT/VTT/ASS subtitles are exposed as WebVTT. HLS.js 1.7.2 is vendored locally with its Apache-2.0 license.
+
+## Visual QA obbligatorio
+
+Le modifiche visive al Control Center non si considerano concluse sulla sola base di lint, test DOM o responsive contract. Il flusso di rilascio UI deve includere un rendering reale con dati del nodo, screenshot almeno a viewport mobile 412×915 e desktop 1440×1000, ispezione visiva delle schermate Dashboard/Media/Sistema e una nuova iterazione se gerarchia, densità, spaziature, profondità o stati risultano deboli. Solo dopo il visual QA si copiano gli asset statici in produzione e si verifica che gli hash deployati coincidano con quelli testati.
+
+Il browser QA/Playwright è volutamente separato dal runtime del pannello e non è una dipendenza di produzione. Durante registrazioni LiveVault attive le catture e i test vanno eseguiti a bassa priorità e non devono avviare transcoding, scansioni media forzate o benchmark.

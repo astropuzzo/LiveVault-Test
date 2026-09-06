@@ -11,7 +11,7 @@
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" href="/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="/icon.svg">
-  <link rel="stylesheet" href="/app.css?v=4.0-control"><link rel="stylesheet" href="/shell.css?v=4.0-control"><link rel="stylesheet" href="/theme.css?v=5.0-feel"><link rel="stylesheet" href="/premium.css?v=10.0-product"><link rel="stylesheet" href="/magic.css?v=12.1-mosaic">
+  <link rel="stylesheet" href="/app.css?v=4.0-control"><link rel="stylesheet" href="/shell.css?v=4.0-control"><link rel="stylesheet" href="/theme.css?v=5.0-feel"><link rel="stylesheet" href="/premium.css?v=10.0-product"><link rel="stylesheet" href="/magic.css?v=13.0-ops">
 </head>
 <body data-view="dashboard" class="is-loading">
   <div class="app-shell">
@@ -44,20 +44,20 @@
         <div class="dashboard-topline"><div><p class="eyebrow">OPENASTRO CONTROL</p><span>Nodo personale</span></div><div class="hero-meta"><span id="hostName">openastro</span><span id="uptime">—</span><span id="lastUpdate">—</span></div></div>
 
         <div class="dashboard-mosaic">
-          <section class="hero node-card" id="overview">
-            <div class="hero-copy">
-              <p class="eyebrow">STATO DEL NODO</p>
+          <article class="app-tile node-card" id="overview">
+            <div class="tile-heading"><span>Nodo</span><i class="state-dot"></i></div>
+            <div class="node-summary">
               <strong class="hero-uptime" id="heroUptimeValue">—</strong>
               <div class="hero-state"><h1 id="heroTitle">Verifica…</h1><span id="heroRecorderPill">—</span></div>
               <p id="heroSubtitle">Stato operativo del nodo.</p>
             </div>
-            <div class="hero-visual hero-bars" aria-hidden="true">
+            <div class="node-meters" aria-hidden="true">
               <div class="hero-bar" id="heroCpuBar"><i></i><span>CPU</span><b id="heroCpuText">—</b></div>
               <div class="hero-bar" id="heroRamBar"><i></i><span>RAM</span><b id="heroRamText">—</b></div>
               <div class="hero-bar" id="heroTempBar"><i></i><span>TEMP</span><b id="heroTempText">—</b></div>
               <div class="hero-bar" id="heroDiskBar"><i></i><span>NVME</span><b id="heroDiskText">—</b></div>
             </div>
-          </section>
+          </article>
 
           <article class="app-tile live-card">
             <div class="tile-heading"><span>LiveVault</span><i class="state-dot"></i></div>
@@ -81,20 +81,26 @@
           </article>
 
           <article class="app-tile action-card">
-            <div class="tile-heading"><span>Azioni rapide</span></div>
+            <div class="tile-heading action-heading"><span>Controlli</span><a href="https://openastro.tailf2871c.ts.net:10000/" target="_blank" rel="noopener">Coolify ↗</a></div>
             <div class="action-bubbles">
-              <button data-action="eject_nvme" data-confirm="Tieni premuto per espellere in sicurezza" aria-label="Espelli NVMe">
-                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4h12v10H6V4Zm-2 14h16v2H4v-2Zm5-8 3 3 3-3h-2V7h-2v3H9Z"/></svg><span id="quickNvmeTitle">NVMe</span><small id="quickNvmeState">Espelli</small>
+              <button id="quickNvmeAction" data-action="eject_nvme" data-confirm="Tieni premuto per espellere in sicurezza" aria-label="Espelli o rimonta NVMe">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4h12v10H6V4Zm-2 14h16v2H4v-2Zm5-8 3 3 3-3h-2V7h-2v3H9Z"/></svg><span id="quickNvmeTitle">Espelli</span><small id="quickNvmeState">NVMe</small>
               </button>
-              <button id="quickWifi" aria-label="Gestisci Wi-Fi">
-                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 8.8C7.6 3.8 16.4 3.8 22 8.8l-1.5 1.6c-4.8-4.2-12.2-4.2-17 0L2 8.8Zm3.5 3.7c3.6-3.1 9.4-3.1 13 0L17 14.1c-2.8-2.3-7.2-2.3-10 0l-1.5-1.6ZM9 16.3c1.7-1.3 4.3-1.3 6 0L12 20l-3-3.7Z"/></svg><span id="quickWifiTitle">Wi-Fi</span><small id="quickWifiState">—</small>
+              <button data-action="restart_livevault" data-confirm="Tieni premuto per riavviare LiveVault" aria-label="Riavvia LiveVault">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4a8 8 0 1 1-7.4 11H7a6 6 0 1 0 .7-7.4L10 10H4V4l2.3 2.3A8 8 0 0 1 12 4Z"/></svg><span>LiveVault</span><small>Riavvia</small>
+              </button>
+              <button data-action="restart_docker" data-confirm="Tieni premuto per riavviare Docker" aria-label="Riavvia Docker">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h6v6H4V5Zm10 0h6v6h-6V5ZM4 15h6v4H4v-4Zm10 0h6v4h-6v-4Z"/></svg><span>Docker</span><small>Riavvia</small>
+              </button>
+              <button class="critical-action" data-action="reboot" data-confirm="Tieni premuto per riavviare ASIAIR" aria-label="Riavvia ASIAIR">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 3h2v9h-2V3Zm-3.8 2.2 1.4 1.4A6 6 0 1 0 15.4 6.6l1.4-1.4A8 8 0 1 1 7.2 5.2Z"/></svg><span>ASIAIR</span><small>Riavvia</small>
               </button>
               <button data-action="backup_now" aria-label="Avvia backup">
-                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a7 7 0 0 1 6.7 5H21l-3.5 4L14 8h2.6A5 5 0 1 0 17 15h2.2A7 7 0 1 1 12 3Z"/></svg><span>Backup</span><small>Ora</small>
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a7 7 0 0 1 6.7 5H21l-3.5 4L14 8h2.6A5 5 0 1 0 17 15h2.2A7 7 0 1 1 12 3Z"/></svg><span>Backup</span><small>Avvia</small>
               </button>
-              <a href="#media" data-route="media" aria-label="Apri Media Hub">
-                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Zm5 4v8l6-4-6-4Z"/></svg><span>Media</span><small>Apri</small>
-              </a>
+              <button id="quickWifi" aria-label="Gestisci Wi-Fi">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 8.8C7.6 3.8 16.4 3.8 22 8.8l-1.5 1.6c-4.8-4.2-12.2-4.2-17 0L2 8.8Zm3.5 3.7c3.6-3.1 9.4-3.1 13 0L17 14.1c-2.8-2.3-7.2-2.3-10 0l-1.5-1.6ZM9 16.3c1.7-1.3 4.3-1.3 6 0L12 20l-3-3.7Z"/></svg><span id="quickWifiTitle">Wi‑Fi</span><small id="quickWifiState">—</small>
+              </button>
             </div>
           </article>
 
@@ -368,6 +374,6 @@
   </div>
 
   <script src="/hls.min.js?v=1.7.2" defer></script>
-  <script src="/app.js?v=12.1-mosaic" defer></script>
+  <script src="/app.js?v=13.0-ops" defer></script>
 </body>
 </html>

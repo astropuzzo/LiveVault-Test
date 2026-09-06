@@ -662,7 +662,7 @@ def state() -> dict:
         "livevault": livevault_health(),
         "interfaces": [
             {"name": "LiveVault", "detail": "Registrazioni e archivio", "url": "https://openastro.tailf2871c.ts.net/", "available": True},
-            {"name": "Coolify", "detail": "Deploy e container · richiede Tailscale", "url": "http://100.85.86.96:8000", "available": docker == "active"},
+            {"name": "Coolify", "detail": "Deploy e container · richiede Tailscale", "url": "https://openastro.tailf2871c.ts.net:10000/", "available": docker == "active"},
             {"name": "Pi-hole", "detail": "DNS e blocco pubblicità", "url": "http://100.85.86.96/admin/", "available": pihole == "active"},
             {"name": "GitHub", "detail": "Codice LiveVault", "url": "https://github.com/astropuzzo/LiveVault-Test", "available": True},
             {"name": "Tailscale", "detail": "Rete privata", "url": "https://login.tailscale.com/admin/machines", "available": True},

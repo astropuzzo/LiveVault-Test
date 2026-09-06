@@ -34,5 +34,5 @@ def test_expensive_views_are_lazy_loaded():
 
 def test_pwa_shell_contains_new_layout_css():
     assert '/shell.css' in SW
-    assert 'openastro-control-v12-mosaic' in SW
+    assert 'openastro-control-v13-ops' in SW
     assert '/magic.css' in SW
