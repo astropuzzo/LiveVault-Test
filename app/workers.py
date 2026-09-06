@@ -121,6 +121,7 @@ class WorkerManager:
         self.started_at: datetime | None = None
         self.upload_current: dict | None = None
         self._retry_after: dict[int, float] = {}
+        self._mp4_repair_failures: dict[Path, tuple[tuple[int, int], float, int, str]] = {}
         self._source_restart_after: dict[int, float] = {}
         self._stitch_retry_after: dict[tuple[int, str], float] = {}
         self._source_check_locks: dict[int, asyncio.Lock] = {}
@@ -707,7 +708,20 @@ class WorkerManager:
         if path.suffix.lower() != ".mp4":
             return False
         async with self._mp4_finalize_lock:
-            return await finalize_mp4_for_streaming(path)
+            stat = path.stat()
+            signature = (stat.st_size, stat.st_mtime_ns)
+            previous = self._mp4_repair_failures.get(path)
+            if previous and previous[0] == signature and time.monotonic() < previous[1]:
+                raise RuntimeError(f"Riparazione in attesa dopo errore: {previous[3]}")
+            try:
+                result = await finalize_mp4_for_streaming(path)
+            except Exception as exc:
+                attempts = previous[2] + 1 if previous and previous[0] == signature else 1
+                delay = min(7200, 900 * 2 ** min(attempts - 1, 3))
+                self._mp4_repair_failures[path] = (signature, time.monotonic() + delay, attempts, str(exc)[-1000:])
+                raise
+            self._mp4_repair_failures.pop(path, None)
+            return result
 
     async def _index_fragment(self, *, source_id: int, source_name: str, session_id: str, path: Path, started_at: datetime | None) -> bool:
         lock = self._fragment_index_locks.setdefault(int(source_id), asyncio.Lock())

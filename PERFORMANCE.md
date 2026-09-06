@@ -87,3 +87,20 @@ conversion factors; external wattmeter calibration has not been performed.
 Historical software estimates are retained separately and excluded from measured
 Wh. Missing samples and gaps over 30 seconds are excluded from energy coverage.
 See control-panel/README.md for setup and measurement scope.
+
+## September 6 follow-up
+
+The latest fetched main remained ecbae19; the interrupted session had not promoted
+c178911. The live CPU saturation was a repeated failed A/V repair of one unchanged
+fragment. Background FFmpeg now starts with affinity restricted to half the available
+CPUs and lower scheduling priority. Failed unchanged MP4 repairs wait 15 minutes,
+then progressively longer up to two hours, before retrying. Changed media retries
+immediately. Shutdown cancellation does not count as a repair failure.
+
+Expired Stripchat 404/410 fragments trigger bounded public-playlist refresh within
+the same capture process. Completed media before a gap is finalized separately;
+init-only files are no longer submitted to remux. Persistent CDN failures remain
+visible after bounded retries. No access-state restrictions are bypassed.
+
+OpenAstro Control now uses a dark palette for the page, cards, controls, charts,
+and login. Asset cache versions were changed so existing installations refresh.

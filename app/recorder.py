@@ -23,6 +23,13 @@ BACKGROUND_VIDEO_THREADS = max(1, (os.cpu_count() or 2) // 2)
 # Background repairs must leave room for live capture. Account for the smaller
 # encoder pool in their deadline rather than timing out healthy slower repairs.
 BACKGROUND_TIMEOUT_FACTOR = max(1, (os.cpu_count() or 2) / BACKGROUND_VIDEO_THREADS)
+
+
+def background_media_command(command: list[str]) -> list[str]:
+    if os.name == "posix":
+        return [sys.executable, "-m", "app.media_process", *command]
+    return command
+
 STITCH_MARKER_NAME = ".livevault-stitch-session.json"
 
 
@@ -474,14 +481,14 @@ async def stitch_recording_parts(parts: list[Path], output: Path, *, allow_trans
         output.unlink(missing_ok=True)
         if not allow_transcode:
             raise RuntimeError(detail or "Stitching stream-copy fallito; transcode rinviato")
-        code, fallback_detail = await run(base + [
+        code, fallback_detail = await run(background_media_command(base + [
             "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
             "-threads:v", str(BACKGROUND_VIDEO_THREADS),
             "-pix_fmt", "yuv420p", "-fps_mode", "vfr",
             "-c:a", "aac", "-b:a", "192k", "-ar", "48000",
             "-af", "aresample=async=1",
             *trailer, str(output),
-        ], int(max(timeout, 600) * BACKGROUND_TIMEOUT_FACTOR))
+        ]), int(max(timeout, 600) * BACKGROUND_TIMEOUT_FACTOR))
         if code != 0 or not output.is_file() or output.stat().st_size <= 0:
             raise RuntimeError(fallback_detail or detail or "Stitching FFmpeg fallito")
     finally:
@@ -624,7 +631,7 @@ async def _rebuild_av_timeline(source: Path, output: Path) -> None:
         command += ["-t", f"{common_duration:.6f}"]
     command += [str(output)]
     proc = await asyncio.create_subprocess_exec(
-        *command,
+        *background_media_command(command),
         stdout=asyncio.subprocess.DEVNULL,
         stderr=asyncio.subprocess.PIPE,
     )

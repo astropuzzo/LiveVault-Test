@@ -446,6 +446,10 @@ def parse_media_playlist(
     )
 
 
+class ExpiredFragment(RuntimeError):
+    """A live CDN object disappeared; refresh the playlist instead of the process."""
+
+
 def _download_bytes(
     session: requests.Session,
     url: str,
@@ -454,9 +458,11 @@ def _download_bytes(
     attempts: int = 3,
 ) -> bytes:
     error: Exception | None = None
+    expired = False
     for attempt in range(attempts):
         try:
             response = session.get(url, headers=headers, timeout=15)
+            expired = response.status_code in {404, 410}
             response.raise_for_status()
             if not response.content:
                 raise RuntimeError("empty media fragment")
@@ -465,6 +471,8 @@ def _download_bytes(
             error = exc
             if attempt + 1 < attempts:
                 time.sleep(0.35 * (attempt + 1))
+    if expired:
+        raise ExpiredFragment("Stripchat live fragment expired (404/410)")
     raise RuntimeError(f"Stripchat fragment download failed: {error}")
 
 
@@ -594,6 +602,7 @@ def capture(args: argparse.Namespace) -> None:
     last_new_segment = time.monotonic()
     last_status_check = 0.0
     refreshes = 0
+    fragment_refreshes = 0
 
     def remember(identity: str) -> None:
         seen.add(identity)
@@ -620,7 +629,7 @@ def capture(args: argparse.Namespace) -> None:
 
     try:
         while not STOP_REQUESTED:
-            response = session.get(selection.media_url, headers=headers, timeout=12)
+            response = session.get(selection.media_url, headers={**headers, "Cache-Control": "no-cache"}, timeout=12)
             if response.status_code >= 400 or "#EXTM3U" not in response.text:
                 refreshes += 1
                 if refreshes > 4:
@@ -634,37 +643,64 @@ def capture(args: argparse.Namespace) -> None:
             refreshes = 0
             playlist = parse_media_playlist(selection.media_url, response.text, selection)
             new_segments = [segment for segment in playlist.segments if segment.identity not in seen]
+            # Join a live window near its newest complete fragments, rather than
+            # chasing the oldest CDN objects while resolver requests finish.
+            if not seen and not playlist.ended:
+                new_segments = new_segments[-3:]
             if new_segments and not playlist.init_url:
                 raise RuntimeError("Stripchat HLS playlist is missing its fMP4 init segment")
 
+            expired_fragment = False
             for segment in new_segments:
                 if STOP_REQUESTED:
                     break
                 if segment.discontinuity and bytes_written > 0:
                     submit_current()
-                if playlist.init_url and current_init != playlist.init_url:
-                    if bytes_written > 0:
-                        submit_current()
-                    init = init_cache.get(playlist.init_url)
-                    if init is None:
-                        init = _download_bytes(session, playlist.init_url, headers)
-                        init_cache[playlist.init_url] = init
+                init = None
+                try:
+                    if playlist.init_url and current_init != playlist.init_url:
+                        if bytes_written > 0:
+                            submit_current()
+                        init = init_cache.get(playlist.init_url)
+                        if init is None:
+                            init = _download_bytes(session, playlist.init_url, headers)
+                            init_cache[playlist.init_url] = init
+                    fragment = _download_bytes(session, segment.url, headers)
+                except ExpiredFragment:
+                    expired_fragment = True
+                    break
+                # Commit the init only with real media: an expired first fragment
+                # must not leave an init-only file queued for repair forever.
+                if init is not None:
                     handle.write(init)
                     bytes_written += len(init)
                     current_init = playlist.init_url
-
-                fragment = _download_bytes(session, segment.url, headers)
                 handle.write(fragment)
                 handle.flush()
                 bytes_written += len(fragment)
                 remember(segment.identity)
                 last_new_segment = time.monotonic()
+                fragment_refreshes = 0
 
                 if (
                     bytes_written >= args.max_bytes
                     or time.monotonic() - part_started >= args.segment_seconds
                 ):
                     submit_current()
+
+            if expired_fragment:
+                fragment_refreshes += 1
+                if fragment_refreshes > 4:
+                    raise RuntimeError("Stripchat CDN fragments remain unavailable after playlist refresh")
+                # Close the good prefix at a gap; never silently splice across it.
+                if bytes_written > 0:
+                    submit_current()
+                print("Stripchat live fragment expired; refreshing public playlist", file=sys.stderr, flush=True)
+                time.sleep(min(2.0, max(0.5, playlist.target_duration / 2)))
+                user_id, state = get_cam_state(session, args.slug, user_id=user_id)
+                stream_id = _public_stream_id(state, user_id)
+                selection, keys = select_master(session, stream_id, args.quality, keys)
+                continue
 
             now = time.monotonic()
             if playlist.ended:
