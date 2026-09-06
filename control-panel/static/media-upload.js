@@ -3,6 +3,14 @@
   const host = $u('#mediaUploadCard');
   if (!host) return;
 
+  if (!window.__openastroPlaybackFixRequested) {
+    window.__openastroPlaybackFixRequested = true;
+    const script = document.createElement('script');
+    script.src = '/media-playback-fix.js?v=15.0-media';
+    script.defer = true;
+    document.head.appendChild(script);
+  }
+
   const input = $u('#mediaUploadInput');
   const drop = $u('#mediaDropZone');
   const choose = $u('#mediaUploadChoose');
