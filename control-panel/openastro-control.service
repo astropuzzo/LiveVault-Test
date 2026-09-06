@@ -10,7 +10,7 @@ Group=astro
 SupplementaryGroups=docker
 WorkingDirectory=/opt/openastro-control
 Environment=PYTHONDONTWRITEBYTECODE=1
-ExecStart=/usr/bin/python3 /opt/openastro-control/server.py
+ExecStart=/usr/bin/python3 /opt/openastro-control/upload_server.py
 Restart=always
 RestartSec=3
 TimeoutStopSec=10
