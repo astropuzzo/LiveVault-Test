@@ -10,6 +10,11 @@ import pytest
 from app import storage_handoff as h
 
 
+def test_buffer_parts_leave_real_capture_capacity_after_trailer_reserve():
+    from app.recorder import safe_output_limit_bytes
+    assert safe_output_limit_bytes(h.BUFFER_SEGMENT_GB) == 64 * 1024**2
+
+
 @pytest.fixture
 def control(tmp_path, monkeypatch):
     monkeypatch.setattr(h, 'settings', SimpleNamespace(data_dir=tmp_path, recordings_dir=tmp_path))

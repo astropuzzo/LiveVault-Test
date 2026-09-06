@@ -7,6 +7,7 @@ from functools import wraps
 from .config import settings
 
 BUFFER_RESERVE = 128 * 1024**2
+BUFFER_SEGMENT_GB = 0.125  # leaves 64 MiB after the recorder's trailer reserve
 
 
 def state() -> dict:
