@@ -23,12 +23,12 @@ if [[ ! -e /var/lib/livevault-buffer.img ]]; then
     fallocate -l 2G /var/lib/livevault-buffer.img
     mkfs.ext4 -q -m 0 /var/lib/livevault-buffer.img
 fi
-rsync -aHAXx --numeric-ids --exclude='/livevault/recordings/***' --exclude='/lost+found/***' /data/ "$target/" || [[ $? == 24 ]]
+rsync -aHAXx --numeric-ids --exclude='/livevault/recordings/***' --exclude='/lost+found/***' --exclude='/.openastro-migration-target' /data/ "$target/" || [[ $? == 24 ]]
 systemctl stop livevault-backup.timer livevault-backup.service
 systemctl stop docker.socket docker.service containerd.service
 # Final consistent copy includes SQLite WALs and Docker/Coolify state. Deletion
 # is confined to the verified new migration destination, never the NVMe.
-rsync -aHAXx --delete --numeric-ids --exclude='/livevault/recordings/***' --exclude='/lost+found/***' /data/ "$target/"
+rsync -aHAXx --delete --numeric-ids --exclude='/livevault/recordings/***' --exclude='/lost+found/***' --exclude='/.openastro-migration-target' /data/ "$target/"
 sync
 umount /data
 python3 - <<'PY'

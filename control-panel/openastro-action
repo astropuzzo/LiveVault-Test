@@ -50,6 +50,13 @@ case "$action" in
         systemd-run --quiet --wait --collect --pipe --unit="openastro-power-apply-$(date +%s)" /usr/local/sbin/openastro-power-profile "$profile" "$wifi"
         record "$profile/$wifi"
         ;;
+    storage_status)
+        systemctl show openastro-internal-migration.service -p ActiveState -p SubState -p ExecMainStatus
+        journalctl -u openastro-internal-migration.service -n 15 --no-pager
+        ;;
+    storage_rollback)
+        /usr/local/libexec/rollback-internal-runtime.sh
+        ;;
     reboot)
         record scheduled
         systemd-run --quiet --unit=openastro-control-reboot --on-active=3s /usr/bin/systemctl reboot
