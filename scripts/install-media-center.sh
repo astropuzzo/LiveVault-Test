@@ -55,13 +55,17 @@ cat >/etc/samba/smb.conf <<SMB
    browseable = yes
    read only = yes
    guest ok = yes
+   write list = astro
+   create mask = 0644
+   directory mask = 0755
    follow symlinks = no
    wide links = no
 SMB
 
 testparm -s /etc/samba/smb.conf >/dev/null
 
-# Keep one stable authenticated SMB credential for Windows clients that reject guest shares.
+# Keep one stable authenticated SMB credential for Windows clients. Guests can
+# browse/read, while only the astro account can import or modify media over LAN.
 CRED=/etc/openastro-media-credentials.json
 if [[ ! -s "$CRED" ]]; then
   password=$(openssl rand -hex 12)
