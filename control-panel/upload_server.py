@@ -11,6 +11,7 @@ import time
 from urllib.parse import parse_qs, urlparse
 
 import media_center
+import media_streaming_patch
 import server as panel
 
 
@@ -18,6 +19,11 @@ UPLOAD_CHUNK = 1024 * 1024
 UPLOAD_RESERVE_BYTES = 256 * 1024 * 1024
 UPLOAD_MAX_BYTES = 8 * 1024 ** 4
 _BASE_MEDIA_STATUS = media_center.status
+
+# Keep the Level 5 planner/governor but harden the HLS transport used by the
+# upload-enabled Control Center runtime. This is intentionally runtime-scoped
+# and leaves unrelated Control Center behavior untouched.
+media_streaming_patch.apply(panel.media_streaming)
 
 
 def _media_status() -> dict:
