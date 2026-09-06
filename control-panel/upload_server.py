@@ -8,7 +8,6 @@ from pathlib import Path
 import secrets
 import shutil
 import time
-from http import HTTPStatus
 from urllib.parse import parse_qs, urlparse
 
 import media_center
@@ -18,6 +17,29 @@ import server as panel
 UPLOAD_CHUNK = 1024 * 1024
 UPLOAD_RESERVE_BYTES = 256 * 1024 * 1024
 UPLOAD_MAX_BYTES = 8 * 1024 ** 4
+_BASE_MEDIA_STATUS = media_center.status
+
+
+def _media_status() -> dict:
+    payload = _BASE_MEDIA_STATUS()
+    for device in payload.get('devices', []):
+        writable = False
+        if device.get('mounted') and device.get('mountpoint'):
+            try:
+                writable = os.access(Path(device['mountpoint']), os.W_OK)
+            except OSError:
+                writable = False
+        device['writable'] = writable
+        device['read_only'] = not writable
+    payload['upload'] = True
+    payload['write_policy'] = 'authenticated-import-only'
+    payload['guest_write'] = False
+    return payload
+
+
+# server.state() calls the shared media_center module. Replace only the status
+# view; all existing library/player behavior remains untouched.
+media_center.status = _media_status
 
 
 def _upload_name(value: str, folder: Path) -> str:
@@ -98,7 +120,7 @@ class Handler(panel.Handler):
             _item, root, folder = media_center._safe_target(uuid, relative, require_file=False)
             name = _upload_name(requested_name, folder)
             if not os.access(folder, os.W_OK):
-                raise PermissionError('Il supporto è montato in sola lettura. Rimontalo in modalità scrivibile.')
+                raise PermissionError('Il supporto è montato in sola lettura. Usa Rileva USB per rimontarlo in modalità import.')
             usage = shutil.disk_usage(folder)
             available = max(0, usage.free - min(UPLOAD_RESERVE_BYTES, usage.total // 20))
             if length > available:
