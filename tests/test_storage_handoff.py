@@ -38,6 +38,10 @@ def test_buffer_reserves_space_and_never_enables_archive_jobs(control, monkeypat
     assert not h.media_online()
     monkeypatch.setattr('shutil.disk_usage', lambda _: SimpleNamespace(free=h.BUFFER_RESERVE + 1))
     assert h.capture_allowed()
+    h.mark_full()
+    # Recorder closure can free temporary remux space. That must not cause an
+    # endless stop/restart loop before the NVMe is returned.
+    assert not h.capture_allowed()
 
 
 def test_quiesce_drains_existing_job_without_cancelling_it(control):

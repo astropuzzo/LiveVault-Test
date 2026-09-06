@@ -16,6 +16,7 @@ def state() -> dict:
         value = json.loads(path.read_text())
         if value.get("mode") not in {"nvme", "buffer", "quiesce"}:
             raise ValueError("Unknown storage mode")
+        value['full'] = (settings.data_dir / '.storage-buffer-full').exists()
         return value
     except FileNotFoundError:
         return {"mode": "legacy"}
@@ -34,8 +35,14 @@ def capture_allowed(required_reserve: int = BUFFER_RESERVE) -> bool:
     if mode == "quiesce":
         return False
     if mode == "buffer":
+        if (settings.data_dir / '.storage-buffer-full').exists():
+            return False
         return shutil.disk_usage(settings.recordings_dir).free > max(BUFFER_RESERVE, required_reserve)
     return True
+
+
+def mark_full() -> None:
+    (settings.data_dir / '.storage-buffer-full').touch()
 
 
 def media_job(function=None, *, buffering=False):

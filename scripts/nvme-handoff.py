@@ -24,6 +24,8 @@ def run(*args):
 
 
 def publish(mode, **fields):
+    if mode == 'nvme':
+        (ROOT / '.storage-buffer-full').unlink(missing_ok=True)
     path = ROOT / 'storage-state.json'
     temporary = path.with_suffix('.tmp')
     with temporary.open('w') as f:
