@@ -868,7 +868,9 @@ class Handler(BaseHTTPRequestHandler):
             if not self.require_session(): return
             query = parse_qs(parsed.query)
             try:
-                self.send_json(media_streaming.playback_plan(str(query.get("uuid", [""])[0]), str(query.get("path", [""])[0])))
+                audio_raw = str(query.get("audio_stream", [""])[0]).strip()
+                audio_stream = int(audio_raw) if audio_raw else None
+                self.send_json(media_streaming.playback_plan(str(query.get("uuid", [""])[0]), str(query.get("path", [""])[0]), audio_stream=audio_stream))
             except (ValueError, FileNotFoundError, PermissionError, RuntimeError) as exc:
                 self.send_json({"ok": False, "error": str(exc)}, 404)
             return
@@ -899,7 +901,9 @@ class Handler(BaseHTTPRequestHandler):
             if not self.require_session(): return
             query = parse_qs(parsed.query)
             try:
-                self.send_media_file(media_streaming.subtitle_info(str(query.get("uuid", [""])[0]), str(query.get("path", [""])[0])), download=False)
+                stream_raw = str(query.get("stream", [""])[0]).strip()
+                stream_index = int(stream_raw) if stream_raw else None
+                self.send_media_file(media_streaming.subtitle_info(str(query.get("uuid", [""])[0]), str(query.get("path", [""])[0]), stream_index=stream_index), download=False)
             except (ValueError, FileNotFoundError, PermissionError) as exc:
                 self.send_error(HTTPStatus.NOT_FOUND, str(exc))
             return
@@ -1040,7 +1044,9 @@ class Handler(BaseHTTPRequestHandler):
                 elif self.path == "/api/media/favorite":
                     result = media_center.set_favorite(uuid, path, bool(payload.get("favorite", False)))
                 elif self.path == "/api/media/hls/start":
-                    result = media_streaming.start_hls(uuid, path, client=self.client_key(), position=float(payload.get("position", 0)))
+                    audio_raw = payload.get("audio_stream")
+                    audio_stream = int(audio_raw) if audio_raw is not None and str(audio_raw) != "" else None
+                    result = media_streaming.start_hls(uuid, path, client=self.client_key(), position=float(payload.get("position", 0)), audio_stream=audio_stream)
                 else:
                     result = media_streaming.stop_hls(str(payload.get("token", "")))
                 self.send_json(result)

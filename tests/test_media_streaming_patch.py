@@ -17,6 +17,8 @@ def test_patch_uses_mpegts_hls_and_browser_safe_mime():
     assert "'seg-%05d.ts'" in text
     assert "'video/mp2t'" in text
     assert "'-hls_init_time', '1'" in text
+    assert "selected_audio_stream" in text
+    assert "audio_stream=audio_stream" in text
 
 
 def test_apply_replaces_only_hls_entrypoints():

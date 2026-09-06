@@ -651,16 +651,28 @@ Thus removing a USB device does not erase knowledge of its library.
 
 Playback planning uses `ffprobe`/FFmpeg:
 
-- browser-safe H.264/AAC MP4 / WebM -> Direct Play;
+- browser-safe H.264/AAC MP4 / WebM -> Direct Play when there is only one audio track;
 - compatible H.264 in another container -> HLS remux, no video re-encode;
-- incompatible audio -> audio conversion to AAC while copying video when possible;
+- multi-audio browser-safe video -> lightweight HLS remux so the user can select a language consistently;
+- incompatible audio -> audio conversion to AAC while copying H.264 video when possible;
 - other video -> H.264/AAC HLS fallback when allowed;
 - CM4 V4L2 hardware H.264 encoder is used when appropriate;
-- sidecar SRT/VTT/ASS subtitles can be exposed as WebVTT.
+- `ffprobe` includes stream title/language plus `default`/`forced` dispositions so the UI can show real track names;
+- sidecar SRT/VTT/ASS and embedded subtitle tracks can be exposed as WebVTT.
 
-**Governor rule:** heavy/full video transcoding is denied/suspended when LiveVault is actively recording or when thermal/load protection triggers. Direct play should remain available.
+### Multi-track audio and subtitles — deployed
+
+The Media player exposes explicit **Lingua / Audio** and **Sottotitoli** selectors when the source contains multiple tracks. Audio switching restarts only the HLS session at the current logical playback position and maps the selected FFmpeg stream index. For H.264 + AC3 MKV this means **video stream-copy plus AC3 -> AAC only**; do not replace this with full video transcoding merely to change language.
+
+Embedded ASS/SSA subtitles use a low-resource cached path under `/var/lib/openastro-control/media-subs/`: FFmpeg first demuxes only the selected subtitle stream with `-c:s copy`, then the Control Center's small Python parser converts readable ASS dialogue to WebVTT. This two-stage path is intentional because the deployed FFmpeg build was verified to emit timestamp-only/blank text when converting this MKV's embedded ASS directly to SRT/WebVTT. Only the subtitle selected by the user is generated, then it is reused from cache.
+
+Real QA reference: `Longlegs (2024) ... MIRCrew.mkv` was verified with audio `Ita AC3 5.1` (stream 1) / `Eng AC3 5.1` (stream 2), subtitles `Forced ita` / `Ita` / `Eng`, and duration `6077.312 s`. Switching to English generated MPEG-TS HLS with H.264 copied and AAC stereo, while selecting embedded ITA returned valid text WebVTT.
+
+**Governor rule:** heavy/full video transcoding is denied/suspended when LiveVault is actively recording or when thermal/load protection triggers. Direct play, HLS remux and lightweight audio-only conversion should remain available.
 
 HLS.js 1.7.2 is vendored locally; runtime should not require a CDN. The upload-enabled Control Center applies `media_streaming_patch.py` at runtime: HLS fallback uses MPEG-TS segments (`seg-*.ts`) rather than fMP4, and the browser-side compatibility patch disables the HLS.js worker and adds bounded network/media recovery.
+
+**QA-browser caveat:** the Playwright Chromium build cached on this CM4 reports H.264/AAC MediaSource support as false, so it can raise `bufferAddCodecError` even when the generated HLS segment is valid. For server-side validation inspect the selected stream/manifest/segment and decode or probe the MPEG-TS output; do not treat that headless-browser codec limitation as proof of a server regression.
 
 ## Level 10 status
 
@@ -778,7 +790,7 @@ git diff --check
 3. **Do not restart Docker as generic troubleshooting.** Scope restarts narrowly.
 4. **Do not expose `/run/docker.sock`, `/var/lib/docker`, `/data/recordings`, or `/share` to GPT Harness.**
 5. **Do not expose SMB/DLNA to the public Internet.**
-6. **Do not mount removable media read-write by default.**
+6. **Do not expose removable-media writes to unauthenticated clients or bypass the authenticated import boundary.**
 7. **Do not weaken Control Center authentication/CSRF/hold-to-confirm.**
 8. **Do not substitute estimated power as real sensor power.**
 9. **Do not ask the user to repeat root/GitHub setup already documented here.** Verify and use it.

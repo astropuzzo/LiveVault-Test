@@ -38,8 +38,8 @@ def apply(streaming) -> None:
             mime = 'application/octet-stream'
         return {'path': target, 'name': name, 'size': st.st_size, 'mime': mime}
 
-    def start_hls(uuid: str, relative: str, *, client: str = '', position: float = 0.0) -> dict:
-        plan = streaming.playback_plan(uuid, relative)
+    def start_hls(uuid: str, relative: str, *, client: str = '', position: float = 0.0, audio_stream: int | None = None) -> dict:
+        plan = streaming.playback_plan(uuid, relative, audio_stream=audio_stream)
         if plan['mode'] == 'direct':
             return {'ok': True, 'mode': 'direct', 'plan': plan}
         if not plan['available'] or not str(plan['mode']).startswith('hls_'):
@@ -63,7 +63,8 @@ def apply(streaming) -> None:
         args = ['ffmpeg', '-hide_banner', '-loglevel', 'warning', '-nostdin', '-re']
         if position > 0:
             args += ['-ss', f'{position:.3f}']
-        args += ['-i', str(info['path']), '-map', '0:v:0', '-map', '0:a:0?', '-sn', '-dn']
+        audio_map = f"0:{plan['selected_audio_stream']}" if plan.get('selected_audio_stream') is not None else '0:a:0?'
+        args += ['-i', str(info['path']), '-map', '0:v:0', '-map', audio_map, '-sn', '-dn']
 
         mode = plan['mode']
         if mode == 'hls_copy':

@@ -457,7 +457,7 @@ def set_favorite(uuid: str, relative: str, enabled: bool) -> dict:
 
 def probe_file(uuid: str, relative: str) -> dict:
     info=file_info(uuid,relative)
-    result=_run(['ffprobe','-v','error','-show_entries','format=duration,size,bit_rate,format_name:stream=index,codec_type,codec_name,width,height,r_frame_rate,sample_rate,channels,channel_layout','-of','json',str(info['path'])],timeout=8)
+    result=_run(['ffprobe','-v','error','-show_entries','format=duration,size,bit_rate,format_name:stream=index,codec_type,codec_name,width,height,r_frame_rate,sample_rate,channels,channel_layout:stream_tags=language,title:stream_disposition=default,forced','-of','json',str(info['path'])],timeout=8)
     probe=None
     if result.returncode==0:
         try: probe=json.loads(result.stdout or '{}')
