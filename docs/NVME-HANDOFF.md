@@ -20,8 +20,9 @@ the container sees the new filesystem, checks remaining device file handles,
 and normally unmounts the NVMe. No lazy unmount is used. A busy device produces
 an error and restores the prior recording mount.
 
-Buffer captures use short parts and stop with 128 MiB reserved for closing
-files. The independent 2 GiB filesystem enforces the hard upper bound even if
+Buffer captures use short parts and reserve 128 MiB per active camera plus
+one spare slot for closing files. The full state stays latched until NVMe
+returns, including across application restarts. The independent 2 GiB filesystem enforces the hard upper bound even if
 sampling or graceful stopping is delayed. A full buffer leaves the app online
 and preserves its contents until the NVMe returns. Existing video on an absent
 NVMe cannot be played locally until reattachment.

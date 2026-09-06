@@ -21,7 +21,7 @@ cp -an /usr/local/sbin/livevault-storage-attach "$backup/attach"
 # The limit is enforced by an independent filesystem, not a sampling timer.
 if [[ ! -e /var/lib/livevault-buffer.img ]]; then
     fallocate -l 2G /var/lib/livevault-buffer.img
-    mkfs.ext4 -q -m 0 /var/lib/livevault-buffer.img
+    mkfs.ext4 -q -m 0 -E nodiscard /var/lib/livevault-buffer.img
 fi
 rsync -aHAXx --numeric-ids --exclude='/livevault/recordings/***' --exclude='/lost+found/***' --exclude='/.openastro-migration-target' /data/ "$target/" || [[ $? == 24 ]]
 systemctl stop livevault-backup.timer livevault-backup.service
