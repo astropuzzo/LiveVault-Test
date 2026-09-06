@@ -11,33 +11,53 @@
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" href="/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="/icon.svg">
-  <link rel="stylesheet" href="/app.css?v=3.3-mediahub-l5">
+  <link rel="stylesheet" href="/app.css?v=4.0-control"><link rel="stylesheet" href="/shell.css?v=4.0-control">
 </head>
-<body>
-  <div class="noise"></div>
-  <header class="topbar">
-    <div class="brand">
-      <div class="mark" aria-hidden="true"><span></span></div>
-      <div><strong>OPENASTRO</strong><small>Il tuo server personale</small></div>
-    </div>
-    <div class="top-actions"><button class="nav-eject" data-action="eject_nvme" data-confirm="Tieni premuto per espellere in sicurezza"><i></i><span>Espelli NVMe</span></button><div class="connection"><i id="connectionDot"></i><span id="connectionText">Connessione…</span></div><button id="logoutButton" class="logout" title="Esci">Esci dal pannello</button></div>
-  </header>
-
-  <main>
-<section class="hero" id="overview">
-      <div>
-        <p class="eyebrow">PANORAMICA DEL NODO</p>
-        <h1 id="heroTitle">Controllo del nodo</h1>
-        <p id="heroSubtitle">Caricamento telemetria in corso.</p>
+<body data-view="dashboard">
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand-block">
+        <div class="mark" aria-hidden="true"><span></span></div>
+        <div><strong>OpenAstro</strong><small>Control Center</small></div>
       </div>
-      <div class="hero-meta">
-        <span id="hostName">openastro</span>
-        <span id="uptime">—</span>
-        <span id="lastUpdate">—</span>
+      <nav class="side-nav" aria-label="Sezioni principali">
+        <a href="#dashboard" data-route="dashboard" class="active"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 13h6V4H4v9Zm0 7h6v-5H4v5Zm10 0h6v-9h-6v9Zm0-16v5h6V4h-6Z"/></svg><span>Dashboard</span></a>
+        <a href="#media" data-route="media"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v14H4V5Zm6 3v8l6-4-6-4Z"/></svg><span>Media</span></a>
+        <a href="#storage" data-route="storage"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14l2 4v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8l2-4Zm1.2 2L5.5 8h13l-.7-2H6.2ZM6 12h12v5H6v-5Zm9 1.5h2v2h-2v-2Z"/></svg><span>Storage</span></a>
+        <a href="#system" data-route="system"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a2 2 0 0 1 2 2v1.1a7 7 0 0 1 1.9.8l.8-.8a2 2 0 1 1 2.8 2.8l-.8.8c.4.6.6 1.2.8 1.9H21a2 2 0 1 1 0 4h-1.1a7 7 0 0 1-.8 1.9l.8.8a2 2 0 1 1-2.8 2.8l-.8-.8a7 7 0 0 1-1.9.8V21a2 2 0 1 1-4 0v-1.1a7 7 0 0 1-1.9-.8l-.8.8a2 2 0 1 1-2.8-2.8l.8-.8a7 7 0 0 1-.8-1.9H3a2 2 0 1 1 0-4h1.1a7 7 0 0 1 .8-1.9l-.8-.8a2 2 0 1 1 2.8-2.8l.8.8a7 7 0 0 1 1.9-.8V5a2 2 0 0 1 2-2Zm0 6a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z"/></svg><span>Sistema</span></a>
+        <a href="#advanced" data-route="advanced"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5h14v3H5V5Zm0 6h14v3H5v-3Zm0 6h14v3H5v-3Z"/></svg><span>Avanzate</span></a>
+      </nav>
+      <div class="sidebar-foot">
+        <a class="livevault-link" href="https://openastro.tailf2871c.ts.net/" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5h6v2H7v10h10v-4h2v6H5V5Zm8 0h6v6h-2V8.4l-6.3 6.3-1.4-1.4L15.6 7H13V5Z"/></svg><span>Apri LiveVault</span></a>
+        <div class="connection"><i id="connectionDot"></i><span id="connectionText">Connessione…</span></div>
+        <button id="logoutButton" class="logout">Esci</button>
+      </div>
+    </aside>
+
+    <header class="mobile-header">
+      <div class="brand"><div class="mark" aria-hidden="true"><span></span></div><strong>OpenAstro</strong></div>
+      <div class="connection"><i></i><span id="mobileConnectionText">Online</span></div>
+    </header>
+
+    <main class="app-main">
+      <section class="app-view active" data-view-panel="dashboard" aria-labelledby="view-dashboard-title">
+        <div class="view-heading"><div><p class="eyebrow">CONTROL CENTER</p><h1 id="view-dashboard-title">Dashboard</h1><p>Quello che conta adesso.</p></div><div class="hero-meta"><span id="hostName">openastro</span><span id="uptime">—</span><span id="lastUpdate">—</span></div></div>
+        <section class="hero" id="overview">
+      <div>
+        <p class="eyebrow">DASHBOARD</p>
+        <h1 id="heroTitle">OpenAstro</h1>
+        <p id="heroSubtitle">Stato operativo del nodo, senza rumore.</p>
       </div>
     </section>
 
-    <section class="metrics-grid" aria-label="Risorse del server">
+
+        <section class="dashboard-health" aria-label="Stato operativo">
+          <article><span>LIVEVAULT</span><strong id="dashLiveState">Verifica…</strong><small id="dashLiveDetail">—</small></article>
+          <article><span>REGISTRAZIONI</span><strong id="dashStorageMode">—</strong><small id="dashStorageDetail">—</small></article>
+          <article><span>MEDIA</span><strong id="dashMediaState">—</strong><small id="dashMediaDetail">—</small></article>
+          <article><span>ENERGIA</span><strong id="dashPowerState">—</strong><small id="dashPowerDetail">—</small></article>
+        </section>
+            <section class="metrics-grid" aria-label="Risorse del server">
       <article class="metric-card">
         <div class="ring" id="cpuRing"><span id="cpuValue">—</span></div>
         <div><p>CPU</p><strong id="loadValue">—</strong><small id="coreValue">—</small></div>
@@ -64,95 +84,19 @@
       </article>
     </section>
 
-    <section class="command-deck" aria-label="Comandi rapidi">
-      <div class="command-intro"><p class="eyebrow">QUICK COMMAND</p><strong>Controlli immediati</strong><small>Sempre disponibili, protetti dalla pressione prolungata.</small></div>
+
+            <section class="command-deck" aria-label="Comandi rapidi">
+      <div class="command-intro"><p class="eyebrow">AZIONI RAPIDE</p><strong>Controlli essenziali</strong><small>Solo le azioni che servono davvero.</small></div>
       <button class="command-tile nvme-command" data-action="eject_nvme" data-confirm="Tieni premuto per espellere in sicurezza"><span class="command-icon"><i></i></span><span><small>ARCHIVIO FISICO</small><strong id="quickNvmeTitle">Espelli NVMe</strong><em id="quickNvmeState">Smontaggio sicuro</em></span><b>→</b></button>
       <button class="command-tile wifi-command" id="quickWifi"><span class="command-icon"><i></i><i></i><i></i></span><span><small>CONNETTIVITÀ</small><strong id="quickWifiTitle">Spegni Wi-Fi</strong><em id="quickWifiState">Hotspot attivo</em></span><b>→</b></button>
     </section>
 
-        <section class="panel telemetry-panel" id="telemetry">
-      <div class="panel-head telemetry-head">
-        <div><p class="eyebrow">TELEMETRIA</p><h2>Andamento risorse</h2></div>
-        <div class="range-switch" role="group" aria-label="Intervallo grafici">
-          <button data-range="3600" class="active" aria-pressed="true">1H</button><button data-range="21600" aria-pressed="false">6H</button><button data-range="86400" aria-pressed="false">24H</button>
-        </div>
-      </div>
-      <div class="chart-grid">
-        <article class="chart-card chart-wide">
-          <header><div><span class="chart-kicker">COMPUTE</span><strong>CPU + memoria</strong></div><div class="legend"><i class="cpu"></i>CPU <i class="ram"></i>RAM</div></header>
-          <div class="chart-host" id="computeChart"><span class="chart-empty">Raccolta dati reali…</span></div>
-          <footer><span id="cpuAverage">CPU media —</span><span id="ramAverage">RAM media —</span></footer>
-        </article>
-        <article class="chart-card">
-          <header><div><span class="chart-kicker">THERMAL</span><strong>Temperatura</strong></div><b id="tempPeak">—</b></header>
-          <div class="chart-host" id="temperatureChart"><span class="chart-empty">Raccolta dati…</span></div>
-          <footer><span>°C</span><span id="tempAverage">media —</span></footer>
-        </article>
-        <article class="chart-card">
-          <header><div><span class="chart-kicker">TRAFFIC</span><strong>Rete</strong></div><b id="networkPeak">—</b></header>
-          <div class="chart-host" id="networkChart"><span class="chart-empty">Raccolta dati…</span></div>
-          <footer><span>↓ download</span><span>↑ upload</span></footer>
-        </article>
-        <article class="chart-card">
-          <header><div><span class="chart-kicker">CAPACITY</span><strong>Disco NVMe</strong></div><b id="diskTrend">—</b></header>
-          <div class="chart-host" id="diskChart"><span class="chart-empty">Raccolta dati…</span></div>
-          <footer><span>% utilizzato</span><span id="diskDelta">variazione —</span></footer>
-        </article>
-        <article class="chart-card">
-          <header><div><span class="chart-kicker">SENSORE ASIAIR · INGRESSO DC</span><strong>Potenza assorbita</strong></div><b id="wattPeak">—</b></header>
-          <div class="chart-host" id="wattChart"><span class="chart-empty">Raccolta dati…</span></div>
-          <footer><span id="energyMeasured">In attesa di campioni misurati</span><span id="wattAverage">media —</span></footer>
-        </article>
-      </div>
-      <footer class="telemetry-footer"><p id="historyStatus" role="status">Caricamento dello storico…</p><div><button id="refreshAll" type="button">Aggiorna</button> <button id="exportMetrics" type="button">Esporta CSV</button></div></footer>
-    </section>
 
-    <section class="panel power-panel" id="power">
-      <div class="panel-head">
-        <div><p class="eyebrow">CPU E CONNETTIVITÀ</p><h2>Profilo energetico</h2></div>
-        <span class="profile-chip" id="currentProfile">—</span>
-      </div>
-      <div class="power-stage">
-        <div class="power-copy"><span id="profileIndex">01 / 04</span><h3 id="profileName">Bilanciato</h3><p id="profileDescription">Prestazioni elastiche per l’uso quotidiano.</p></div>
-        <div class="power-orbit" aria-hidden="true"><i></i><i></i><b id="powerGlyph">B</b></div>
-      </div>
-      <div class="profile-slider">
-        <input id="powerSlider" type="range" min="0" max="3" step="1" value="1" aria-label="Profilo energetico da ECO a MAX">
-        <div class="profile-labels"><span>ECO</span><span>BALANCE</span><span>PERFORMANCE</span><span>MAX</span></div>
-      </div>
-      <div class="power-facts">
-        <div><span>GOVERNOR</span><strong id="powerGovernor">—</strong></div>
-        <div><span>FREQUENZA</span><strong id="powerFrequency">—</strong></div>
-        <div><span>HOTSPOT</span><strong id="powerWifi">—</strong></div>
-        <div><span>ALIMENTAZIONE</span><strong id="powerHealth">—</strong></div>
-        <div><span>ASSORBIMENTO</span><strong id="powerWatts">—</strong></div>
-      </div>
-      <div class="power-controls">
-        <label class="wifi-toggle"><input type="checkbox" id="wifiKeep" checked><span></span><div><strong>Hotspot Wi-Fi indipendente</strong><small id="wifiHint">Puoi attivarlo o spegnerlo con qualsiasi profilo.</small></div></label>
-        <button class="button power-apply" id="applyPower">Applica profilo</button>
-      </div>
-      <p class="power-safety">MAX usa il limite ufficiale di 1,5 GHz: nessun overclock. NVMe e registrazioni non vengono mai sospesi.</p>
-    </section>
+      </section>
 
-    <section class="panel storage-panel" id="storage">
-      <div class="panel-head">
-        <div><p class="eyebrow">ARCHIVIAZIONE</p><h2>NVMe duale</h2></div>
-        <span class="status-chip" id="storageChip">Verifica…</span>
-      </div>
-      <div class="storage-map">
-        <div class="drive-visual"><i></i><span>WDS 500</span><small>USB 3 / UAS</small></div>
-        <div class="partition"><span>SERVER · EXT4</span><strong id="dataUsage">—</strong><div class="bar"><i id="dataBar"></i></div></div>
-        <div class="partition"><span>USB SHARE · EXFAT</span><strong id="shareUsage">—</strong><div class="bar"><i id="shareBar"></i></div></div>
-      </div>
-      <div class="storage-note" id="storageNote">Prima di rimuovere il disco, usa sempre Espelli NVMe.</div>
-      <div class="action-row">
-        <button class="button danger" data-action="eject_nvme" data-confirm="Tieni premuto per espellere in sicurezza">Espelli NVMe</button>
-        <button class="button" data-action="attach_nvme" data-confirm="Tieni premuto per rimontare il disco">Rimonta</button>
-        <button class="button secondary" data-action="backup_now">Backup ora</button>
-      </div>
-    </section>
-
-    <section class="panel media-panel" id="media">
+      <section class="app-view" data-view-panel="media" aria-labelledby="view-media-title">
+        <div class="view-heading"><div><p class="eyebrow">LIBRERIA PERSONALE</p><h1 id="view-media-title">Media</h1><p>USB, streaming e libreria in un unico workspace.</p></div></div>
+            <section class="panel media-panel workspace-panel" id="media">
       <div class="panel-head media-head">
         <div><p class="eyebrow">MEDIA HUB</p><h2>OpenAstro Media</h2><small>La tua libreria USB, in casa e fuori casa.</small></div>
         <div class="media-head-actions"><span class="status-chip" id="mediaChip">Nessun supporto</span><button class="button secondary" data-action="media_rescan">Rileva USB</button></div>
@@ -220,7 +164,112 @@
       <p class="media-note">I supporti sono montati in sola lettura. Le anteprime vengono generate solo quando servono. Streaming remoto e download passano dal pannello HTTPS; SMB e DLNA restano esclusivamente nella rete locale.</p>
     </section>
 
-    <section class="panel" id="services">
+
+      </section>
+
+      <section class="app-view" data-view-panel="storage" aria-labelledby="view-storage-title">
+        <div class="view-heading"><div><p class="eyebrow">ARCHIVIAZIONE</p><h1 id="view-storage-title">Storage</h1><p>NVMe, buffer interno, backup e rimozione sicura.</p></div></div>
+            <section class="panel storage-panel" id="storage">
+      <div class="panel-head">
+        <div><p class="eyebrow">ARCHIVIAZIONE</p><h2>NVMe duale</h2></div>
+        <span class="status-chip" id="storageChip">Verifica…</span>
+      </div>
+      <div class="storage-map">
+        <div class="drive-visual"><i></i><span>WDS 500</span><small>USB 3 / UAS</small></div>
+        <div class="partition"><span>SERVER · EXT4</span><strong id="dataUsage">—</strong><div class="bar"><i id="dataBar"></i></div></div>
+        <div class="partition"><span>USB SHARE · EXFAT</span><strong id="shareUsage">—</strong><div class="bar"><i id="shareBar"></i></div></div>
+      </div>
+      <div class="storage-note" id="storageNote">Prima di rimuovere il disco, usa sempre Espelli NVMe.</div>
+      <div class="action-row">
+        <button class="button danger" data-action="eject_nvme" data-confirm="Tieni premuto per espellere in sicurezza">Espelli NVMe</button>
+        <button class="button" data-action="attach_nvme" data-confirm="Tieni premuto per rimontare il disco">Rimonta</button>
+        <button class="button secondary" data-action="backup_now">Backup ora</button>
+      </div>
+    </section>
+
+
+      </section>
+
+      <section class="app-view" data-view-panel="system" aria-labelledby="view-system-title">
+        <div class="view-heading"><div><p class="eyebrow">PRESTAZIONI</p><h1 id="view-system-title">Sistema</h1><p>Energia, temperatura e telemetria storica.</p></div></div>
+        <div class="system-grid">    <section class="panel power-panel" id="power">
+      <div class="panel-head">
+        <div><p class="eyebrow">CPU E CONNETTIVITÀ</p><h2>Profilo energetico</h2></div>
+        <span class="profile-chip" id="currentProfile">—</span>
+      </div>
+      <div class="power-stage">
+        <div class="power-copy"><span id="profileIndex">01 / 04</span><h3 id="profileName">Bilanciato</h3><p id="profileDescription">Prestazioni elastiche per l’uso quotidiano.</p></div>
+        <div class="power-orbit" aria-hidden="true"><i></i><i></i><b id="powerGlyph">B</b></div>
+      </div>
+      <div class="profile-slider">
+        <input id="powerSlider" type="range" min="0" max="3" step="1" value="1" aria-label="Profilo energetico da ECO a MAX">
+        <div class="profile-labels"><span>ECO</span><span>BALANCE</span><span>PERFORMANCE</span><span>MAX</span></div>
+      </div>
+      <div class="power-facts">
+        <div><span>GOVERNOR</span><strong id="powerGovernor">—</strong></div>
+        <div><span>FREQUENZA</span><strong id="powerFrequency">—</strong></div>
+        <div><span>HOTSPOT</span><strong id="powerWifi">—</strong></div>
+        <div><span>ALIMENTAZIONE</span><strong id="powerHealth">—</strong></div>
+        <div><span>ASSORBIMENTO</span><strong id="powerWatts">—</strong></div>
+      </div>
+      <div class="power-controls">
+        <label class="wifi-toggle"><input type="checkbox" id="wifiKeep" checked><span></span><div><strong>Hotspot Wi-Fi indipendente</strong><small id="wifiHint">Puoi attivarlo o spegnerlo con qualsiasi profilo.</small></div></label>
+        <button class="button power-apply" id="applyPower">Applica profilo</button>
+      </div>
+      <p class="power-safety">MAX usa il limite ufficiale di 1,5 GHz: nessun overclock. NVMe e registrazioni non vengono mai sospesi.</p>
+    </section>
+
+        <section class="panel telemetry-panel" id="telemetry">
+      <div class="panel-head telemetry-head">
+        <div><p class="eyebrow">TELEMETRIA</p><h2>Andamento risorse</h2></div>
+        <div class="range-switch" role="group" aria-label="Intervallo grafici">
+          <button data-range="3600" class="active" aria-pressed="true">1H</button><button data-range="21600" aria-pressed="false">6H</button><button data-range="86400" aria-pressed="false">24H</button><button data-range="604800" aria-pressed="false">7G</button><button data-range="2592000" aria-pressed="false">30G</button><button data-range="7776000" aria-pressed="false">90G</button>
+        </div>
+      </div>
+      <div class="availability-card" id="availabilityCard">
+        <div class="availability-copy">
+          <div><span>DISPONIBILITÀ</span><strong id="availabilityPercent">—</strong><small id="availabilityKnown">calcolo…</small></div>
+          <div><span>DOWNTIME</span><strong id="downtimeTotal">—</strong><small id="downtimeCount">nessun evento</small></div>
+          <div><span>ULTIMO OFFLINE</span><strong id="lastDowntime">—</strong><small id="lastDowntimeWhen">nessun downtime registrato</small></div>
+        </div>
+        <div class="availability-track" id="availabilityTimeline" aria-label="Timeline disponibilità"><i class="availability-online"></i></div>
+      </div>
+      <div class="chart-grid">
+        <article class="chart-card chart-wide">
+          <header><div><span class="chart-kicker">COMPUTE</span><strong>CPU + memoria</strong></div><div class="legend"><i class="cpu"></i>CPU <i class="ram"></i>RAM</div></header>
+          <div class="chart-host" id="computeChart"><span class="chart-empty">Raccolta dati reali…</span></div>
+          <footer><span id="cpuAverage">CPU media —</span><span id="ramAverage">RAM media —</span></footer>
+        </article>
+        <article class="chart-card">
+          <header><div><span class="chart-kicker">THERMAL</span><strong>Temperatura</strong></div><b id="tempPeak">—</b></header>
+          <div class="chart-host" id="temperatureChart"><span class="chart-empty">Raccolta dati…</span></div>
+          <footer><span>°C</span><span id="tempAverage">media —</span></footer>
+        </article>
+        <article class="chart-card">
+          <header><div><span class="chart-kicker">TRAFFIC</span><strong>Rete</strong></div><b id="networkPeak">—</b></header>
+          <div class="chart-host" id="networkChart"><span class="chart-empty">Raccolta dati…</span></div>
+          <footer><span>↓ download</span><span>↑ upload</span></footer>
+        </article>
+        <article class="chart-card">
+          <header><div><span class="chart-kicker">CAPACITY</span><strong>Disco NVMe</strong></div><b id="diskTrend">—</b></header>
+          <div class="chart-host" id="diskChart"><span class="chart-empty">Raccolta dati…</span></div>
+          <footer><span>% utilizzato</span><span id="diskDelta">variazione —</span></footer>
+        </article>
+        <article class="chart-card">
+          <header><div><span class="chart-kicker">SENSORE ASIAIR · INGRESSO DC</span><strong>Potenza assorbita</strong></div><b id="wattPeak">—</b></header>
+          <div class="chart-host" id="wattChart"><span class="chart-empty">Raccolta dati…</span></div>
+          <footer><span id="energyMeasured">In attesa di campioni misurati</span><span id="wattAverage">media —</span></footer>
+        </article>
+      </div>
+      <footer class="telemetry-footer"><p id="historyStatus" role="status">Caricamento dello storico…</p><div><button id="refreshAll" type="button">Aggiorna</button> <button id="exportMetrics" type="button">Esporta CSV</button></div></footer>
+    </section>
+
+</div>
+      </section>
+
+      <section class="app-view" data-view-panel="advanced" aria-labelledby="view-advanced-title">
+        <div class="view-heading"><div><p class="eyebrow">AMMINISTRAZIONE</p><h1 id="view-advanced-title">Avanzate</h1><p>Solo ciò che serve per diagnosi e manutenzione.</p></div></div>
+        <div class="advanced-grid">    <section class="panel" id="services">
       <div class="panel-head"><div><p class="eyebrow">OPERATIVITÀ</p><h2>Servizi</h2></div><span id="serviceCount">—</span></div>
       <div class="service-grid" id="serviceGrid"></div>
       <div class="action-row compact">
@@ -247,18 +296,20 @@
         <button class="button ghost-danger" data-action="reboot" data-confirm="Tieni premuto per riavviare ASIAIR">Riavvia ASIAIR</button>
       </div>
     </section>
-  </main>
+</div>
+      </section>
+    </main>
 
-  <nav class="bottom-nav" aria-label="Navigazione">
-    <a href="#overview" class="active">Stato</a>
-    <a href="#telemetry">Trend</a>
-    <a href="#power">Energia</a>
-    <a href="#storage">NVMe</a>
-    <a href="#media">Media</a>
-    <a href="#services">Servizi</a><a class="external" href="https://openastro.tailf2871c.ts.net/">LiveVault ↗</a>
-  </nav>
+    <nav class="mobile-nav" aria-label="Navigazione mobile">
+      <a href="#dashboard" data-route="dashboard" class="active"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 13h6V4H4v9Zm0 7h6v-5H4v5Zm10 0h6v-9h-6v9Zm0-16v5h6V4h-6Z"/></svg><span>Stato</span></a>
+      <a href="#media" data-route="media"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v14H4V5Zm6 3v8l6-4-6-4Z"/></svg><span>Media</span></a>
+      <a href="#storage" data-route="storage"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14l2 4v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8l2-4Zm1.2 2L5.5 8h13l-.7-2H6.2ZM6 12h12v5H6v-5Zm9 1.5h2v2h-2v-2Z"/></svg><span>Storage</span></a>
+      <a href="#system" data-route="system"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a2 2 0 0 1 2 2v1.1a7 7 0 0 1 1.9.8l.8-.8a2 2 0 1 1 2.8 2.8l-.8.8c.4.6.6 1.2.8 1.9H21a2 2 0 1 1 0 4h-1.1a7 7 0 0 1-.8 1.9l.8.8a2 2 0 1 1-2.8 2.8l-.8-.8a7 7 0 0 1-1.9.8V21a2 2 0 1 1-4 0v-1.1a7 7 0 0 1-1.9-.8l-.8.8a2 2 0 1 1-2.8-2.8l.8-.8a7 7 0 0 1-.8-1.9H3a2 2 0 1 1 0-4h1.1a7 7 0 0 1 .8-1.9l-.8-.8a2 2 0 1 1 2.8-2.8l.8.8a7 7 0 0 1 1.9-.8V5a2 2 0 0 1 2-2Zm0 6a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z"/></svg><span>Sistema</span></a>
+      <a href="#advanced" data-route="advanced"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5h14v3H5V5Zm0 6h14v3H5v-3Zm0 6h14v3H5v-3Z"/></svg><span>Altro</span></a>
+    </nav>
+  </div>
 
-  <dialog id="mediaPlayerDialog" class="media-player-dialog">
+    <dialog id="mediaPlayerDialog" class="media-player-dialog">
     <div class="media-player-head"><div><small><span id="mediaPlayerType">MEDIA</span> · <b id="mediaPlayerPlan">DIRECT</b></small><h3 id="mediaPlayerTitle">Player</h3></div><button id="mediaPlayerClose" class="icon-button" aria-label="Chiudi">×</button></div>
     <div id="mediaPlayerStage" class="media-player-stage"></div>
     <div class="media-player-info"><div id="mediaPlayerMeta"><span>Caricamento dettagli…</span></div><div class="media-player-actions"><button id="mediaPlayerFavorite" class="button secondary">Preferito</button><a id="mediaPlayerDownload" class="button secondary" href="#">Scarica</a></div></div>
@@ -288,7 +339,8 @@
       <div class="login-error" id="loginError" role="alert"></div>
     </form>
   </div>
+
   <script src="/hls.min.js?v=1.7.2" defer></script>
-  <script src="/app.js?v=3.3-mediahub-l5" defer></script>
+  <script src="/app.js?v=4.0-control" defer></script>
 </body>
 </html>

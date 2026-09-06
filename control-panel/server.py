@@ -37,6 +37,10 @@ STARTED_AT = time.time()
 ACTION_LOG = Path("/var/log/openastro-control-actions.log")
 STATE_DIR = Path("/var/lib/openastro-control")
 HISTORY_FILE = STATE_DIR / "history.json"
+AVAILABILITY_FILE = STATE_DIR / "availability.json"
+HISTORY_RAW_SECONDS = 86400
+HISTORY_RETENTION_SECONDS = 90 * 86400
+AVAILABILITY_RETENTION_SECONDS = 400 * 86400
 PROFILE_FILE = Path("/etc/openastro-power-profile")
 AUTH_FILE = Path("/etc/openastro-control-auth.json")
 DATA_UUID = "5fe2d0f6-b485-44e9-8e26-31fb0d217db2"
@@ -62,6 +66,8 @@ _network_lock = threading.Lock()
 _network_last: tuple[float, int, int] | None = None
 _history_lock = threading.Lock()
 _history: list[dict] = []
+_availability_lock = threading.Lock()
+_availability: dict = {}
 _session_lock = threading.Lock()
 _sessions: dict[str, dict] = {}
 _login_attempts: dict[str, list[float]] = {}
@@ -334,12 +340,147 @@ def sample_metrics() -> dict:
     }
 
 
+def _boot_id() -> str:
+    return read_text("/proc/sys/kernel/random/boot_id", "unknown").strip()
+
+
+def _boot_time() -> int:
+    try:
+        uptime = float(read_text("/proc/uptime", "0").split()[0])
+    except (ValueError, IndexError):
+        uptime = 0.0
+    return max(0, int(time.time() - uptime))
+
+
+def _merge_downtimes(rows: list[dict]) -> list[dict]:
+    clean = []
+    for row in sorted(rows, key=lambda item: int(item.get("start", 0))):
+        start = int(row.get("start", 0)); end = int(row.get("end", 0))
+        if start <= 0 or end <= start:
+            continue
+        if clean and start <= clean[-1]["end"] + 2:
+            clean[-1]["end"] = max(clean[-1]["end"], end)
+        else:
+            clean.append({"start": start, "end": end, "reason": str(row.get("reason", "offline"))})
+    return clean
+
+
+def save_availability() -> None:
+    try:
+        STATE_DIR.mkdir(parents=True, exist_ok=True)
+        with _availability_lock:
+            payload = json.dumps(_availability, separators=(",", ":"))
+        temporary = AVAILABILITY_FILE.with_suffix(".tmp")
+        temporary.write_text(payload, encoding="utf-8")
+        temporary.replace(AVAILABILITY_FILE)
+    except OSError:
+        pass
+
+
+def load_availability() -> None:
+    global _availability
+    now = int(time.time()); boot_id = _boot_id(); boot_time = _boot_time()
+    try:
+        loaded = json.loads(AVAILABILITY_FILE.read_text(encoding="utf-8"))
+        if not isinstance(loaded, dict):
+            loaded = {}
+    except (OSError, ValueError, json.JSONDecodeError):
+        loaded = {}
+    with _history_lock:
+        history_first = int(_history[0].get("t", now)) if _history else now
+        history_last = int(_history[-1].get("t", 0)) if _history else 0
+    first_seen = int(loaded.get("first_seen") or history_first or now)
+    last_seen = int(loaded.get("last_seen") or history_last or 0)
+    previous_boot = str(loaded.get("boot_id") or "")
+    downtimes = list(loaded.get("downtimes") or [])
+    # A changed kernel boot ID is a real machine reboot/power cycle. A control-panel
+    # restart within the same boot is not system downtime.
+    if previous_boot and previous_boot != boot_id and last_seen and boot_time > last_seen + 30:
+        downtimes.append({"start": last_seen, "end": boot_time, "reason": "system_offline"})
+    cutoff = now - AVAILABILITY_RETENTION_SECONDS
+    downtimes = [row for row in _merge_downtimes(downtimes) if row["end"] >= cutoff]
+    _availability = {
+        "boot_id": boot_id,
+        "boot_time": boot_time,
+        "first_seen": min(first_seen, history_first),
+        "last_seen": now,
+        "downtimes": downtimes,
+    }
+    save_availability()
+
+
+def touch_availability(now: int, *, persist: bool = False) -> None:
+    with _availability_lock:
+        _availability["last_seen"] = int(now)
+        _availability["boot_id"] = _boot_id()
+        _availability["boot_time"] = _boot_time()
+        if not _availability.get("first_seen"):
+            _availability["first_seen"] = int(now)
+    if persist:
+        save_availability()
+
+
+def availability_payload(seconds: int, now: int | None = None) -> dict:
+    now = int(now or time.time()); cutoff = now - seconds
+    with _availability_lock:
+        data = dict(_availability)
+        rows = [dict(row) for row in data.get("downtimes", [])]
+    first_seen = int(data.get("first_seen") or now)
+    known_start = max(cutoff, first_seen)
+    clipped = []
+    downtime = 0
+    for row in rows:
+        start = max(cutoff, int(row.get("start", 0)))
+        end = min(now, int(row.get("end", 0)))
+        if end <= start:
+            continue
+        clipped.append({"start": start, "end": end, "seconds": end - start, "reason": row.get("reason", "offline")})
+        if end > known_start:
+            downtime += max(0, end - max(start, known_start))
+    known = max(0, now - known_start)
+    downtime = min(downtime, known)
+    online = max(0, known - downtime)
+    unknown = max(0, known_start - cutoff)
+    return {
+        "known_since": first_seen,
+        "online_seconds": online,
+        "downtime_seconds": downtime,
+        "unknown_seconds": unknown,
+        "uptime_percent": round(online / known * 100, 3) if known else None,
+        "downtimes": clipped,
+        "current_online": True,
+        "boot_time": int(data.get("boot_time") or _boot_time()),
+    }
+
+
+def _compact_history(rows: list[dict], now: int) -> list[dict]:
+    """Keep 10 s detail for 24 h, 5 min detail to 7 d, 30 min detail to 90 d."""
+    cutoff = now - HISTORY_RETENTION_SECONDS
+    recent_cutoff = now - HISTORY_RAW_SECONDS
+    week_cutoff = now - 7 * 86400
+    kept: list[dict] = []
+    buckets: dict[tuple[int, int], dict] = {}
+    for row in rows:
+        t = int(row.get("t", 0))
+        if t < cutoff:
+            continue
+        if t >= recent_cutoff:
+            kept.append(row)
+            continue
+        size = 300 if t >= week_cutoff else 1800
+        key = (size, t // size)
+        buckets[key] = row
+    kept.extend(buckets.values())
+    kept.sort(key=lambda row: int(row.get("t", 0)))
+    return kept
+
+
 def load_history() -> None:
     global _history
     try:
         loaded = json.loads(HISTORY_FILE.read_text(encoding="utf-8"))
-        cutoff = int(time.time()) - 86400
-        _history = [item for item in loaded if isinstance(item, dict) and item.get("t", 0) >= cutoff]
+        now = int(time.time())
+        _history = _compact_history([item for item in loaded if isinstance(item, dict)], now)
         for item in _history:
             if "power_measurement" not in item:
                 item["estimated_watts"] = item.get("watts")
@@ -350,9 +491,11 @@ def load_history() -> None:
 
 
 def save_history() -> None:
+    global _history
     try:
         STATE_DIR.mkdir(parents=True, exist_ok=True)
         with _history_lock:
+            _history = _compact_history(_history, int(time.time()))
             payload = json.dumps(_history, separators=(",", ":"))
         temporary = HISTORY_FILE.with_suffix(".tmp")
         temporary.write_text(payload, encoding="utf-8")
@@ -370,22 +513,36 @@ def history_loop() -> None:
             print(f"Telemetry sample unavailable: {type(exc).__name__}", flush=True)
             time.sleep(10)
             continue
-        cutoff = sample["t"] - 86400
         with _history_lock:
             _history.append(sample)
-            while _history and _history[0].get("t", 0) < cutoff:
-                _history.pop(0)
         writes += 1
+        # Persist detailed telemetry every minute and the tiny availability heartbeat
+        # every minute. If power is lost, downtime start precision is therefore <=60 s.
         if writes % 6 == 0:
             save_history()
+            touch_availability(sample["t"], persist=True)
+        else:
+            touch_availability(sample["t"], persist=False)
         time.sleep(10)
 
 
+def _gap_points(downtimes: list[dict]) -> list[dict]:
+    points = []
+    for row in downtimes:
+        # Synthetic null samples force every chart line to break over real downtime.
+        for t in (row["start"] + 1, max(row["start"] + 1, row["end"] - 1)):
+            points.append({"t": t, "cpu": None, "ram": None, "temp": None, "disk": None,
+                           "rx": None, "tx": None, "watts": None,
+                           "power_measurement": "offline", "offline": True})
+    return points
+
+
 def history_payload(seconds: int) -> dict:
-    seconds = max(900, min(86400, seconds))
-    cutoff = int(time.time()) - seconds
+    seconds = max(900, min(90 * 86400, seconds))
+    now = int(time.time()); cutoff = now - seconds
     with _history_lock:
         points = [item.copy() for item in _history if item.get("t", 0) >= cutoff]
+    availability = availability_payload(seconds, now)
     energy = measured_energy(points)
     measured = [p["watts"] for p in points if p.get("power_measurement") == "measured" and p.get("watts") is not None]
     energy["peak_watts"] = max(measured) if measured else None
@@ -395,7 +552,10 @@ def history_payload(seconds: int) -> dict:
         points = points[::stride]
         if points[-1]["t"] != latest["t"]:
             points.append(latest)
-    return {"range": seconds, "points": points, "sample_seconds": 10, "energy": energy}
+    points.extend(_gap_points(availability["downtimes"]))
+    points.sort(key=lambda item: item["t"])
+    return {"range": seconds, "points": points, "sample_seconds": 10,
+            "energy": energy, "availability": availability}
 
 
 def auth_config() -> dict:
@@ -934,6 +1094,7 @@ class Handler(BaseHTTPRequestHandler):
 if __name__ == "__main__":
     mimetypes.add_type("application/manifest+json", ".webmanifest")
     load_history()
+    load_availability()
     threading.Thread(target=history_loop, name="telemetry", daemon=True).start()
     server = ThreadingHTTPServer((HOST, PORT), Handler)
     print(f"OpenAstro Control listening on http://{HOST}:{PORT}", flush=True)

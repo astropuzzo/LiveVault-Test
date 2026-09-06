@@ -23,6 +23,8 @@ let mediaHls = null;
 let mediaHlsToken = '';
 let mediaPlaybackBase = 0;
 let mediaPlaybackDuration = 0;
+const VALID_VIEWS = new Set(['dashboard','media','storage','system','advanced']);
+let currentView = VALID_VIEWS.has(location.hash.slice(1)) ? location.hash.slice(1) : 'dashboard';
 
 const powerProfiles = [
   {key:'eco', name:'ECO', glyph:'E', governor:'powersave', mhz:900, description:'Il nodo respira piano: consumi e temperatura ridotti per monitoraggio e servizi leggeri.'},
@@ -102,8 +104,35 @@ function chartMarkup(points, series, min, max) {
 function measuredWatts(power) {
   return power?.measurement === 'measured' && power.watts != null && Number.isFinite(Number(power.watts)) ? Number(power.watts) : null;
 }
-function renderHistory(points, energy = {}) {
+function availabilityDate(timestamp) {
+  if (!timestamp) return '—';
+  return new Date(timestamp * 1000).toLocaleString('it-IT', {day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'});
+}
+function renderAvailability(availability = {}, rangeSeconds = historyRange) {
+  const pct = availability.uptime_percent;
+  $('#availabilityPercent').textContent = pct == null ? '—' : `${pct.toFixed(pct >= 99 ? 2 : 1)}%`;
+  const known = Math.max(0, rangeSeconds - Number(availability.unknown_seconds || 0));
+  $('#availabilityKnown').textContent = availability.unknown_seconds > 0 ? `${duration(known)} monitorati · ${duration(availability.unknown_seconds)} non storicizzati` : `${duration(known)} monitorati`;
+  $('#downtimeTotal').textContent = duration(availability.downtime_seconds || 0);
+  const rows = availability.downtimes || [];
+  $('#downtimeCount').textContent = rows.length ? `${rows.length} event${rows.length === 1 ? 'o' : 'i'} offline` : 'nessun evento offline';
+  const last = rows.at(-1);
+  $('#lastDowntime').textContent = last ? duration(last.seconds || (last.end-last.start)) : '—';
+  $('#lastDowntimeWhen').textContent = last ? `${availabilityDate(last.start)} → ${availabilityDate(last.end)}` : 'nessun downtime registrato';
+  const now = Date.now()/1000, start = now - rangeSeconds;
+  const segments = rows.map(row => {
+    const left = Math.max(0, (row.start - start) / rangeSeconds * 100);
+    const right = Math.min(100, (row.end - start) / rangeSeconds * 100);
+    const width = Math.max(.25, right-left);
+    return `<b class="availability-offline" style="left:${left.toFixed(4)}%;width:${width.toFixed(4)}%" title="Offline ${availabilityDate(row.start)} → ${availabilityDate(row.end)} · ${duration(row.seconds||0)}"></b>`;
+  }).join('');
+  const unknownWidth = Math.max(0, Math.min(100, Number(availability.unknown_seconds || 0) / rangeSeconds * 100));
+  $('#availabilityTimeline').innerHTML = `<i class="availability-online"></i>${unknownWidth ? `<b class="availability-unknown" style="left:0;width:${unknownWidth.toFixed(4)}%" title="Periodo precedente all'inizio del monitoraggio"></b>` : ''}${segments}`;
+}
+
+function renderHistory(points, energy = {}, availability = {}, rangeSeconds = historyRange) {
   latestHistory = points;
+  renderAvailability(availability, rangeSeconds);
   const cpuAvg = mean(points, 'cpu'), ramAvg = mean(points, 'ram');
   $('#computeChart').innerHTML = chartMarkup(points, [{key:'cpu',className:'cpu'},{key:'ram',className:'ram'}], 0, 100);
   $('#cpuAverage').textContent = points.some(point => point.cpu != null) ? `CPU media ${cpuAvg.toFixed(0)}%` : 'CPU media —';
@@ -132,7 +161,7 @@ function renderHistory(points, energy = {}) {
   $('#energyMeasured').textContent = energy.wh != null ? `${energy.wh.toFixed(2)} Wh · ${coverage} coperti` : 'In attesa di campioni misurati';
 }
 async function refreshHistory() {
-  if (historyBusy || document.hidden || !signedIn) return;
+  if (historyBusy || document.hidden || !signedIn || currentView !== 'system') return;
   historyBusy = true;
   const requestedRange = historyRange;
   try {
@@ -140,8 +169,8 @@ async function refreshHistory() {
     if (response.status === 401) return showLogin();
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const result = await response.json();
-    if (requestedRange === historyRange) renderHistory(result.points || [], result.energy || {});
-    $('#historyStatus').textContent = `Campioni ogni 10 s · ${Intl.DateTimeFormat().resolvedOptions().timeZone}`;
+    if (requestedRange === historyRange) renderHistory(result.points || [], result.energy || {}, result.availability || {}, result.range || requestedRange);
+    $('#historyStatus').textContent = requestedRange <= 86400 ? `Dettaglio 10 s · downtime reale · ${Intl.DateTimeFormat().resolvedOptions().timeZone}` : `Storico compattato · downtime reale · ${Intl.DateTimeFormat().resolvedOptions().timeZone}`;
   } catch (_) { $('#historyStatus').textContent = 'Storico non aggiornato. Riprova con Aggiorna.'; }
   finally { historyBusy = false; if (requestedRange !== historyRange) refreshHistory(); }
 }
@@ -255,7 +284,7 @@ function renderMediaHome(profile = {}) {
   bindMediaProfileCards(); renderMediaFiles();
 }
 async function loadMediaHome(force=false) {
-  if (!signedIn) return;
+  if (!signedIn || (currentView !== 'media' && !force)) return;
   const now=Date.now(); if (!force && now-mediaHomeLoadedAt<10000) return; mediaHomeLoadedAt=now;
   try {
     const response=await fetch('/api/media/home',{cache:'no-store',signal:AbortSignal.timeout(12000)}); if(response.status===401)return showLogin();
@@ -393,8 +422,30 @@ function renderMedia(media = {}) {
     $('#mediaDriveMeta').textContent = `${bytes(usage?.used||0)} usati su ${bytes(usage?.total||selected.size||0)}`; $('#mediaDriveFree').textContent = bytes(usage?.free||0); $('#mediaDriveBar').style.width = `${usage?.total ? usage.used/usage.total*100 : 0}%`;
   } else { $('#mediaDriveModel').textContent='NESSUN SUPPORTO'; $('#mediaDriveName').textContent='Media USB'; $('#mediaDriveMeta').textContent='Inserisci un dispositivo USB rimovibile.'; $('#mediaDriveFree').textContent='—'; $('#mediaDriveBar').style.width='0%'; }
   const signature = mounted.map(device => `${device.uuid}:${device.usage?.used||0}`).join('|');
-  if (mediaUuid && signature !== mediaSignature) { mediaSignature=signature; loadMediaDirectory(mediaPath); loadMediaLibrary(); }
+  if (currentView === 'media' && mediaUuid && signature !== mediaSignature) { mediaSignature=signature; loadMediaDirectory(mediaPath); loadMediaLibrary(); }
   if (!mounted.length) { mediaItems=[]; renderMediaFiles(); renderMediaLibrary(null); $('#mediaRecentWrap').hidden=true; }
+}
+
+function selectView(view, updateHash = false) {
+  view = VALID_VIEWS.has(view) ? view : 'dashboard';
+  currentView = view;
+  document.body.dataset.view = view;
+  $$('[data-view-panel]').forEach(panel => panel.classList.toggle('active', panel.dataset.viewPanel === view));
+  $$('[data-route]').forEach(link => link.classList.toggle('active', link.dataset.route === view));
+  if (updateHash && location.hash !== `#${view}`) history.pushState(null, '', `#${view}`);
+  window.scrollTo({top:0, behavior:'auto'});
+  if (view === 'system') refreshHistory();
+  if (view === 'media') {
+    loadMediaHome(true);
+    if (mediaUuid) { loadMediaDirectory(mediaPath); loadMediaLibrary(); }
+  }
+}
+function dashboardStatusCard(id, state, detail, tone = '') {
+  const strong = $(`#${id}`), card = strong?.closest('article');
+  if (!strong || !card) return;
+  strong.textContent = state;
+  const small = card.querySelector('small'); if (small) small.textContent = detail;
+  card.classList.remove('attention','bad'); if (tone) card.classList.add(tone);
 }
 
 function render(data) {
@@ -405,6 +456,14 @@ function render(data) {
   const storage = data.storage;
   const lv = data.livevault || {};
   const online = lv.ok === true;
+  const handoffMode = lv.storage_handoff?.mode || (storage.data.mounted ? 'nvme' : 'buffer');
+  const mediaOnline = (data.media?.devices || []).filter(item => item.mounted);
+  const wattsNow = measuredWatts(data.power);
+  dashboardStatusCard('dashLiveState', online ? 'Online' : 'Problema', online ? `${lv.worker?.active_recorders ?? 0} recorder attivi` : 'LiveVault non raggiungibile', online ? '' : 'bad');
+  dashboardStatusCard('dashStorageMode', handoffMode === 'buffer' ? 'Buffer 4 GB' : 'NVMe', handoffMode === 'buffer' ? `${bytes(storage.buffer?.used || 0)} / ${bytes(storage.buffer?.total || 0)}` : `${bytes(storage.data?.free || 0)} liberi`, handoffMode === 'buffer' ? 'attention' : '');
+  dashboardStatusCard('dashMediaState', mediaOnline.length ? `${mediaOnline.length} USB online` : 'Pronto', mediaOnline.length ? mediaOnline.map(item => item.label || 'USB').join(' · ') : 'Nessun supporto collegato');
+  dashboardStatusCard('dashPowerState', wattsNow != null ? `${wattsNow.toFixed(1)} W` : '—', wattsNow != null ? `${data.power.input_volts?.toFixed?.(2) || '—'} V · ${data.power.input_amps?.toFixed?.(3) || '—'} A` : 'Sensore ASIAIR non disponibile', wattsNow == null ? 'attention' : '');
+  const mobileConnection = $('#mobileConnectionText'); if (mobileConnection) mobileConnection.textContent = online ? 'Online' : 'Attenzione';
   $('#connectionText').textContent = online ? 'Sistema operativo' : 'LiveVault non disponibile';
   $('.connection').className = `connection ${online ? 'online' : 'offline'}`;
   $('#heroTitle').textContent = online ? 'Il tuo nodo, in diretta.' : storage.data.mounted ? 'LiveVault non risponde.' : 'NVMe scollegato.';
@@ -436,7 +495,7 @@ function render(data) {
   $('#wattValue').title = 'Potenza DC dai sensori ASIAIR, inclusi i carichi collegati. Conversione del driver INDI; non calibrata con wattmetro esterno.';
   renderPower(data.power);
   renderMedia(data.media || {});
-  loadMediaHome();
+  if (currentView === 'media') loadMediaHome();
 
   const mounted = storage.data.mounted && storage.share.mounted;
   $('#storageChip').textContent = mounted ? 'Montato' : storage.data_present ? 'Rilevato · non montato' : 'Scollegato';
@@ -447,7 +506,7 @@ function render(data) {
   $('#shareBar').style.width = `${storage.share.percent || 0}%`;
   $('#storageNote').textContent = mounted ? 'Disco operativo. Prima di rimuoverlo usa sempre Espelli NVMe.' : storage.data_present ? 'Disco presente ma non montato: premi Rimonta.' : 'Puoi ricollegare l’NVMe: il ripristino sarà automatico.';
   $$('[data-action="eject_nvme"]').forEach(button => { button.disabled = !storage.data.mounted; });
-  $('.nav-eject span').textContent = storage.data.mounted ? 'Espelli NVMe' : 'NVMe scollegato';
+  const navEject = $('.nav-eject span'); if (navEject) navEject.textContent = storage.data.mounted ? 'Espelli NVMe' : 'NVMe scollegato';
   $('#quickNvmeTitle').textContent = storage.data.mounted ? 'Espelli NVMe' : 'NVMe scollegato';
   $('#quickNvmeState').textContent = storage.data.mounted ? 'Passa al buffer interno' : `Buffer ${bytes(storage.buffer?.used || 0)} / ${bytes(storage.buffer?.total || 0)}`;
   $('[data-action="attach_nvme"]').disabled = mounted;
@@ -494,16 +553,16 @@ function showLogin() {
   stopHold();
   if ($('#confirmDialog').open) $('#confirmDialog').close();
   $('main').inert = true;
-  $('.topbar').inert = true;
-  $('.bottom-nav').inert = true;
+  const sidebar = $('.sidebar'); if (sidebar) sidebar.inert = true;
+  const mobileNav = $('.mobile-nav'); if (mobileNav) mobileNav.inert = true;
   $('#loginGate').hidden = false;
   document.body.classList.add('locked');
 }
 function hideLogin() {
   signedIn = true;
   $('main').inert = false;
-  $('.topbar').inert = false;
-  $('.bottom-nav').inert = false;
+  const sidebar = $('.sidebar'); if (sidebar) sidebar.inert = false;
+  const mobileNav = $('.mobile-nav'); if (mobileNav) mobileNav.inert = false;
   $('#loginGate').hidden = true;
   document.body.classList.remove('locked');
   $('#loginError').textContent = '';
@@ -643,18 +702,15 @@ $('#loginForm').addEventListener('submit', async event => {
     $('#loginPassword').value = '';
     hideLogin();
     await refresh();
-    await refreshHistory();
-    await loadMediaHome(true);
+    if (currentView === 'system') await refreshHistory();
+    if (currentView === 'media') await loadMediaHome(true);
   } catch (error) { $('#loginError').textContent = error.message; }
   submit.disabled = false;
 });
 $('#logoutButton').addEventListener('click', async () => { await fetch('/api/logout', {method:'POST'}); showLogin(); });
-const sections = [...document.querySelectorAll('main > section[id]')];
-const navObserver = new IntersectionObserver(entries => entries.forEach(entry => {
-  if (entry.isIntersecting) $$('.bottom-nav a').forEach(link => link.classList.toggle('active', link.hash === `#${entry.target.id}`));
-}), {rootMargin:'-25% 0px -65%'});
-sections.forEach(section => navObserver.observe(section));
-document.addEventListener('visibilitychange', () => { if (document.hidden) stopHold(); else { refresh(); refreshHistory(); loadMediaHome(true); } });
+$$('[data-route]').forEach(link => link.addEventListener('click', event => { event.preventDefault(); selectView(link.dataset.route, true); }));
+window.addEventListener('hashchange', () => selectView(location.hash.slice(1) || 'dashboard'));
+document.addEventListener('visibilitychange', () => { if (document.hidden) stopHold(); else { refresh(); if (currentView === 'system') refreshHistory(); if (currentView === 'media') loadMediaHome(true); } });
 $('#refreshAll').addEventListener('click', () => { refresh(); refreshHistory(); });
 $('#exportMetrics').addEventListener('click', () => {
   if (!latestHistory.length) return toast('Nessun campione da esportare.', true);
@@ -665,9 +721,10 @@ $('#exportMetrics').addEventListener('click', () => {
 });
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
 bindActionButtons();
+selectView(currentView);
 refresh();
-refreshHistory();
-loadMediaHome(true);
+if (currentView === 'system') refreshHistory();
+if (currentView === 'media') loadMediaHome(true);
 setInterval(refresh, 5000);
-setInterval(refreshHistory, 30000);
-setInterval(()=>loadMediaHome(), 10000);
+setInterval(() => { if (currentView === 'system') refreshHistory(); }, 30000);
+setInterval(() => { if (currentView === 'media') loadMediaHome(); }, 10000);
