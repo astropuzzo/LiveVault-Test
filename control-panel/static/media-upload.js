@@ -28,15 +28,15 @@
     if (privateIp || localName) {
       routeChip.textContent = 'LAN DIRETTA';
       routeChip.dataset.route = 'lan';
-      route.textContent = 'Trasferimento diretto sulla rete locale.';
+      route.textContent = 'Sei già sul percorso locale. Per film molto grandi SMB resta la via più veloce.';
     } else if (hostName.endsWith('.ts.net')) {
-      routeChip.textContent = 'AUTO · TAILSCALE';
+      routeChip.textContent = 'LAN → WEB';
       routeChip.dataset.route = 'auto';
-      route.textContent = 'Peer diretto/LAN quando disponibile; Funnel/Internet solo come fallback.';
+      route.textContent = 'Priorità LAN: usa SMB quando sei sulla stessa rete. Questo uploader HTTPS è il fallback remoto.';
     } else {
-      routeChip.textContent = 'HTTPS REMOTO';
+      routeChip.textContent = 'LAN → WEB';
       routeChip.dataset.route = 'remote';
-      route.textContent = 'Trasferimento cifrato verso il nodo. In LAN usa SMB per la velocità massima.';
+      route.textContent = 'Priorità LAN: usa SMB quando disponibile; altrimenti carica qui via HTTPS.';
     }
   }
 
