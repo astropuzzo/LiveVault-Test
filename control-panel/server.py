@@ -984,7 +984,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Vary", "Accept-Encoding")
         if compressed:
             self.send_header("Content-Encoding", "gzip")
-        self.send_header("Content-Security-Policy", "default-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' data:; connect-src 'self'")
+        self.send_header("Content-Security-Policy", "default-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' data:; media-src 'self' blob:; connect-src 'self'; worker-src 'self' blob:")
         self.end_headers()
         self.wfile.write(body)
 
@@ -1044,6 +1044,8 @@ class Handler(BaseHTTPRequestHandler):
                 else:
                     result = media_streaming.stop_hls(str(payload.get("token", "")))
                 self.send_json(result)
+            except RuntimeError as exc:
+                self.send_json({"ok": False, "error": str(exc)}, 503)
             except (ValueError, FileNotFoundError, PermissionError) as exc:
                 self.send_json({"ok": False, "error": str(exc)}, 400)
             return
