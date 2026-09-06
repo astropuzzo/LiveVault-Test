@@ -30,4 +30,4 @@ def test_expensive_views_are_lazy_loaded():
 
 def test_pwa_shell_contains_new_layout_css():
     assert '/shell.css' in SW
-    assert 'openastro-control-v4' in SW
+    assert 'openastro-control-v10-product' in SW

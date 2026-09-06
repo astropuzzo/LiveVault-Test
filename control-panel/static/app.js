@@ -428,10 +428,17 @@ function renderMedia(media = {}) {
 
 function selectView(view, updateHash = false) {
   view = VALID_VIEWS.has(view) ? view : 'dashboard';
+  const labels = {dashboard:'Dashboard',media:'Media',storage:'Storage',system:'Sistema',advanced:'Avanzate'};
   currentView = view;
   document.body.dataset.view = view;
   $$('[data-view-panel]').forEach(panel => panel.classList.toggle('active', panel.dataset.viewPanel === view));
-  $$('[data-route]').forEach(link => link.classList.toggle('active', link.dataset.route === view));
+  $$('[data-route]').forEach(link => {
+    const active = link.dataset.route === view;
+    link.classList.toggle('active', active);
+    if (active) link.setAttribute('aria-current','page'); else link.removeAttribute('aria-current');
+  });
+  const mobileTitle = $('#mobileViewTitle'); if (mobileTitle) mobileTitle.textContent = labels[view] || 'OpenAstro';
+  document.title = `${labels[view] || 'Control'} · OpenAstro`;
   if (updateHash && location.hash !== `#${view}`) history.pushState(null, '', `#${view}`);
   window.scrollTo({top:0, behavior:'auto'});
   if (view === 'system') refreshHistory();
@@ -450,7 +457,7 @@ function dashboardStatusCard(id, state, detail, tone = '') {
 
 function render(data) {
   latestState = data;
-  document.body.classList.remove('stale');
+  document.body.classList.remove('stale','is-loading');
   csrf = data.csrf || csrf;
   const host = data.host;
   const storage = data.storage;

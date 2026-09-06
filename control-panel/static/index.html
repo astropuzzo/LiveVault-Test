@@ -11,9 +11,9 @@
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" href="/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="/icon.svg">
-  <link rel="stylesheet" href="/app.css?v=4.0-control"><link rel="stylesheet" href="/shell.css?v=4.0-control"><link rel="stylesheet" href="/theme.css?v=5.0-feel">
+  <link rel="stylesheet" href="/app.css?v=4.0-control"><link rel="stylesheet" href="/shell.css?v=4.0-control"><link rel="stylesheet" href="/theme.css?v=5.0-feel"><link rel="stylesheet" href="/premium.css?v=10.0-product">
 </head>
-<body data-view="dashboard">
+<body data-view="dashboard" class="is-loading">
   <div class="app-shell">
     <aside class="sidebar">
       <div class="brand-block">
@@ -35,28 +35,30 @@
     </aside>
 
     <header class="mobile-header">
-      <div class="brand"><div class="mark" aria-hidden="true"><span></span></div><strong>OpenAstro</strong></div>
-      <div class="connection"><i></i><span id="mobileConnectionText">Online</span></div>
+      <div class="mobile-identity"><div class="mark" aria-hidden="true"><span></span></div><div><small>OPENASTRO</small><strong id="mobileViewTitle">Dashboard</strong></div></div>
+      <div class="mobile-status"><div class="connection"><i></i><span id="mobileConnectionText">Online</span></div></div>
     </header>
 
     <main class="app-main">
       <section class="app-view active" data-view-panel="dashboard" aria-labelledby="view-dashboard-title">
-        <div class="view-heading"><div><p class="eyebrow">CONTROL CENTER</p><h1 id="view-dashboard-title">Dashboard</h1><p>Quello che conta adesso.</p></div><div class="hero-meta"><span id="hostName">openastro</span><span id="uptime">—</span><span id="lastUpdate">—</span></div></div>
-        <section class="hero" id="overview">
-      <div>
-        <p class="eyebrow">DASHBOARD</p>
-        <h1 id="heroTitle">OpenAstro</h1>
-        <p id="heroSubtitle">Stato operativo del nodo, senza rumore.</p>
-      </div>
-    </section>
+        <div class="dashboard-topline"><div><p class="eyebrow">OPENASTRO CONTROL</p><span>Nodo personale</span></div><div class="hero-meta"><span id="hostName">openastro</span><span id="uptime">—</span><span id="lastUpdate">—</span></div></div>
+        <div class="dashboard-stage">
+          <section class="hero" id="overview">
+            <div class="hero-copy">
+              <p class="eyebrow">STATO DEL NODO</p>
+              <h1 id="heroTitle">OpenAstro</h1>
+              <p id="heroSubtitle">Stato operativo del nodo, senza rumore.</p>
+            </div>
+            <div class="hero-visual" aria-hidden="true"><div class="hero-orbit"><i></i><i></i><span></span></div><small>NODE</small></div>
+          </section>
 
-
-        <section class="dashboard-health" aria-label="Stato operativo">
+          <section class="dashboard-health" aria-label="Stato operativo">
           <article><span>LIVEVAULT</span><strong id="dashLiveState">Verifica…</strong><small id="dashLiveDetail">—</small></article>
           <article><span>REGISTRAZIONI</span><strong id="dashStorageMode">—</strong><small id="dashStorageDetail">—</small></article>
           <article><span>MEDIA</span><strong id="dashMediaState">—</strong><small id="dashMediaDetail">—</small></article>
           <article><span>ENERGIA</span><strong id="dashPowerState">—</strong><small id="dashPowerDetail">—</small></article>
-        </section>
+          </section>
+        </div>
             <section class="metrics-grid" aria-label="Risorse del server">
       <article class="metric-card">
         <div class="ring" id="cpuRing"><span id="cpuValue">—</span></div>
@@ -301,7 +303,7 @@
     </main>
 
     <nav class="mobile-nav" aria-label="Navigazione mobile">
-      <a href="#dashboard" data-route="dashboard" class="active"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 13h6V4H4v9Zm0 7h6v-5H4v5Zm10 0h6v-9h-6v9Zm0-16v5h6V4h-6Z"/></svg><span>Stato</span></a>
+      <a href="#dashboard" data-route="dashboard" class="active"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 13h6V4H4v9Zm0 7h6v-5H4v5Zm10 0h6v-9h-6v9Zm0-16v5h6V4h-6Z"/></svg><span>Home</span></a>
       <a href="#media" data-route="media"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v14H4V5Zm6 3v8l6-4-6-4Z"/></svg><span>Media</span></a>
       <a href="#storage" data-route="storage"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14l2 4v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8l2-4Zm1.2 2L5.5 8h13l-.7-2H6.2ZM6 12h12v5H6v-5Zm9 1.5h2v2h-2v-2Z"/></svg><span>Storage</span></a>
       <a href="#system" data-route="system"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a2 2 0 0 1 2 2v1.1a7 7 0 0 1 1.9.8l.8-.8a2 2 0 1 1 2.8 2.8l-.8.8c.4.6.6 1.2.8 1.9H21a2 2 0 1 1 0 4h-1.1a7 7 0 0 1-.8 1.9l.8.8a2 2 0 1 1-2.8 2.8l-.8-.8a7 7 0 0 1-1.9.8V21a2 2 0 1 1-4 0v-1.1a7 7 0 0 1-1.9-.8l-.8.8a2 2 0 1 1-2.8-2.8l.8-.8a7 7 0 0 1-.8-1.9H3a2 2 0 1 1 0-4h1.1a7 7 0 0 1 .8-1.9l-.8-.8a2 2 0 1 1 2.8-2.8l.8.8a7 7 0 0 1 1.9-.8V5a2 2 0 0 1 2-2Zm0 6a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z"/></svg><span>Sistema</span></a>
@@ -341,6 +343,6 @@
   </div>
 
   <script src="/hls.min.js?v=1.7.2" defer></script>
-  <script src="/app.js?v=4.0-control" defer></script>
+  <script src="/app.js?v=10.0-product" defer></script>
 </body>
 </html>
