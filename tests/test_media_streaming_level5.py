@@ -7,7 +7,7 @@ from types import SimpleNamespace
 
 import pytest
 
-ROOT = Path('/mnt/livevault-nvme/gpt-harness/work/LiveVault-Test/control-panel')
+ROOT = Path(__file__).parents[1] / 'control-panel'
 sys.path.insert(0, str(ROOT))
 spec = importlib.util.spec_from_file_location('media_streaming_level5_test', ROOT / 'media_streaming.py')
 streaming = importlib.util.module_from_spec(spec)
