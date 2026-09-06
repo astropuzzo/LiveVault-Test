@@ -19,6 +19,10 @@ let mediaUuid = '';
 let mediaPath = '';
 let mediaSignature = '';
 let mediaBusy = false;
+let mediaHls = null;
+let mediaHlsToken = '';
+let mediaPlaybackBase = 0;
+let mediaPlaybackDuration = 0;
 
 const powerProfiles = [
   {key:'eco', name:'ECO', glyph:'E', governor:'powersave', mhz:900, description:'Il nodo respira piano: consumi e temperatura ridotti per monitoraggio e servizi leggeri.'},
@@ -189,6 +193,16 @@ function mediaThumbUrl(path, uuid = mediaUuid) {
 function mediaProbeUrl(path, uuid = mediaUuid) {
   return `/api/media/probe?${new URLSearchParams({uuid, path})}`;
 }
+function mediaPlanUrl(path, uuid = mediaUuid) { return `/api/media/play-plan?${new URLSearchParams({uuid,path})}`; }
+function mediaSubtitleUrl(path, uuid = mediaUuid) { return `/api/media/subtitle?${new URLSearchParams({uuid,path})}`; }
+async function stopMediaHls() {
+  if (mediaHls) { try { mediaHls.destroy(); } catch (_) {} mediaHls=null; }
+  const token=mediaHlsToken; mediaHlsToken='';
+  if (token) { try { await fetch('/api/media/hls/stop',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:JSON.stringify({token})}); } catch (_) {} }
+}
+function addMediaSubtitleTracks(video, tracks, uuid) {
+  (tracks||[]).forEach((track,index)=>{ const node=document.createElement('track'); node.kind='subtitles'; node.label=track.label||`Subtitle ${index+1}`; node.srclang=(track.label||'sub').slice(0,5).toLowerCase(); node.src=mediaSubtitleUrl(track.path,uuid); if(index===0)node.default=false; video.appendChild(node); });
+}
 let mediaProfile = {continue:[], recently_played:[], favorites:[], active_streams:[], stats:{known_files:0,known_bytes:0}};
 let mediaFavoriteKeys = new Set();
 let mediaHomeLoadedAt = 0;
@@ -211,11 +225,10 @@ function mediaResumePosition(uuid, path) {
   return Number(row?.position || 0);
 }
 async function saveMediaProgress(media, force = false) {
-  if (!media || !mediaPlayerUuid || !mediaPlayerPath || !Number.isFinite(media.currentTime) || !Number.isFinite(media.duration) || !media.duration) return;
-  if (!force && media.currentTime < 2) return;
-  try {
-    await fetch('/api/media/progress', {method:'POST', headers:{'Content-Type':'application/json','X-CSRF-Token':csrf}, body:JSON.stringify({uuid:mediaPlayerUuid,path:mediaPlayerPath,position:media.currentTime,duration:media.duration}), signal:AbortSignal.timeout(8000)});
-  } catch (_) {}
+  if (!media || !mediaPlayerUuid || !mediaPlayerPath || !Number.isFinite(media.currentTime)) return;
+  const position=mediaPlaybackBase + media.currentTime; const duration=mediaPlaybackDuration || media.duration || 0;
+  if (!duration || (!force && position < 2)) return;
+  try { await fetch('/api/media/progress',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:JSON.stringify({uuid:mediaPlayerUuid,path:mediaPlayerPath,position,duration}),signal:AbortSignal.timeout(8000)}); } catch (_) {}
 }
 function mediaProfileCard(item, kind='history') {
   const available = item.available !== false;
@@ -334,37 +347,29 @@ async function loadMediaDirectory(path = mediaPath) {
   finally { mediaBusy = false; }
 }
 function closeMediaPlayer() {
-  const stage=$('#mediaPlayerStage'), media=stage.querySelector('video,audio');
-  if (media) saveMediaProgress(media,true);
-  if (mediaResumeTimer) clearInterval(mediaResumeTimer); mediaResumeTimer=null; stage.innerHTML='';
-  if ($('#mediaPlayerDialog').open) $('#mediaPlayerDialog').close();
-  setTimeout(()=>loadMediaHome(true),500);
+  const stage=$('#mediaPlayerStage'), media=stage.querySelector('video,audio'); if(media) saveMediaProgress(media,true);
+  if(mediaResumeTimer)clearInterval(mediaResumeTimer); mediaResumeTimer=null; stopMediaHls(); stage.innerHTML='';
+  mediaPlaybackBase=0; mediaPlaybackDuration=0; if($('#mediaPlayerDialog').open)$('#mediaPlayerDialog').close(); setTimeout(()=>loadMediaHome(true),500);
 }
-async function openMediaPlayer(path, name, category, uuid = mediaUuid) {
-  if (!uuid || !path) return;
-  const device=(latestState?.media?.devices||[]).find(item=>item.uuid===uuid);
-  if (!device?.mounted) return toast('Il supporto che contiene questo file non è collegato.',true);
-  mediaPlayerUuid=uuid; mediaPlayerPath=path; mediaPlayerName=name||path.split('/').at(-1);
-  $('#mediaPlayerTitle').textContent=mediaPlayerName; $('#mediaPlayerType').textContent=mediaCategoryLabel(category);
-  $('#mediaPlayerDownload').href=mediaUrl(path,true,uuid); $('#mediaPlayerMeta').innerHTML='<span>Analisi file…</span>';
-  $('#mediaPlayerFavorite').textContent=isMediaFavorite(path,uuid)?'★ Preferito':'☆ Preferito';
-  const url=mediaUrl(path,false,uuid), stage=$('#mediaPlayerStage');
-  if(category==='image') stage.innerHTML=`<img src="${escapeHtml(url)}" alt="${escapeHtml(mediaPlayerName)}">`;
-  else if(category==='audio') stage.innerHTML=`<audio controls preload="metadata" src="${escapeHtml(url)}"></audio>`;
-  else stage.innerHTML=`<video controls playsinline preload="metadata" src="${escapeHtml(url)}"></video>`;
-  if(!$('#mediaPlayerDialog').open) $('#mediaPlayerDialog').showModal();
-  const media=stage.querySelector('video,audio');
-  if(media){
-    media.addEventListener('loadedmetadata',()=>{const saved=mediaResumePosition(uuid,path); if(saved>5&&saved<media.duration-10) media.currentTime=saved;},{once:true});
-    media.addEventListener('pause',()=>saveMediaProgress(media,true)); media.addEventListener('ended',()=>saveMediaProgress(media,true));
-    mediaResumeTimer=setInterval(()=>{if(!media.paused) saveMediaProgress(media);},5000);
-  }
-  try {
-    const response=await fetch(mediaProbeUrl(path,uuid),{cache:'no-store',signal:AbortSignal.timeout(12000)}); const data=await response.json();
-    const probe=data.probe||{}, format=probe.format||{}, streams=probe.streams||[]; const video=streams.find(x=>x.codec_type==='video'), audio=streams.find(x=>x.codec_type==='audio'); const bits=[];
-    if(format.duration)bits.push(mediaDuration(format.duration)); if(video?.width)bits.push(`${video.width}×${video.height}`); if(video?.codec_name)bits.push(video.codec_name.toUpperCase()); if(audio?.codec_name)bits.push(audio.codec_name.toUpperCase()); if(format.bit_rate)bits.push(`${(Number(format.bit_rate)/1e6).toFixed(1)} Mb/s`); bits.push(bytes(data.size));
-    $('#mediaPlayerMeta').innerHTML=bits.map(value=>`<span>${escapeHtml(value)}</span>`).join('');
-  } catch(_){$('#mediaPlayerMeta').innerHTML=`<span>${bytes(mediaItems.find(i=>i.path===path)?.size||0)}</span>`;}
+async function openMediaPlayer(path,name,category,uuid=mediaUuid){
+  if(!uuid||!path)return; const device=(latestState?.media?.devices||[]).find(item=>item.uuid===uuid); if(!device?.mounted)return toast('Il supporto che contiene questo file non è collegato.',true);
+  await stopMediaHls(); mediaPlayerUuid=uuid; mediaPlayerPath=path; mediaPlayerName=name||path.split('/').at(-1); mediaPlaybackBase=0; mediaPlaybackDuration=0;
+  $('#mediaPlayerTitle').textContent=mediaPlayerName; $('#mediaPlayerType').textContent=mediaCategoryLabel(category); $('#mediaPlayerPlan').textContent='ANALISI'; $('#mediaPlayerNote').textContent='Analisi compatibilità codec e carico del nodo…';
+  $('#mediaPlayerDownload').href=mediaUrl(path,true,uuid); $('#mediaPlayerMeta').innerHTML='<span>Analisi file…</span>'; $('#mediaPlayerFavorite').textContent=isMediaFavorite(path,uuid)?'★ Preferito':'☆ Preferito';
+  if(!$('#mediaPlayerDialog').open)$('#mediaPlayerDialog').showModal(); const stage=$('#mediaPlayerStage'); stage.innerHTML='<div class="media-playback-wait"><strong>Preparazione playback…</strong><small>OpenAstro sta scegliendo il percorso più efficiente.</small></div>';
+  let plan={mode:'direct',available:true,subtitles:[],duration:0,reason:'Direct Play'};
+  try{const r=await fetch(mediaPlanUrl(path,uuid),{cache:'no-store',signal:AbortSignal.timeout(12000)});const x=await r.json();if(r.ok&&x.ok)plan=x;}catch(_){}
+  mediaPlaybackDuration=Number(plan.duration||0); const resume=mediaResumePosition(uuid,path); const directUrl=mediaUrl(path,false,uuid); let media=null;
+  const bindProgress=()=>{ if(!media)return; media.addEventListener('pause',()=>saveMediaProgress(media,true)); media.addEventListener('ended',()=>saveMediaProgress(media,true)); mediaResumeTimer=setInterval(()=>{if(!media.paused)saveMediaProgress(media);},5000); };
+  const originalVideo=()=>{ stage.innerHTML='<video controls playsinline preload="metadata"></video>'; media=stage.querySelector('video'); media.src=directUrl; addMediaSubtitleTracks(media,plan.subtitles,uuid); media.addEventListener('loadedmetadata',()=>{if(resume>5&&resume<media.duration-10)media.currentTime=resume;},{once:true}); mediaPlaybackBase=0; if(!mediaPlaybackDuration)mediaPlaybackDuration=media.duration||0; bindProgress(); };
+  if(category==='image'){stage.innerHTML=`<img src="${escapeHtml(directUrl)}" alt="${escapeHtml(mediaPlayerName)}">`;$('#mediaPlayerPlan').textContent='DIRECT';$('#mediaPlayerNote').textContent='Immagine servita direttamente dal supporto USB.';}
+  else if(category==='audio'){stage.innerHTML='<audio controls preload="metadata"></audio>';media=stage.querySelector('audio');media.src=directUrl;media.addEventListener('loadedmetadata',()=>{if(resume>5&&resume<media.duration-10)media.currentTime=resume;},{once:true});bindProgress();$('#mediaPlayerPlan').textContent='DIRECT';$('#mediaPlayerNote').textContent=plan.reason||'Audio Direct Play.';}
+  else if(plan.mode==='direct'){originalVideo();$('#mediaPlayerPlan').textContent='DIRECT PLAY';$('#mediaPlayerNote').textContent=plan.reason||'Nessuna conversione: il file passa direttamente dalla USB al browser.';}
+  else if(plan.available&&String(plan.mode).startsWith('hls_')){
+    $('#mediaPlayerPlan').textContent=plan.mode==='hls_copy'?'REMUX HLS':plan.mode==='hls_audio'?'AUDIO → AAC':'TRANSCODE HLS'; $('#mediaPlayerNote').textContent=`${plan.reason}. Finestra seek fallback: circa ${Math.round((plan.hls_window_seconds||360)/60)} min.`;
+    try{const r=await fetch('/api/media/hls/start',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:JSON.stringify({uuid,path,position:resume}),signal:AbortSignal.timeout(15000)});const h=await r.json();if(!r.ok||!h.ok)throw new Error(h.error||'HLS non disponibile');mediaHlsToken=h.token||'';mediaPlaybackBase=Number(h.offset||0);mediaPlaybackDuration=Number(h.plan?.duration||plan.duration||0);stage.innerHTML='<video controls playsinline preload="metadata"></video>';media=stage.querySelector('video');addMediaSubtitleTracks(media,plan.subtitles,uuid);if(window.Hls&&Hls.isSupported()){mediaHls=new Hls({maxBufferLength:60,backBufferLength:90,enableWorker:true});mediaHls.loadSource(h.manifest);mediaHls.attachMedia(media);}else if(media.canPlayType('application/vnd.apple.mpegurl')){media.src=h.manifest;}else throw new Error('Questo browser non supporta HLS/MSE');bindProgress();}catch(error){stage.innerHTML=`<div class="media-playback-blocked"><strong>Fallback HLS non disponibile</strong><small>${escapeHtml(error.message||'Errore HLS')}</small><button id="mediaTryOriginal" class="button secondary">Prova comunque il file originale</button></div>`;$('#mediaTryOriginal').addEventListener('click',originalVideo);}
+  }else{stage.innerHTML=`<div class="media-playback-blocked"><strong>Transcode protetto</strong><small>${escapeHtml(plan.reason||'Playback non disponibile')}</small><button id="mediaTryOriginal" class="button secondary">Prova Direct Play</button></div>`;$('#mediaTryOriginal').addEventListener('click',originalVideo);$('#mediaPlayerPlan').textContent='PROTECTED';$('#mediaPlayerNote').textContent=plan.reason||'OpenAstro evita di sottrarre risorse a LiveVault.';}
+  try{const response=await fetch(mediaProbeUrl(path,uuid),{cache:'no-store',signal:AbortSignal.timeout(12000)});const data=await response.json();const probe=data.probe||{},format=probe.format||{},streams=probe.streams||[];const video=streams.find(x=>x.codec_type==='video'),audio=streams.find(x=>x.codec_type==='audio');const bits=[];if(format.duration)bits.push(mediaDuration(format.duration));if(video?.width)bits.push(`${video.width}×${video.height}`);if(video?.codec_name)bits.push(video.codec_name.toUpperCase());if(audio?.codec_name)bits.push(audio.codec_name.toUpperCase());if(format.bit_rate)bits.push(`${(Number(format.bit_rate)/1e6).toFixed(1)} Mb/s`);bits.push(bytes(data.size));$('#mediaPlayerMeta').innerHTML=bits.map(value=>`<span>${escapeHtml(value)}</span>`).join('');}catch(_){$('#mediaPlayerMeta').innerHTML=`<span>${bytes(mediaItems.find(i=>i.path===path)?.size||0)}</span>`;}
 }
 function renderMedia(media = {}) {
   const devices = media.devices || [], mounted = devices.filter(device => device.mounted);
@@ -581,7 +586,7 @@ $('#mediaGridView').addEventListener('click', () => { mediaView='grid'; $('#medi
 $('#mediaListView').addEventListener('click', () => { mediaView='list'; $('#mediaListView').classList.add('active'); $('#mediaGridView').classList.remove('active'); renderMediaFiles(); });
 $('#mediaLibraryRefresh').addEventListener('click', () => loadMediaLibrary(true));
 $('#mediaPlayerClose').addEventListener('click', closeMediaPlayer);
-$('#mediaPlayerDialog').addEventListener('close', () => { const media=$('#mediaPlayerStage').querySelector('video,audio'); if(media) saveMediaProgress(media,true); if(mediaResumeTimer) clearInterval(mediaResumeTimer); mediaResumeTimer=null; $('#mediaPlayerStage').innerHTML=''; setTimeout(()=>loadMediaHome(true),500); });
+$('#mediaPlayerDialog').addEventListener('close', () => { const media=$('#mediaPlayerStage').querySelector('video,audio'); if(media) saveMediaProgress(media,true); if(mediaResumeTimer) clearInterval(mediaResumeTimer); mediaResumeTimer=null; stopMediaHls(); mediaPlaybackBase=0; mediaPlaybackDuration=0; $('#mediaPlayerStage').innerHTML=''; setTimeout(()=>loadMediaHome(true),500); });
 $('#mediaPlayerFavorite').addEventListener('click', async () => { const state=await toggleMediaFavorite(mediaPlayerPath,mediaPlayerName,mediaPlayerUuid); $('#mediaPlayerFavorite').textContent=state?'★ Preferito':'☆ Preferito'; });
 $('#mediaBack').addEventListener('click', () => loadMediaDirectory($('#mediaBack').dataset.parent || ''));
 $('#mediaCredentials').addEventListener('click', async () => {

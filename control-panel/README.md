@@ -88,3 +88,7 @@ The Media Hub provides an authenticated remote browser, direct HTTP Range stream
 ### Media Hub Level 3
 
 The media panel keeps a persistent SQLite catalog on eMMC (`/var/lib/openastro-control/media.sqlite3`). Playback progress, completion state, favorites, recent history and remembered/offline libraries are server-side and shared by every authenticated browser. Direct HTTP media streams are tracked while active. USB media remains read-only and isolated from LiveVault storage.
+
+### Media Hub Level 5
+
+Playback is planned per file using ffprobe. Browser-safe H.264/AAC MP4 and WebM profiles use Direct Play; compatible H.264 in other containers uses an HLS remux; incompatible audio can be converted to AAC without re-encoding video; other video can fall back to H.264/AAC HLS through the CM4 V4L2 encoder. Full video transcoding is automatically denied while LiveVault is recording or when thermal/load guards trip. Sidecar SRT/VTT/ASS subtitles are exposed as WebVTT. HLS.js 1.7.2 is vendored locally with its Apache-2.0 license.

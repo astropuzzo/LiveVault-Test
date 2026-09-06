@@ -11,7 +11,7 @@
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" href="/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="/icon.svg">
-  <link rel="stylesheet" href="/app.css?v=3.2-mediahub-l3">
+  <link rel="stylesheet" href="/app.css?v=3.3-mediahub-l5">
 </head>
 <body>
   <div class="noise"></div>
@@ -259,10 +259,10 @@
   </nav>
 
   <dialog id="mediaPlayerDialog" class="media-player-dialog">
-    <div class="media-player-head"><div><small id="mediaPlayerType">MEDIA</small><h3 id="mediaPlayerTitle">Player</h3></div><button id="mediaPlayerClose" class="icon-button" aria-label="Chiudi">×</button></div>
+    <div class="media-player-head"><div><small><span id="mediaPlayerType">MEDIA</span> · <b id="mediaPlayerPlan">DIRECT</b></small><h3 id="mediaPlayerTitle">Player</h3></div><button id="mediaPlayerClose" class="icon-button" aria-label="Chiudi">×</button></div>
     <div id="mediaPlayerStage" class="media-player-stage"></div>
     <div class="media-player-info"><div id="mediaPlayerMeta"><span>Caricamento dettagli…</span></div><div class="media-player-actions"><button id="mediaPlayerFavorite" class="button secondary">Preferito</button><a id="mediaPlayerDownload" class="button secondary" href="#">Scarica</a></div></div>
-    <p class="media-player-note">La riproduzione diretta dipende dai codec supportati dal browser. Per i formati non compatibili puoi usare DLNA sulla TV o scaricare il file.</p>
+    <p class="media-player-note" id="mediaPlayerNote">OpenAstro sceglie automaticamente Direct Play o fallback HLS in base a container, codec e carico LiveVault.</p>
   </dialog>
 
   <dialog id="confirmDialog">
@@ -288,6 +288,7 @@
       <div class="login-error" id="loginError" role="alert"></div>
     </form>
   </div>
-  <script src="/app.js?v=3.2-mediahub-l3" defer></script>
+  <script src="/hls.min.js?v=1.7.2" defer></script>
+  <script src="/app.js?v=3.3-mediahub-l5" defer></script>
 </body>
 </html>

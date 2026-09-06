@@ -21,15 +21,12 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, quote, urlparse
 
-try:
-    import media_center
-except ModuleNotFoundError:
-    import importlib.util
-    _media_spec = importlib.util.spec_from_file_location("openastro_media_center", Path(__file__).resolve().with_name("media_center.py"))
-    if _media_spec is None or _media_spec.loader is None:
-        raise
-    media_center = importlib.util.module_from_spec(_media_spec)
-    _media_spec.loader.exec_module(media_center)
+import sys
+_CONTROL_DIR = str(Path(__file__).resolve().parent)
+if _CONTROL_DIR not in sys.path:
+    sys.path.insert(0, _CONTROL_DIR)
+import media_center
+import media_streaming
 
 
 ROOT = Path(__file__).resolve().parent
@@ -707,12 +704,64 @@ class Handler(BaseHTTPRequestHandler):
             except (ValueError, FileNotFoundError, PermissionError) as exc:
                 self.send_error(HTTPStatus.NOT_FOUND, str(exc))
             return
+        if path == "/api/media/play-plan":
+            if not self.require_session(): return
+            query = parse_qs(parsed.query)
+            try:
+                self.send_json(media_streaming.playback_plan(str(query.get("uuid", [""])[0]), str(query.get("path", [""])[0])))
+            except (ValueError, FileNotFoundError, PermissionError, RuntimeError) as exc:
+                self.send_json({"ok": False, "error": str(exc)}, 404)
+            return
+        if path == "/api/media/hls/manifest":
+            if not self.require_session(): return
+            query = parse_qs(parsed.query)
+            try:
+                body = media_streaming.manifest_text(str(query.get("token", [""])[0])).encode("utf-8")
+                self.send_response(HTTPStatus.OK)
+                self.send_header("Content-Type", "application/vnd.apple.mpegurl")
+                self.send_header("Content-Length", str(len(body)))
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("X-Content-Type-Options", "nosniff")
+                self.end_headers()
+                self.wfile.write(body)
+            except (ValueError, FileNotFoundError, PermissionError) as exc:
+                self.send_json({"ok": False, "error": str(exc)}, 404)
+            return
+        if path == "/api/media/hls/segment":
+            if not self.require_session(): return
+            query = parse_qs(parsed.query)
+            try:
+                self.send_media_file(media_streaming.segment_info(str(query.get("token", [""])[0]), str(query.get("name", [""])[0])), download=False)
+            except (ValueError, FileNotFoundError, PermissionError) as exc:
+                self.send_error(HTTPStatus.NOT_FOUND, str(exc))
+            return
+        if path == "/api/media/subtitle":
+            if not self.require_session(): return
+            query = parse_qs(parsed.query)
+            try:
+                self.send_media_file(media_streaming.subtitle_info(str(query.get("uuid", [""])[0]), str(query.get("path", [""])[0])), download=False)
+            except (ValueError, FileNotFoundError, PermissionError) as exc:
+                self.send_error(HTTPStatus.NOT_FOUND, str(exc))
+            return
+        if path == "/api/media/streaming-diagnostics":
+            if not self.require_session(): return
+            self.send_json(media_streaming.diagnostics())
+            return
         if path == "/api/media/home":
             if not self.require_session(): return
             query = parse_qs(parsed.query)
             uuid = str(query.get("uuid", [""])[0]).strip() or None
             try:
-                self.send_json(media_center.home(uuid))
+                payload = media_center.home(uuid)
+                hls_jobs = media_streaming.hls_jobs()
+                payload["hls_streams"] = hls_jobs
+                payload["active_streams"] = list(payload.get("active_streams") or []) + [
+                    {"id": "hls:" + job["token"], "uuid": job.get("uuid", ""), "path": job.get("path", ""),
+                     "name": job.get("name", ""), "client": job.get("client", ""), "started": job.get("started", 0),
+                     "last_seen": time.time(), "bytes_sent": 0, "seconds": job.get("seconds", 0), "mode": job.get("mode", "hls")}
+                    for job in hls_jobs
+                ]
+                self.send_json(payload)
             except (ValueError, FileNotFoundError, PermissionError) as exc:
                 self.send_json({"ok": False, "error": str(exc)}, 404)
             return
@@ -815,7 +864,7 @@ class Handler(BaseHTTPRequestHandler):
                     _sessions.pop(cookie["openastro_session"].value, None)
             self.send_json({"ok": True}, headers={"Set-Cookie": "openastro_session=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Strict"})
             return
-        if self.path in {"/api/media/progress", "/api/media/favorite"}:
+        if self.path in {"/api/media/progress", "/api/media/favorite", "/api/media/hls/start", "/api/media/hls/stop"}:
             session = self.require_session()
             if not session:
                 return
@@ -828,8 +877,12 @@ class Handler(BaseHTTPRequestHandler):
                 path = str(payload.get("path", ""))
                 if self.path == "/api/media/progress":
                     result = media_center.update_progress(uuid, path, float(payload.get("position", 0)), float(payload.get("duration", 0)), client=self.client_key())
-                else:
+                elif self.path == "/api/media/favorite":
                     result = media_center.set_favorite(uuid, path, bool(payload.get("favorite", False)))
+                elif self.path == "/api/media/hls/start":
+                    result = media_streaming.start_hls(uuid, path, client=self.client_key(), position=float(payload.get("position", 0)))
+                else:
+                    result = media_streaming.stop_hls(str(payload.get("token", "")))
                 self.send_json(result)
             except (ValueError, FileNotFoundError, PermissionError) as exc:
                 self.send_json({"ok": False, "error": str(exc)}, 400)
