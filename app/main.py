@@ -1181,6 +1181,7 @@ def _activity_statistics(db, days: int, profile_id: int | None = None) -> dict:
         recordings=recording_rows,
         days=days,
         now=now,
+        include_intervals=profile_id is not None,
     )
 
 

@@ -122,43 +122,210 @@ function applyDynamicStyles(root = document) {
   }
 }
 
+function chartTickLabel(seconds) {
+  const value = Math.max(0, Number(seconds) || 0);
+  if (value >= 3600) return `${new Intl.NumberFormat('it-IT', {maximumFractionDigits: 1}).format(value / 3600)}h`;
+  if (value >= 60) return `${Math.round(value / 60)}m`;
+  return `${Math.round(value)}s`;
+}
+
+function chartGridMarkup(maxValue, width, top, chartHeight, labelX = 4) {
+  return [0, .25, .5, .75, 1].map(ratio => {
+    const y = top + chartHeight - chartHeight * ratio;
+    return `<line class="chart-grid-line" x1="46" y1="${y.toFixed(2)}" x2="${width}" y2="${y.toFixed(2)}"></line><text class="chart-y-label" x="${labelX}" y="${(y + 4).toFixed(2)}">${esc(chartTickLabel(maxValue * ratio))}</text>`;
+  }).join('');
+}
+
 function activityChartSvg(rows = []) {
   if (!rows.length || !rows.some(row => Number(row.online_seconds) || Number(row.recorded_seconds))) return '<div class="empty compact">Nessun dato.</div>';
-  const width = 820, height = 230, top = 12, bottom = 34, chartHeight = height - top - bottom;
+  const width = 920, height = 300, left = 48, top = 16, bottom = 42, chartHeight = height - top - bottom, chartWidth = width - left;
   const maxValue = Math.max(1, ...rows.flatMap(row => [Number(row.online_seconds) || 0, Number(row.recorded_seconds) || 0]));
-  const groupWidth = width / rows.length;
-  const barWidth = Math.max(.5, Math.min(9, groupWidth * .30));
-  const skip = rows.length > 120 ? 30 : rows.length > 60 ? 14 : rows.length > 31 ? 7 : rows.length > 14 ? 4 : 1;
+  const groupWidth = chartWidth / rows.length;
+  const barWidth = Math.max(1.5, Math.min(13, groupWidth * .31));
+  const skip = rows.length > 180 ? 30 : rows.length > 90 ? 14 : rows.length > 45 ? 7 : rows.length > 21 ? 4 : rows.length > 12 ? 2 : 1;
   let bars = '';
   let labels = '';
   rows.forEach((row, index) => {
     const online = Number(row.online_seconds) || 0;
     const recorded = Number(row.recorded_seconds) || 0;
-    const center = index * groupWidth + groupWidth / 2;
+    const center = left + index * groupWidth + groupWidth / 2;
     const onlineHeight = online / maxValue * chartHeight;
     const recordedHeight = recorded / maxValue * chartHeight;
-    bars += `<rect class="chart-bar online" x="${(center - barWidth - .5).toFixed(2)}" y="${(top + chartHeight - onlineHeight).toFixed(2)}" width="${barWidth.toFixed(2)}" height="${onlineHeight.toFixed(2)}"><title>${esc(row.date)} · online ${esc(duration(online))}</title></rect>`;
-    bars += `<rect class="chart-bar recorded" x="${(center + .5).toFixed(2)}" y="${(top + chartHeight - recordedHeight).toFixed(2)}" width="${barWidth.toFixed(2)}" height="${recordedHeight.toFixed(2)}"><title>${esc(row.date)} · registrato ${esc(duration(recorded))}</title></rect>`;
-    if (index % skip === 0 || index === rows.length - 1) labels += `<text class="chart-label" x="${center.toFixed(2)}" y="${height - 9}" text-anchor="middle">${esc(row.date.slice(5))}</text>`;
+    bars += `<rect class="chart-bar online" x="${(center - barWidth - .75).toFixed(2)}" y="${(top + chartHeight - onlineHeight).toFixed(2)}" width="${barWidth.toFixed(2)}" height="${onlineHeight.toFixed(2)}"><title>${esc(row.date)} · online ${esc(duration(online))}</title></rect>`;
+    bars += `<rect class="chart-bar recorded" x="${(center + .75).toFixed(2)}" y="${(top + chartHeight - recordedHeight).toFixed(2)}" width="${barWidth.toFixed(2)}" height="${recordedHeight.toFixed(2)}"><title>${esc(row.date)} · registrato ${esc(duration(recorded))}</title></rect>`;
+    if (index % skip === 0 || index === rows.length - 1) labels += `<text class="chart-label" x="${center.toFixed(2)}" y="${height - 12}" text-anchor="middle">${esc(row.date.slice(5))}</text>`;
   });
-  return `<svg class="activity-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="Grafico tempo online e registrato"><line class="chart-axis" x1="0" y1="${top + chartHeight}" x2="${width}" y2="${top + chartHeight}"></line>${bars}${labels}</svg>`;
+  return `<svg class="activity-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="Grafico tempo online e registrato">${chartGridMarkup(maxValue, width, top, chartHeight)}<line class="chart-axis" x1="${left}" y1="${top + chartHeight}" x2="${width}" y2="${top + chartHeight}"></line>${bars}${labels}</svg>`;
 }
 
 function hourlyChartSvg(rows = []) {
   if (!rows.length || !rows.some(row => Number(row.online_seconds))) return '<div class="empty compact">Nessun dato.</div>';
-  const width = 820, height = 220, top = 12, bottom = 30, chartHeight = height - top - bottom;
+  const width = 920, height = 300, left = 48, top = 16, bottom = 42, chartHeight = height - top - bottom, chartWidth = width - left;
   const maxValue = Math.max(1, ...rows.map(row => Number(row.online_seconds) || 0));
-  const groupWidth = width / 24;
-  const barWidth = Math.max(5, groupWidth * .56);
+  const groupWidth = chartWidth / 24;
+  const barWidth = Math.max(9, groupWidth * .62);
   let bars = '';
   rows.forEach((row, index) => {
     const value = Number(row.online_seconds) || 0;
     const barHeight = value / maxValue * chartHeight;
-    const x = index * groupWidth + (groupWidth - barWidth) / 2;
+    const x = left + index * groupWidth + (groupWidth - barWidth) / 2;
     bars += `<rect class="chart-bar online" x="${x.toFixed(2)}" y="${(top + chartHeight - barHeight).toFixed(2)}" width="${barWidth.toFixed(2)}" height="${barHeight.toFixed(2)}"><title>${String(index).padStart(2, '0')}:00 · ${esc(duration(value))}</title></rect>`;
-    if (index % 3 === 0) bars += `<text class="chart-label" x="${(index * groupWidth + groupWidth / 2).toFixed(2)}" y="${height - 8}" text-anchor="middle">${String(index).padStart(2, '0')}</text>`;
+    if (index % 2 === 0) bars += `<text class="chart-label" x="${(left + index * groupWidth + groupWidth / 2).toFixed(2)}" y="${height - 12}" text-anchor="middle">${String(index).padStart(2, '0')}</text>`;
   });
-  return `<svg class="activity-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="Grafico distribuzione oraria"><line class="chart-axis" x1="0" y1="${top + chartHeight}" x2="${width}" y2="${top + chartHeight}"></line>${bars}</svg>`;
+  return `<svg class="activity-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="Grafico distribuzione oraria">${chartGridMarkup(maxValue, width, top, chartHeight)}<line class="chart-axis" x1="${left}" y1="${top + chartHeight}" x2="${width}" y2="${top + chartHeight}"></line>${bars}</svg>`;
+}
+
+function localDayKey(value) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (!Number.isFinite(date.getTime())) return '';
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+function localDayStart(value = new Date()) {
+  const date = value instanceof Date ? new Date(value) : new Date(value);
+  date.setHours(0, 0, 0, 0);
+  return date;
+}
+
+function profileActivityModel(activity) {
+  const daysRequested = Math.max(1, Number(activity?.days) || 30);
+  const today = localDayStart(new Date());
+  const first = new Date(today);
+  first.setDate(first.getDate() - daysRequested + 1);
+  const dayMap = new Map();
+  for (let cursor = new Date(first); cursor <= today; cursor.setDate(cursor.getDate() + 1)) {
+    const date = new Date(cursor);
+    dayMap.set(localDayKey(date), {date, onlineSeconds: 0, sessionStarts: 0});
+  }
+
+  const weekdayHours = Array.from({length: 7}, () => Array(24).fill(0));
+  const overallHours = Array(24).fill(0);
+  const intervals = (activity?.activity_intervals || []).map(row => ({
+    start: new Date(row.started_at),
+    end: new Date(row.ended_at),
+  })).filter(row => Number.isFinite(row.start.getTime()) && Number.isFinite(row.end.getTime()) && row.end > row.start);
+
+  for (const interval of intervals) {
+    const startKey = localDayKey(interval.start);
+    if (dayMap.has(startKey)) dayMap.get(startKey).sessionStarts += 1;
+    let cursor = new Date(Math.max(interval.start.getTime(), first.getTime()));
+    const stop = new Date(Math.min(interval.end.getTime(), today.getTime() + 86400000));
+    while (cursor < stop) {
+      const nextHour = new Date(cursor);
+      nextHour.setMinutes(60, 0, 0);
+      if (nextHour <= cursor) nextHour.setTime(cursor.getTime() + 3600000);
+      const nextMidnight = localDayStart(cursor);
+      nextMidnight.setDate(nextMidnight.getDate() + 1);
+      const chunkEnd = new Date(Math.min(stop.getTime(), nextHour.getTime(), nextMidnight.getTime()));
+      if (chunkEnd <= cursor) break;
+      const seconds = (chunkEnd - cursor) / 1000;
+      const key = localDayKey(cursor);
+      if (dayMap.has(key)) dayMap.get(key).onlineSeconds += seconds;
+      weekdayHours[cursor.getDay()][cursor.getHours()] += seconds;
+      overallHours[cursor.getHours()] += seconds;
+      cursor = chunkEnd;
+    }
+  }
+
+  if (!intervals.length) {
+    for (const row of activity?.daily || []) {
+      const date = new Date(`${row.date}T12:00:00`);
+      const key = localDayKey(date);
+      if (dayMap.has(key)) dayMap.get(key).onlineSeconds = Number(row.online_seconds) || 0;
+    }
+    for (const row of activity?.hourly || []) overallHours[Number(row.hour) || 0] = Number(row.online_seconds) || 0;
+  }
+
+  const days = [...dayMap.values()];
+  const weekdayNames = ['Dom', 'Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab'];
+  const weekdayLong = ['Domenica', 'Lunedì', 'Martedì', 'Mercoledì', 'Giovedì', 'Venerdì', 'Sabato'];
+  const weekdayStats = Array.from({length: 7}, (_, day) => ({day, label: weekdayNames[day], longLabel: weekdayLong[day], occurrences: 0, activeDays: 0, seconds: 0, weightedObserved: 0, weightedActive: 0}));
+  days.forEach((row, index) => {
+    const stat = weekdayStats[row.date.getDay()];
+    stat.occurrences += 1;
+    stat.seconds += row.onlineSeconds;
+    if (row.onlineSeconds > 0) stat.activeDays += 1;
+    const age = days.length - index - 1;
+    const weight = Math.pow(.5, age / 45);
+    stat.weightedObserved += weight;
+    if (row.onlineSeconds > 0) stat.weightedActive += weight;
+  });
+  weekdayStats.forEach(stat => {
+    stat.frequency = stat.occurrences ? stat.activeDays / stat.occurrences : 0;
+    stat.averageSeconds = stat.activeDays ? stat.seconds / stat.activeDays : 0;
+    stat.weightedFrequency = stat.weightedObserved ? stat.weightedActive / stat.weightedObserved : 0;
+  });
+
+  return {days, intervals, weekdayHours, overallHours, weekdayStats, weekdayNames, weekdayLong};
+}
+
+function weekdayPreferencesMarkup(activity) {
+  const model = profileActivityModel(activity);
+  const ordered = [1, 2, 3, 4, 5, 6, 0].map(day => model.weekdayStats[day]);
+  const best = ordered.reduce((winner, row) => row.frequency > (winner?.frequency ?? -1) ? row : winner, null);
+  return `<section class="profile-intel-card weekday-preferences"><div class="profile-intel-head"><div><h4>Giorni preferiti</h4><p>Frequenza di connessione nel periodo selezionato</p></div>${best?.activeDays ? `<span class="intel-highlight">Più frequente · ${esc(best.longLabel)}</span>` : ''}</div><div class="weekday-list">${ordered.map(row => `<div class="weekday-row ${best === row && row.activeDays ? 'best' : ''}"><strong>${esc(row.label)}</strong><div class="weekday-track"><i data-dynamic-width="${(row.frequency * 100).toFixed(1)}"></i></div><span>${Math.round(row.frequency * 100)}%</span><small>${row.activeDays}/${row.occurrences} gg · media ${esc(duration(row.averageSeconds))}</small></div>`).join('')}</div></section>`;
+}
+
+function activityCalendarMarkup(activity) {
+  const model = profileActivityModel(activity);
+  const visibleCount = Math.min(model.days.length, 56);
+  const visible = model.days.slice(-visibleCount);
+  if (!visible.length) return '';
+  const maxSeconds = Math.max(1, ...visible.map(row => row.onlineSeconds));
+  const firstWeekday = (visible[0].date.getDay() + 6) % 7;
+  const blanks = Array.from({length: firstWeekday}, () => '<span class="calendar-cell empty" aria-hidden="true"></span>').join('');
+  const cells = visible.map(row => {
+    const ratio = row.onlineSeconds / maxSeconds;
+    const level = row.onlineSeconds <= 0 ? 0 : ratio <= .2 ? 1 : ratio <= .45 ? 2 : ratio <= .7 ? 3 : 4;
+    const label = new Intl.DateTimeFormat('it-IT', {weekday:'short', day:'2-digit', month:'short'}).format(row.date);
+    const online = row.onlineSeconds > 0 ? duration(row.onlineSeconds) : 'nessuna live rilevata';
+    return `<time class="calendar-cell level-${level}" datetime="${esc(localDayKey(row.date))}" title="${esc(`${label} · ${online}`)}"><strong>${row.date.getDate()}</strong><span>${row.onlineSeconds > 0 ? esc(duration(row.onlineSeconds)) : '—'}</span></time>`;
+  }).join('');
+  return `<section class="profile-intel-card activity-calendar-card"><div class="profile-intel-head"><div><h4>Calendario attività</h4><p>Ultimi ${visibleCount} giorni · intensità = tempo online</p></div><div class="calendar-legend"><span>meno</span><i class="level-1"></i><i class="level-2"></i><i class="level-3"></i><i class="level-4"></i><span>più</span></div></div><div class="calendar-week-head"><span>Lun</span><span>Mar</span><span>Mer</span><span>Gio</span><span>Ven</span><span>Sab</span><span>Dom</span></div><div class="activity-calendar-grid">${blanks}${cells}</div></section>`;
+}
+
+function predictedWindow(hours) {
+  const peak = Math.max(...hours);
+  if (!(peak > 0)) return null;
+  let peakHour = hours.indexOf(peak);
+  let start = peakHour;
+  let end = peakHour;
+  const threshold = peak * .35;
+  while (start > 0 && peakHour - start < 2 && hours[start - 1] >= threshold) start -= 1;
+  while (end < 23 && end - peakHour < 3 && hours[end + 1] >= threshold) end += 1;
+  const endHour = (end + 1) % 24;
+  return `${String(start).padStart(2, '0')}:00–${String(endHour).padStart(2, '0')}:00`;
+}
+
+function forecastMarkup(activity) {
+  const model = profileActivityModel(activity);
+  const summary = activity?.summary || {};
+  const liveSessions = Number(summary.live_sessions) || model.intervals.length;
+  const activeDays = model.days.filter(row => row.onlineSeconds > 0).length;
+  const exactRatio = Number(summary.online_seconds) > 0 ? Math.min(1, Number(summary.exact_online_seconds || 0) / Number(summary.online_seconds || 1)) : 0;
+  const enough = liveSessions >= 3 && activeDays >= 2;
+  const today = localDayStart(new Date());
+  const rows = [];
+  for (let offset = 1; offset <= 7; offset += 1) {
+    const date = new Date(today);
+    date.setDate(date.getDate() + offset);
+    const weekday = date.getDay();
+    const stat = model.weekdayStats[weekday];
+    const smoothed = (stat.weightedActive + .5) / Math.max(1, stat.weightedObserved + 1);
+    const probability = Math.max(.05, Math.min(.95, smoothed));
+    const samples = stat.activeDays;
+    const confidenceScore = Math.min(1, samples / 5) * Math.min(1, stat.occurrences / 4) * (.72 + .28 * exactRatio);
+    const confidence = confidenceScore >= .7 ? 'alta' : confidenceScore >= .38 ? 'media' : 'bassa';
+    const window = stat.activeDays ? (predictedWindow(model.weekdayHours[weekday]) || predictedWindow(model.overallHours)) : null;
+    rows.push({date, probability, confidence, window, samples});
+  }
+  const headingNote = enough ? 'Si aggiorna automaticamente con ogni nuova sessione' : 'Servono almeno 3 sessioni e 2 giorni attivi per una previsione utile';
+  return `<section class="profile-intel-card forecast-card ${enough ? '' : 'learning'}"><div class="profile-intel-head"><div><h4>Previsione prossimi 7 giorni</h4><p>${esc(headingNote)}</p></div><span class="intel-highlight">stima adattiva</span></div>${enough ? `<div class="forecast-grid">${rows.map(row => `<article class="forecast-day ${row.probability >= .55 ? 'likely' : ''}"><time>${esc(new Intl.DateTimeFormat('it-IT',{weekday:'short',day:'2-digit',month:'short'}).format(row.date))}</time><strong>${Math.round(row.probability * 100)}%</strong><span>${esc(row.window || 'orario incerto')}</span><small>confidenza ${esc(row.confidence)} · ${row.samples} campioni</small></article>`).join('')}</div><p class="forecast-method">La probabilità usa ricorrenza settimanale con peso maggiore ai dati recenti; la fascia oraria deriva dalle ore effettivamente online per quel giorno della settimana.</p>` : '<div class="forecast-learning"><strong>Previsione in apprendimento</strong><span>Il calendario futuro comparirà automaticamente quando lo storico è sufficiente.</span></div>'}</section>`;
+}
+
+function profileIntelligenceMarkup(activity) {
+  if (!activity) return '';
+  return `<div class="profile-intelligence">${weekdayPreferencesMarkup(activity)}${activityCalendarMarkup(activity)}${forecastMarkup(activity)}</div>`;
 }
 
 function dataFlowMarkup(rows = []) {
@@ -686,7 +853,7 @@ function renderProfile() {
   }).join('') || '<div class="empty compact">Nessuna registrazione.</div>';
   const localCaptures = (profileData.local_captures || []).filter(item => item.local_available);
   const localCaptureCards = localCaptures.map(item => {
-    const state = item.state === 'recording' ? '● REC IN CORSO' : item.state === 'ready' ? 'PRONTA · CONSOLIDAMENTO' : item.state === 'checking' ? 'CONTROLLO IN CORSO' : 'RECUPERO DISPONIBILE';
+    const state = item.state === 'recording' ? '● REC IN CORSO' : item.state === 'ready' ? 'PRONTA · CONSOLIDAMENTO' : item.state === 'checking' ? 'CONTROLLO IN CORSO' : 'RIPRISTINO DISPONIBILE';
     const tone = item.state === 'recording' ? 'recording' : item.state === 'recovery' ? 'warning' : 'ready';
     return `<article class="local-capture" data-tone="${tone}"><div><strong>${esc(item.source_name)}</strong><small>${esc(item.filename)} · ${esc(item.size_human || humanBytes(item.size_bytes || 0))} · ${esc(duration(item.duration_seconds || 0))}</small></div><span>${esc(state)}</span><button class="btn soft" data-profile-action="local-capture" data-url="${esc(item.view_url)}" data-title="${esc(`${item.source_name} · copia locale`)}" type="button">Anteprima locale</button></article>`;
   }).join('');
@@ -698,7 +865,7 @@ function renderProfile() {
     <div class="profile-workspace">
       <main class="profile-main-column">
         ${localCaptureSection}
-        <section class="profile-section profile-statistics"><div class="profile-section-head"><div><h3>Statistiche</h3><p>Attività online e copertura delle registrazioni</p></div><label class="stats-range compact"><span>Periodo</span><select id="profileStatisticsRange"><option value="7" ${profileStatisticsDays === 7 ? 'selected' : ''}>7g</option><option value="30" ${profileStatisticsDays === 30 ? 'selected' : ''}>30g</option><option value="90" ${profileStatisticsDays === 90 ? 'selected' : ''}>90g</option><option value="365" ${profileStatisticsDays === 365 ? 'selected' : ''}>365g</option></select></label></div>${activity ? `<div class="stats-summary-grid compact">${statisticsSummaryMarkup(activity, true)}</div><div class="stats-chart-grid profile"><div class="stats-mini-chart"><div class="chart-title">Online vs registrato</div>${activityChartSvg(activity.daily)}</div><div class="stats-mini-chart"><div class="chart-title">Orari più frequenti</div>${hourlyChartSvg(activity.hourly)}</div></div>${statisticsHistoryNote(activity) ? `<p class="stats-note">${esc(statisticsHistoryNote(activity))}</p>` : ''}` : '<div class="empty compact">Statistiche non disponibili.</div>'}</section>
+        <section class="profile-section profile-statistics"><div class="profile-section-head"><div><h3>Statistiche</h3><p>Attività online, copertura e abitudini nel tempo</p></div><label class="stats-range compact"><span>Periodo</span><select id="profileStatisticsRange"><option value="7" ${profileStatisticsDays === 7 ? 'selected' : ''}>7g</option><option value="30" ${profileStatisticsDays === 30 ? 'selected' : ''}>30g</option><option value="90" ${profileStatisticsDays === 90 ? 'selected' : ''}>90g</option><option value="365" ${profileStatisticsDays === 365 ? 'selected' : ''}>365g</option></select></label></div>${activity ? `<div class="stats-summary-grid compact">${statisticsSummaryMarkup(activity, true)}</div><div class="stats-chart-stack profile"><div class="stats-large-chart"><div class="chart-title-row"><div><h4>Online vs registrato</h4><p>Tempo rilevato online e quota effettivamente registrata, giorno per giorno</p></div><div class="chart-legend"><span>online</span><span class="recorded">registrato</span></div></div>${activityChartSvg(activity.daily)}</div><div class="stats-large-chart"><div class="chart-title-row"><div><h4>Orari più frequenti</h4><p>Distribuzione del tempo online nelle 24 ore</p></div></div>${hourlyChartSvg(activity.hourly)}</div></div>${profileIntelligenceMarkup(activity)}${statisticsHistoryNote(activity) ? `<p class="stats-note">${esc(statisticsHistoryNote(activity))}</p>` : ''}` : '<div class="empty compact">Statistiche non disponibili.</div>'}</section>
         <section class="profile-section profile-days-section"><div class="profile-section-head"><div><h3>Registrazioni</h3><p>Giornate e file associati alla creator</p></div><button class="btn quiet" data-profile-action="archive" data-id="${profile.id}" type="button">Apri archivio${Number(profileData.recording_day_count || 0) > Number((profileData.recording_days || []).length) ? ' · altre' : ''}</button></div><div class="profile-days">${recordingDays}</div></section>
         <section class="profile-section profile-timeline-section"><div class="profile-section-head"><div><h3>Timeline</h3><p>Ultimi eventi rilevati</p></div></div><ol class="timeline">${timeline}</ol></section>
       </main>
@@ -1051,10 +1218,10 @@ function runSystemAction(action) {
 $('#healthPill').addEventListener('click', event => runSystemAction(event.currentTarget.dataset.action));
 $('#retryRecoveryBtn').addEventListener('click', async event => {
   const button = event.currentTarget;
-  setBusy(button, true, 'Recupero…');
+  setBusy(button, true, 'Ripristino…');
   try {
     const result = await api('/api/recovery/run', {method: 'POST'});
-    toast(result.started ? 'Recupero avviato: le registrazioni continuano' : 'Recupero già in corso');
+    toast(result.started ? 'Ripristino avviato: le registrazioni continuano' : 'Ripristino già in corso');
     await refresh({includeRecordings: false});
   } catch (error) { toast(error.message, 'bad'); }
   finally { setBusy(button, false); }
@@ -2333,7 +2500,7 @@ function controlRoomPulseMarkup() {
     return `<div class="cr-pulse-row"><div class="cr-pulse-who">${creatorLinkMarkup(representative.representative_source_id, representative.display_name, 'cr-pulse-name')}${pulseSessionTimingMarkup(representative)}</div><div class="cr-pulse-track"><svg class="cr-pulse-svg" viewBox="0 0 1000 16" preserveAspectRatio="none" role="img" aria-label="Timeline ${esc(representative.display_name)}">${graphics}</svg></div></div>`;
   }).join('');
   const hidden = Math.max(0, profileOrder.length - recentProfiles.length);
-  return `<section class="cr-pulse"><div class="cr-pulse-head"><div><strong>Cronologia</strong></div><div class="cr-pulse-head-right"><span class="cr-pulse-legend"><i class="live"></i>ONLINE <i class="private"></i>PRIVATA <i class="tipjar"></i>TIP-JAR <i class="rec"></i>REC <i class="processing"></i>RECUPERO <i class="missed"></i>NON REC</span><span>${controlRoomPulseData.hours || 12}h${hidden ? ` · +${hidden}` : ''}</span></div></div><div class="cr-pulse-scale"><span></span><div>${labels}</div></div>${rows || ''}</section>`;
+  return `<section class="cr-pulse"><div class="cr-pulse-head"><div><strong>Cronologia</strong></div><div class="cr-pulse-head-right"><span class="cr-pulse-legend"><i class="live"></i>ONLINE <i class="private"></i>PRIVATA <i class="tipjar"></i>TIP-JAR <i class="rec"></i>REC <i class="processing"></i>IN ELABORAZIONE <i class="restricted"></i>LIMITATA <i class="missed"></i>NON REC</span><span>${controlRoomPulseData.hours || 12}h${hidden ? ` · +${hidden}` : ''}</span></div></div><div class="cr-pulse-scale"><span></span><div>${labels}</div></div>${rows || ''}</section>`;
 }
 
 function controlRoomRecentEnded(profiles) {
@@ -2352,7 +2519,7 @@ function controlRoomEndedCard(session) {
   const cover = safeUrl(source?.cover_thumbnail_url || '');
   const saved = session.state === 'saved';
   const processing = session.state === 'processing';
-  const state = saved ? '✓ SALVATA' : processing ? 'IN RECUPERO' : session.state === 'missed' ? 'NON REC' : session.file_count ? `UPLOAD ${session.uploaded_count}/${session.file_count}` : 'TERMINATA';
+  const state = saved ? '✓ SALVATA' : processing ? 'IN ELABORAZIONE' : session.state === 'missed' ? 'NON REC' : session.file_count ? `UPLOAD ${session.uploaded_count}/${session.file_count}` : 'TERMINATA';
   const meta = [duration(session.duration_seconds), session.file_count ? `${session.file_count} file` : '', session.total_bytes ? humanBytes(session.total_bytes) : '', session.file_count ? `${Math.round(Number(session.coverage_percent) || 0)}% REC` : ''].filter(Boolean).join(' · ');
   const local = (session.recordings || []).find(item => item.local_url);
   return `<article class="cr-ended-card ${saved ? 'saved' : ''} ${processing ? 'processing' : ''} ${session.state === 'missed' ? 'missed' : ''}">

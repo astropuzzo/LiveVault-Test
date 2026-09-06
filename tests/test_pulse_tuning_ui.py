@@ -49,3 +49,12 @@ def test_pulse_has_patterns_real_time_scale_and_selectable_window():
     assert "['remote', 'CLOUD', 'url(#lv-pulse-cloud)']" in js
     assert 'cr-pulse-legend-swatch' in js
     assert 'justify-self:center' in css
+
+
+def test_pulse_legend_names_every_supported_state_without_vague_recovery_copy():
+    js = (ROOT / 'app/static/pulse-tuning.js').read_text(encoding='utf-8')
+    app = (ROOT / 'app/static/app.js').read_text(encoding='utf-8')
+    assert "['processing', 'IN ELABORAZIONE', 'url(#lv-pulse-processing)']" in js
+    assert "['restricted', 'LIMITATA', 'url(#lv-pulse-restricted)']" in js
+    assert 'RECUPERO' not in js
+    assert '<i class="restricted"></i>LIMITATA' in app

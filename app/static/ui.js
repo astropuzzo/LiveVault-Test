@@ -122,11 +122,11 @@
       const value = maxValue - i*niceStep, y=T+i*(ch/4);
       return `<line class="chart-grid-line" x1="${L}" x2="${W-R}" y1="${y}" y2="${y}"></line><text class="chart-y-label" x="${L-8}" y="${y+4}" text-anchor="end">${esc(durationScale(value))}</text>`;
     }).join('');
-    const groupWidth = cw / 24, barWidth = groupWidth * .54;
+    const groupWidth = cw / 24, barWidth = groupWidth * .64;
     const bars = rows.map((row, index) => {
       const value = Number(row.online_seconds) || 0, bh=value/maxValue*ch;
       const x=L+index*groupWidth+(groupWidth-barWidth)/2;
-      const label = index % 3 === 0 ? `<text class="chart-label" x="${(L+index*groupWidth+groupWidth/2).toFixed(2)}" y="${H-10}" text-anchor="middle">${String(index).padStart(2,'0')}</text>` : '';
+      const label = index % 2 === 0 ? `<text class="chart-label" x="${(L+index*groupWidth+groupWidth/2).toFixed(2)}" y="${H-10}" text-anchor="middle">${String(index).padStart(2,'0')}</text>` : '';
       return `<rect class="chart-bar online" x="${x.toFixed(2)}" y="${(T+ch-bh).toFixed(2)}" width="${barWidth.toFixed(2)}" height="${bh.toFixed(2)}"><title>${String(index).padStart(2,'0')}:00 · ${esc(duration(value))}</title></rect>${label}`;
     }).join('');
     return `<svg class="activity-chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Tempo online per fascia oraria">${grid}${bars}</svg>`;

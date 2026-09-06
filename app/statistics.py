@@ -72,7 +72,7 @@ def _accumulate_interval(start: datetime, end: datetime, daily: dict, hourly: li
     return total
 
 
-def build_activity_statistics(*, sources: Iterable, profiles: Iterable, live_sessions: Iterable, recordings: Iterable, days: int = 30, now: datetime | None = None) -> dict:
+def build_activity_statistics(*, sources: Iterable, profiles: Iterable, live_sessions: Iterable, recordings: Iterable, days: int = 30, now: datetime | None = None, include_intervals: bool = False) -> dict:
     days = max(1, min(int(days), 365))
     now = _aware(now) or datetime.now(timezone.utc)
     window_start = (now - timedelta(days=days - 1)).replace(hour=0, minute=0, second=0, microsecond=0)
@@ -106,6 +106,7 @@ def build_activity_statistics(*, sources: Iterable, profiles: Iterable, live_ses
     recording_totals: dict[int, dict[str, int]] = defaultdict(lambda: {"count": 0, "bytes": 0, "uploaded": 0, "failed": 0, "local": 0})
     online_now_profiles: set[int] = set()
     exact_tracking_started_at: datetime | None = None
+    activity_intervals: list[dict[str, str]] = []
 
     for session in live_sessions:
         source_id = int(session.source_id)
@@ -172,6 +173,8 @@ def build_activity_statistics(*, sources: Iterable, profiles: Iterable, live_ses
         merged_live = _merge_intervals(live_intervals.get(profile_id, []))
         merged_exact = _merge_intervals(exact_intervals.get(profile_id, []))
         merged_recorded = _merge_intervals(recording_intervals.get(profile_id, []))
+        if include_intervals:
+            activity_intervals.extend({"started_at": _iso(start), "ended_at": _iso(end)} for start, end in merged_live)
 
         profile_online = _interval_total(merged_live)
         profile_recorded = _interval_total(merged_recorded)
@@ -260,5 +263,6 @@ def build_activity_statistics(*, sources: Iterable, profiles: Iterable, live_ses
         },
         "daily": daily_rows,
         "hourly": hourly_rows,
+        "activity_intervals": sorted(activity_intervals, key=lambda row: row["started_at"]) if include_intervals else [],
         "top_creators": top_creators,
     }

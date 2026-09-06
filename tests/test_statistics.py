@@ -30,6 +30,21 @@ def test_activity_statistics_combines_exact_live_history_and_recording_backfill(
     assert data["top_creators"][0]["display_name"] == "Creator"
 
 
+def test_profile_statistics_can_expose_merged_activity_intervals_for_local_intelligence():
+    now = datetime(2026, 9, 6, 18, 0, tzinfo=timezone.utc)
+    profile = SimpleNamespace(id=10, display_name="Creator")
+    source = SimpleNamespace(id=1, profile_id=10, archived=False)
+    sessions = [
+        SimpleNamespace(source_id=1, started_at=now - timedelta(hours=4), ended_at=now - timedelta(hours=2), origin="probe"),
+        SimpleNamespace(source_id=1, started_at=now - timedelta(hours=3), ended_at=now - timedelta(hours=1), origin="probe"),
+    ]
+    data = build_activity_statistics(sources=[source], profiles=[profile], live_sessions=sessions, recordings=[], days=1, now=now, include_intervals=True)
+    assert data["activity_intervals"] == [{
+        "started_at": "2026-09-06T14:00:00Z",
+        "ended_at": "2026-09-06T17:00:00Z",
+    }]
+
+
 def test_linked_sources_do_not_double_count_overlapping_creator_time():
     now = datetime(2026, 9, 2, 12, 0, tzinfo=timezone.utc)
     profile = SimpleNamespace(id=10, display_name="Creator")

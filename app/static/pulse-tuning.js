@@ -225,7 +225,8 @@
     ['tipjar', 'TIP-JAR', 'url(#lv-pulse-tipjar)'],
     ['rec', 'REC', '#ff4f62'],
     ['remote', 'CLOUD', 'url(#lv-pulse-cloud)'],
-    ['processing', 'RECUPERO', 'url(#lv-pulse-processing)'],
+    ['processing', 'IN ELABORAZIONE', 'url(#lv-pulse-processing)'],
+    ['restricted', 'LIMITATA', 'url(#lv-pulse-restricted)'],
     ['missed', 'NON REC', 'url(#lv-pulse-missed)'],
   ];
 
