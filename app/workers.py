@@ -1842,7 +1842,7 @@ class WorkerManager:
                 if mode == "buffer":
                     if not storage_handoff.capture_allowed(storage_handoff.BUFFER_RESERVE * (len(self.active) + 1)):
                         storage_handoff.mark_full()
-                        self.last_errors["storage"] = "Buffer interno pieno (2 GB): registrazioni sospese fino al rientro NVMe"
+                        self.last_errors["storage"] = "Buffer interno pieno: registrazioni sospese fino al rientro NVMe"
                         for session in list(self.active.values()):
                             session.rollover_requested = True
                         await self.stop_all_recordings()

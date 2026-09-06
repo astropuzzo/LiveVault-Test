@@ -3,7 +3,7 @@
 The ASIAIR host keeps Docker, Coolify, SQLite, settings and previews on internal
 eMMC. The existing `/data` runtime paths are retained through an internal bind
 mount. Only `/data/livevault/recordings` switches between the NVMe and a separate
-2 GiB ext4 loop filesystem on eMMC. The application bind must use `rslave`
+4 GiB ext4 loop filesystem on eMMC. The application bind must use `rslave`
 propagation; the host `/data` mount is shared.
 
 `scripts/migrate-internal-runtime.sh` performs the one-time host migration.
@@ -17,12 +17,15 @@ cleanly, blocks new media work, and drains existing jobs without cancelling
 threads that still hold files. Archive finalization/upload is deferred during
 buffering. After acknowledgement the host switches the recording mount, checks
 the container sees the new filesystem, checks remaining device file handles,
-and normally unmounts the NVMe. No lazy unmount is used. A busy device produces
-an error and restores the prior recording mount.
+and normally unmounts the NVMe. GPT Harness is stopped immediately before the
+unmount so its private sandbox cannot retain the removable filesystem, then
+restarted eMMC-only; attach restarts it again after the NVMe is mounted so its
+optional heavy-workspace path becomes writable again. No lazy unmount is used.
+A busy device produces an error and restores the prior recording mount.
 
 Buffer captures use short parts and reserve 128 MiB per active camera plus
 one spare slot for closing files. The full state stays latched until NVMe
-returns, including across application restarts. The independent 2 GiB filesystem enforces the hard upper bound even if
+returns, including across application restarts. The independent 4 GiB filesystem enforces the hard upper bound even if
 sampling or graceful stopping is delayed. A full buffer leaves the app online
 and preserves its contents until the NVMe returns. Existing video on an absent
 NVMe cannot be played locally until reattachment.

@@ -73,6 +73,10 @@ def transfer():
     return module
 
 
+def test_host_buffer_limit_is_four_gib(transfer):
+    assert transfer.BUFFER_LIMIT_BYTES == 4 * 1024**3
+
+
 @pytest.mark.skipif(os.name != 'posix', reason='host transfer uses Linux directory fsync')
 def test_transfer_is_restartable_and_preserves_original_marker(tmp_path, transfer):
     source, dest = tmp_path / 'buffer', tmp_path / 'nvme'

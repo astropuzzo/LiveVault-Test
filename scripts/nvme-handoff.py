@@ -15,8 +15,10 @@ import uuid
 ROOT = Path('/data/livevault')
 NVME = Path('/mnt/livevault-nvme')
 BUFFER = Path('/var/lib/livevault-buffer')
+BUFFER_LIMIT_BYTES = 4 * 1024**3
 RECORDINGS = ROOT / 'recordings'
 DATA_UUID = '5fe2d0f6-b485-44e9-8e26-31fb0d217db2'
+GPT_HARNESS_SERVICE = 'gpt-harness.service'
 
 
 def run(*args):
@@ -118,31 +120,67 @@ def verify_container_view():
             raise RuntimeError('Mount propagation non valida: NVMe NON espulso')
 
 
-def wait_closed_device_handles():
+def device_blockers():
+    """Return processes that still hold an fd/cwd on the NVMe filesystem."""
     device = NVME.stat().st_dev
-    deadline = time.monotonic() + 20
-    while True:
-        busy = False
-        for proc in Path('/proc').iterdir():
-            if not proc.name.isdigit():
-                continue
+    blockers = []
+    for proc in Path('/proc').iterdir():
+        if not proc.name.isdigit():
+            continue
+        try:
+            handles = list((proc / 'fd').iterdir()) + [proc / 'cwd']
+        except (FileNotFoundError, PermissionError):
+            continue
+        for handle in handles:
             try:
-                handles = list((proc / 'fd').iterdir()) + [proc / 'cwd']
-            except (FileNotFoundError, PermissionError):
-                continue
-            for handle in handles:
+                if handle.stat().st_dev != device:
+                    continue
                 try:
-                    if handle.stat().st_dev == device:
-                        busy = True
-                        break
-                except (FileNotFoundError, PermissionError, ProcessLookupError):
-                    pass
-            if busy:
+                    target = os.readlink(handle)
+                except (OSError, PermissionError):
+                    target = '?'
+                try:
+                    command = (proc / 'comm').read_text().strip()
+                except (OSError, PermissionError):
+                    command = '?'
+                blockers.append((int(proc.name), command, handle.name, target))
                 break
-        if not busy:
+            except (FileNotFoundError, PermissionError, ProcessLookupError):
+                pass
+    return blockers
+
+
+def service_active(name):
+    return subprocess.run(
+        ['systemctl', 'is-active', '--quiet', name],
+        capture_output=True,
+    ).returncode == 0
+
+
+def set_service(name, action):
+    return subprocess.run(
+        ['systemctl', action, name],
+        text=True,
+        capture_output=True,
+    )
+
+
+
+def wait_closed_device_handles():
+    deadline = time.monotonic() + 20
+    blockers = []
+    while True:
+        blockers = device_blockers()
+        if not blockers:
             return
         if time.monotonic() >= deadline:
-            raise RuntimeError('Un lettore usa ancora NVMe: chiudi download/player locali e riprova')
+            details = '; '.join(
+                f'pid={pid} process={command} {handle}->{target}'
+                for pid, command, handle, target in blockers[:8]
+            )
+            if len(blockers) > 8:
+                details += f'; +{len(blockers) - 8} altri'
+            raise RuntimeError(f'NVMe ancora in uso: {details}')
         time.sleep(.5)
 
 
@@ -190,10 +228,23 @@ def main(action):
                 os.sync()
                 if os.path.ismount('/share'):
                     run('umount', '/share')
-                wait_closed_device_handles()
-                run('umount', str(NVME))
-                publish('buffer', limit_bytes=2 * 1024**3)
-                print('NVMe espulso: puoi scollegarlo. Docker online; registrazione su buffer interno massimo 2 GB.')
+                # GPT Harness has an optional writable view of its NVMe workspace.
+                # Stop it before detaching the filesystem so its private mount
+                # namespace cannot retain the removable device; start it again
+                # immediately after the host unmount, when it runs eMMC-only.
+                harness_was_active = service_active(GPT_HARNESS_SERVICE)
+                if harness_was_active:
+                    result = set_service(GPT_HARNESS_SERVICE, 'stop')
+                    if result.returncode != 0:
+                        raise RuntimeError(f'Impossibile fermare GPT Harness: {result.stdout}{result.stderr}'.strip())
+                try:
+                    wait_closed_device_handles()
+                    run('umount', str(NVME))
+                finally:
+                    if harness_was_active:
+                        set_service(GPT_HARNESS_SERVICE, 'start')
+                publish('buffer', limit_bytes=BUFFER_LIMIT_BYTES)
+                print('NVMe espulso: puoi scollegarlo. Docker online; GPT Harness riavviato su eMMC; registrazione su buffer interno massimo 4 GB.')
             else:
                 # Close all buffer writers before copying. Same stable paths and
                 # session IDs let the existing recovery/stitcher join the parts.
@@ -203,7 +254,11 @@ def main(action):
                 publish('nvme')
                 subprocess.run(['mount', '/share'], capture_output=True)
                 subprocess.run(['systemctl', 'start', 'livevault-backup.timer'], capture_output=True)
-                print('NVMe operativo: buffer trasferito e verificato; registrazioni riprese, stitching in coda.')
+                # If Harness stayed online while the NVMe was absent, restart it
+                # so systemd recreates its sandbox with the optional NVMe RW path.
+                if service_active(GPT_HARNESS_SERVICE):
+                    set_service(GPT_HARNESS_SERVICE, 'restart')
+                print('NVMe operativo: buffer trasferito e verificato; registrazioni riprese, stitching in coda; GPT Harness riallineato al workspace NVMe.')
         except Exception:
             # Roll back only when the expected storage can actually be restored.
             source = NVME / 'livevault/recordings' if previous == 'nvme' else BUFFER
