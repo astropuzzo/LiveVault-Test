@@ -17,6 +17,10 @@
   let queue = [];
   let working = false;
 
+  if (typeof actionLabels !== 'undefined') {
+    actionLabels.media_rescan = ['Aggiorna supporti media', 'Rileva i dispositivi USB rimovibili consentiti e li prepara per import autenticato.'];
+  }
+
   function routeState() {
     const hostName = location.hostname.toLowerCase();
     const privateIp = /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(hostName);
@@ -36,14 +40,27 @@
     }
   }
 
+  function selectedDevice() {
+    if (typeof latestState === 'undefined' || !latestState?.media?.devices || typeof mediaUuid === 'undefined') return null;
+    return latestState.media.devices.find(device => device.uuid === mediaUuid) || null;
+  }
+
   function syncTarget() {
-    const ready = Boolean(typeof mediaUuid !== 'undefined' && mediaUuid);
-    host.classList.toggle('disabled', !ready);
-    input.disabled = !ready || working;
-    choose.disabled = !ready || working;
+    const device = selectedDevice();
+    const selected = Boolean(typeof mediaUuid !== 'undefined' && mediaUuid && device?.mounted);
+    const writable = selected && device?.writable !== false;
+    host.classList.toggle('disabled', !writable);
+    input.disabled = !writable || working;
+    choose.disabled = !writable || working;
     const current = typeof mediaPath !== 'undefined' ? mediaPath : '';
-    pathLabel.textContent = ready ? `/${current || ''}` : 'nessun supporto';
-    drop.setAttribute('aria-disabled', String(!ready || working));
+    pathLabel.textContent = selected ? `/${current || ''}` : 'nessun supporto';
+    drop.setAttribute('aria-disabled', String(!writable || working));
+    if (selected && !writable) pathLabel.textContent += ' · sola lettura';
+
+    const model = $u('#mediaDriveModel');
+    if (model && selected) {
+      model.textContent = model.textContent.replace(/READ-ONLY|IMPORT RW/g, writable ? 'IMPORT RW' : 'READ-ONLY');
+    }
   }
 
   function rowMarkup(item) {
@@ -62,7 +79,9 @@
   }
 
   function addFiles(files) {
-    if (!mediaUuid) return toast('Collega e seleziona prima un supporto Media.', true);
+    const device = selectedDevice();
+    if (!mediaUuid || !device?.mounted) return toast('Collega e seleziona prima un supporto Media.', true);
+    if (device.writable === false) return toast('Il supporto è ancora in sola lettura. Premi Rileva USB per prepararlo all’import.', true);
     const incoming = [...files].filter(file => file && file.size >= 0);
     if (!incoming.length) return;
     for (const file of incoming) queue.push({file, state:'queued', loaded:0, total:file.size, error:''});
