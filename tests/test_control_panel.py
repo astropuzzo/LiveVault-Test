@@ -109,6 +109,7 @@ def test_adc_input_scaling_signed_samples_and_restore(monkeypatch, raw, expected
         def write(self, data): writes.append(data)
         def read(self, size): return next(reads)
     monkeypatch.setitem(sys.modules, "fcntl", SimpleNamespace(ioctl=lambda *args: None))
+    monkeypatch.setattr(panel, "_input_power_bus_paths", lambda: ["/dev/i2c-test"])
     monkeypatch.setattr("builtins.open", lambda *args, **kwargs: Bus())
     monkeypatch.setattr(panel.time, "sleep", lambda _: None)
     result = panel.read_input_power()
@@ -119,6 +120,33 @@ def test_adc_input_scaling_signed_samples_and_restore(monkeypatch, raw, expected
         assert result["input_amps"] == expected
         assert result["watts"] == round(12.0435 * expected, 3)
         assert result["measurement"] == "measured"
+
+
+
+def test_adc_falls_back_to_available_csi_adapter(monkeypatch):
+    reads = iter([b"\x85\x83", (1147 << 4).to_bytes(2, "big"), (120 << 4).to_bytes(2, "big")])
+    opened = []
+    class Bus:
+        def __enter__(self): return self
+        def __exit__(self, *args): pass
+        def fileno(self): return 7
+        def write(self, data): pass
+        def read(self, size): return next(reads)
+    def fake_open(path, *args, **kwargs):
+        opened.append(path)
+        if path == "/dev/i2c-10":
+            raise FileNotFoundError(path)
+        return Bus()
+    monkeypatch.setitem(sys.modules, "fcntl", SimpleNamespace(ioctl=lambda *args: None))
+    monkeypatch.setattr(panel, "_input_power_bus_paths", lambda: ["/dev/i2c-10", "/dev/i2c-22"])
+    monkeypatch.setattr("builtins.open", fake_open)
+    monkeypatch.setattr(panel.time, "sleep", lambda _: None)
+    result = panel.read_input_power()
+    assert opened == ["/dev/i2c-10", "/dev/i2c-22"]
+    assert result["measurement"] == "measured"
+    assert result["power_bus"] == "/dev/i2c-22"
+    assert result["input_volts"] == 12.043
+    assert result["input_amps"] == 0.6
 
 
 def test_adc_missing_is_not_zero_or_estimate(monkeypatch):

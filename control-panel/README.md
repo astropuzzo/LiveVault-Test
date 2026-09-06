@@ -46,7 +46,9 @@ e non vengono conservate in chiaro sul server o nel repository.
 ## Sensore di potenza ASIAIR Plus CM4
 
 Eseguire `sudo bash scripts/enable-asiair-telemetry.sh` dalla radice del repository
-per abilitare il bus I2C CSI (`/dev/i2c-10`) anche ai successivi avvii, senza reboot.
+per abilitare il bus I2C CSI sui GPIO 44/45 anche ai successivi avvii, senza reboot.
+A seconda del kernel il controller può apparire come `/dev/i2c-10`, `/dev/i2c-0` o
+come adapter parent: il pannello individua automaticamente l'ADS1015 a `0x4b`.
 L'utente del servizio deve appartenere al gruppo `i2c` (già configurato sul nodo).
 Non installare un controller delle uscite per leggere i sensori: potrebbe cambiare
 lo stato delle porte. Il pannello legge soltanto l'ADC 0x4b e ripristina la sua

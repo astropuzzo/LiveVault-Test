@@ -221,48 +221,69 @@ def estimated_watts(cpu_usage: float, network: dict, data_mounted: bool, wifi_ac
     return round(board + cpu + nvme + wifi + ethernet + io_network, 2)
 
 
+def _input_power_bus_paths() -> list[str]:
+    """Prefer the CSI I2C aliases, then probe any remaining adapter.
+
+    Raspberry Pi kernels may expose the CM4 CSI bus as i2c-10 when the
+    i2c0 mux is enabled, or as i2c-0 / the parent adapter when i2c0 is
+    pinned directly to GPIO 44/45. Do not make telemetry depend on a bus
+    number that can change across firmware/kernel configurations.
+    """
+    import glob
+    preferred = ["/dev/i2c-10", "/dev/i2c-0", "/dev/i2c-22"]
+    discovered = sorted(glob.glob("/dev/i2c-*"), key=lambda value: int(value.rsplit("-", 1)[-1]))
+    return list(dict.fromkeys(preferred + discovered))
+
+
+def _read_input_power_bus(path: str) -> tuple[float, float]:
+    import fcntl
+    with open(path, "r+b", buffering=0) as bus:
+        fcntl.ioctl(bus.fileno(), 0x0703, 0x4b)
+        bus.write(b"\x01")
+        original = bus.read(2)
+        if len(original) != 2:
+            raise OSError("ADC configuration unavailable")
+        values = []
+        try:
+            for config, scale in ((0xE683, 21 / 2000), (0xF483, 1 / 200)):
+                bus.write(bytes((1, config >> 8, config & 255)))
+                time.sleep(0.005)
+                bus.write(b"\x00")
+                sample = bus.read(2)
+                if len(sample) != 2:
+                    raise OSError("Incomplete ADC sample")
+                word = int.from_bytes(sample, "big", signed=True)
+                raw = word >> 4
+                if word & 15 or raw >= 2047 or raw < -1:
+                    raise ValueError("Invalid or saturated ADC sample")
+                values.append(max(0, raw) * scale)
+        finally:
+            bus.write(b"\x01" + original)
+    volts, amps = values
+    if not 1 <= volts <= 21 or not 0 <= amps <= 10:
+        raise ValueError("ADC input outside supported range")
+    return volts, amps
+
+
 def read_input_power() -> dict:
     """Read only the ASIAIR Plus CM4 input ADC; never claim power-output GPIOs.
 
-    ADS1015 at 0x4b on the CSI I2C mux. Channel mapping and scaling follow
+    ADS1015 at 0x4b on the CSI I2C bus. Channel mapping and scaling follow
     indilib/indi-3rdparty indi-asi-power/asipower.h. This is DC input power,
     including attached loads, not AC wall power or CPU-only consumption.
     """
     result = {"watts": None, "input_volts": None, "input_amps": None,
               "measurement": "unavailable", "power_source": "ASIAIR ADS1015",
               "power_scope": "DC input", "power_sample_at": None}
-    try:
-        import fcntl
-        with open("/dev/i2c-10", "r+b", buffering=0) as bus:
-            fcntl.ioctl(bus.fileno(), 0x0703, 0x4b)
-            bus.write(b"\x01")
-            original = bus.read(2)
-            if len(original) != 2:
-                raise OSError("ADC configuration unavailable")
-            values = []
-            try:
-                for config, scale in ((0xE683, 21 / 2000), (0xF483, 1 / 200)):
-                    bus.write(bytes((1, config >> 8, config & 255)))
-                    time.sleep(0.005)
-                    bus.write(b"\x00")
-                    sample = bus.read(2)
-                    if len(sample) != 2:
-                        raise OSError("Incomplete ADC sample")
-                    word = int.from_bytes(sample, "big", signed=True)
-                    raw = word >> 4
-                    if word & 15 or raw >= 2047 or raw < -1:
-                        raise ValueError("Invalid or saturated ADC sample")
-                    values.append(max(0, raw) * scale)
-            finally:
-                bus.write(b"\x01" + original)
-        volts, amps = values
-        if not 1 <= volts <= 21 or not 0 <= amps <= 10:
-            raise ValueError("ADC input outside supported range")
+    for path in _input_power_bus_paths():
+        try:
+            volts, amps = _read_input_power_bus(path)
+        except (OSError, ValueError, ImportError, PermissionError):
+            continue
         result.update(watts=round(volts * amps, 3), input_volts=round(volts, 3),
                       input_amps=round(amps, 3), measurement="measured",
-                      power_sample_at=time.time())
-    except (OSError, ValueError, ImportError):
-        pass
+                      power_sample_at=time.time(), power_bus=path)
+        break
     return result
 
 
