@@ -1190,7 +1190,7 @@ class WorkerManager:
                     self._observe_live_state(db, current, bool(result.live), checked_at, result.status)
                     recording_allowed = bool(current.enabled and current.consent_confirmed and not current.archived)
             cfg = runtime()
-            if not result.live or not getattr(result, "recordable", True) or self._stopping or source.id in self.active or cfg.recording_paused or not recording_allowed or not storage_handoff.capture_allowed():
+            if not result.live or not getattr(result, "recordable", True) or self._stopping or source.id in self.active or cfg.recording_paused or not recording_allowed or not storage_handoff.capture_allowed(storage_handoff.BUFFER_RESERVE * (len(self.active) + 1)):
                 return
             state = disk_state()
             if state.pressure == "critical":
@@ -1212,7 +1212,7 @@ class WorkerManager:
                     latest = db.get(Source, source.id)
                     still_allowed = bool(
                         latest and latest.enabled and latest.consent_confirmed and not latest.archived
-                        and not runtime().recording_paused and storage_handoff.capture_allowed()
+                        and not runtime().recording_paused and storage_handoff.capture_allowed(storage_handoff.BUFFER_RESERVE * (len(self.active) + 1))
                     )
                 if not still_allowed:
                     await stop_recorder(session)
@@ -1840,8 +1840,10 @@ class WorkerManager:
                         self.request_recovery()
                     self.wake()
                 if mode == "buffer":
-                    if not storage_handoff.capture_allowed():
+                    if not storage_handoff.capture_allowed(storage_handoff.BUFFER_RESERVE * (len(self.active) + 1)):
                         self.last_errors["storage"] = "Buffer interno pieno (2 GB): registrazioni sospese fino al rientro NVMe"
+                        for session in list(self.active.values()):
+                            session.rollover_requested = True
                         await self.stop_all_recordings()
                     await asyncio.sleep(0.25)
                     continue

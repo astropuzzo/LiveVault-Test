@@ -28,13 +28,13 @@ def media_online() -> bool:
     return state()["mode"] in {"legacy", "nvme"}
 
 
-def capture_allowed() -> bool:
+def capture_allowed(required_reserve: int = BUFFER_RESERVE) -> bool:
     import shutil
     mode = state()["mode"]
     if mode == "quiesce":
         return False
     if mode == "buffer":
-        return shutil.disk_usage(settings.recordings_dir).free > BUFFER_RESERVE
+        return shutil.disk_usage(settings.recordings_dir).free > max(BUFFER_RESERVE, required_reserve)
     return True
 
 
