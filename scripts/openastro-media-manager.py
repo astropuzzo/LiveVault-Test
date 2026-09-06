@@ -2,8 +2,9 @@
 """OpenAstro removable-media manager.
 
 Only USB filesystems marked removable by the kernel are eligible. LiveVault's
-SERVER and SHARE UUIDs are permanently excluded. Media is mounted read-only
-under /srv/openastro-media so TV/PC/browser clients cannot damage source files.
+SERVER and SHARE UUIDs are permanently excluded. Media is mounted read/write
+under /srv/openastro-media for authenticated OpenAstro imports; DLNA and guest
+SMB access remain read-only so normal playback clients cannot modify files.
 """
 from __future__ import annotations
 
@@ -11,6 +12,7 @@ import argparse
 import json
 import os
 from pathlib import Path
+import pwd
 import re
 import subprocess
 import sys
@@ -109,13 +111,22 @@ def source_for_target(target: Path) -> str | None:
     return result.stdout.strip() if result.returncode == 0 else None
 
 
+def _astro_ids() -> tuple[int, int]:
+    try:
+        user = pwd.getpwnam("astro")
+        return user.pw_uid, user.pw_gid
+    except KeyError:
+        return 1001, 1001
+
+
 def mount_options(info: dict) -> str:
-    common = ["ro", "nosuid", "nodev", "noexec"]
+    common = ["rw", "nosuid", "nodev", "noexec"]
     fs = info["fstype"]
+    uid, gid = _astro_ids()
     if fs in {"exfat", "vfat", "fat", "fat32"}:
-        common += ["uid=1001", "gid=1001", "fmask=0133", "dmask=0022"]
+        common += [f"uid={uid}", f"gid={gid}", "fmask=0133", "dmask=0022"]
     elif fs in {"ntfs", "ntfs3"}:
-        common += ["uid=1001", "gid=1001", "umask=022"]
+        common += [f"uid={uid}", f"gid={gid}", "umask=022"]
     return ",".join(common)
 
 
@@ -133,6 +144,10 @@ def mount_media(uuid: str, *, quiet: bool = False) -> dict:
     if current:
         if Path(current).resolve() != Path(real_device).resolve():
             raise RuntimeError(f"Mountpoint già usato da {current}")
+        # Upgrade an older read-only Media Center mount in place.
+        options = run(["findmnt", "-nro", "OPTIONS", "--mountpoint", str(target)], check=False).stdout.split(',')
+        if "ro" in options:
+            run(["mount", "-o", "remount,rw", str(target)])
         return info
     if info["existing_mounts"]:
         raise RuntimeError(f"Supporto già montato altrove: {', '.join(info['existing_mounts'])}")
@@ -141,9 +156,17 @@ def mount_media(uuid: str, *, quiet: bool = False) -> dict:
     if not current or Path(current).resolve() != Path(real_device).resolve():
         subprocess.run(["umount", str(target)], check=False)
         raise RuntimeError("Verifica mount media fallita")
+    if info["fstype"] in {"ext2", "ext3", "ext4"}:
+        uid, gid = _astro_ids()
+        try:
+            os.chown(target, uid, gid)
+            os.chmod(target, target.stat().st_mode | 0o700)
+        except OSError as exc:
+            subprocess.run(["umount", str(target)], check=False)
+            raise RuntimeError(f"Impossibile rendere scrivibile il supporto ext: {exc}") from exc
     restart_indexer()
     if not quiet:
-        print(f"{info['label']} montata read-only in {target}")
+        print(f"{info['label']} montata read/write in {target}; guest/DLNA restano read-only")
     return info
 
 
