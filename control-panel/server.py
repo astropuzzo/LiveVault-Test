@@ -675,6 +675,30 @@ class Handler(BaseHTTPRequestHandler):
             except (ValueError, FileNotFoundError, PermissionError) as exc:
                 self.send_json({"ok": False, "error": str(exc)}, 404)
             return
+        if path == "/api/media/library":
+            if not self.require_session(): return
+            query = parse_qs(parsed.query)
+            try:
+                self.send_json(media_center.library_summary(str(query.get("uuid", [""])[0]), force=query.get("force", ["0"])[0] == "1"))
+            except (ValueError, FileNotFoundError, PermissionError) as exc:
+                self.send_json({"ok": False, "error": str(exc)}, 404)
+            return
+        if path == "/api/media/probe":
+            if not self.require_session(): return
+            query = parse_qs(parsed.query)
+            try:
+                self.send_json(media_center.probe_file(str(query.get("uuid", [""])[0]), str(query.get("path", [""])[0])))
+            except (ValueError, FileNotFoundError, PermissionError) as exc:
+                self.send_json({"ok": False, "error": str(exc)}, 404)
+            return
+        if path == "/api/media/thumbnail":
+            if not self.require_session(): return
+            query = parse_qs(parsed.query)
+            try:
+                self.send_media_file(media_center.thumbnail_info(str(query.get("uuid", [""])[0]), str(query.get("path", [""])[0])), download=False)
+            except (ValueError, FileNotFoundError, PermissionError) as exc:
+                self.send_error(HTTPStatus.NOT_FOUND, str(exc))
+            return
         if path == "/api/history":
             if not self.require_session():
                 return

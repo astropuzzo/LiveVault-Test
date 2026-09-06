@@ -17,7 +17,7 @@ PYNET
 
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
-apt-get install -y --no-install-recommends samba samba-common-bin minidlna wsdd2 exfatprogs ntfs-3g >/dev/null
+apt-get install -y --no-install-recommends samba samba-common-bin minidlna wsdd2 exfatprogs ntfs-3g ffmpeg >/dev/null
 
 for path in /etc/samba/smb.conf /etc/minidlna.conf /etc/udev/rules.d/99-openastro-media.rules; do
   [[ -e "$path" ]] && cp -a "$path" "$BACKUP/$(basename "$path")"

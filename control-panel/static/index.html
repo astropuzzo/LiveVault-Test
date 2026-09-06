@@ -11,7 +11,7 @@
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" href="/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="/icon.svg">
-  <link rel="stylesheet" href="/app.css?v=3.0.0-dark3-buffer">
+  <link rel="stylesheet" href="/app.css?v=3.1-mediahub">
 </head>
 <body>
   <div class="noise"></div>
@@ -153,26 +153,57 @@
     </section>
 
     <section class="panel media-panel" id="media">
-      <div class="panel-head">
-        <div><p class="eyebrow">MEDIA CENTER</p><h2>USB condivise</h2></div>
-        <span class="status-chip" id="mediaChip">Nessun supporto</span>
+      <div class="panel-head media-head">
+        <div><p class="eyebrow">MEDIA HUB</p><h2>OpenAstro Media</h2><small>La tua libreria USB, in casa e fuori casa.</small></div>
+        <div class="media-head-actions"><span class="status-chip" id="mediaChip">Nessun supporto</span><button class="button secondary" data-action="media_rescan">Rileva USB</button></div>
       </div>
-      <div class="media-layout">
-        <div class="media-sidebar">
+
+      <div class="media-stats" id="mediaStats">
+        <button data-media-filter="video"><span>VIDEO</span><strong id="mediaStatVideo">0</strong><small id="mediaStatVideoSize">0 B</small></button>
+        <button data-media-filter="audio"><span>AUDIO</span><strong id="mediaStatAudio">0</strong><small id="mediaStatAudioSize">0 B</small></button>
+        <button data-media-filter="image"><span>FOTO</span><strong id="mediaStatImage">0</strong><small id="mediaStatImageSize">0 B</small></button>
+        <button data-media-filter="all"><span>TOTALE</span><strong id="mediaStatTotal">0</strong><small id="mediaStatTotalSize">0 B</small></button>
+      </div>
+
+      <div class="media-layout media-layout-v2">
+        <aside class="media-sidebar">
+          <div class="media-section-title"><span>SUPPORTI</span><small>Read-only</small></div>
           <div id="mediaDeviceList" class="media-devices"><p class="muted">Collega una chiavetta o un disco USB rimovibile.</p></div>
-          <div class="media-access">
-            <span>PC / MAC · SMB</span><code id="mediaSmbPath">\\OPENASTRO\Media</code>
-            <span>SMART TV · DLNA</span><strong id="mediaDlnaName">OpenAstro Media</strong>
-            <div class="action-row compact"><button class="button secondary" id="mediaCredentials">Credenziali SMB</button><button class="button secondary" data-action="media_rescan">Aggiorna</button></div>
-            <small id="mediaCredentialsText">SMB e DLNA disponibili solo nella rete locale.</small>
+
+          <div class="media-access-grid">
+            <article><span class="media-access-icon">WEB</span><div><strong>Browser remoto</strong><small>HTTPS autenticato · disponibile anche fuori casa</small></div><b class="good">ON</b></article>
+            <article><span class="media-access-icon">SMB</span><div><strong>PC / Mac</strong><code id="mediaSmbPath">\\OPENASTRO\Media</code></div><b id="mediaSmbState">—</b></article>
+            <article><span class="media-access-icon">TV</span><div><strong>Smart TV / DLNA</strong><small id="mediaDlnaName">OpenAstro Media</small></div><b id="mediaDlnaState">—</b></article>
+          </div>
+          <div class="action-row compact media-side-actions"><button class="button secondary" id="mediaCredentials">Credenziali SMB</button><button class="button secondary" id="mediaLibraryRefresh">Reindicizza</button></div>
+          <small id="mediaCredentialsText" class="media-credential-note">SMB e DLNA sono confinati alla LAN.</small>
+        </aside>
+
+        <div class="media-main">
+          <div class="media-drive-hero">
+            <div><small id="mediaDriveModel">NESSUN SUPPORTO</small><h3 id="mediaDriveName">Media USB</h3><p id="mediaDriveMeta">Inserisci un dispositivo USB rimovibile.</p></div>
+            <div class="media-capacity"><strong id="mediaDriveFree">—</strong><small>liberi</small><div class="bar"><i id="mediaDriveBar"></i></div></div>
+          </div>
+
+          <div class="media-recent-wrap" id="mediaRecentWrap" hidden>
+            <div class="media-section-title"><span>AGGIUNTI DI RECENTE</span><small id="mediaRecentCount"></small></div>
+            <div class="media-recent" id="mediaRecent"></div>
+          </div>
+
+          <div class="media-browser-v2">
+            <div class="media-toolbar-v2">
+              <div class="media-path-row"><button id="mediaBack" class="icon-button" disabled title="Indietro">←</button><div><small id="mediaDriveLabel">USB</small><strong id="mediaPath">/</strong></div></div>
+              <div class="media-search"><input id="mediaSearch" type="search" placeholder="Cerca in questa cartella…" autocomplete="off"><select id="mediaSort" aria-label="Ordina"><option value="name">Nome</option><option value="recent">Più recenti</option><option value="size">Dimensione</option></select></div>
+              <div class="media-filter-row">
+                <button class="active" data-media-filter="all">Tutto</button><button data-media-filter="video">Video</button><button data-media-filter="audio">Audio</button><button data-media-filter="image">Foto</button><button data-media-filter="favorite">Preferiti</button>
+                <span class="media-view-switch"><button id="mediaGridView" class="active" title="Griglia">GRID</button><button id="mediaListView" title="Lista">LIST</button></span>
+              </div>
+            </div>
+            <div id="mediaFiles" class="media-files-v2 grid"><div class="media-empty"><strong>Nessun supporto</strong><small>Collega un'unità USB per iniziare.</small></div></div>
           </div>
         </div>
-        <div class="media-browser">
-          <div class="media-toolbar"><button id="mediaBack" class="button secondary" disabled>← Indietro</button><div><small id="mediaDriveName">USB</small><strong id="mediaPath">/</strong></div></div>
-          <div id="mediaFiles" class="media-files"><p class="muted">Seleziona un supporto per vedere i file.</p></div>
-        </div>
       </div>
-      <p class="media-note">I supporti vengono montati in sola lettura. Da Internet i file passano solo dal pannello HTTPS autenticato; SMB e DLNA non vengono esposti pubblicamente.</p>
+      <p class="media-note">I supporti sono montati in sola lettura. Le anteprime vengono generate solo quando servono. Streaming remoto e download passano dal pannello HTTPS; SMB e DLNA restano esclusivamente nella rete locale.</p>
     </section>
 
     <section class="panel" id="services">
@@ -213,6 +244,13 @@
     <a href="#services">Servizi</a><a class="external" href="https://openastro.tailf2871c.ts.net/">LiveVault ↗</a>
   </nav>
 
+  <dialog id="mediaPlayerDialog" class="media-player-dialog">
+    <div class="media-player-head"><div><small id="mediaPlayerType">MEDIA</small><h3 id="mediaPlayerTitle">Player</h3></div><button id="mediaPlayerClose" class="icon-button" aria-label="Chiudi">×</button></div>
+    <div id="mediaPlayerStage" class="media-player-stage"></div>
+    <div class="media-player-info"><div id="mediaPlayerMeta"><span>Caricamento dettagli…</span></div><div class="media-player-actions"><button id="mediaPlayerFavorite" class="button secondary">Preferito</button><a id="mediaPlayerDownload" class="button secondary" href="#">Scarica</a></div></div>
+    <p class="media-player-note">La riproduzione diretta dipende dai codec supportati dal browser. Per i formati non compatibili puoi usare DLNA sulla TV o scaricare il file.</p>
+  </dialog>
+
   <dialog id="confirmDialog">
     <div class="dialog-icon">!</div>
     <h3 id="dialogTitle">Conferma azione</h3>
@@ -236,6 +274,6 @@
       <div class="login-error" id="loginError" role="alert"></div>
     </form>
   </div>
-  <script src="/app.js?v=3.0.0-dark3-buffer" defer></script>
+  <script src="/app.js?v=3.1-mediahub" defer></script>
 </body>
 </html>

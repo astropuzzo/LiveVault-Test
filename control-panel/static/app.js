@@ -178,62 +178,167 @@ function renderPower(power) {
   $('#quickWifi').classList.toggle('is-off', !activeWifiOn);
 }
 
-function mediaUrl(path, download = false) {
-  const query = new URLSearchParams({uuid:mediaUuid, path});
+function mediaUrl(path, download = false, uuid = mediaUuid) {
+  const query = new URLSearchParams({uuid, path});
   if (download) query.set('download', '1');
   return `/api/media/file?${query}`;
+}
+function mediaThumbUrl(path, uuid = mediaUuid) {
+  return `/api/media/thumbnail?${new URLSearchParams({uuid, path})}`;
+}
+function mediaProbeUrl(path, uuid = mediaUuid) {
+  return `/api/media/probe?${new URLSearchParams({uuid, path})}`;
+}
+function mediaFavorites() {
+  try { return JSON.parse(localStorage.getItem('openastro.media.favorites') || '{}'); } catch (_) { return {}; }
+}
+function isMediaFavorite(path, uuid = mediaUuid) { return Boolean(mediaFavorites()[`${uuid}:${path}`]); }
+function toggleMediaFavorite(path, name = '', uuid = mediaUuid) {
+  const favorites = mediaFavorites(), key = `${uuid}:${path}`;
+  if (favorites[key]) delete favorites[key]; else favorites[key] = {uuid, path, name, added:Date.now()};
+  localStorage.setItem('openastro.media.favorites', JSON.stringify(favorites));
+  renderMediaFiles();
+  return Boolean(favorites[key]);
+}
+function mediaCategoryLabel(category) { return ({video:'VIDEO',audio:'AUDIO',image:'FOTO',document:'DOC',archive:'ARCHIVIO',other:'FILE',dir:'CARTELLA'})[category] || 'FILE'; }
+function mediaDate(timestamp) { return timestamp ? new Date(timestamp * 1000).toLocaleDateString('it-IT',{day:'2-digit',month:'short',year:'numeric'}) : '—'; }
+function mediaDuration(value) {
+  const seconds = Math.max(0, Number(value) || 0), h = Math.floor(seconds/3600), m = Math.floor((seconds%3600)/60), s = Math.floor(seconds%60);
+  return h ? `${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}` : `${m}:${String(s).padStart(2,'0')}`;
+}
+let mediaItems = [];
+let mediaLibrary = null;
+let mediaFilter = 'all';
+let mediaView = 'grid';
+let mediaSearchText = '';
+let mediaSort = 'name';
+let mediaPlayerPath = '';
+let mediaPlayerName = '';
+let mediaPlayerUuid = '';
+let mediaResumeTimer = null;
+
+function mediaFilteredItems() {
+  let items = [...mediaItems];
+  const query = mediaSearchText.trim().toLocaleLowerCase('it-IT');
+  if (query) items = items.filter(item => item.name.toLocaleLowerCase('it-IT').includes(query));
+  if (mediaFilter === 'favorite') items = items.filter(item => item.type === 'file' && isMediaFavorite(item.path));
+  else if (mediaFilter !== 'all') items = items.filter(item => item.type === 'dir' || item.category === mediaFilter);
+  if (mediaSort === 'recent') items.sort((a,b) => (a.type !== b.type ? (a.type === 'dir' ? -1 : 1) : (b.modified||0)-(a.modified||0)));
+  else if (mediaSort === 'size') items.sort((a,b) => (a.type !== b.type ? (a.type === 'dir' ? -1 : 1) : (b.size||0)-(a.size||0)));
+  else items.sort((a,b) => (a.type !== b.type ? (a.type === 'dir' ? -1 : 1) : a.name.localeCompare(b.name, 'it', {numeric:true})));
+  return items;
+}
+function mediaCard(item) {
+  if (item.type === 'dir') return `<button class="media-card media-dir" data-media-path="${escapeHtml(item.path)}"><div class="media-art folder-art"><span>DIR</span></div><div class="media-card-copy"><strong>${escapeHtml(item.name)}</strong><small>Cartella</small></div></button>`;
+  const favorite = isMediaFavorite(item.path);
+  const art = item.thumbnail ? `<div class="media-art has-thumb"><img loading="lazy" src="${escapeHtml(mediaThumbUrl(item.path))}" alt=""><span>${mediaCategoryLabel(item.category)}</span></div>` : `<div class="media-art type-art ${escapeHtml(item.category)}"><span>${mediaCategoryLabel(item.category)}</span></div>`;
+  return `<article class="media-card" data-category="${escapeHtml(item.category)}">${art}<div class="media-card-copy"><strong title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</strong><small>${bytes(item.size)} · ${mediaDate(item.modified)}</small></div><div class="media-card-actions">${item.streamable ? `<button data-media-play="${escapeHtml(item.path)}" data-media-name="${escapeHtml(item.name)}" data-media-category="${escapeHtml(item.category)}">Riproduci</button>` : `<a href="${escapeHtml(mediaUrl(item.path))}" target="_blank" rel="noopener">Apri</a>`}<a href="${escapeHtml(mediaUrl(item.path,true))}">Download</a><button class="media-fav ${favorite?'active':''}" data-media-fav="${escapeHtml(item.path)}" data-media-name="${escapeHtml(item.name)}" title="Preferito">${favorite?'★':'☆'}</button></div></article>`;
+}
+function renderMediaFiles() {
+  const host = $('#mediaFiles');
+  if (!mediaUuid) { host.className = `media-files-v2 ${mediaView}`; host.innerHTML = '<div class="media-empty"><strong>Nessun supporto</strong><small>Collega un’unità USB per iniziare.</small></div>'; return; }
+  const items = mediaFilteredItems();
+  host.className = `media-files-v2 ${mediaView}`;
+  host.innerHTML = items.length ? items.map(mediaCard).join('') : '<div class="media-empty"><strong>Nessun risultato</strong><small>Prova a cambiare ricerca o filtro.</small></div>';
+  $$('.media-dir').forEach(button => button.addEventListener('click', () => loadMediaDirectory(button.dataset.mediaPath)));
+  $$('[data-media-play]').forEach(button => button.addEventListener('click', () => openMediaPlayer(button.dataset.mediaPlay, button.dataset.mediaName, button.dataset.mediaCategory)));
+  $$('[data-media-fav]').forEach(button => button.addEventListener('click', () => toggleMediaFavorite(button.dataset.mediaFav, button.dataset.mediaName)));
+}
+function renderMediaLibrary(library) {
+  mediaLibrary = library;
+  const counts = library?.counts || {}, sizes = library?.bytes || {};
+  $('#mediaStatVideo').textContent = counts.video || 0; $('#mediaStatVideoSize').textContent = bytes(sizes.video || 0);
+  $('#mediaStatAudio').textContent = counts.audio || 0; $('#mediaStatAudioSize').textContent = bytes(sizes.audio || 0);
+  $('#mediaStatImage').textContent = counts.image || 0; $('#mediaStatImageSize').textContent = bytes(sizes.image || 0);
+  $('#mediaStatTotal').textContent = library?.total_files || 0; $('#mediaStatTotalSize').textContent = bytes(library?.total_bytes || 0);
+  const recent = library?.recent || [];
+  $('#mediaRecentWrap').hidden = !recent.length;
+  $('#mediaRecentCount').textContent = recent.length ? `${recent.length} elementi` : '';
+  $('#mediaRecent').innerHTML = recent.slice(0,12).map(item => `<button class="media-recent-card" data-media-recent="${escapeHtml(item.path)}" data-media-name="${escapeHtml(item.name)}" data-media-category="${escapeHtml(item.category)}">${item.thumbnail ? `<img loading="lazy" src="${escapeHtml(mediaThumbUrl(item.path))}" alt="">` : `<span>${mediaCategoryLabel(item.category)}</span>`}<strong>${escapeHtml(item.name)}</strong><small>${mediaDate(item.modified)}</small></button>`).join('');
+  $$('.media-recent-card').forEach(button => button.addEventListener('click', () => openMediaPlayer(button.dataset.mediaRecent, button.dataset.mediaName, button.dataset.mediaCategory)));
+}
+async function loadMediaLibrary(force = false) {
+  if (!mediaUuid) return;
+  try {
+    const query = new URLSearchParams({uuid:mediaUuid}); if (force) query.set('force','1');
+    const response = await fetch(`/api/media/library?${query}`, {cache:'no-store', signal:AbortSignal.timeout(30000)});
+    if (response.status === 401) return showLogin();
+    const result = await response.json();
+    if (response.ok && result.ok) renderMediaLibrary(result);
+  } catch (_) {}
 }
 async function loadMediaDirectory(path = mediaPath) {
   if (!mediaUuid || mediaBusy) return;
   mediaBusy = true;
-  $('#mediaFiles').innerHTML = '<p class="muted">Caricamento…</p>';
+  $('#mediaFiles').innerHTML = '<div class="media-empty"><strong>Caricamento…</strong><small>Lettura del supporto USB.</small></div>';
   try {
     const query = new URLSearchParams({uuid:mediaUuid, path:path || ''});
     const response = await fetch(`/api/media/list?${query}`, {cache:'no-store', signal:AbortSignal.timeout(15000)});
     if (response.status === 401) return showLogin();
     const result = await response.json();
     if (!response.ok || !result.ok) throw new Error(result.error || `HTTP ${response.status}`);
-    mediaPath = result.path || '';
-    $('#mediaDriveName').textContent = result.label || 'USB';
-    $('#mediaPath').textContent = `/${mediaPath}`;
-    $('#mediaBack').disabled = !mediaPath;
-    $('#mediaBack').dataset.parent = result.parent || '';
-    $('#mediaFiles').innerHTML = result.items.length ? result.items.map(item => item.type === 'dir'
-      ? `<button class="media-row media-dir" data-media-path="${escapeHtml(item.path)}"><span class="media-kind">DIR</span><strong>${escapeHtml(item.name)}</strong><small>Cartella</small><b>→</b></button>`
-      : `<div class="media-row"><span class="media-kind">${item.streamable ? 'PLAY' : 'FILE'}</span><strong>${escapeHtml(item.name)}</strong><small>${bytes(item.size)} · ${escapeHtml(item.mime || '')}</small><div class="media-file-actions"><a href="${escapeHtml(mediaUrl(item.path))}" target="_blank" rel="noopener">Apri</a><a href="${escapeHtml(mediaUrl(item.path, true))}">Scarica</a></div></div>`).join('')
-      : '<p class="muted">Questa cartella è vuota.</p>';
-    $$('.media-dir').forEach(button => button.addEventListener('click', () => loadMediaDirectory(button.dataset.mediaPath)));
-  } catch (error) {
-    $('#mediaFiles').innerHTML = `<p class="muted">${escapeHtml(error.message || 'Impossibile leggere il supporto.')}</p>`;
-  } finally { mediaBusy = false; }
+    mediaPath = result.path || ''; mediaItems = result.items || [];
+    $('#mediaDriveLabel').textContent = result.label || 'USB'; $('#mediaPath').textContent = `/${mediaPath}`;
+    $('#mediaBack').disabled = !mediaPath; $('#mediaBack').dataset.parent = result.parent || '';
+    renderMediaFiles();
+  } catch (error) { $('#mediaFiles').innerHTML = `<div class="media-empty"><strong>Supporto non leggibile</strong><small>${escapeHtml(error.message || '')}</small></div>`; }
+  finally { mediaBusy = false; }
+}
+function closeMediaPlayer() {
+  const stage = $('#mediaPlayerStage'); const media = stage.querySelector('video,audio');
+  if (media && mediaPlayerUuid && mediaPlayerPath && Number.isFinite(media.currentTime) && media.currentTime > 2) localStorage.setItem(`openastro.media.resume:${mediaPlayerUuid}:${mediaPlayerPath}`, String(media.currentTime));
+  if (mediaResumeTimer) clearInterval(mediaResumeTimer); mediaResumeTimer = null; stage.innerHTML = '';
+  if ($('#mediaPlayerDialog').open) $('#mediaPlayerDialog').close();
+}
+async function openMediaPlayer(path, name, category) {
+  if (!mediaUuid || !path) return;
+  mediaPlayerUuid = mediaUuid; mediaPlayerPath = path; mediaPlayerName = name || path.split('/').at(-1);
+  $('#mediaPlayerTitle').textContent = mediaPlayerName; $('#mediaPlayerType').textContent = mediaCategoryLabel(category);
+  $('#mediaPlayerDownload').href = mediaUrl(path, true, mediaPlayerUuid); $('#mediaPlayerMeta').innerHTML = '<span>Analisi file…</span>';
+  const favorite = isMediaFavorite(path, mediaPlayerUuid); $('#mediaPlayerFavorite').textContent = favorite ? '★ Preferito' : '☆ Preferito';
+  const url = mediaUrl(path, false, mediaPlayerUuid); const stage = $('#mediaPlayerStage');
+  if (category === 'image') stage.innerHTML = `<img src="${escapeHtml(url)}" alt="${escapeHtml(mediaPlayerName)}">`;
+  else if (category === 'audio') stage.innerHTML = `<audio controls preload="metadata" src="${escapeHtml(url)}"></audio>`;
+  else stage.innerHTML = `<video controls playsinline preload="metadata" src="${escapeHtml(url)}"></video>`;
+  if (!$('#mediaPlayerDialog').open) $('#mediaPlayerDialog').showModal();
+  const media = stage.querySelector('video,audio');
+  if (media) {
+    media.addEventListener('loadedmetadata', () => { const saved = Number(localStorage.getItem(`openastro.media.resume:${mediaPlayerUuid}:${path}`) || 0); if (saved > 5 && saved < media.duration - 10) media.currentTime = saved; }, {once:true});
+    mediaResumeTimer = setInterval(() => { if (!media.paused && media.currentTime > 2) localStorage.setItem(`openastro.media.resume:${mediaPlayerUuid}:${path}`, String(media.currentTime)); }, 5000);
+  }
+  try {
+    const response = await fetch(mediaProbeUrl(path, mediaPlayerUuid), {cache:'no-store', signal:AbortSignal.timeout(12000)}); const data = await response.json();
+    const probe = data.probe || {}, format = probe.format || {}, streams = probe.streams || [];
+    const video = streams.find(s => s.codec_type === 'video'), audio = streams.find(s => s.codec_type === 'audio');
+    const bits = [];
+    if (format.duration) bits.push(mediaDuration(format.duration)); if (video?.width) bits.push(`${video.width}×${video.height}`); if (video?.codec_name) bits.push(video.codec_name.toUpperCase()); if (audio?.codec_name) bits.push(audio.codec_name.toUpperCase()); if (format.bit_rate) bits.push(`${(Number(format.bit_rate)/1e6).toFixed(1)} Mb/s`); bits.push(bytes(data.size));
+    $('#mediaPlayerMeta').innerHTML = bits.map(value => `<span>${escapeHtml(value)}</span>`).join('');
+  } catch (_) { $('#mediaPlayerMeta').innerHTML = `<span>${bytes(mediaItems.find(i=>i.path===path)?.size || 0)}</span>`; }
 }
 function renderMedia(media = {}) {
-  const devices = media.devices || [];
-  const mounted = devices.filter(device => device.mounted);
-  $('#mediaChip').textContent = mounted.length ? `${mounted.length} collegat${mounted.length === 1 ? 'o' : 'i'}` : 'Nessun supporto';
+  const devices = media.devices || [], mounted = devices.filter(device => device.mounted);
+  $('#mediaChip').textContent = mounted.length ? `${mounted.length} support${mounted.length === 1 ? 'o' : 'i'} online` : 'Nessun supporto';
   $('#mediaChip').className = `status-chip ${mounted.length ? 'good' : ''}`;
-  $('#mediaSmbPath').textContent = media.smb_path || '\\\\OPENASTRO\\Media';
-  $('#mediaDlnaName').textContent = media.dlna_name || 'OpenAstro Media';
+  $('#mediaSmbPath').textContent = media.smb_path || '\\\\OPENASTRO\\Media'; $('#mediaDlnaName').textContent = media.dlna_name || 'OpenAstro Media';
+  $('#mediaSmbState').textContent = media.smb === 'active' ? 'ON' : 'OFF'; $('#mediaSmbState').className = media.smb === 'active' ? 'good' : 'bad';
+  $('#mediaDlnaState').textContent = media.dlna === 'active' ? 'ON' : 'OFF'; $('#mediaDlnaState').className = media.dlna === 'active' ? 'good' : 'bad';
   $('#mediaDeviceList').innerHTML = devices.length ? devices.map(device => {
-    const usage = device.usage;
-    const detail = usage ? `${bytes(usage.free)} liberi · ${escapeHtml(device.fstype.toUpperCase())} · sola lettura` : `${escapeHtml(device.fstype.toUpperCase())} · non montato`;
-    return `<div class="media-device ${device.uuid === mediaUuid ? 'selected' : ''}"><button class="media-select" data-media-uuid="${escapeHtml(device.uuid)}"><strong>${escapeHtml(device.label || 'USB')}</strong><small>${escapeHtml(device.model || '')}</small><span>${detail}</span></button>${device.mounted ? `<button class="media-eject" data-media-eject="${escapeHtml(device.uuid)}" title="Espelli">⏏</button>` : ''}</div>`;
-  }).join('') : '<p class="muted">Collega una chiavetta o un disco USB rimovibile.</p>';
-  $$('.media-select').forEach(button => button.addEventListener('click', () => {
-    mediaUuid = button.dataset.mediaUuid; mediaPath = ''; mediaSignature = '';
-    renderMedia(media); loadMediaDirectory('');
-  }));
-  $$('.media-eject').forEach(button => button.addEventListener('click', event => {
-    event.stopPropagation(); openConfirm('media_eject', {uuid:button.dataset.mediaEject});
-  }));
-  if (mediaUuid && !mounted.some(device => device.uuid === mediaUuid)) { mediaUuid = ''; mediaPath = ''; }
-  if (!mediaUuid && mounted.length) { mediaUuid = mounted[0].uuid; mediaPath = ''; }
-  const signature = mounted.map(device => `${device.uuid}:${device.usage?.used || 0}`).join('|');
-  if (mediaUuid && signature !== mediaSignature) { mediaSignature = signature; loadMediaDirectory(mediaPath); }
-  if (!mounted.length) {
-    $('#mediaDriveName').textContent = 'USB'; $('#mediaPath').textContent = '/'; $('#mediaBack').disabled = true;
-    $('#mediaFiles').innerHTML = '<p class="muted">Nessun supporto media collegato.</p>';
-  }
+    const usage = device.usage, usedPct = usage?.total ? usage.used/usage.total*100 : 0;
+    return `<div class="media-device ${device.uuid === mediaUuid ? 'selected' : ''}"><button class="media-select" data-media-uuid="${escapeHtml(device.uuid)}"><strong>${escapeHtml(device.label || 'USB')}</strong><small>${escapeHtml(device.model || '')}</small><span>${usage ? `${bytes(usage.free)} liberi · ${escapeHtml(device.fstype.toUpperCase())}` : `${escapeHtml(device.fstype.toUpperCase())} · non montato`}</span><div class="mini-capacity"><i style="width:${usedPct.toFixed(1)}%"></i></div></button>${device.mounted ? `<button class="media-eject" data-media-eject="${escapeHtml(device.uuid)}" title="Espelli in sicurezza">EJECT</button>` : ''}</div>`;
+  }).join('') : '<div class="media-empty side"><strong>Nessuna USB</strong><small>Collega un supporto rimovibile.</small></div>';
+  $$('.media-select').forEach(button => button.addEventListener('click', () => { mediaUuid = button.dataset.mediaUuid; mediaPath=''; mediaSignature=''; mediaLibrary=null; renderMedia(media); loadMediaDirectory(''); loadMediaLibrary(); }));
+  $$('.media-eject').forEach(button => button.addEventListener('click', event => { event.stopPropagation(); openConfirm('media_eject',{uuid:button.dataset.mediaEject}); }));
+  if (mediaUuid && !mounted.some(device => device.uuid === mediaUuid)) { mediaUuid=''; mediaPath=''; mediaItems=[]; mediaLibrary=null; }
+  if (!mediaUuid && mounted.length) { mediaUuid=mounted[0].uuid; mediaPath=''; }
+  const selected = mounted.find(device => device.uuid === mediaUuid);
+  if (selected) {
+    $('#mediaDriveModel').textContent = `${selected.model || 'USB STORAGE'} · ${String(selected.fstype||'').toUpperCase()} · READ-ONLY`;
+    $('#mediaDriveName').textContent = selected.label || 'Media USB'; const usage=selected.usage;
+    $('#mediaDriveMeta').textContent = `${bytes(usage?.used||0)} usati su ${bytes(usage?.total||selected.size||0)}`; $('#mediaDriveFree').textContent = bytes(usage?.free||0); $('#mediaDriveBar').style.width = `${usage?.total ? usage.used/usage.total*100 : 0}%`;
+  } else { $('#mediaDriveModel').textContent='NESSUN SUPPORTO'; $('#mediaDriveName').textContent='Media USB'; $('#mediaDriveMeta').textContent='Inserisci un dispositivo USB rimovibile.'; $('#mediaDriveFree').textContent='—'; $('#mediaDriveBar').style.width='0%'; }
+  const signature = mounted.map(device => `${device.uuid}:${device.usage?.used||0}`).join('|');
+  if (mediaUuid && signature !== mediaSignature) { mediaSignature=signature; loadMediaDirectory(mediaPath); loadMediaLibrary(); }
+  if (!mounted.length) { mediaItems=[]; renderMediaFiles(); renderMediaLibrary(null); $('#mediaRecentWrap').hidden=true; }
 }
 
 function render(data) {
@@ -415,6 +520,17 @@ function stopHold() {
   $('#holdAction').style.setProperty('--hold', '0%');
 }
 
+$$('[data-media-filter]').forEach(button => button.addEventListener('click', () => {
+  mediaFilter = button.dataset.mediaFilter || 'all'; $$('[data-media-filter]').forEach(item => item.classList.toggle('active', item.dataset.mediaFilter === mediaFilter)); renderMediaFiles();
+}));
+$('#mediaSearch').addEventListener('input', event => { mediaSearchText = event.target.value || ''; renderMediaFiles(); });
+$('#mediaSort').addEventListener('change', event => { mediaSort = event.target.value || 'name'; renderMediaFiles(); });
+$('#mediaGridView').addEventListener('click', () => { mediaView='grid'; $('#mediaGridView').classList.add('active'); $('#mediaListView').classList.remove('active'); renderMediaFiles(); });
+$('#mediaListView').addEventListener('click', () => { mediaView='list'; $('#mediaListView').classList.add('active'); $('#mediaGridView').classList.remove('active'); renderMediaFiles(); });
+$('#mediaLibraryRefresh').addEventListener('click', () => loadMediaLibrary(true));
+$('#mediaPlayerClose').addEventListener('click', closeMediaPlayer);
+$('#mediaPlayerDialog').addEventListener('close', () => { const media=$('#mediaPlayerStage').querySelector('video,audio'); if(media && mediaPlayerUuid && mediaPlayerPath && media.currentTime>2) localStorage.setItem(`openastro.media.resume:${mediaPlayerUuid}:${mediaPlayerPath}`,String(media.currentTime)); if(mediaResumeTimer) clearInterval(mediaResumeTimer); mediaResumeTimer=null; $('#mediaPlayerStage').innerHTML=''; });
+$('#mediaPlayerFavorite').addEventListener('click', () => { const state=toggleMediaFavorite(mediaPlayerPath,mediaPlayerName,mediaPlayerUuid); $('#mediaPlayerFavorite').textContent=state?'★ Preferito':'☆ Preferito'; });
 $('#mediaBack').addEventListener('click', () => loadMediaDirectory($('#mediaBack').dataset.parent || ''));
 $('#mediaCredentials').addEventListener('click', async () => {
   try {

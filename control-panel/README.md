@@ -78,3 +78,9 @@ file restano accessibili anche fuori casa senza pubblicare SMB/DLNA su Internet.
 `openastro-storage-watchdog.service` è separato dal Media Center e gira dalla eMMC: se un
 reset USB rende il filesystem LiveVault assente, `shutdown`, read-only o con UUID errato,
 porta LiveVault sul buffer interno da 4 GiB anziché lasciare i worker sul mount guasto.
+
+## Media Hub
+
+OpenAstro Control includes an isolated removable-media hub. Eligible USB filesystems are mounted read-only under `/srv/openastro-media` and are explicitly separated from LiveVault SERVER/SHARE storage.
+
+The Media Hub provides an authenticated remote browser, direct HTTP Range streaming/downloads, an integrated browser player with resume position, local favorites, search/sort/category filters, recent-media indexing, lazy video/image thumbnails, and ffprobe metadata. LAN clients can also use `\\OPENASTRO\\Media` over SMB and `OpenAstro Media` over DLNA. SMB/DLNA are restricted to the LAN; remote access uses the existing HTTPS control-panel authentication.
