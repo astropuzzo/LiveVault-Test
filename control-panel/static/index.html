@@ -11,7 +11,7 @@
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" href="/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="/icon.svg">
-  <link rel="stylesheet" href="/app.css?v=4.0-control"><link rel="stylesheet" href="/shell.css?v=4.0-control"><link rel="stylesheet" href="/theme.css?v=5.0-feel"><link rel="stylesheet" href="/premium.css?v=10.0-product">
+  <link rel="stylesheet" href="/app.css?v=4.0-control"><link rel="stylesheet" href="/shell.css?v=4.0-control"><link rel="stylesheet" href="/theme.css?v=5.0-feel"><link rel="stylesheet" href="/premium.css?v=10.0-product"><link rel="stylesheet" href="/magic.css?v=12.1-mosaic">
 </head>
 <body data-view="dashboard" class="is-loading">
   <div class="app-shell">
@@ -42,57 +42,81 @@
     <main class="app-main">
       <section class="app-view active" data-view-panel="dashboard" aria-labelledby="view-dashboard-title">
         <div class="dashboard-topline"><div><p class="eyebrow">OPENASTRO CONTROL</p><span>Nodo personale</span></div><div class="hero-meta"><span id="hostName">openastro</span><span id="uptime">—</span><span id="lastUpdate">—</span></div></div>
-        <div class="dashboard-stage">
-          <section class="hero" id="overview">
+
+        <div class="dashboard-mosaic">
+          <section class="hero node-card" id="overview">
             <div class="hero-copy">
               <p class="eyebrow">STATO DEL NODO</p>
-              <h1 id="heroTitle">OpenAstro</h1>
-              <p id="heroSubtitle">Stato operativo del nodo, senza rumore.</p>
+              <strong class="hero-uptime" id="heroUptimeValue">—</strong>
+              <div class="hero-state"><h1 id="heroTitle">Verifica…</h1><span id="heroRecorderPill">—</span></div>
+              <p id="heroSubtitle">Stato operativo del nodo.</p>
             </div>
-            <div class="hero-visual" aria-hidden="true"><div class="hero-orbit"><i></i><i></i><span></span></div><small>NODE</small></div>
+            <div class="hero-visual hero-bars" aria-hidden="true">
+              <div class="hero-bar" id="heroCpuBar"><i></i><span>CPU</span><b id="heroCpuText">—</b></div>
+              <div class="hero-bar" id="heroRamBar"><i></i><span>RAM</span><b id="heroRamText">—</b></div>
+              <div class="hero-bar" id="heroTempBar"><i></i><span>TEMP</span><b id="heroTempText">—</b></div>
+              <div class="hero-bar" id="heroDiskBar"><i></i><span>NVME</span><b id="heroDiskText">—</b></div>
+            </div>
           </section>
 
-          <section class="dashboard-health" aria-label="Stato operativo">
-          <article><span>LIVEVAULT</span><strong id="dashLiveState">Verifica…</strong><small id="dashLiveDetail">—</small></article>
-          <article><span>REGISTRAZIONI</span><strong id="dashStorageMode">—</strong><small id="dashStorageDetail">—</small></article>
-          <article><span>MEDIA</span><strong id="dashMediaState">—</strong><small id="dashMediaDetail">—</small></article>
-          <article><span>ENERGIA</span><strong id="dashPowerState">—</strong><small id="dashPowerDetail">—</small></article>
-          </section>
+          <article class="app-tile live-card">
+            <div class="tile-heading"><span>LiveVault</span><i class="state-dot"></i></div>
+            <div class="live-rings" id="liveRings" aria-hidden="true"><i></i><i></i><i></i></div>
+            <strong id="dashLiveState">Verifica…</strong>
+            <small id="dashLiveDetail">—</small>
+          </article>
+
+          <article class="app-tile power-card">
+            <div class="tile-heading"><span>Energia</span><i></i></div>
+            <div class="power-gauge" id="dashPowerArt" aria-hidden="true"><i></i></div>
+            <strong id="dashPowerState">—</strong>
+            <small id="dashPowerDetail">—</small>
+          </article>
+
+          <article class="app-tile storage-card">
+            <div class="tile-heading"><span>Storage</span><i></i></div>
+            <strong id="dashStorageMode">—</strong>
+            <small id="dashStorageDetail">—</small>
+            <div class="storage-usage" id="dashStorageArt" aria-hidden="true"><i></i><b></b></div>
+          </article>
+
+          <article class="app-tile action-card">
+            <div class="tile-heading"><span>Azioni rapide</span></div>
+            <div class="action-bubbles">
+              <button data-action="eject_nvme" data-confirm="Tieni premuto per espellere in sicurezza" aria-label="Espelli NVMe">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4h12v10H6V4Zm-2 14h16v2H4v-2Zm5-8 3 3 3-3h-2V7h-2v3H9Z"/></svg><span id="quickNvmeTitle">NVMe</span><small id="quickNvmeState">Espelli</small>
+              </button>
+              <button id="quickWifi" aria-label="Gestisci Wi-Fi">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 8.8C7.6 3.8 16.4 3.8 22 8.8l-1.5 1.6c-4.8-4.2-12.2-4.2-17 0L2 8.8Zm3.5 3.7c3.6-3.1 9.4-3.1 13 0L17 14.1c-2.8-2.3-7.2-2.3-10 0l-1.5-1.6ZM9 16.3c1.7-1.3 4.3-1.3 6 0L12 20l-3-3.7Z"/></svg><span id="quickWifiTitle">Wi-Fi</span><small id="quickWifiState">—</small>
+              </button>
+              <button data-action="backup_now" aria-label="Avvia backup">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a7 7 0 0 1 6.7 5H21l-3.5 4L14 8h2.6A5 5 0 1 0 17 15h2.2A7 7 0 1 1 12 3Z"/></svg><span>Backup</span><small>Ora</small>
+              </button>
+              <a href="#media" data-route="media" aria-label="Apri Media Hub">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Zm5 4v8l6-4-6-4Z"/></svg><span>Media</span><small>Apri</small>
+              </a>
+            </div>
+          </article>
+
+          <article class="media-feature-card">
+            <a href="#media" data-route="media" aria-label="Apri OpenAstro Media">
+              <div><span>OpenAstro Media</span><strong id="dashMediaState">Pronto</strong><small id="dashMediaDetail">Nessun supporto collegato</small></div>
+              <div class="media-feature-orb" aria-hidden="true"><i></i><i></i><b>▶</b></div>
+            </a>
+          </article>
         </div>
-            <section class="metrics-grid" aria-label="Risorse del server">
-      <article class="metric-card">
-        <div class="ring" id="cpuRing"><span id="cpuValue">—</span></div>
-        <div><p>CPU</p><strong id="loadValue">—</strong><small id="coreValue">—</small></div>
-      </article>
-      <article class="metric-card">
-        <div class="ring" id="ramRing"><span id="ramValue">—</span></div>
-        <div><p>MEMORIA</p><strong id="ramUsed">—</strong><small id="ramTotal">—</small></div>
-      </article>
-      <article class="metric-card">
-        <div class="ring temp" id="tempRing"><span id="tempValue">—</span></div>
-        <div><p>TEMPERATURA</p><strong id="tempState">—</strong><small>Compute Module</small></div>
-      </article>
-      <article class="metric-card">
-        <div class="ring" id="diskRing"><span id="diskValue">—</span></div>
-        <div><p>NVME SERVER</p><strong id="diskFree">—</strong><small id="diskTotal">—</small></div>
-      </article>
-      <article class="metric-card network-card">
-        <div class="ring" id="networkRing"><span>NET</span></div>
-        <div><p>RETE LIVE</p><strong id="networkDown">↓ —</strong><small id="networkUp">↑ —</small></div>
-      </article>
-      <article class="metric-card watt-card">
-        <div class="ring power-ring" id="wattRing"><span>—</span></div>
-        <div><p>POTENZA MISURATA</p><strong id="wattValue">—</strong><small id="wattDaily">Sensore ingresso ASIAIR</small></div>
-      </article>
-    </section>
 
-
-            <section class="command-deck" aria-label="Comandi rapidi">
-      <div class="command-intro"><p class="eyebrow">AZIONI RAPIDE</p><strong>Controlli essenziali</strong><small>Solo le azioni che servono davvero.</small></div>
-      <button class="command-tile nvme-command" data-action="eject_nvme" data-confirm="Tieni premuto per espellere in sicurezza"><span class="command-icon"><i></i></span><span><small>ARCHIVIO FISICO</small><strong id="quickNvmeTitle">Espelli NVMe</strong><em id="quickNvmeState">Smontaggio sicuro</em></span><b>→</b></button>
-      <button class="command-tile wifi-command" id="quickWifi"><span class="command-icon"><i></i><i></i><i></i></span><span><small>CONNETTIVITÀ</small><strong id="quickWifiTitle">Spegni Wi-Fi</strong><em id="quickWifiState">Hotspot attivo</em></span><b>→</b></button>
-    </section>
-
+        <section class="resource-details" id="resourceDetails">
+          <button class="resource-toggle" id="resourceToggle" type="button" aria-expanded="false"><span><b>Risorse live</b><small>CPU, RAM, temperatura, disco e rete</small></span><i>⌄</i></button>
+          <section class="metrics-grid" aria-label="Risorse del server">
+            <article class="metric-card"><div class="ring" id="cpuRing"><span id="cpuValue">—</span></div><div><p>CPU</p><strong id="loadValue">—</strong><small id="coreValue">—</small></div></article>
+            <article class="metric-card"><div class="ring" id="ramRing"><span id="ramValue">—</span></div><div><p>MEMORIA</p><strong id="ramUsed">—</strong><small id="ramTotal">—</small></div></article>
+            <article class="metric-card"><div class="ring temp" id="tempRing"><span id="tempValue">—</span></div><div><p>TEMPERATURA</p><strong id="tempState">—</strong><small>Compute Module</small></div></article>
+            <article class="metric-card"><div class="ring" id="diskRing"><span id="diskValue">—</span></div><div><p>NVME SERVER</p><strong id="diskFree">—</strong><small id="diskTotal">—</small></div></article>
+            <article class="metric-card network-card"><div class="ring" id="networkRing"><span>NET</span></div><div><p>RETE LIVE</p><strong id="networkDown">↓ —</strong><small id="networkUp">↑ —</small></div></article>
+            <article class="metric-card watt-card"><div class="ring power-ring" id="wattRing"><span>—</span></div><div><p>POTENZA MISURATA</p><strong id="wattValue">—</strong><small id="wattDaily">Sensore ingresso ASIAIR</small></div></article>
+          </section>
+        </section>
 
       </section>
 
@@ -101,7 +125,7 @@
             <section class="panel media-panel workspace-panel" id="media">
       <div class="panel-head media-head">
         <div><p class="eyebrow">MEDIA HUB</p><h2>OpenAstro Media</h2><small>La tua libreria USB, in casa e fuori casa.</small></div>
-        <div class="media-head-actions"><span class="status-chip" id="mediaChip">Nessun supporto</span><button class="button secondary" data-action="media_rescan">Rileva USB</button></div>
+        <div class="media-head-actions"><span class="status-chip" id="mediaChip">Nessun supporto</span><button class="button secondary media-tech-toggle" id="mediaTechToggle" type="button">Dettagli</button><button class="button secondary" data-action="media_rescan">Rileva USB</button></div>
       </div>
 
       <div class="media-stats" id="mediaStats">
@@ -194,7 +218,8 @@
 
       <section class="app-view" data-view-panel="system" aria-labelledby="view-system-title">
         <div class="view-heading"><div><p class="eyebrow">PRESTAZIONI</p><h1 id="view-system-title">Sistema</h1><p>Energia, temperatura e telemetria storica.</p></div></div>
-        <div class="system-grid">    <section class="panel power-panel" id="power">
+        <div class="system-tabs" role="tablist" aria-label="Vista sistema"><button class="active" type="button" data-system-tab="power">Energia</button><button type="button" data-system-tab="telemetry">Storico</button></div>
+        <div class="system-grid system-tab-power">    <section class="panel power-panel" id="power">
       <div class="panel-head">
         <div><p class="eyebrow">CPU E CONNETTIVITÀ</p><h2>Profilo energetico</h2></div>
         <span class="profile-chip" id="currentProfile">—</span>
@@ -343,6 +368,6 @@
   </div>
 
   <script src="/hls.min.js?v=1.7.2" defer></script>
-  <script src="/app.js?v=10.0-product" defer></script>
+  <script src="/app.js?v=12.1-mosaic" defer></script>
 </body>
 </html>

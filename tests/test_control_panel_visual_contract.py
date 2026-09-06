@@ -9,14 +9,19 @@ def test_product_visual_layers_are_explicit_and_ordered():
     shell = html.index('/shell.css?v=4.0-control')
     theme = html.index('/theme.css?v=5.0-feel')
     premium = html.index('/premium.css?v=10.0-product')
-    assert app < shell < theme < premium
+    magic = html.index('/magic.css?v=12.1-mosaic')
+    assert app < shell < theme < premium < magic
 
 
 def test_dashboard_has_single_product_hero_and_mobile_route_title():
     html = (ROOT / 'index.html').read_text(encoding='utf-8')
     assert html.count('id="overview"') == 1
-    assert 'class="dashboard-stage"' in html
-    assert 'class="hero-visual"' in html
+    assert 'class="dashboard-mosaic"' in html
+    assert 'class="hero-visual hero-bars"' in html
+    assert 'id="resourceToggle"' in html
+    assert 'id="mediaTechToggle"' in html
+    assert 'data-system-tab="power"' in html
+    assert 'data-system-tab="telemetry"' in html
     assert 'id="mobileViewTitle"' in html
 
 
@@ -26,3 +31,19 @@ def test_premium_theme_keeps_route_specific_accent_and_mobile_dock():
     assert '.metric-card .ring' in css
     assert '.mobile-nav' in css
     assert 'conic-gradient' in css
+
+
+def test_visual_qa_layer_uses_data_driven_surfaces_and_progressive_disclosure():
+    css = (ROOT / 'magic.css').read_text(encoding='utf-8')
+    js = (ROOT / 'app.js').read_text(encoding='utf-8')
+    assert '.hero-bars' in css
+    assert '.app-tile' in css
+    assert '.live-rings' in css
+    assert '.power-gauge' in css
+    assert '.media-feature-card' in css
+    assert '.resource-details.open>.metrics-grid' in css
+    assert '.media-tech-open' in css
+    assert '.system-tab-telemetry' in css
+    assert 'backdrop-filter:blur(28px)' in css
+    assert "setHeroBar('#heroCpuBar'" in js
+    assert "media.classList.toggle('media-tech-open')" in js

@@ -13,8 +13,12 @@ def test_control_center_has_exact_primary_views():
 
 
 def test_desktop_and_mobile_navigation_match_views():
-    routes = re.findall(r'data-route="([a-z]+)"', HTML)
-    assert routes == ['dashboard','media','storage','system','advanced'] * 2
+    expected = ['dashboard','media','storage','system','advanced']
+    side = re.search(r'<nav class="side-nav".*?</nav>', HTML, re.S)
+    mobile = re.search(r'<nav class="mobile-nav".*?</nav>', HTML, re.S)
+    assert side and mobile
+    assert re.findall(r'data-route="([a-z]+)"', side.group(0)) == expected
+    assert re.findall(r'data-route="([a-z]+)"', mobile.group(0)) == expected
 
 
 def test_html_ids_are_unique():
@@ -30,4 +34,5 @@ def test_expensive_views_are_lazy_loaded():
 
 def test_pwa_shell_contains_new_layout_css():
     assert '/shell.css' in SW
-    assert 'openastro-control-v10-product' in SW
+    assert 'openastro-control-v12-mosaic' in SW
+    assert '/magic.css' in SW

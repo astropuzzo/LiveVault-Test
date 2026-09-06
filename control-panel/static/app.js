@@ -447,6 +447,14 @@ function selectView(view, updateHash = false) {
     if (mediaUuid) { loadMediaDirectory(mediaPath); loadMediaLibrary(); }
   }
 }
+function setHeroBar(id, textId, value, label, warn = false) {
+  const el=$(id), text=$(textId); if(!el)return;
+  const level=Math.max(6,Math.min(100,Number(value)||0));
+  el.style.setProperty('--level',`${level}%`);
+  el.classList.toggle('warn',Boolean(warn));
+  if(text) text.textContent=label;
+}
+
 function dashboardStatusCard(id, state, detail, tone = '') {
   const strong = $(`#${id}`), card = strong?.closest('article');
   if (!strong || !card) return;
@@ -466,15 +474,34 @@ function render(data) {
   const handoffMode = lv.storage_handoff?.mode || (storage.data.mounted ? 'nvme' : 'buffer');
   const mediaOnline = (data.media?.devices || []).filter(item => item.mounted);
   const wattsNow = measuredWatts(data.power);
-  dashboardStatusCard('dashLiveState', online ? 'Online' : 'Problema', online ? `${lv.worker?.active_recorders ?? 0} recorder attivi` : 'LiveVault non raggiungibile', online ? '' : 'bad');
-  dashboardStatusCard('dashStorageMode', handoffMode === 'buffer' ? 'Buffer 4 GB' : 'NVMe', handoffMode === 'buffer' ? `${bytes(storage.buffer?.used || 0)} / ${bytes(storage.buffer?.total || 0)}` : `${bytes(storage.data?.free || 0)} liberi`, handoffMode === 'buffer' ? 'attention' : '');
-  dashboardStatusCard('dashMediaState', mediaOnline.length ? `${mediaOnline.length} USB online` : 'Pronto', mediaOnline.length ? mediaOnline.map(item => item.label || 'USB').join(' · ') : 'Nessun supporto collegato');
+  setHeroBar('#heroCpuBar','#heroCpuText',host.cpu_percent,`${host.cpu_percent.toFixed(0)}%`,host.cpu_percent>=85);
+  setHeroBar('#heroRamBar','#heroRamText',host.memory.percent,`${host.memory.percent.toFixed(0)}%`,host.memory.percent>=88);
+  const tempLevel=host.temperature==null?0:Math.max(0,Math.min(100,(host.temperature-25)/55*100));
+  setHeroBar('#heroTempBar','#heroTempText',tempLevel,host.temperature==null?'—':`${host.temperature.toFixed(0)}°`,host.temperature>=72);
+  const diskLevel=storage.data?.mounted ? Number(storage.data.percent||0) : 0;
+  setHeroBar('#heroDiskBar','#heroDiskText',diskLevel,storage.data?.mounted?`${diskLevel.toFixed(0)}%`:'OFF',diskLevel>=90);
+  const storageArt=$('#dashStorageArt'); if(storageArt) storageArt.style.setProperty('--usage',`${diskLevel}%`);
+  const powerLevel=Math.min(100,Math.max(5,(wattsNow||0)/15*100));
+  const powerArt=$('#dashPowerArt'); if(powerArt) powerArt.style.setProperty('--level',`${powerLevel}%`);
+  const liveRings=$('#liveRings'); if(liveRings){
+    liveRings.style.setProperty('--cpu',`${Math.max(2,Math.min(100,host.cpu_percent||0))}%`);
+    liveRings.style.setProperty('--ram',`${Math.max(2,Math.min(100,host.memory.percent||0))}%`);
+    liveRings.style.setProperty('--thermal',`${Math.max(2,Math.min(100,tempLevel))}%`);
+  }
+  const recorderCount=Number(lv.worker?.active_recorders||0);
+  const uptimeHero=$('#heroUptimeValue'); if(uptimeHero) uptimeHero.textContent=duration(host.uptime);
+  const recorderPill=$('#heroRecorderPill'); if(recorderPill){ recorderPill.textContent=`${recorderCount} REC`; recorderPill.classList.toggle('active',recorderCount>0); }
+  dashboardStatusCard('dashLiveState', online ? 'Online' : 'Problema', online ? `${recorderCount} recorder attiv${recorderCount===1?'o':'i'}` : 'LiveVault non raggiungibile', online ? '' : 'bad');
+  const storageState=handoffMode === 'buffer' ? 'Buffer' : (storage.data?.mounted ? bytes(storage.data.free || 0) : 'Offline');
+  const storageDetail=handoffMode === 'buffer' ? `${bytes(storage.buffer?.used || 0)} usati su ${bytes(storage.buffer?.total || 0)}` : (storage.data?.mounted ? `liberi · NVMe ${diskLevel.toFixed(0)}% usato` : 'NVMe non montato');
+  dashboardStatusCard('dashStorageMode', storageState, storageDetail, handoffMode === 'buffer' ? 'attention' : (!storage.data?.mounted ? 'bad' : ''));
+  dashboardStatusCard('dashMediaState', mediaOnline.length ? `${mediaOnline.length} USB online` : 'Pronto', mediaOnline.length ? mediaOnline.map(item => item.label || 'USB').join(' · ') : 'Collega un supporto USB');
   dashboardStatusCard('dashPowerState', wattsNow != null ? `${wattsNow.toFixed(1)} W` : '—', wattsNow != null ? `${data.power.input_volts?.toFixed?.(2) || '—'} V · ${data.power.input_amps?.toFixed?.(3) || '—'} A` : 'Sensore ASIAIR non disponibile', wattsNow == null ? 'attention' : '');
   const mobileConnection = $('#mobileConnectionText'); if (mobileConnection) mobileConnection.textContent = online ? 'Online' : 'Attenzione';
   $('#connectionText').textContent = online ? 'Sistema operativo' : 'LiveVault non disponibile';
   $('.connection').className = `connection ${online ? 'online' : 'offline'}`;
-  $('#heroTitle').textContent = online ? 'Il tuo nodo, in diretta.' : storage.data.mounted ? 'LiveVault non risponde.' : 'NVMe scollegato.';
-  $('#heroSubtitle').textContent = online ? `LiveVault ${lv.version || ''} è operativo e raggiungibile.` : storage.data.mounted ? 'Il server è online, ma LiveVault non risponde.' : 'Il pannello resta attivo. Ricollega il disco per ripristinare i servizi.';
+  $('#heroTitle').textContent = online ? 'Operativo' : storage.data.mounted ? 'Attenzione' : 'Storage offline';
+  $('#heroSubtitle').textContent = online ? `LiveVault ${lv.version || ''} · ${handoffMode === 'buffer' ? 'buffer interno' : 'NVMe'} · ${host.name}` : storage.data.mounted ? 'Il nodo è online, ma LiveVault non risponde.' : 'Il pannello resta attivo sul buffer interno.';
   $('#hostName').textContent = host.name;
   $('#uptime').textContent = `UP ${duration(host.uptime)}`;
   $('#lastUpdate').textContent = new Date(data.timestamp * 1000).toLocaleTimeString('it-IT', {hour:'2-digit',minute:'2-digit',second:'2-digit'});
@@ -715,6 +742,16 @@ $('#loginForm').addEventListener('submit', async event => {
   submit.disabled = false;
 });
 $('#logoutButton').addEventListener('click', async () => { await fetch('/api/logout', {method:'POST'}); showLogin(); });
+const resourceToggle=$('#resourceToggle');
+if(resourceToggle) resourceToggle.addEventListener('click',()=>{ const details=$('#resourceDetails'); const open=details.classList.toggle('open'); resourceToggle.setAttribute('aria-expanded',String(open)); });
+const mediaTechToggle=$('#mediaTechToggle');
+if(mediaTechToggle) mediaTechToggle.addEventListener('click',()=>{ const media=$('#media'); const open=media.classList.toggle('media-tech-open'); mediaTechToggle.textContent=open?'Chiudi dettagli':'Dettagli'; mediaTechToggle.setAttribute('aria-expanded',String(open)); });
+$$('[data-system-tab]').forEach(button=>button.addEventListener('click',()=>{
+  const tab=button.dataset.systemTab; const grid=$('.system-grid'); if(!grid)return;
+  grid.classList.toggle('system-tab-power',tab==='power'); grid.classList.toggle('system-tab-telemetry',tab==='telemetry');
+  $$('[data-system-tab]').forEach(item=>item.classList.toggle('active',item===button));
+  if(tab==='telemetry') refreshHistory();
+}));
 $$('[data-route]').forEach(link => link.addEventListener('click', event => { event.preventDefault(); selectView(link.dataset.route, true); }));
 window.addEventListener('hashchange', () => selectView(location.hash.slice(1) || 'dashboard'));
 document.addEventListener('visibilitychange', () => { if (document.hidden) stopHold(); else { refresh(); if (currentView === 'system') refreshHistory(); if (currentView === 'media') loadMediaHome(true); } });
