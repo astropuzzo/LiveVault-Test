@@ -11,7 +11,7 @@
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" href="/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="/icon.svg">
-  <link rel="stylesheet" href="/app.css?v=4.0-control"><link rel="stylesheet" href="/shell.css?v=4.0-control"><link rel="stylesheet" href="/theme.css?v=5.0-feel"><link rel="stylesheet" href="/premium.css?v=10.0-product"><link rel="stylesheet" href="/magic.css?v=13.0-ops">
+  <link rel="stylesheet" href="/app.css?v=4.0-control"><link rel="stylesheet" href="/shell.css?v=4.0-control"><link rel="stylesheet" href="/theme.css?v=5.0-feel"><link rel="stylesheet" href="/premium.css?v=10.0-product"><link rel="stylesheet" href="/magic.css?v=13.0-ops"><link rel="stylesheet" href="/media-upload.css?v=14.0-import">
 </head>
 <body data-view="dashboard" class="is-loading">
   <div class="app-shell">
@@ -127,7 +127,7 @@
       </section>
 
       <section class="app-view" data-view-panel="media" aria-labelledby="view-media-title">
-        <div class="view-heading"><div><p class="eyebrow">LIBRERIA PERSONALE</p><h1 id="view-media-title">Media</h1><p>USB, streaming e libreria in un unico workspace.</p></div></div>
+        <div class="view-heading"><div><p class="eyebrow">LIBRERIA PERSONALE</p><h1 id="view-media-title">Media</h1><p>USB, streaming, import e libreria in un unico workspace.</p></div></div>
             <section class="panel media-panel workspace-panel" id="media">
       <div class="panel-head media-head">
         <div><p class="eyebrow">MEDIA HUB</p><h2>OpenAstro Media</h2><small>La tua libreria USB, in casa e fuori casa.</small></div>
@@ -157,16 +157,16 @@
 
       <div class="media-layout media-layout-v2">
         <aside class="media-sidebar">
-          <div class="media-section-title"><span>SUPPORTI</span><small>Read-only</small></div>
+          <div class="media-section-title"><span>SUPPORTI</span><small>Import protetto</small></div>
           <div id="mediaDeviceList" class="media-devices"><p class="muted">Collega una chiavetta o un disco USB rimovibile.</p></div>
 
           <div class="media-access-grid">
-            <article><span class="media-access-icon">WEB</span><div><strong>Browser remoto</strong><small>HTTPS autenticato · disponibile anche fuori casa</small></div><b class="good">ON</b></article>
-            <article><span class="media-access-icon">SMB</span><div><strong>PC / Mac</strong><code id="mediaSmbPath">\\OPENASTRO\Media</code></div><b id="mediaSmbState">—</b></article>
+            <article><span class="media-access-icon">WEB</span><div><strong>Browser</strong><small>Upload HTTPS · LAN/Tailscale diretto quando disponibile</small></div><b class="good">ON</b></article>
+            <article><span class="media-access-icon">SMB</span><div><strong>PC / Mac · LAN veloce</strong><code id="mediaSmbPath">\\OPENASTRO\Media</code></div><b id="mediaSmbState">—</b></article>
             <article><span class="media-access-icon">TV</span><div><strong>Smart TV / DLNA</strong><small id="mediaDlnaName">OpenAstro Media</small></div><b id="mediaDlnaState">—</b></article>
           </div>
           <div class="action-row compact media-side-actions"><button class="button secondary" id="mediaCredentials">Credenziali SMB</button><button class="button secondary" id="mediaLibraryRefresh">Reindicizza</button></div>
-          <small id="mediaCredentialsText" class="media-credential-note">SMB e DLNA sono confinati alla LAN.</small>
+          <small id="mediaCredentialsText" class="media-credential-note">SMB e DLNA sono confinati alla LAN. La scrittura SMB richiede l’utente astro.</small>
         </aside>
 
         <div class="media-main">
@@ -174,6 +174,18 @@
             <div><small id="mediaDriveModel">NESSUN SUPPORTO</small><h3 id="mediaDriveName">Media USB</h3><p id="mediaDriveMeta">Inserisci un dispositivo USB rimovibile.</p></div>
             <div class="media-capacity"><strong id="mediaDriveFree">—</strong><small>liberi</small><div class="bar"><i id="mediaDriveBar"></i></div></div>
           </div>
+
+          <section class="media-upload-card disabled" id="mediaUploadCard" aria-labelledby="mediaUploadTitle">
+            <header class="media-upload-head"><div><span>IMPORTA SUL SERVER</span><strong id="mediaUploadTitle">Carica dal computer</strong><small id="mediaUploadRoute">Percorso automatico: LAN/Tailscale diretto quando disponibile, Internet solo come fallback.</small></div><span class="media-upload-route" id="mediaUploadRouteChip">AUTO</span></header>
+            <label class="media-drop-zone" id="mediaDropZone" aria-disabled="true">
+              <input id="mediaUploadInput" type="file" multiple hidden>
+              <span class="media-drop-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M11 15h2V8.8l2.6 2.6 1.4-1.4L12 5l-5 5 1.4 1.4L11 8.8V15Zm-6 3h14v2H5v-2Z"/></svg></span>
+              <span class="media-drop-copy"><strong>Trascina qui film, musica, foto o altri file</strong><small>Destinazione: <b id="mediaUploadPath">nessun supporto</b>. Il file entra subito nella libreria web e MiniDLNA lo rileva automaticamente.</small></span>
+              <button class="media-upload-pick" id="mediaUploadChoose" type="button" disabled>Seleziona file</button>
+            </label>
+            <div class="media-upload-queue" id="mediaUploadQueue" hidden><div class="media-upload-queue-head"><strong>Trasferimenti</strong><span id="mediaUploadQueueSummary">0/0 completati</span></div><div class="media-upload-queue-list" id="mediaUploadQueueList"></div></div>
+            <div class="media-upload-lan"><div class="media-upload-lan-copy"><strong>Dal PC sulla stessa rete: usa prima la LAN</strong><small><code>\\OPENASTRO\Media</code> con l’utente <b>astro</b> trasferisce direttamente via SMB. MiniDLNA è il catalogo TV: non è una pagina web di upload.</small></div><button id="mediaUploadCopySmb" type="button">Copia percorso SMB</button></div>
+          </section>
 
           <div class="media-recent-wrap" id="mediaRecentWrap" hidden>
             <div class="media-section-title"><span>AGGIUNTI DI RECENTE</span><small id="mediaRecentCount"></small></div>
@@ -193,7 +205,7 @@
           </div>
         </div>
       </div>
-      <p class="media-note">I supporti sono montati in sola lettura. Le anteprime vengono generate solo quando servono. Streaming remoto e download passano dal pannello HTTPS; SMB e DLNA restano esclusivamente nella rete locale.</p>
+      <p class="media-note">I supporti Media sono scrivibili soltanto per import autenticato OpenAstro/SMB. DLNA e accesso guest restano in sola lettura. Streaming remoto e download passano dal pannello HTTPS; SMB e DLNA restano esclusivamente nella rete locale.</p>
     </section>
 
 
@@ -375,5 +387,6 @@
 
   <script src="/hls.min.js?v=1.7.2" defer></script>
   <script src="/app.js?v=13.0-ops" defer></script>
+  <script src="/media-upload.js?v=14.0-import" defer></script>
 </body>
 </html>
