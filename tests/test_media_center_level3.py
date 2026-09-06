@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-MODULE = Path('/mnt/livevault-nvme/gpt-harness/work/LiveVault-Test/control-panel/media_center.py')
+MODULE = Path(__file__).parents[1] / 'control-panel' / 'media_center.py'
 spec = importlib.util.spec_from_file_location('media_center_level3_test', MODULE)
 media = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(media)
