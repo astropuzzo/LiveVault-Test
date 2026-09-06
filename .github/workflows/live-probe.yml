@@ -1,0 +1,35 @@
+name: Live probe
+
+on:
+  push:
+    branches:
+      - probe/live-runtime-967b
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Probe LiveVault and Control Center public endpoints
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          echo '=== LiveVault health ==='
+          curl -fsS --retry 3 --retry-delay 2 --connect-timeout 10 --max-time 30 \
+            https://openastro.tailf2871c.ts.net/healthz | tee /tmp/livevault-health.json
+          echo
+          echo '=== Control Center root ==='
+          curl -ksS -D /tmp/panel-headers --connect-timeout 10 --max-time 30 \
+            https://openastro.tailf2871c.ts.net:8443/ -o /tmp/panel.html
+          head -n 12 /tmp/panel-headers
+          grep -Eo 'media-upload\.(css|js)[^"< ]*|media-playback-fix\.js[^"< ]*' /tmp/panel.html || true
+          echo '=== static import assets ==='
+          for asset in media-upload.js media-upload.css media-playback-fix.js; do
+            code=$(curl -ksS -o "/tmp/$asset" -w '%{http_code}' --connect-timeout 10 --max-time 30 \
+              "https://openastro.tailf2871c.ts.net:8443/$asset")
+            bytes=$(wc -c < "/tmp/$asset")
+            printf '%s http=%s bytes=%s\n' "$asset" "$code" "$bytes"
+          done
+          echo '=== Coolify ==='
+          curl -ksS -o /dev/null -w 'http=%{http_code} total=%{time_total}s\n' --connect-timeout 10 --max-time 30 \
+            https://openastro.tailf2871c.ts.net:10000/
