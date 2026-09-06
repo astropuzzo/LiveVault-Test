@@ -61,6 +61,13 @@ def test_stripchat_private_paid_and_geo_states_are_nonrecordable():
     assert (restricted.status, restricted.live, restricted.recordable) == ("restricted", True, False)
 
 
+def test_stripchat_hidden_and_ticket_are_private_not_tipjar():
+    hidden = classify_stripchat_cam(_stripchat_payload("hidden"), 42)
+    ticket = classify_stripchat_cam(_stripchat_payload("ticketShow"), 42)
+    assert (hidden.status, hidden.live, hidden.recordable) == ("private", True, False)
+    assert (ticket.status, ticket.live, ticket.recordable) == ("private", True, False)
+
+
 def test_stripchat_unknown_active_state_fails_closed():
     state = classify_stripchat_cam(_stripchat_payload("newPaidMode"), 42)
 

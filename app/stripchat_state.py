@@ -16,11 +16,11 @@ _PRIVATE_KEYS = {
     "virtualprivate",
     "p2pvoice",
     "exclusive",
-}
-_TIPJAR_KEYS = {
     "ticket",
     "ticketshow",
     "hidden",
+}
+_TIPJAR_KEYS = {
     "away",
     "tipjar",
 }

@@ -250,7 +250,7 @@
 
   function categoryTags(profile) {
     const items = [...(profile.categories || []), ...(profile.collections || [])];
-    return items.slice(0,3).map(item => `<span class="library-tag" style="--tag:${esc(item.color)}">${esc(item.name)}</span>`).join('') + (items.length > 3 ? `<span class="library-tag muted-tag">+${items.length-3}</span>` : '');
+    return items.slice(0,3).map(item => `<span class="library-tag" data-tag-color="${esc(item.color)}">${esc(item.name)}</span>`).join('') + (items.length > 3 ? `<span class="library-tag muted-tag">+${items.length-3}</span>` : '');
   }
 
   renderLibrary = function renderLibraryProduct() {
@@ -279,6 +279,7 @@
       </article>`;
     }).join('');
     updateSelectionUi(visible);
+    applyDynamicStyles(root);
   };
 
   function attentionReasonsProduct(recording) {

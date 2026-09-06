@@ -28,9 +28,10 @@ class ProbeResult:
 
 PRIVATE_STATUS_TOKENS = {
     "private", "p2p", "group", "password", "password protected", "exclusive",
+    "hidden", "secret show", "secret", "ticket show", "ticket",
 }
 TIPJAR_STATUS_TOKENS = {
-    "ticket", "hidden", "away", "offline_tipping", "tip_offline", "tipjar", "tip_jar",
+    "away", "offline_tipping", "tip_offline", "tipjar", "tip_jar",
 }
 
 

@@ -87,7 +87,9 @@ def test_stripchat_hls_advert_is_rejected(monkeypatch):
 
 def test_provider_access_states_are_normalized():
     assert providers.inaccessible_status("Model is in private show") == "private"
-    assert providers.inaccessible_status("Hidden session in progress") == "tipjar"
+    assert providers.inaccessible_status("Hidden session in progress") == "private"
+    assert providers.inaccessible_status("Secret show in progress") == "private"
+    assert providers.inaccessible_status("Ticket show") == "private"
     assert providers.inaccessible_status("offline_tipping") == "tipjar"
     assert providers.inaccessible_status("Subscribers only live stream") == "restricted"
 

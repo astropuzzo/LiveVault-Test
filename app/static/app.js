@@ -102,6 +102,26 @@ function statNumber(value, suffix = '') {
   return `${new Intl.NumberFormat('it-IT', {maximumFractionDigits: 1}).format(number)}${suffix}`;
 }
 
+function applyDynamicStyles(root = document) {
+  const scope = root && typeof root.querySelectorAll === 'function' ? root : document;
+  for (const node of scope.querySelectorAll('[data-tag-color]')) {
+    const value = String(node.dataset.tagColor || '').trim();
+    if (/^#[0-9a-f]{6}$/i.test(value)) node.style.setProperty('--tag', value);
+  }
+  for (const node of scope.querySelectorAll('[data-dynamic-width]')) {
+    const value = Math.max(0, Math.min(100, Number(node.dataset.dynamicWidth) || 0));
+    node.style.width = `${value}%`;
+  }
+  for (const node of scope.querySelectorAll('[data-progress]')) {
+    const value = Math.max(0, Math.min(100, Number(node.dataset.progress) || 0));
+    node.style.setProperty('--progress', `${value}%`);
+  }
+  for (const node of scope.querySelectorAll('[data-dynamic-height]')) {
+    const value = Math.max(0, Math.min(100, Number(node.dataset.dynamicHeight) || 0));
+    node.style.height = `${value}%`;
+  }
+}
+
 function activityChartSvg(rows = []) {
   if (!rows.length || !rows.some(row => Number(row.online_seconds) || Number(row.recorded_seconds))) return '<div class="empty compact">Nessun dato.</div>';
   const width = 820, height = 230, top = 12, bottom = 34, chartHeight = height - top - bottom;
@@ -150,7 +170,7 @@ function dataFlowMarkup(rows = []) {
     const count = Number(row.recording_count) || 0;
     const uploaded = Number(row.uploaded_count) || 0;
     const width = Math.max(3, bytes / maxBytes * 100);
-    return `<div class="data-flow-row"><time>${esc(row.date.slice(5))}</time><div class="data-flow-track"><i style="width:${width.toFixed(1)}%"></i></div><strong>${esc(humanBytes(bytes))}</strong><small>${count} video · ${uploaded} cloud</small></div>`;
+    return `<div class="data-flow-row"><time>${esc(row.date.slice(5))}</time><div class="data-flow-track"><i data-dynamic-width="${width.toFixed(1)}"></i></div><strong>${esc(humanBytes(bytes))}</strong><small>${count} video · ${uploaded} cloud</small></div>`;
   }).join('');
 }
 
@@ -458,7 +478,7 @@ function renderSources() {
 
 function tagMarkup(items, className = 'library-tag') {
   return (items || []).map(item =>
-    `<span class="${className}" style="--tag:${esc(item.color)}">${esc(item.name)}</span>`
+    `<span class="${className}" data-tag-color="${esc(item.color)}">${esc(item.name)}</span>`
   ).join('');
 }
 
@@ -560,6 +580,7 @@ function renderLibrary() {
     </article>`;
   }).join('');
   updateSelectionUi(visible);
+  applyDynamicStyles(root);
 }
 
 function fillLibraryControls() {
@@ -589,11 +610,13 @@ function renderTaxonomy() {
   const categoryRoot = $('#categoryList');
   const collectionRoot = $('#collectionList');
   categoryRoot.innerHTML = (libraryMeta.categories || []).length ? libraryMeta.categories.map(item =>
-    `<article class="taxonomy-row"><span class="taxonomy-swatch" style="--tag:${esc(item.color)}"></span><div><strong>${esc(item.name)}</strong><small>${item.profile_count || 0} profili</small></div><button class="btn quiet" data-tax-action="edit-category" data-id="${item.id}" type="button">Modifica</button><button class="btn quiet danger" data-tax-action="delete-category" data-id="${item.id}" type="button">Elimina</button></article>`
+    `<article class="taxonomy-row"><span class="taxonomy-swatch" data-tag-color="${esc(item.color)}"></span><div><strong>${esc(item.name)}</strong><small>${item.profile_count || 0} profili</small></div><button class="btn quiet" data-tax-action="edit-category" data-id="${item.id}" type="button">Modifica</button><button class="btn quiet danger" data-tax-action="delete-category" data-id="${item.id}" type="button">Elimina</button></article>`
   ).join('') : '<div class="empty compact">Nessuna categoria.</div>';
   collectionRoot.innerHTML = (libraryMeta.collections || []).length ? libraryMeta.collections.map(item =>
-    `<article class="taxonomy-row collection-row"><span class="taxonomy-swatch" style="--tag:${esc(item.color)}"></span><div><strong>${esc(item.name)}${item.pinned ? ' · in evidenza' : ''}</strong><small>${item.profile_count || 0} profili${item.description ? ` · ${esc(item.description)}` : ''}</small></div><button class="btn quiet" data-tax-action="toggle-collection" data-id="${item.id}" type="button">${item.pinned ? 'Togli evidenza' : 'Evidenzia'}</button><button class="btn quiet" data-tax-action="edit-collection" data-id="${item.id}" type="button">Modifica</button><button class="btn quiet danger" data-tax-action="delete-collection" data-id="${item.id}" type="button">Elimina</button></article>`
+    `<article class="taxonomy-row collection-row"><span class="taxonomy-swatch" data-tag-color="${esc(item.color)}"></span><div><strong>${esc(item.name)}${item.pinned ? ' · in evidenza' : ''}</strong><small>${item.profile_count || 0} profili${item.description ? ` · ${esc(item.description)}` : ''}</small></div><button class="btn quiet" data-tax-action="toggle-collection" data-id="${item.id}" type="button">${item.pinned ? 'Togli evidenza' : 'Evidenzia'}</button><button class="btn quiet" data-tax-action="edit-collection" data-id="${item.id}" type="button">Modifica</button><button class="btn quiet danger" data-tax-action="delete-collection" data-id="${item.id}" type="button">Elimina</button></article>`
   ).join('') : '<div class="empty compact">Nessuna raccolta.</div>';
+  applyDynamicStyles(categoryRoot);
+  applyDynamicStyles(collectionRoot);
 }
 
 async function loadLibraryMeta() {
@@ -631,10 +654,10 @@ function renderProfile() {
   $('#profileTitle').textContent = profile.display_name;
   $('#profileReference').textContent = `${profile.linked_sources.length} account · ${dateText(profile.created_at)}`;
   const categoryChecks = (libraryMeta.categories || []).map(item =>
-    `<label class="choice-tag" style="--tag:${esc(item.color)}"><input type="checkbox" data-profile-category="${item.id}" ${profile.categories.some(row => row.id === item.id) ? 'checked' : ''}><span>${esc(item.name)}</span></label>`
+    `<label class="choice-tag" data-tag-color="${esc(item.color)}"><input type="checkbox" data-profile-category="${item.id}" ${profile.categories.some(row => row.id === item.id) ? 'checked' : ''}><span>${esc(item.name)}</span></label>`
   ).join('') || '<span class="muted">Nessuna categoria.</span>';
   const collectionChecks = (libraryMeta.collections || []).map(item =>
-    `<label class="choice-tag collection" style="--tag:${esc(item.color)}"><input type="checkbox" data-profile-collection="${item.id}" ${profile.collections.some(row => row.id === item.id) ? 'checked' : ''}><span>${esc(item.name)}</span></label>`
+    `<label class="choice-tag collection" data-tag-color="${esc(item.color)}"><input type="checkbox" data-profile-collection="${item.id}" ${profile.collections.some(row => row.id === item.id) ? 'checked' : ''}><span>${esc(item.name)}</span></label>`
   ).join('') || '<span class="muted">Nessuna raccolta.</span>';
   const linked = profile.linked_sources.map(source => {
     const url = safeUrl(source.source_url);
@@ -672,15 +695,21 @@ function renderProfile() {
       <div class="profile-cover ${cover ? '' : 'empty'}">${cover ? `<img src="${esc(cover)}" alt="Copertina di ${esc(profile.display_name)}">` : `<span>${esc(profile.display_name.slice(0, 2).toUpperCase())}</span>`}</div>
       <div class="profile-summary"><button class="favorite-toggle ${profile.favorite ? 'active' : ''}" data-profile-action="favorite" data-id="${profile.id}" type="button" aria-pressed="${profile.favorite}">★ ${profile.favorite ? 'Preferita' : 'Preferiti'}</button><div class="profile-metrics"><span><strong>${stats.recording_count || 0}</strong> completati</span><span><strong>${localCaptures.length}</strong> locali ora</span><span><strong>${humanBytes(stats.total_bytes || 0)}</strong> archiviati</span><span><strong>${duration(stats.total_duration_seconds || 0)}</strong> durata</span><span><strong>${stats.uploaded_count || 0}</strong> cloud</span><span class="${stats.failed_count ? 'danger-text' : ''}"><strong>${stats.failed_count || 0}</strong> problemi</span></div></div>
     </div>
-    ${localCaptureSection}
-    <section class="profile-section profile-statistics"><div class="profile-section-head"><div><h3>Statistiche</h3></div><label class="stats-range compact"><span>Periodo</span><select id="profileStatisticsRange"><option value="7" ${profileStatisticsDays === 7 ? 'selected' : ''}>7g</option><option value="30" ${profileStatisticsDays === 30 ? 'selected' : ''}>30g</option><option value="90" ${profileStatisticsDays === 90 ? 'selected' : ''}>90g</option><option value="365" ${profileStatisticsDays === 365 ? 'selected' : ''}>365g</option></select></label></div>${activity ? `<div class="stats-summary-grid compact">${statisticsSummaryMarkup(activity, true)}</div><div class="stats-chart-grid profile"><div class="stats-mini-chart"><div class="chart-title">Online vs registrato</div>${activityChartSvg(activity.daily)}</div><div class="stats-mini-chart"><div class="chart-title">Orari più frequenti</div>${hourlyChartSvg(activity.hourly)}</div></div>${statisticsHistoryNote(activity) ? `<p class="stats-note">${esc(statisticsHistoryNote(activity))}</p>` : ''}` : '<div class="empty compact">Statistiche non disponibili.</div>'}</section>
-    <section class="profile-section"><div class="profile-section-head"><h3>Identità e note</h3></div><label class="field"><span>Nome profilo</span><input id="profileDisplayName" maxlength="120" value="${esc(profile.display_name)}"></label><label class="field"><span>Note private</span><textarea id="profileNotes" maxlength="20000" rows="4" placeholder="Note, preferenze, riferimenti…">${esc(profile.notes)}</textarea></label></section>
-    <section class="profile-section"><div class="profile-section-head"><h3>Categorie</h3><button class="btn quiet" data-profile-action="manage-taxonomy" type="button">Gestisci</button></div><div class="choice-grid">${categoryChecks}</div></section>
-    <section class="profile-section"><div class="profile-section-head"><h3>Raccolte libreria</h3></div><div class="choice-grid">${collectionChecks}</div></section>
-    <section class="profile-section"><div class="profile-section-head"><h3>Account e provider</h3><button class="btn soft" data-profile-action="add-source" data-id="${profile.profile_id}" type="button">Collega nuova sorgente</button></div><div class="linked-list">${linked}</div></section>
-    <section class="profile-section"><div class="profile-section-head"><h3>Giornate</h3><button class="btn quiet" data-profile-action="archive" data-id="${profile.id}" type="button">Archivio${Number(profileData.recording_day_count || 0) > Number((profileData.recording_days || []).length) ? ' · altre' : ''}</button></div><div class="profile-days">${recordingDays}</div></section>
-    <section class="profile-section"><div class="profile-section-head"><h3>Timeline</h3></div><ol class="timeline">${timeline}</ol></section>
-    <div class="profile-save"><button class="btn danger" data-profile-action="delete-profile" data-id="${profile.profile_id}" type="button">Elimina creator definitivamente</button><span id="profileSaveError" class="error-text"></span><button class="btn primary" data-profile-action="save" data-id="${profile.id}" type="button">Salva profilo</button></div>`;
+    <div class="profile-workspace">
+      <main class="profile-main-column">
+        ${localCaptureSection}
+        <section class="profile-section profile-statistics"><div class="profile-section-head"><div><h3>Statistiche</h3><p>Attività online e copertura delle registrazioni</p></div><label class="stats-range compact"><span>Periodo</span><select id="profileStatisticsRange"><option value="7" ${profileStatisticsDays === 7 ? 'selected' : ''}>7g</option><option value="30" ${profileStatisticsDays === 30 ? 'selected' : ''}>30g</option><option value="90" ${profileStatisticsDays === 90 ? 'selected' : ''}>90g</option><option value="365" ${profileStatisticsDays === 365 ? 'selected' : ''}>365g</option></select></label></div>${activity ? `<div class="stats-summary-grid compact">${statisticsSummaryMarkup(activity, true)}</div><div class="stats-chart-grid profile"><div class="stats-mini-chart"><div class="chart-title">Online vs registrato</div>${activityChartSvg(activity.daily)}</div><div class="stats-mini-chart"><div class="chart-title">Orari più frequenti</div>${hourlyChartSvg(activity.hourly)}</div></div>${statisticsHistoryNote(activity) ? `<p class="stats-note">${esc(statisticsHistoryNote(activity))}</p>` : ''}` : '<div class="empty compact">Statistiche non disponibili.</div>'}</section>
+        <section class="profile-section profile-days-section"><div class="profile-section-head"><div><h3>Registrazioni</h3><p>Giornate e file associati alla creator</p></div><button class="btn quiet" data-profile-action="archive" data-id="${profile.id}" type="button">Apri archivio${Number(profileData.recording_day_count || 0) > Number((profileData.recording_days || []).length) ? ' · altre' : ''}</button></div><div class="profile-days">${recordingDays}</div></section>
+        <section class="profile-section profile-timeline-section"><div class="profile-section-head"><div><h3>Timeline</h3><p>Ultimi eventi rilevati</p></div></div><ol class="timeline">${timeline}</ol></section>
+      </main>
+      <aside class="profile-side-column">
+        <section class="profile-section profile-identity"><div class="profile-section-head"><div><h3>Identità e note</h3><p>Dati interni del profilo</p></div></div><label class="field"><span>Nome profilo</span><input id="profileDisplayName" maxlength="120" value="${esc(profile.display_name)}"></label><label class="field"><span>Note private</span><textarea id="profileNotes" maxlength="20000" rows="5" placeholder="Note, preferenze, riferimenti…">${esc(profile.notes)}</textarea></label></section>
+        <section class="profile-section profile-categories"><div class="profile-section-head"><h3>Categorie</h3><button class="btn quiet" data-profile-action="manage-taxonomy" type="button">Gestisci</button></div><div class="choice-grid">${categoryChecks}</div></section>
+        <section class="profile-section profile-collections"><div class="profile-section-head"><h3>Raccolte</h3></div><div class="choice-grid">${collectionChecks}</div></section>
+        <section class="profile-section profile-accounts"><div class="profile-section-head"><div><h3>Account</h3><p>Provider collegati a questo profilo</p></div><button class="btn soft" data-profile-action="add-source" data-id="${profile.profile_id}" type="button">Collega</button></div><div class="linked-list">${linked}</div></section>
+      </aside>
+    </div>
+    <div class="profile-save"><button class="btn danger" data-profile-action="delete-profile" data-id="${profile.profile_id}" type="button">Elimina creator</button><span id="profileSaveError" class="error-text"></span><button class="btn primary" data-profile-action="save" data-id="${profile.id}" type="button">Salva modifiche</button></div>`;
 }
 
 async function saveProfile(button) {
@@ -1069,9 +1098,10 @@ function renderStatistics() {
   const sortValue = row => sort === 'duration' ? Number(row.recorded_seconds) : sort === 'storage' ? Number(row.recording_bytes) : sort === 'coverage' ? Number(row.coverage_percent) : Number(row.recording_count);
   const rows = [...(statisticsData.top_creators || [])].sort((a,b) => sortValue(b) - sortValue(a));
   const max = Math.max(1, ...rows.map(sortValue));
-  $('#statisticsLeaderboard').innerHTML = rows.length ? rows.map((row, index) => `<article class="leader-row rich"><span class="leader-rank">${index + 1}</span><div class="leader-name">${creatorLinkMarkup(row.representative_source_id, row.display_name)}${row.online_now ? '<span class="leader-live">LIVE</span>' : ''}<i class="leader-progress" style="--progress:${(sortValue(row)/max*100).toFixed(1)}%"></i></div><div><strong>${row.recording_count || 0}</strong><small>video · ${esc(humanBytes(row.recording_bytes || 0))}</small></div><div><strong>${esc(duration(row.recorded_seconds))}</strong><small>registrato · ${row.recording_sessions || 0} sessioni</small></div><div><strong>${esc(statNumber(row.coverage_percent, '%'))}</strong><small>copertura · ${row.failed_count || 0} errori</small></div></article>`).join('') : '<div class="empty">Nessun dato.</div>';
+  $('#statisticsLeaderboard').innerHTML = rows.length ? rows.map((row, index) => `<article class="leader-row rich"><span class="leader-rank">${index + 1}</span><div class="leader-name">${creatorLinkMarkup(row.representative_source_id, row.display_name)}${row.online_now ? '<span class="leader-live">LIVE</span>' : ''}<i class="leader-progress" data-progress="${(sortValue(row)/max*100).toFixed(1)}"></i></div><div><strong>${row.recording_count || 0}</strong><small>video · ${esc(humanBytes(row.recording_bytes || 0))}</small></div><div><strong>${esc(duration(row.recorded_seconds))}</strong><small>registrato · ${row.recording_sessions || 0} sessioni</small></div><div><strong>${esc(statNumber(row.coverage_percent, '%'))}</strong><small>copertura · ${row.failed_count || 0} errori</small></div></article>`).join('') : '<div class="empty">Nessun dato.</div>';
   $('#statisticsNote').textContent = statisticsHistoryNote(statisticsData);
   $('#statisticsRange').value = String(statisticsDays);
+  applyDynamicStyles($('#statisticsView'));
 }
 
 async function loadStatistics(days = statisticsDays) {
@@ -2365,17 +2395,22 @@ function liveDnaMarkup(activity) {
   const peak = hourly.reduce((best, row) => Number(row.online_seconds) > Number(best?.online_seconds || -1) ? row : best, null);
   const average = Number(summary.live_sessions) ? Number(summary.online_seconds || 0) / Number(summary.live_sessions) : 0;
   const dayNames = ['L','M','M','G','V','S','D'];
-  const weekBars = week.map(row => `<div class="dna-day"><i style="height:${Math.max(4, row.seconds / maxWeek * 100).toFixed(1)}%"></i><span>${dayNames[row.index]}</span></div>`).join('');
-  const hourBars = hourly.map(row => `<i title="${String(row.hour).padStart(2,'0')}:00" style="height:${Math.max(3, (Number(row.online_seconds) || 0) / maxHour * 100).toFixed(1)}%"></i>`).join('');
+  const weekBars = week.map(row => `<div class="dna-day"><i data-dynamic-height="${Math.max(4, row.seconds / maxWeek * 100).toFixed(1)}"></i><span>${dayNames[row.index]}</span></div>`).join('');
+  const hourBars = hourly.map(row => `<i title="${String(row.hour).padStart(2,'0')}:00" data-dynamic-height="${Math.max(3, (Number(row.online_seconds) || 0) / maxHour * 100).toFixed(1)}"></i>`).join('');
   return `<section class="profile-section live-dna"><div class="profile-section-head"><h3>Live DNA</h3></div><div class="dna-layout"><div class="dna-week">${weekBars}</div><div class="dna-hours">${hourBars}</div><div class="dna-metrics"><span><strong>${esc(duration(average))}</strong> media</span><span><strong>${peak ? `${String(peak.hour).padStart(2,'0')}:00` : '—'}</strong> picco</span><span><strong>${esc(statNumber(summary.coverage_percent || 0, '%'))}</strong> REC</span></div></div></section>`;
 }
 
 const renderProfileV271 = renderProfile;
 renderProfile = function renderProfileV280() {
   renderProfileV271();
-  if (!profileData?.activity_statistics) return;
-  const overview = $('#profileContent .profile-overview');
-  if (overview && !$('#profileContent .live-dna')) overview.insertAdjacentHTML('afterend', liveDnaMarkup(profileData.activity_statistics));
+  if (profileData?.activity_statistics) {
+    const overview = $('#profileContent .profile-overview');
+    if (overview && !$('#profileContent .live-dna')) overview.insertAdjacentHTML('afterend', liveDnaMarkup(profileData.activity_statistics));
+    const dna = $('#profileContent .live-dna');
+    const mainColumn = $('#profileContent .profile-main-column');
+    if (dna && mainColumn) mainColumn.prepend(dna);
+  }
+  applyDynamicStyles($('#profileContent'));
 };
 
 function ensureArchiveIntelControls() {
