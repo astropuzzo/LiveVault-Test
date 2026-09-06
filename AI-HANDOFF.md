@@ -579,9 +579,16 @@ Mount root:
 /srv/openastro-media
 ```
 
-Media mounts are **read-only by default**.
+Media mounts managed by OpenAstro are **read/write for authenticated import paths**. The write boundary is enforced above the filesystem:
 
-Do not change this default casually; it prevents TV/PC/browser clients from deleting or corrupting media.
+- SMB requires the authenticated `astro` account; there is no guest SMB access.
+- Control Center uploads require an authenticated session plus CSRF token.
+- DLNA is a consumption/indexing path and does not provide a write API.
+- The media reconcile helper upgrades an older OpenAstro-managed `ro` mount to `rw` so imports keep working.
+
+Do not expose SMB/DLNA publicly and do not reintroduce a blanket read-only mount without redesigning the authenticated import workflow.
+
+**GPT Harness namespace note:** plain `findmnt` executed inside the harness sandbox can show the media bind as `ro` even while the host mount used by `astro`, Samba and the Control Center is writable. For write-state verification use the root bridge/host namespace (for example `gpt-root runuser -u astro -- ...`) and confirm with a real create/delete or SMB `put`/`del`, not only the harness-side mount flags.
 
 Manager/source:
 
@@ -619,7 +626,7 @@ OpenAstro Media
 
 ## Remote access
 
-Remote file browsing/streaming goes through the authenticated Control Center HTTPS endpoint, not SMB/DLNA.
+Remote file browsing/streaming goes through the authenticated Control Center HTTPS endpoint, not SMB/DLNA. The Media UI also supports authenticated HTTPS upload as the remote fallback; on the same LAN it deliberately recommends `\\OPENASTRO\Media` first for large files.
 
 ## Media Hub Level 3 — deployed baseline
 
@@ -653,7 +660,7 @@ Playback planning uses `ffprobe`/FFmpeg:
 
 **Governor rule:** heavy/full video transcoding is denied/suspended when LiveVault is actively recording or when thermal/load protection triggers. Direct play should remain available.
 
-HLS.js 1.7.2 is vendored locally; runtime should not require a CDN.
+HLS.js 1.7.2 is vendored locally; runtime should not require a CDN. The upload-enabled Control Center applies `media_streaming_patch.py` at runtime: HLS fallback uses MPEG-TS segments (`seg-*.ts`) rather than fMP4, and the browser-side compatibility patch disables the HLS.js worker and adds bounded network/media recovery.
 
 ## Level 10 status
 

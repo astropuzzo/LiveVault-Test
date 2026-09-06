@@ -40,6 +40,7 @@ def test_static_csp_allows_hls_media_source_and_worker(control_server):
         csp = response.headers.get("Content-Security-Policy", "")
     assert "media-src 'self' blob:" in csp
     assert "worker-src 'self' blob:" in csp
+    assert "style-src-attr 'unsafe-inline'" in csp
 
 
 def test_hls_runtime_failure_is_structured_json(control_server, monkeypatch):
