@@ -296,13 +296,20 @@ Main user-facing action wrapper:
 
 ### Manual NVMe eject/attach transaction
 
-`nvme-handoff.py` must keep `/data` `rshared` and the LiveVault Docker bind is
-`rslave`. Every mount switch reasserts host propagation before replacing
-`/data/livevault/recordings`. Container verification is not a single-shot
-comparison: it waits for propagation and, only if exactly one stable LiveVault
-container retains a stale view, restarts that already-quiesced container and
-verifies the filesystem device again. Docker is not restarted. A persistent
-mismatch aborts the eject and the NVMe must remain connected.
+`nvme-handoff.py` keeps `/data` `rshared` and the LiveVault Docker bind is
+`rslave`, but manual handoff correctness must **not** depend on Docker propagating
+a replacement child mount. Every switch first changes the host
+`/data/livevault/recordings` mount, then verifies every exact container
+`/data/recordings` mount. If the container view is stale, the helper creates a
+temporary sibling source under `/data/livevault/.handoff-source`, waits for that
+new mount to propagate, enters each LiveVault container mount namespace with
+`nsenter`, pops every stacked `/data/recordings` mount, and bind-mounts the desired
+source directly. It then removes the temporary sibling and verifies the final
+mount set. On eject it additionally rejects the operation if **any** LiveVault
+container mount still references the NVMe device. Do not reintroduce the old
+`docker restart` fallback: real QA showed that restarting the same container can
+retain the stale NVMe submount. Docker/Coolify compose artifacts are not required.
+A persistent mismatch aborts the eject and the NVMe must remain connected.
 
 Rollback after a failed manual eject is a **complete state rollback**, not just
 a recordings rebind: when the expected NVMe is still present it restores the
@@ -310,14 +317,19 @@ NVMe recordings bind, `storage-state.json`, `/share`, and the prior active state
 of `livevault-backup.timer`. This matters because the timer is intentionally
 stopped before detaching storage.
 
-Real end-to-end QA on 2026-09-07 verified the user-facing action path:
-`eject_nvme` reached `mode=buffer`, `/mnt/livevault-nvme` and `/share` were truly
-unmounted, host and container recordings both used the 4 GiB loop filesystem,
-LiveVault stayed healthy, and GPT Harness restarted eMMC-only. `attach_nvme`
-then remounted the expected UUID, restored host/container recordings to the
-NVMe, remounted `/share`, restarted the backup timer and returned to
-`mode=nvme`. A forced propagation failure was also injected before physical
-unmount and verified to restore NVMe + `/share` + backup timer automatically.
+Real end-to-end QA on 2026-09-07 verified the user-facing action path twice.
+An earlier implementation could still fail on a freshly deployed Coolify
+container with `host=1792` (buffer) while the container remained on `2082`
+(NVMe); `docker restart` did not repair that stale mount. After replacing that
+fallback with namespace repair, the same live container completed `eject_nvme`
+with **one recorder active**: `mode=buffer`, `/mnt/livevault-nvme` and `/share`
+truly unmounted, container `/data/recordings` on loop device `1792`, LiveVault
+healthy, the recorder resumed on the 4 GiB buffer, and GPT Harness restarted
+eMMC-only. `attach_nvme` then quiesced the buffer recorder, transferred and
+verified buffered files, restored host/container recordings to NVMe device
+`2082`, remounted `/share`, restarted the backup timer, emptied the buffer, and
+returned to `mode=nvme` with the recorder active. A separate forced failure before
+physical unmount verified complete rollback of NVMe + `/share` + backup timer.
 
 Control Center actions include:
 

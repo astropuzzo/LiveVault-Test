@@ -20,8 +20,11 @@ RECORDINGS = ROOT / 'recordings'
 DATA_UUID = '5fe2d0f6-b485-44e9-8e26-31fb0d217db2'
 GPT_HARNESS_SERVICE = 'gpt-harness.service'
 CONTAINER_VIEW_SETTLE_SECONDS = 3.0
-CONTAINER_VIEW_RESTART_SECONDS = 20.0
+CONTAINER_VIEW_REPAIR_SECONDS = 5.0
 CONTAINER_VIEW_POLL_SECONDS = 0.25
+CONTAINER_REPAIR_SOURCE = ROOT / '.handoff-source'
+CONTAINER_REPAIR_PATH = '/data/.handoff-source'
+CONTAINER_RECORDINGS_PATH = '/data/recordings'
 
 
 def run(*args):
@@ -119,13 +122,44 @@ def livevault_containers():
     return [item for item in run('docker', 'ps', '-q', '--filter', 'name=ahul2vdjkyvjiwgzpcrmxzfe').splitlines() if item]
 
 
-def container_recordings_device(container):
+def container_path_device(container, path):
     return int(run('docker', 'exec', container, 'python', '-c',
-                   'import os; print(os.stat("/data/recordings").st_dev)'))
+                   f'import os; print(os.stat({path!r}).st_dev)'))
+
+
+def container_recordings_devices(container):
+    """Return every mount stacked exactly on /data/recordings, bottom to top."""
+    code = (
+        'import os\n'
+        'out=[]\n'
+        'for line in open("/proc/self/mountinfo"):\n'
+        ' p=line.split()\n'
+        f' if len(p)>4 and p[4]=={CONTAINER_RECORDINGS_PATH!r}:\n'
+        '  a,b=map(int,p[2].split(":")); out.append(os.makedev(a,b))\n'
+        'print(",".join(map(str,out)))\n'
+    )
+    output = run('docker', 'exec', container, 'python', '-c', code)
+    return tuple(int(item) for item in output.split(',') if item)
+
+
+def container_mountpoints_on_device(container, device):
+    code = (
+        'import os\n'
+        f'wanted={int(device)}\n'
+        'out=[]\n'
+        'for line in open("/proc/self/mountinfo"):\n'
+        ' p=line.split()\n'
+        ' if len(p)>4:\n'
+        '  a,b=map(int,p[2].split(":"))\n'
+        '  if os.makedev(a,b)==wanted: out.append(p[4])\n'
+        'print("\\n".join(out))\n'
+    )
+    output = run('docker', 'exec', container, 'python', '-c', code)
+    return [item for item in output.splitlines() if item]
 
 
 def wait_container_view(expected, timeout):
-    """Wait for shared-subtree propagation, tolerating brief container churn."""
+    """Wait for exactly one desired recording mount in every running container."""
     deadline = time.monotonic() + timeout
     last = {}
     while True:
@@ -134,11 +168,11 @@ def wait_container_view(expected, timeout):
             current = {}
             for container in containers:
                 try:
-                    current[container] = container_recordings_device(container)
+                    current[container] = container_recordings_devices(container)
                 except (subprocess.CalledProcessError, ValueError):
                     current[container] = None
             last = current
-            if current and all(actual == expected for actual in current.values()):
+            if current and all(devices == (expected,) for devices in current.values()):
                 return True, current
         else:
             last = {}
@@ -147,31 +181,76 @@ def wait_container_view(expected, timeout):
         time.sleep(CONTAINER_VIEW_POLL_SECONDS)
 
 
+def repair_container_views(containers, expected):
+    """Deterministically replace stale container mounts without recreating Docker."""
+    CONTAINER_REPAIR_SOURCE.mkdir(parents=True, exist_ok=True)
+    if os.path.ismount(CONTAINER_REPAIR_SOURCE):
+        run('umount', str(CONTAINER_REPAIR_SOURCE))
+    run('mount', '--bind', str(RECORDINGS), str(CONTAINER_REPAIR_SOURCE))
+    try:
+        deadline = time.monotonic() + CONTAINER_VIEW_REPAIR_SECONDS
+        pending = set(containers)
+        while pending and time.monotonic() < deadline:
+            for container in list(pending):
+                try:
+                    if container_path_device(container, CONTAINER_REPAIR_PATH) == expected:
+                        pending.remove(container)
+                except (subprocess.CalledProcessError, ValueError):
+                    pass
+            if pending:
+                time.sleep(CONTAINER_VIEW_POLL_SECONDS)
+        if pending:
+            raise RuntimeError(f'Sorgente handoff non propagata ai container: {sorted(pending)}')
+
+        for container in containers:
+            pid = run('docker', 'inspect', '-f', '{{.State.Pid}}', container)
+            if not pid.isdigit() or int(pid) <= 0:
+                raise RuntimeError(f'Container LiveVault non eseguibile durante handoff: {container}')
+            # Pop every mount stacked at the recording target. A simple bind-over
+            # would hide, but still retain, the old NVMe mount and make unplugging unsafe.
+            script = (
+                'set -eu; n=0; '
+                f'while mountpoint -q {CONTAINER_RECORDINGS_PATH}; do '
+                f'umount {CONTAINER_RECORDINGS_PATH}; n=$((n+1)); '
+                '[ "$n" -le 8 ] || exit 72; done; '
+                f'mount --bind {CONTAINER_REPAIR_PATH} {CONTAINER_RECORDINGS_PATH}'
+            )
+            run('nsenter', '-t', pid, '-m', '--', 'sh', '-c', script)
+    finally:
+        if os.path.ismount(CONTAINER_REPAIR_SOURCE):
+            run('umount', str(CONTAINER_REPAIR_SOURCE))
+
+
 def verify_container_view():
     expected = RECORDINGS.stat().st_dev
     ok, seen = wait_container_view(expected, CONTAINER_VIEW_SETTLE_SECONDS)
     if ok:
         return
 
-    # A manual handoff is already quiesced at this point. If exactly one stable
-    # LiveVault container has retained a stale submount, restart only that
-    # container as a bounded fallback. Docker itself stays online and the state
-    # remains fail-closed until the new filesystem is positively verified.
     containers = livevault_containers()
-    if len(containers) == 1:
-        container = containers[0]
-        run('docker', 'restart', '--time', '30', container)
-        ok, seen = wait_container_view(expected, CONTAINER_VIEW_RESTART_SECONDS)
-        if ok:
-            return
-
     if not containers:
         raise RuntimeError('LiveVault non disponibile: handoff annullato')
+
+    repair_container_views(containers, expected)
+    ok, seen = wait_container_view(expected, CONTAINER_VIEW_REPAIR_SECONDS)
+    if ok:
+        return
+
     detail = ', '.join(f'{container}={actual}' for container, actual in sorted(seen.items())) or 'nessuna vista leggibile'
     raise RuntimeError(
-        f'Mount propagation non valida dopo retry: host={expected}; container={detail}. NVMe NON espulso'
+        f'Mount container non riallineato dopo repair: host={expected}; container={detail}. NVMe NON espulso'
     )
 
+
+def verify_containers_detached_from_device(device):
+    stale = {}
+    for container in livevault_containers():
+        paths = container_mountpoints_on_device(container, device)
+        if paths:
+            stale[container] = paths
+    if stale:
+        detail = '; '.join(f'{container}={paths}' for container, paths in sorted(stale.items()))
+        raise RuntimeError(f'Container mantiene ancora mount NVMe: {detail}. NVMe NON espulso')
 
 def device_blockers():
     """Return processes that still hold an fd/cwd on the NVMe filesystem."""
@@ -280,6 +359,7 @@ def main(action):
                 run('systemctl', 'stop', 'livevault-backup.timer', 'livevault-backup.service')
                 switch(BUFFER)
                 verify_container_view()
+                verify_containers_detached_from_device(NVME.stat().st_dev)
                 os.sync()
                 if os.path.ismount('/share'):
                     run('umount', '/share')

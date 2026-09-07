@@ -17,11 +17,18 @@ cleanly, blocks new media work, and drains existing jobs without cancelling
 threads that still hold files. Archive finalization/upload is deferred during
 buffering. After acknowledgement the host reasserts `/data` as `rshared`, switches the
 recording mount and positively verifies that every running LiveVault container
-sees the same filesystem device. Propagation verification is bounded/retried;
-if one stable LiveVault container retains a stale submount, the helper restarts
-only that already-quiesced container and verifies again. Docker itself remains
-online. Only after that check passes does it inspect remaining device handles
-and unmount the NVMe. GPT Harness is stopped immediately before the unmount so
+sees exactly one `/data/recordings` mount on the same filesystem device. Shared-
+subtree propagation is allowed a short bounded settle period, but correctness no
+longer depends on it. If a container retains a stale submount, the helper creates
+a temporary sibling bind under `/data/livevault`, waits for that fresh mount to
+propagate, enters the container mount namespace with `nsenter`, removes every
+stacked `/data/recordings` mount, and binds the desired source there directly.
+The temporary sibling is then removed. Docker and the LiveVault container remain
+online; no Coolify-generated compose artifact and no `docker restart` fallback
+are required. Before physical detach the helper also verifies that no LiveVault
+container mount namespace retains any mount backed by the NVMe device. Only
+after those checks pass does it inspect remaining device handles and unmount the
+NVMe. GPT Harness is stopped immediately before the unmount so
 its private sandbox cannot retain the removable filesystem, then restarted
 eMMC-only; attach restarts it again after the NVMe is mounted so its optional
 heavy-workspace path becomes writable again. No lazy unmount is used for a
