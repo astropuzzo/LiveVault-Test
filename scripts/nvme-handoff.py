@@ -2,6 +2,8 @@
 """Privileged, serialized NVMe handoff. Never lazy-unmount or discard a buffer."""
 from __future__ import annotations
 
+import ctypes
+import errno
 import hashlib
 import json
 import os
@@ -19,12 +21,16 @@ BUFFER_LIMIT_BYTES = 4 * 1024**3
 RECORDINGS = ROOT / 'recordings'
 DATA_UUID = '5fe2d0f6-b485-44e9-8e26-31fb0d217db2'
 GPT_HARNESS_SERVICE = 'gpt-harness.service'
-CONTAINER_VIEW_SETTLE_SECONDS = 3.0
-CONTAINER_VIEW_REPAIR_SECONDS = 5.0
-CONTAINER_VIEW_POLL_SECONDS = 0.25
-CONTAINER_REPAIR_SOURCE = ROOT / '.handoff-source'
-CONTAINER_REPAIR_PATH = '/data/.handoff-source'
+CONTAINER_VIEW_SETTLE_SECONDS = 1.0
+CONTAINER_VIEW_REPAIR_SECONDS = 3.0
+CONTAINER_VIEW_POLL_SECONDS = 0.20
 CONTAINER_RECORDINGS_PATH = '/data/recordings'
+SYS_OPEN_TREE = 428
+SYS_MOVE_MOUNT = 429
+AT_FDCWD = -100
+OPEN_TREE_CLONE = 1
+OPEN_TREE_CLOEXEC = os.O_CLOEXEC
+MOVE_MOUNT_F_EMPTY_PATH = 0x00000004
 
 
 def run(*args):
@@ -122,11 +128,6 @@ def livevault_containers():
     return [item for item in run('docker', 'ps', '-q', '--filter', 'name=ahul2vdjkyvjiwgzpcrmxzfe').splitlines() if item]
 
 
-def container_path_device(container, path):
-    return int(run('docker', 'exec', container, 'python', '-c',
-                   f'import os; print(os.stat({path!r}).st_dev)'))
-
-
 def container_recordings_devices(container):
     """Return every mount stacked exactly on /data/recordings, bottom to top."""
     code = (
@@ -181,44 +182,96 @@ def wait_container_view(expected, timeout):
         time.sleep(CONTAINER_VIEW_POLL_SECONDS)
 
 
-def repair_container_views(containers, expected):
-    """Deterministically replace stale container mounts without recreating Docker."""
-    CONTAINER_REPAIR_SOURCE.mkdir(parents=True, exist_ok=True)
-    if os.path.ismount(CONTAINER_REPAIR_SOURCE):
-        run('umount', str(CONTAINER_REPAIR_SOURCE))
-    run('mount', '--bind', str(RECORDINGS), str(CONTAINER_REPAIR_SOURCE))
-    try:
-        deadline = time.monotonic() + CONTAINER_VIEW_REPAIR_SECONDS
-        pending = set(containers)
-        while pending and time.monotonic() < deadline:
-            for container in list(pending):
-                try:
-                    if container_path_device(container, CONTAINER_REPAIR_PATH) == expected:
-                        pending.remove(container)
-                except (subprocess.CalledProcessError, ValueError):
-                    pass
-            if pending:
-                time.sleep(CONTAINER_VIEW_POLL_SECONDS)
-        if pending:
-            raise RuntimeError(f'Sorgente handoff non propagata ai container: {sorted(pending)}')
+def _mount_clone_into_namespace(pid, source, target, expected):
+    """Clone a host mount and attach it inside another mount namespace.
 
-        for container in containers:
-            pid = run('docker', 'inspect', '-f', '{{.State.Pid}}', container)
-            if not pid.isdigit() or int(pid) <= 0:
-                raise RuntimeError(f'Container LiveVault non eseguibile durante handoff: {container}')
-            # Pop every mount stacked at the recording target. A simple bind-over
-            # would hide, but still retain, the old NVMe mount and make unplugging unsafe.
-            script = (
-                'set -eu; n=0; '
-                f'while mountpoint -q {CONTAINER_RECORDINGS_PATH}; do '
-                f'umount {CONTAINER_RECORDINGS_PATH}; n=$((n+1)); '
-                '[ "$n" -le 8 ] || exit 72; done; '
-                f'mount --bind {CONTAINER_REPAIR_PATH} {CONTAINER_RECORDINGS_PATH}'
+    This uses the modern mount API so correctness does not depend on Docker
+    shared-subtree propagation. The operation runs in a forked child because
+    setns(2) permanently changes the caller's mount namespace.
+    """
+    read_fd, write_fd = os.pipe()
+    child = os.fork()
+    if child == 0:
+        os.close(read_fd)
+        try:
+            libc = ctypes.CDLL(None, use_errno=True)
+            mount_fd = libc.syscall(
+                SYS_OPEN_TREE,
+                AT_FDCWD,
+                os.fsencode(source),
+                OPEN_TREE_CLONE | OPEN_TREE_CLOEXEC,
             )
-            run('nsenter', '-t', pid, '-m', '--', 'sh', '-c', script)
-    finally:
-        if os.path.ismount(CONTAINER_REPAIR_SOURCE):
-            run('umount', str(CONTAINER_REPAIR_SOURCE))
+            if mount_fd < 0:
+                code = ctypes.get_errno()
+                raise OSError(code, f'open_tree: {os.strerror(code)}')
+            try:
+                ns_fd = os.open(f'/proc/{pid}/ns/mnt', os.O_RDONLY | os.O_CLOEXEC)
+                try:
+                    if libc.setns(ns_fd, 0) != 0:
+                        code = ctypes.get_errno()
+                        raise OSError(code, f'setns: {os.strerror(code)}')
+                finally:
+                    os.close(ns_fd)
+
+                target_b = os.fsencode(target)
+                # Pop every mount stacked on the target. A bind-over alone would
+                # hide the old NVMe mount while still retaining the device.
+                for _ in range(8):
+                    if libc.umount2(target_b, 0) == 0:
+                        continue
+                    code = ctypes.get_errno()
+                    if code in {errno.EINVAL, errno.ENOENT}:
+                        break
+                    raise OSError(code, f'umount2({target}): {os.strerror(code)}')
+                else:
+                    raise RuntimeError(f'Troppi mount sovrapposti su {target}')
+
+                if libc.syscall(
+                    SYS_MOVE_MOUNT,
+                    mount_fd,
+                    b'',
+                    AT_FDCWD,
+                    target_b,
+                    MOVE_MOUNT_F_EMPTY_PATH,
+                ) != 0:
+                    code = ctypes.get_errno()
+                    raise OSError(code, f'move_mount: {os.strerror(code)}')
+            finally:
+                os.close(mount_fd)
+
+            actual = os.stat(target).st_dev
+            if actual != expected:
+                raise RuntimeError(f'Namespace repair device errato: {actual} != {expected}')
+        except BaseException as exc:
+            try:
+                os.write(write_fd, f'{type(exc).__name__}: {exc}'.encode()[:4096])
+            finally:
+                os.close(write_fd)
+            os._exit(1)
+        os.close(write_fd)
+        os._exit(0)
+
+    os.close(write_fd)
+    chunks = []
+    while True:
+        chunk = os.read(read_fd, 4096)
+        if not chunk:
+            break
+        chunks.append(chunk)
+    os.close(read_fd)
+    _, status = os.waitpid(child, 0)
+    if not os.WIFEXITED(status) or os.WEXITSTATUS(status) != 0:
+        detail = b''.join(chunks).decode(errors='replace') or f'child status={status}'
+        raise RuntimeError(f'Riallineamento mount namespace fallito: {detail}')
+
+
+def repair_container_views(containers, expected):
+    """Replace stale /data/recordings mounts without relying on propagation."""
+    for container in containers:
+        pid = run('docker', 'inspect', '-f', '{{.State.Pid}}', container)
+        if not pid.isdigit() or int(pid) <= 0:
+            raise RuntimeError(f'Container LiveVault non eseguibile durante handoff: {container}')
+        _mount_clone_into_namespace(int(pid), RECORDINGS, CONTAINER_RECORDINGS_PATH, expected)
 
 
 def verify_container_view():
@@ -407,6 +460,13 @@ def main(action):
             restored = (previous != 'nvme' or os.path.ismount(NVME)) and source.is_dir()
             if restored:
                 switch(source)
+                try:
+                    verify_container_view()
+                except Exception:
+                    # Preserve the original exception, but do not publish a mode
+                    # that the running container has not positively adopted.
+                    publish('quiesce', reason='rollback-container-view-failed')
+                    raise
                 publish(previous)
                 if previous == 'nvme':
                     if share_was_mounted and not os.path.ismount('/share'):

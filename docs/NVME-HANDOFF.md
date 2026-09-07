@@ -19,14 +19,16 @@ buffering. After acknowledgement the host reasserts `/data` as `rshared`, switch
 recording mount and positively verifies that every running LiveVault container
 sees exactly one `/data/recordings` mount on the same filesystem device. Shared-
 subtree propagation is allowed a short bounded settle period, but correctness no
-longer depends on it. If a container retains a stale submount, the helper creates
-a temporary sibling bind under `/data/livevault`, waits for that fresh mount to
-propagate, enters the container mount namespace with `nsenter`, removes every
-stacked `/data/recordings` mount, and binds the desired source there directly.
-The temporary sibling is then removed. Docker and the LiveVault container remain
-online; no Coolify-generated compose artifact and no `docker restart` fallback
-are required. Before physical detach the helper also verifies that no LiveVault
-container mount namespace retains any mount backed by the NVMe device. Only
+longer depends on it. If a container retains a stale submount, the helper uses
+Linux `open_tree(2)` to clone the already-selected host recordings mount, enters
+the target mount namespace with `setns(2)`, removes every stacked
+`/data/recordings` mount, and attaches the cloned mount with `move_mount(2)`.
+This path does not require a source path to be visible inside the container and
+does not depend on a new mount event propagating through Docker. Docker and the
+LiveVault container remain online; no Coolify-generated compose artifact and no
+`docker restart` fallback are required. Before physical detach the helper also
+verifies that no LiveVault container mount namespace retains any mount backed by
+the NVMe device. Only
 after those checks pass does it inspect remaining device handles and unmount the
 NVMe. GPT Harness is stopped immediately before the unmount so
 its private sandbox cannot retain the removable filesystem, then restarted
@@ -35,6 +37,15 @@ heavy-workspace path becomes writable again. No lazy unmount is used for a
 manual eject. A failure remains fail-closed and restores the complete prior
 state when the medium is still present: recordings bind, `/share`, storage
 state and `livevault-backup.timer`.
+
+A later real Control Center attempt exposed one more failure mode: the temporary
+sibling repair source itself could fail to propagate to a newly deployed
+container (`Sorgente handoff non propagata ai container`). That approach was
+removed. The final kernel-mount repair above was then exercised on the same
+container: `eject_nvme` completed with the NVMe and `/share` truly unmounted and
+container recordings on loop device `1792`; `attach_nvme` returned host and
+container recordings to NVMe device `2082`, restored `/share` and the backup
+timer, and left the buffer empty.
 
 Buffer captures use short parts and reserve 128 MiB per active camera plus
 one spare slot for closing files. The full state stays latched until NVMe

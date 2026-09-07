@@ -155,42 +155,28 @@ def test_detach_verification_rejects_hidden_nvme_mount(monkeypatch, transfer):
         transfer.verify_containers_detached_from_device(2082)
 
 
-def test_namespace_repair_unmounts_all_recording_layers_before_bind(monkeypatch, tmp_path, transfer):
-    root = tmp_path / 'livevault'
-    rec = root / 'recordings'
-    source = root / '.handoff-source'
-    rec.mkdir(parents=True)
-    source.mkdir(parents=True)
-    monkeypatch.setattr(transfer, 'ROOT', root)
-    monkeypatch.setattr(transfer, 'RECORDINGS', rec)
-    monkeypatch.setattr(transfer, 'CONTAINER_REPAIR_SOURCE', source)
-    monkeypatch.setattr(transfer, 'CONTAINER_REPAIR_PATH', '/data/.handoff-source')
-    monkeypatch.setattr(transfer, 'CONTAINER_VIEW_REPAIR_SECONDS', 0.01)
-    mounted = {'source': False}
-    monkeypatch.setattr(transfer.os.path, 'ismount', lambda path: mounted['source'] if Path(path) == source else False)
+def test_namespace_repair_uses_kernel_mount_clone_for_each_container(monkeypatch, tmp_path, transfer):
+    monkeypatch.setattr(transfer, 'RECORDINGS', tmp_path)
+    expected = tmp_path.stat().st_dev
+    monkeypatch.setattr(transfer, 'run', lambda *args: '4242' if args[:3] == ('docker', 'inspect', '-f') else '')
     calls = []
-    def fake_run(*args):
-        calls.append(args)
-        if args[:2] == ('mount', '--bind') and args[-1] == str(source):
-            mounted['source'] = True
-            return ''
-        if args[:2] == ('umount', str(source)):
-            mounted['source'] = False
-            return ''
-        if args[:3] == ('docker', 'inspect', '-f'):
-            return '4242'
-        if args[:3] == ('docker', 'exec', 'live'):
-            return str(rec.stat().st_dev)
-        return ''
-    monkeypatch.setattr(transfer, 'run', fake_run)
-    expected = rec.stat().st_dev
-    transfer.repair_container_views(['live'], expected)
-    nsenter = next(call for call in calls if call and call[0] == 'nsenter')
-    script = nsenter[-1]
-    assert 'while mountpoint -q /data/recordings' in script
-    assert 'umount /data/recordings' in script
-    assert 'mount --bind /data/.handoff-source /data/recordings' in script
-    assert mounted['source'] is False
+    monkeypatch.setattr(
+        transfer,
+        '_mount_clone_into_namespace',
+        lambda pid, source, target, device: calls.append((pid, source, target, device)),
+    )
+    transfer.repair_container_views(['live-a', 'live-b'], expected)
+    assert calls == [
+        (4242, tmp_path, '/data/recordings', expected),
+        (4242, tmp_path, '/data/recordings', expected),
+    ]
+
+
+def test_namespace_repair_rejects_nonrunning_container(monkeypatch, tmp_path, transfer):
+    monkeypatch.setattr(transfer, 'RECORDINGS', tmp_path)
+    monkeypatch.setattr(transfer, 'run', lambda *args: '0')
+    with pytest.raises(RuntimeError, match='non eseguibile'):
+        transfer.repair_container_views(['live'], tmp_path.stat().st_dev)
 
 
 def test_failed_eject_rollback_restores_backup_timer_and_share(monkeypatch, transfer, tmp_path):
@@ -213,7 +199,12 @@ def test_failed_eject_rollback_restores_backup_timer_and_share(monkeypatch, tran
     monkeypatch.setattr(transfer.os.path, 'ismount', lambda path: mounted.get(str(path), False))
     monkeypatch.setattr(transfer, 'quiesce', lambda: None)
     monkeypatch.setattr(transfer, 'switch', lambda source: None)
-    monkeypatch.setattr(transfer, 'verify_container_view', lambda: (_ for _ in ()).throw(RuntimeError('propagation failed')))
+    verify_calls = {'count': 0}
+    def verify_once_then_recover():
+        verify_calls['count'] += 1
+        if verify_calls['count'] == 1:
+            raise RuntimeError('propagation failed')
+    monkeypatch.setattr(transfer, 'verify_container_view', verify_once_then_recover)
     calls = []
     def fake_run(*args, **kwargs):
         calls.append(tuple(args))
@@ -225,4 +216,5 @@ def test_failed_eject_rollback_restores_backup_timer_and_share(monkeypatch, tran
     monkeypatch.setattr(transfer.subprocess, 'run', lambda args, **kwargs: popen_calls.append(tuple(args)) or SimpleNamespace(returncode=0, stdout='', stderr=''))
     with pytest.raises(RuntimeError, match='propagation failed'):
         transfer.main('eject')
+    assert verify_calls['count'] == 2
     assert ('systemctl', 'start', 'livevault-backup.timer') in popen_calls

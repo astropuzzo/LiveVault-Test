@@ -23,7 +23,7 @@ def test_dashboard_has_single_product_hero_and_mobile_route_title():
     assert 'data-system-tab="power"' in html
     assert 'data-system-tab="telemetry"' in html
     assert 'id="mobileViewTitle"' in html
-    assert 'id="quickNvmeAction"' in html
+    assert '<button id="quickNvmeAction" data-action="eject_nvme"' in html
     assert 'data-action="restart_livevault"' in html
     assert 'data-action="restart_docker"' in html
     assert 'data-action="reboot"' in html

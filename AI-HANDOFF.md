@@ -300,16 +300,18 @@ Main user-facing action wrapper:
 `rslave`, but manual handoff correctness must **not** depend on Docker propagating
 a replacement child mount. Every switch first changes the host
 `/data/livevault/recordings` mount, then verifies every exact container
-`/data/recordings` mount. If the container view is stale, the helper creates a
-temporary sibling source under `/data/livevault/.handoff-source`, waits for that
-new mount to propagate, enters each LiveVault container mount namespace with
-`nsenter`, pops every stacked `/data/recordings` mount, and bind-mounts the desired
-source directly. It then removes the temporary sibling and verifies the final
-mount set. On eject it additionally rejects the operation if **any** LiveVault
-container mount still references the NVMe device. Do not reintroduce the old
-`docker restart` fallback: real QA showed that restarting the same container can
-retain the stale NVMe submount. Docker/Coolify compose artifacts are not required.
-A persistent mismatch aborts the eject and the NVMe must remain connected.
+`/data/recordings` mount. If the container view is stale, the helper now uses the
+Linux mount API directly: `open_tree(2)` clones the desired host mount before
+namespace entry, `setns(2)` enters the LiveVault container mount namespace, every
+stacked `/data/recordings` mount is removed, and `move_mount(2)` attaches the
+cloned mount directly. This avoids both a container-visible temporary source path
+and any dependency on a fresh mount event propagating through Docker. It then
+verifies the final mount set. On eject it additionally rejects the operation if
+**any** LiveVault container mount still references the NVMe device. Do not
+reintroduce either the old `docker restart` fallback or the later temporary
+`.handoff-source` propagation fallback: both failed in real UI-driven QA.
+Docker/Coolify compose artifacts are not required. A persistent mismatch aborts
+the eject and the NVMe must remain connected.
 
 Rollback after a failed manual eject is a **complete state rollback**, not just
 a recordings rebind: when the expected NVMe is still present it restores the
@@ -317,15 +319,18 @@ NVMe recordings bind, `storage-state.json`, `/share`, and the prior active state
 of `livevault-backup.timer`. This matters because the timer is intentionally
 stopped before detaching storage.
 
-Real end-to-end QA on 2026-09-07 verified the user-facing action path twice.
-An earlier implementation could still fail on a freshly deployed Coolify
+Real end-to-end QA on 2026-09-07 verified the user-facing action path multiple
+times. An earlier implementation could still fail on a freshly deployed Coolify
 container with `host=1792` (buffer) while the container remained on `2082`
-(NVMe); `docker restart` did not repair that stale mount. After replacing that
-fallback with namespace repair, the same live container completed `eject_nvme`
-with **one recorder active**: `mode=buffer`, `/mnt/livevault-nvme` and `/share`
-truly unmounted, container `/data/recordings` on loop device `1792`, LiveVault
-healthy, the recorder resumed on the 4 GiB buffer, and GPT Harness restarted
-eMMC-only. `attach_nvme` then quiesced the buffer recorder, transferred and
+(NVMe); `docker restart` did not repair that stale mount. A subsequent temporary
+sibling-source repair also failed from the actual Control Center button with
+`Sorgente handoff non propagata ai container`. The final `open_tree`/`setns`/
+`move_mount` repair was then deployed and exercised on that same failing
+container via the exact `/usr/local/sbin/openastro-action eject_nvme` path:
+`mode=buffer`, `/mnt/livevault-nvme` and `/share` truly unmounted, container
+`/data/recordings` on loop device `1792`, and LiveVault healthy. A previous QA
+run also covered **one recorder active**, which resumed on the 4 GiB buffer.
+`attach_nvme` then transferred any buffer contents and
 verified buffered files, restored host/container recordings to NVMe device
 `2082`, remounted `/share`, restarted the backup timer, emptied the buffer, and
 returned to `mode=nvme` with the recorder active. A separate forced failure before
