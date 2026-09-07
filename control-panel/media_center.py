@@ -27,6 +27,9 @@ _LIBRARY_CACHE: dict[str, tuple[float, dict]] = {}
 _DB_INIT_LOCK = threading.Lock()
 _STREAM_LOCK = threading.Lock()
 _ACTIVE_STREAMS: dict[str, dict] = {}
+_PROBE_CACHE_LOCK = threading.Lock()
+_PROBE_CACHE: dict[tuple[str, str, int, int], dict] = {}
+_PROBE_CACHE_MAX = 64
 
 VIDEO_EXT = {'.mp4','.mkv','.avi','.mov','.m4v','.webm','.ts','.m2ts','.mts','.wmv','.flv','.mpg','.mpeg'}
 AUDIO_EXT = {'.mp3','.flac','.aac','.m4a','.wav','.ogg','.opus','.wma','.alac'}
@@ -457,6 +460,11 @@ def set_favorite(uuid: str, relative: str, enabled: bool) -> dict:
 
 def probe_file(uuid: str, relative: str) -> dict:
     info=file_info(uuid,relative)
+    key=(uuid,relative,int(info['modified']),int(info['size']))
+    with _PROBE_CACHE_LOCK:
+        cached=_PROBE_CACHE.get(key)
+    if cached is not None:
+        return cached
     result=_run(['ffprobe','-v','error','-show_entries','format=duration,size,bit_rate,format_name:stream=index,codec_type,codec_name,width,height,r_frame_rate,sample_rate,channels,channel_layout:stream_tags=language,title:stream_disposition=default,forced','-of','json',str(info['path'])],timeout=8)
     probe=None
     if result.returncode==0:
@@ -465,9 +473,16 @@ def probe_file(uuid: str, relative: str) -> dict:
     if probe:
         fmt=probe.get('format') or {}; streams=probe.get('streams') or []; video=next((s for s in streams if s.get('codec_type')=='video'),{}); audio=next((s for s in streams if s.get('codec_type')=='audio'),{})
         with _db() as conn:
-            conn.execute('''UPDATE media_items SET duration=?,width=?,height=?,video_codec=?,audio_codec=?,bit_rate=? WHERE uuid=? AND path=?''',
+            conn.execute('UPDATE media_items SET duration=?,width=?,height=?,video_codec=?,audio_codec=?,bit_rate=? WHERE uuid=? AND path=?',
                 (float(fmt.get('duration') or 0) or None,video.get('width'),video.get('height'),video.get('codec_name'),audio.get('codec_name'),int(fmt.get('bit_rate') or 0) or None,uuid,relative))
-    return {'ok':True,**{k:v for k,v in info.items() if k!='path'},'probe':probe}
+    payload={'ok':True,**{k:v for k,v in info.items() if k!='path'},'probe':probe}
+    with _PROBE_CACHE_LOCK:
+        for old_key in [item for item in _PROBE_CACHE if item[:2]==(uuid,relative) and item!=key]:
+            _PROBE_CACHE.pop(old_key,None)
+        _PROBE_CACHE[key]=payload
+        while len(_PROBE_CACHE)>_PROBE_CACHE_MAX:
+            _PROBE_CACHE.pop(next(iter(_PROBE_CACHE)))
+    return payload
 
 
 def thumbnail_info(uuid: str, relative: str) -> dict:

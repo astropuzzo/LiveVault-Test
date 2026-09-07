@@ -11,7 +11,7 @@
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" href="/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="/icon.svg">
-  <link rel="stylesheet" href="/app.css?v=17.0-seek"><link rel="stylesheet" href="/shell.css?v=4.0-control"><link rel="stylesheet" href="/theme.css?v=5.0-feel"><link rel="stylesheet" href="/premium.css?v=10.0-product"><link rel="stylesheet" href="/magic.css?v=13.0-ops"><link rel="stylesheet" href="/media-upload.css?v=14.0-import">
+  <link rel="stylesheet" href="/app.css?v=18.0-player"><link rel="stylesheet" href="/shell.css?v=4.0-control"><link rel="stylesheet" href="/theme.css?v=5.0-feel"><link rel="stylesheet" href="/premium.css?v=10.0-product"><link rel="stylesheet" href="/magic.css?v=13.0-ops"><link rel="stylesheet" href="/media-upload.css?v=14.0-import">
 </head>
 <body data-view="dashboard" class="is-loading">
   <div class="app-shell">
@@ -357,7 +357,6 @@
     <dialog id="mediaPlayerDialog" class="media-player-dialog">
     <div class="media-player-head"><div><small><span id="mediaPlayerType">MEDIA</span> · <b id="mediaPlayerPlan">DIRECT</b></small><h3 id="mediaPlayerTitle">Player</h3></div><button id="mediaPlayerClose" class="icon-button" aria-label="Chiudi">×</button></div>
     <div id="mediaPlayerStage" class="media-player-stage"></div>
-    <div class="media-player-seek" id="mediaPlayerSeek" hidden><div class="media-player-seek-head"><span>FILM COMPLETO</span><strong><b id="mediaPlayerSeekCurrent">0:00</b> / <b id="mediaPlayerSeekDuration">0:00</b></strong></div><input id="mediaPlayerSeekInput" type="range" min="0" max="0" step="1" value="0" aria-label="Posizione nel film completo"></div>
     <div class="media-player-info"><div id="mediaPlayerMeta"><span>Caricamento dettagli…</span></div><div class="media-player-actions"><button id="mediaPlayerFavorite" class="button secondary">Preferito</button><a id="mediaPlayerDownload" class="button secondary" href="#">Scarica</a></div></div>
     <div class="media-player-tracks" id="mediaPlayerTracks" hidden></div>
     <p class="media-player-note" id="mediaPlayerNote">OpenAstro sceglie automaticamente Direct Play o fallback HLS in base a container, codec e carico LiveVault.</p>
@@ -388,7 +387,7 @@
   </div>
 
   <script src="/hls.min.js?v=1.7.2" defer></script>
-  <script src="/app.js?v=17.0-seek" defer></script>
+  <script src="/app.js?v=18.0-player" defer></script>
   <script src="/media-upload.js?v=14.0-import" defer></script>
 </body>
 </html>

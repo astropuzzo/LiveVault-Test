@@ -18,7 +18,7 @@ import time
 
 def apply(streaming) -> None:
     """Patch only HLS production/segment MIME on the already imported module."""
-    if getattr(streaming, '_openastro_media_patch_v15', False):
+    if getattr(streaming, '_openastro_media_patch_v18', False):
         return
 
     def segment_info(token: str, name: str) -> dict:
@@ -57,10 +57,10 @@ def apply(streaming) -> None:
         manifest = root / 'index.m3u8'
         log_path = root / 'ffmpeg.log'
 
-        # -re protects the CM4 and LiveVault recorder. A one-second initial HLS
-        # target makes the first playable segment appear quickly; subsequent
-        # segments use the normal four-second target.
-        args = ['ffmpeg', '-hide_banner', '-loglevel', 'warning', '-nostdin', '-re']
+        # Burst only the first 12 seconds of input so a seek reaches the next source
+        # keyframe quickly, then enforce native 1x read rate. Video remains copy
+        # for H.264/compatible paths, so this costs only a short AAC audio burst.
+        args = ['ffmpeg', '-hide_banner', '-loglevel', 'warning', '-nostdin', '-readrate', '1', '-readrate_initial_burst', '12']
         if position > 0:
             args += ['-ss', f'{position:.3f}']
         audio_map = f"0:{plan['selected_audio_stream']}" if plan.get('selected_audio_stream') is not None else '0:a:0?'
@@ -95,9 +95,11 @@ def apply(streaming) -> None:
         try:
             with streaming._LOCK:
                 streaming._cleanup_locked()
-                if len(streaming._JOBS) >= streaming.MAX_HLS_JOBS:
-                    oldest = min(streaming._JOBS, key=lambda key: streaming._JOBS[key].get('last_access', 0))
-                    streaming._stop_locked(oldest)
+                replacement = next((key for key, job in streaming._JOBS.items() if client and job.get('client') == client and job.get('uuid') == uuid and job.get('path') == relative), None)
+                if replacement:
+                    streaming._stop_locked(replacement)
+                elif len(streaming._JOBS) >= streaming.MAX_HLS_JOBS:
+                    streaming._stop_locked(min(streaming._JOBS, key=lambda key: streaming._JOBS[key].get('last_access', 0)))
                 proc = subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=stderr, start_new_session=True)
                 streaming._JOBS[token] = {
                     'token': token, 'uuid': uuid, 'path': relative, 'name': info['name'], 'mode': mode,
@@ -134,4 +136,4 @@ def apply(streaming) -> None:
 
     streaming.segment_info = segment_info
     streaming.start_hls = start_hls
-    streaming._openastro_media_patch_v15 = True
+    streaming._openastro_media_patch_v18 = True

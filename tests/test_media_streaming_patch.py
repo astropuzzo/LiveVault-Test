@@ -22,9 +22,9 @@ def test_patch_uses_mpegts_hls_and_browser_safe_mime():
 
 
 def test_apply_replaces_only_hls_entrypoints():
-    stream = SimpleNamespace(_openastro_media_patch_v15=False)
+    stream = SimpleNamespace(_openastro_media_patch_v18=False)
     # apply() installs closures without executing any ffmpeg work.
     patch.apply(stream)
     assert callable(stream.start_hls)
     assert callable(stream.segment_info)
-    assert stream._openastro_media_patch_v15 is True
+    assert stream._openastro_media_patch_v18 is True

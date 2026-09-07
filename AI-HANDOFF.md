@@ -674,13 +674,13 @@ HLS.js 1.7.2 is vendored locally; runtime should not require a CDN. The upload-e
 
 **QA-browser caveat:** the Playwright Chromium build cached on this CM4 reports H.264/AAC MediaSource support as false, so it can raise `bufferAddCodecError` even when the generated HLS segment is valid. For server-side validation inspect the selected stream/manifest/segment and decode or probe the MPEG-TS output; do not treat that headless-browser codec limitation as proof of a server regression.
 
-### Full-duration seek — deployed
+### Full-duration seek / single-timeline player — deployed
 
-The native HTML/HLS timeline represents only the currently generated rolling HLS window and therefore grows in a few-second increments. **Do not pre-generate the whole movie to make that native timeline long**; that wastes CPU/I/O and defeats the CM4 resource governor.
+The rolling HLS manifest still contains only a bounded window, but the UI must **not expose that rolling window as a second native timeline**. The HLS video element intentionally has no native `controls`; OpenAstro renders one compact custom transport containing play/pause, the single full-duration scrubber, logical clock, mute and fullscreen. The scrubber always spans `0 -> full ffprobe duration`.
 
-The player instead exposes a separate **`FILM COMPLETO`** scrubber immediately spanning `0 -> full ffprobe duration`. Releasing that scrubber at an arbitrary logical position closes/replaces the lightweight HLS session and starts a new one at the requested `position` (FFmpeg input seek via `-ss`), while preserving the selected audio and subtitle. This gives random access without decoding or preparing the preceding part of the film.
+Seeking inside the already buffered HLS range is local/immediate. Seeking outside it keeps the same player/DOM and asks the backend for a replacement HLS session at the requested logical `position`; it must not call `openMediaPlayer()` again. The backend reuses cached probe/playback-plan data, replaces the previous same-client/same-file HLS job, and uses FFmpeg `-readrate 1 -readrate_initial_burst 12`: the initial burst reaches the next source keyframe quickly, then read rate returns to 1x so the CM4/LiveVault governor remains respected. H.264 video stays stream-copy when possible; Longlegs therefore remains H.264 copy + AC3 -> AAC only.
 
-Real QA with Longlegs verified a jump from about `124 s` directly to `3000 s` (`50:00`) while the full duration remained `6077.312 s` (`1:41:17`). The second HLS request carried `position: 3000`, and playback preparation completed from that point. Mobile QA also caught and fixed a long-title dialog overflow: player header flex children must keep `min-width: 0` so the filename ellipsizes instead of horizontally scrolling the whole dialog.
+Real Longlegs QA after the v18 player change verified exactly **one** range input in the dialog/stage, no `FILM COMPLETO` duplicate, no native video controls, no mobile horizontal overflow at 412 px, and a far seek to `4500 s` completing end-to-end in about `1.57 s` in the isolated browser QA. A production backend probe at the same position produced the first MPEG-TS HLS segment in about `2.03 s`; `ffprobe` reported H.264 1920x1008 + AAC stereo and FFmpeg decoded the segment successfully. Timing varies with source keyframe placement and current CM4 load, but the old 5-6 second forced-real-time startup path is no longer used.
 
 ## Level 10 status
 

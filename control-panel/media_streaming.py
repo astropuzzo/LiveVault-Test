@@ -23,6 +23,9 @@ TOKEN_RE = re.compile(r'^[a-f0-9]{20}$')
 SEGMENT_RE = re.compile(r'^[A-Za-z0-9._-]{1,120}$')
 _LOCK = threading.Lock()
 _JOBS: dict[str, dict] = {}
+_PLAN_CACHE_LOCK = threading.Lock()
+_PLAN_CACHE: dict[tuple[str, str, int | None], dict] = {}
+_PLAN_CACHE_MAX = 64
 MAX_HLS_JOBS = 2
 HLS_IDLE_SECONDS = 600
 
@@ -138,6 +141,17 @@ def subtitle_tracks(uuid: str, relative: str, probe_payload: dict | None = None)
 
 
 def playback_plan(uuid: str, relative: str, *, audio_stream: int | None = None) -> dict:
+    cache_key=(uuid,relative,audio_stream)
+    with _PLAN_CACHE_LOCK:
+        cached=_PLAN_CACHE.get(cache_key)
+    if cached is not None:
+        try:
+            st=cached['source'].stat()
+            plan=cached['plan']
+            if int(st.st_mtime)==cached['modified'] and st.st_size==cached['size'] and plan.get('mode')!='hls_transcode':
+                return plan
+        except OSError:
+            pass
     info = media_center.file_info(uuid, relative)
     probe_payload = media_center.probe_file(uuid, relative)
     fmt, video, audio = _probe_parts(probe_payload)
@@ -182,7 +196,7 @@ def playback_plan(uuid: str, relative: str, *, audio_stream: int | None = None) 
             available = False; reason = 'Transcode sospeso: temperatura elevata'
         elif pressure['load1'] >= 3.2:
             available = False; reason = 'Transcode sospeso: CPU già sotto carico'
-    return {
+    result={
         'ok': True, 'uuid': uuid, 'path': relative, 'name': info['name'], 'category': info['category'],
         'mode': mode, 'available': available, 'reason': reason, 'direct_url': None,
         'video_codec': vcodec or None, 'audio_codec': acodec or None,
@@ -194,7 +208,15 @@ def playback_plan(uuid: str, relative: str, *, audio_stream: int | None = None) 
         'hls_window_seconds': 360 if mode.startswith('hls_') else None,
         'hardware_encoder': Path('/dev/video11').exists(),
     }
-
+    if mode!='hls_transcode' and info.get('path') is not None and info.get('modified') is not None and info.get('size') is not None:
+        entry={'source':info['path'],'modified':int(info['modified']),'size':int(info['size']),'plan':result}
+        with _PLAN_CACHE_LOCK:
+            _PLAN_CACHE[cache_key]=entry
+            if selected_audio is not None:
+                _PLAN_CACHE[(uuid,relative,int(selected_audio['stream_index']))]=entry
+            while len(_PLAN_CACHE)>_PLAN_CACHE_MAX:
+                _PLAN_CACHE.pop(next(iter(_PLAN_CACHE)))
+    return result
 
 def _job_token(uuid: str, relative: str, modified: int, size: int) -> str:
     raw = f'{uuid}\0{relative}\0{modified}\0{size}\0{time.time_ns()}'.encode()
@@ -230,10 +252,13 @@ def _stop_locked(token: str) -> None:
     if proc is not None and proc.poll() is None:
         try:
             os.killpg(proc.pid, signal.SIGTERM)
-            proc.wait(timeout=3)
+            proc.wait(timeout=.15)
         except Exception:
-            try: os.killpg(proc.pid, signal.SIGKILL)
-            except Exception: pass
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)
+                proc.wait(timeout=.15)
+            except Exception:
+                pass
     shutil.rmtree(job['root'], ignore_errors=True)
 
 
@@ -261,7 +286,7 @@ def start_hls(uuid: str, relative: str, *, client: str = '', position: float = 0
     root.mkdir(mode=0o750)
     manifest = root / 'index.m3u8'
     stderr = (root / 'ffmpeg.log').open('wb')
-    args = ['ffmpeg', '-hide_banner', '-loglevel', 'warning', '-nostdin', '-re']
+    args = ['ffmpeg', '-hide_banner', '-loglevel', 'warning', '-nostdin', '-readrate', '1', '-readrate_initial_burst', '12']
     if position > 0:
         args += ['-ss', f'{position:.3f}']
     audio_map = f"0:{plan['selected_audio_stream']}" if plan.get('selected_audio_stream') is not None else '0:a:0?'
@@ -281,9 +306,11 @@ def start_hls(uuid: str, relative: str, *, client: str = '', position: float = 0
              '-hls_fmp4_init_filename', 'init.mp4', '-hls_segment_filename', str(root / 'seg-%05d.m4s'), str(manifest)]
     with _LOCK:
         _cleanup_locked()
-        if len(_JOBS) >= MAX_HLS_JOBS:
-            oldest = min(_JOBS, key=lambda key: _JOBS[key].get('last_access', 0))
-            _stop_locked(oldest)
+        replacement = next((key for key, job in _JOBS.items() if client and job.get('client') == client and job.get('uuid') == uuid and job.get('path') == relative), None)
+        if replacement:
+            _stop_locked(replacement)
+        elif len(_JOBS) >= MAX_HLS_JOBS:
+            _stop_locked(min(_JOBS, key=lambda key: _JOBS[key].get('last_access', 0)))
         proc = subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=stderr, start_new_session=True)
         _JOBS[token] = {'token': token, 'uuid': uuid, 'path': relative, 'name': info['name'], 'mode': mode,
                         'root': root, 'manifest': manifest, 'process': proc, 'started': time.time(),
