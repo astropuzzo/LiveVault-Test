@@ -450,14 +450,34 @@ class WorkerManager:
             if current is None or current is not session:
                 return None
             try:
-                candidates = list(reversed(capture_output_files(current)))
+                candidates: list[Path] = []
+                preferred = self.playable_active_capture_path(source_id)
+                if preferred is not None:
+                    candidates.append(preferred)
+                candidates.extend(reversed(capture_output_files(current)))
+                # Preserve order while avoiding duplicate work on the same file.
+                candidates = list(dict.fromkeys(candidates))
             except OSError:
                 candidates = []
             async with self._preview_semaphore:
-                for candidate in candidates[:2]:
+                for candidate in candidates[:3]:
                     if await asyncio.to_thread(generate_live_preview, candidate, output):
                         return output
             return output if fresh(LIVE_PREVIEW_MAX_AGE_SECONDS) else None
+
+    def _clear_orphan_source_errors(self) -> None:
+        """Do not surface stale fragment/stitch errors for sources removed from configuration."""
+        with db_session() as db:
+            source_ids = {int(value) for value in db.scalars(select(Source.id)).all()}
+        for key in list(self.last_errors):
+            if not (key.startswith("fragment:") or key.startswith("stitch:")):
+                continue
+            try:
+                source_id = int(key.split(":", 2)[1])
+            except (IndexError, ValueError):
+                continue
+            if source_id not in source_ids:
+                self.last_errors.pop(key, None)
 
     async def _maintenance_backfill(self) -> None:
         recovery = self.recovery_task
@@ -470,6 +490,7 @@ class WorkerManager:
 
     @storage_handoff.media_job
     async def _maintenance_pass(self) -> None:
+        self._clear_orphan_source_errors()
         async with self._recovery_lock:
             await self._finalize_closed_stitch_sessions()
         await self._repair_local_mp4s()
@@ -791,9 +812,15 @@ class WorkerManager:
             current.has_audio = integrity.has_audio
             current.video_codec = integrity.codec("video")
             current.audio_codec = integrity.codec("audio")
-            current.integrity_status = "passed" if integrity.ok else "failed"
+            error_text = str(integrity.error or "").lower()
+            retryable = (not integrity.ok) and any(marker in error_text for marker in RETRYABLE_MEDIA_ERRORS)
+            current.integrity_status = "passed" if integrity.ok else "checking" if retryable else "failed"
             current.integrity_error = integrity.error
         if integrity.ok:
+            self.last_errors.pop(f"fragment:{source_id}", None)
+        elif retryable:
+            # Fresh fragmented MP4s can be temporarily unreadable. Keep the row
+            # pending for the maintenance retry instead of publishing a false alarm.
             self.last_errors.pop(f"fragment:{source_id}", None)
         else:
             self.last_errors[f"fragment:{source_id}"] = integrity.error or "Frammento non valido"
@@ -888,6 +915,20 @@ class WorkerManager:
             if self._stitch_retry_after.get(retry_key, 0) > time.monotonic():
                 continue
             await self._revalidate_retryable_fragments(items)
+            # A transient quick-probe failure is not a corrupt fragment. Do not
+            # race into stitching while a freshly closed fMP4 is still being repaired.
+            pending_retryable = [
+                item for item in items
+                if not fragment_usable_for_stitch(item)
+                and Path(item.local_path).is_file()
+                and (
+                    item.integrity_status == "checking"
+                    or any(marker in str(item.integrity_error or "").lower() for marker in RETRYABLE_MEDIA_ERRORS)
+                )
+            ]
+            if pending_retryable:
+                self._stitch_retry_after[retry_key] = time.monotonic() + 60
+                continue
             latest = max(item.finalized_at for item in items)
             ready_seconds = sum(
                 float(item.duration_seconds or 0)

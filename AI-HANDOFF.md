@@ -1156,3 +1156,11 @@ Source/deploy hashes for Pi-hole/Control files: matched at deployment
 ```
 
 At the final pre-release health check LiveVault still had `active_recorders=1`, so the full-host reboot was **intentionally deferred** rather than interrupting that recording. Boot persistence is configured (`pihole-FTL.service` and `openastro-pihole-firewall.service` are enabled), but a future maintenance window with zero recorders should perform the one remaining physical reboot verification.
+
+### Live-stream preview / fragment probe / stitch resilience — 2026-09-07
+
+Live preview and fragment finalization must not assume a fixed storage throughput. The old stitch/remux watchdog derived a deadline from an arbitrary `4 MiB/s` throughput (`total_bytes / (4 * 1024**2)`); this was only a timeout heuristic, not an FFmpeg speed cap, and it could kill healthy work under fragmented-MP4 or busy-storage conditions. `app/recorder.py` now waits on **actual output progress**: the process may continue while the output size/mtime advances, with a 300 s no-progress watchdog and a 6 h hard safety ceiling. The same progress watchdog is used by normal copy-remux finalization. The expensive A/V rebuild remains resource-bounded separately.
+
+Fragment indexing now uses `probe_media(..., quick=True)`: the quick ffprobe is bounded to 12 s with smaller probe/analyze windows and treats a timeout as **deferred verification**, not the former red `Analisi stream ffprobe scaduta dopo 60 secondi` terminal-style error. Final media verification retains the deeper probe.
+
+Authenticated live previews remain lazy to avoid continuous decoder load on the CM4. `live_preview_for()` prefers the current playable capture, then up to three recent capture parts. For growing fragmented MP4, `generate_live_preview()` briefly obtains duration and input-seeks near `duration - 4 s` before falling back to `-sseof -6` / `-ss 0.5`. On the real `soft_katy` capture this reduced a representative near-tail frame extraction from roughly 5.8-6.9 s to about 1.1 s. Stale `fragment:*` / `stitch:*` errors belonging to deleted/orphaned source IDs are pruned during maintenance rather than remaining visible as current live faults.

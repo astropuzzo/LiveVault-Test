@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import os
 import signal
 import shutil
 import sys
+import time
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -20,9 +22,71 @@ from .utils import probe_media, safe_name, utcnow
 LIVE_PREVIEW_INTERVAL_SECONDS = 20
 LIVE_PREVIEW_MAX_AGE_SECONDS = 90
 BACKGROUND_VIDEO_THREADS = max(1, (os.cpu_count() or 2) // 2)
-# Background repairs must leave room for live capture. Account for the smaller
-# encoder pool in their deadline rather than timing out healthy slower repairs.
+# Compatibility/tuning knob for CPU-bound repair tests; stream-copy watchdogs no longer derive deadlines from byte throughput.
 BACKGROUND_TIMEOUT_FACTOR = max(1, (os.cpu_count() or 2) / BACKGROUND_VIDEO_THREADS)
+MEDIA_PROGRESS_POLL_SECONDS = 2.0
+MEDIA_IDLE_TIMEOUT_SECONDS = 300.0
+MEDIA_HARD_TIMEOUT_SECONDS = 6 * 60 * 60
+
+
+async def _wait_media_process(
+    proc: asyncio.subprocess.Process,
+    output: Path,
+    *,
+    operation: str,
+    idle_timeout: float = MEDIA_IDLE_TIMEOUT_SECONDS,
+    hard_timeout: float = MEDIA_HARD_TIMEOUT_SECONDS,
+) -> tuple[bytes, bytes]:
+    """Wait for FFmpeg while watching actual output progress instead of assuming MiB/s."""
+    started = time.monotonic()
+    last_progress = started
+    last_signature: tuple[int, int] | None = None
+    communication = asyncio.create_task(proc.communicate())
+    try:
+        while not communication.done():
+            done, _ = await asyncio.wait({communication}, timeout=MEDIA_PROGRESS_POLL_SECONDS)
+            if done:
+                break
+            now = time.monotonic()
+            try:
+                stat = output.stat()
+                signature = (int(stat.st_size), int(stat.st_mtime_ns))
+            except OSError:
+                signature = (0, 0)
+            if signature != last_signature:
+                last_signature = signature
+                last_progress = now
+            if now - last_progress > max(30.0, float(idle_timeout)):
+                proc.kill()
+                _stdout, stderr = await communication
+                detail = (stderr or b"").decode(errors="replace")[-1200:]
+                raise RuntimeError(
+                    f"{operation} bloccato: nessun progresso output per {int(idle_timeout)} secondi"
+                    + (f" · {detail}" if detail else "")
+                )
+            if now - started > max(float(idle_timeout), float(hard_timeout)):
+                proc.kill()
+                _stdout, stderr = await communication
+                detail = (stderr or b"").decode(errors="replace")[-1200:]
+                raise RuntimeError(
+                    f"{operation} interrotto dal limite di sicurezza dopo {int(hard_timeout)} secondi"
+                    + (f" · {detail}" if detail else "")
+                )
+        return await communication
+    except asyncio.CancelledError:
+        if proc.returncode is None:
+            with contextlib.suppress(ProcessLookupError):
+                proc.terminate()
+            try:
+                await asyncio.wait_for(proc.wait(), timeout=3)
+            except asyncio.TimeoutError:
+                with contextlib.suppress(ProcessLookupError):
+                    proc.kill()
+                await proc.wait()
+        communication.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await communication
+        raise
 
 
 def background_media_command(command: list[str]) -> list[str]:
@@ -367,7 +431,6 @@ async def start_recorder(source: Source, *, session_id: str | None = None) -> Re
     output_pattern = directory / f"{session_id}_{capture_id}_part%03d{extension}"
     preview_path = live_preview_path(source.id)
     preview_path.parent.mkdir(parents=True, exist_ok=True)
-    preview_path.unlink(missing_ok=True)
     if source.platform == "stripchat":
         cmd = build_stripchat_capture_command(
             source,
@@ -454,22 +517,15 @@ async def stitch_recording_parts(parts: list[Path], output: Path, *, allow_trans
 
     concat_file.write_text("\n".join(quote(path) for path in parts) + "\n", encoding="utf-8")
 
-    async def run(args: list[str], timeout: int) -> tuple[int, str]:
+    async def run(args: list[str]) -> tuple[int, str]:
         proc = await asyncio.create_subprocess_exec(
             *args,
             stdout=asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.PIPE,
         )
-        try:
-            _stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
-        except asyncio.TimeoutError as exc:
-            proc.kill()
-            await proc.wait()
-            raise RuntimeError("Stitching sessione scaduto") from exc
+        _stdout, stderr = await _wait_media_process(proc, output, operation="Stitching sessione")
         return proc.returncode, (stderr or b"").decode(errors="replace")[-1800:]
 
-    total_bytes = sum(path.stat().st_size for path in parts)
-    timeout = max(180, min(3600, int(total_bytes / (4 * 1024**2))))
     base = [
         "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
         "-filter_threads", "1", "-threads:v", "1",
@@ -479,7 +535,7 @@ async def stitch_recording_parts(parts: list[Path], output: Path, *, allow_trans
     ]
     trailer = ["-movflags", "+faststart"] if output.suffix.lower() == ".mp4" else []
     try:
-        code, detail = await run(base + ["-c", "copy", *trailer, str(output)], timeout)
+        code, detail = await run(base + ["-c", "copy", *trailer, str(output)])
         if code == 0 and output.is_file() and output.stat().st_size > 0:
             return
         output.unlink(missing_ok=True)
@@ -492,7 +548,7 @@ async def stitch_recording_parts(parts: list[Path], output: Path, *, allow_trans
             "-c:a", "aac", "-b:a", "192k", "-ar", "48000",
             "-af", "aresample=async=1",
             *trailer, str(output),
-        ]), int(max(timeout, 600) * BACKGROUND_TIMEOUT_FACTOR))
+]))
         if code != 0 or not output.is_file() or output.stat().st_size <= 0:
             raise RuntimeError(fallback_detail or detail or "Stitching FFmpeg fallito")
     finally:
@@ -553,30 +609,8 @@ async def _copy_remux(source: Path, output: Path, *, duration: float | None = No
         stdout=asyncio.subprocess.DEVNULL,
         stderr=asyncio.subprocess.PIPE,
     )
-    # Remuxing competes with capture and upload I/O on production storage.
-    # Budget for a conservative 4 MiB/s instead of declaring healthy large
-    # files dead while the disk is busy.
-    timeout = max(180, min(3600, int(source.stat().st_size / (4 * 1024**2))))
-    try:
-        _, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
-    except asyncio.CancelledError:
-        try:
-            proc.terminate()
-        except ProcessLookupError:
-            pass
-        try:
-            await asyncio.wait_for(proc.wait(), timeout=3)
-        except asyncio.TimeoutError:
-            try:
-                proc.kill()
-            except ProcessLookupError:
-                pass
-            await proc.wait()
-        raise
-    except asyncio.TimeoutError as exc:
-        proc.kill()
-        await proc.wait()
-        raise RuntimeError("Finalizzazione MP4 scaduta") from exc
+    # Finalization is governed by actual output progress, never by an assumed disk throughput.
+    _, stderr = await _wait_media_process(proc, output, operation="Finalizzazione MP4")
     if proc.returncode != 0 or not output.exists() or output.stat().st_size <= 0:
         detail = (stderr or b"").decode(errors="replace")[-1500:]
         raise RuntimeError(detail or "FFmpeg remux failed")
@@ -640,29 +674,9 @@ async def _rebuild_av_timeline(source: Path, output: Path) -> None:
         stdout=asyncio.subprocess.DEVNULL,
         stderr=asyncio.subprocess.PIPE,
     )
-    # A repair may need a full video transcode, so allow substantially more
-    # time than the copy-remux path while still bounding stuck processes.
-    timeout = int(max(300, min(3600, int(source.stat().st_size / (1024**2)) * 3)) * BACKGROUND_TIMEOUT_FACTOR)
-    try:
-        _, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
-    except asyncio.CancelledError:
-        try:
-            proc.terminate()
-        except ProcessLookupError:
-            pass
-        try:
-            await asyncio.wait_for(proc.wait(), timeout=3)
-        except asyncio.TimeoutError:
-            try:
-                proc.kill()
-            except ProcessLookupError:
-                pass
-            await proc.wait()
-        raise
-    except asyncio.TimeoutError as exc:
-        proc.kill()
-        await proc.wait()
-        raise RuntimeError("Riparazione A/V scaduta") from exc
+    _, stderr = await _wait_media_process(
+        proc, output, operation="Riparazione A/V", idle_timeout=600.0
+    )
     if proc.returncode != 0 or not output.exists() or output.stat().st_size <= 0:
         detail = (stderr or b"").decode(errors="replace")[-1500:]
         raise RuntimeError(detail or "Ricostruzione A/V fallita")

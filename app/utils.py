@@ -130,7 +130,7 @@ def _video_gap_error(path: Path, streams: list[dict]) -> str:
         return f"Analisi timestamp video fallita: {exc}"[-1200:]
 
 
-def _probe_duration(path: Path) -> float | None:
+def _probe_duration(path: Path, *, timeout_seconds: float = 30) -> float | None:
     """Duration is useful metadata, but it must never block file recovery."""
     try:
         result = subprocess.run(
@@ -140,7 +140,7 @@ def _probe_duration(path: Path) -> float | None:
             ],
             capture_output=True,
             text=True,
-            timeout=30,
+            timeout=max(1.0, float(timeout_seconds)),
             check=False,
         )
         value = (result.stdout or "").strip()
@@ -149,25 +149,42 @@ def _probe_duration(path: Path) -> float | None:
         return None
 
 
-def probe_media(path: Path, *, require_audio: bool = True) -> IntegrityResult:
+def probe_media(path: Path, *, require_audio: bool = True, quick: bool = False) -> IntegrityResult:
+    """Probe media metadata without turning a transient fMP4 state into a minute-long stall.
+
+    Final files keep the deeper probe. Fragment indexing uses a short bounded probe and
+    retries later if a freshly closed fragmented MP4 is not readable yet.
+    """
+    timeout_seconds = 12 if quick else 60
+    probe_size = "2M" if quick else "32M"
+    analyze_duration = "2M" if quick else "20M"
+    read_interval = "%+3" if quick else "%+15"
     try:
         p = subprocess.run(
             [
-                "ffprobe", "-v", "error", "-probesize", "32M", "-analyzeduration", "20M",
-                "-read_intervals", "%+15", "-show_entries",
-                "format=format_name:stream=index,codec_type,codec_name,start_time,duration,avg_frame_rate",
+                "ffprobe", "-v", "error", "-probesize", probe_size, "-analyzeduration", analyze_duration,
+                "-read_intervals", read_interval, "-show_entries",
+                "format=format_name,duration:stream=index,codec_type,codec_name,start_time,duration,avg_frame_rate",
                 "-of", "json", str(path),
             ],
             capture_output=True,
             text=True,
-            timeout=60,
+            timeout=timeout_seconds,
             check=False,
         )
         if p.returncode != 0:
             return IntegrityResult(False, None, (p.stderr or "ffprobe failed")[-1200:])
         payload = json.loads(p.stdout or "{}")
         streams = payload.get("streams") or []
-        duration = _probe_duration(path)
+        duration = _finite_float((payload.get("format") or {}).get("duration"))
+        if duration is None:
+            stream_durations = [
+                value for stream in streams
+                if (value := _finite_float(stream.get("duration"))) is not None and value > 0
+            ]
+            duration = max(stream_durations, default=None)
+        if duration is None and not quick:
+            duration = _probe_duration(path)
         has_video = any(x.get("codec_type") == "video" for x in streams)
         has_audio = any(x.get("codec_type") == "audio" for x in streams)
         if not has_video:
@@ -183,13 +200,15 @@ def probe_media(path: Path, *, require_audio: bool = True) -> IntegrityResult:
             return IntegrityResult(False, duration, "File vuoto", streams)
         return IntegrityResult(True, duration, "", streams)
     except subprocess.TimeoutExpired:
+        if quick:
+            return IntegrityResult(False, None, "Analisi rapida ffprobe temporaneamente non disponibile; verifica differita")
         return IntegrityResult(False, None, "Analisi stream ffprobe scaduta dopo 60 secondi; riprova quando il file è stabile")
     except Exception as exc:
         return IntegrityResult(False, None, str(exc)[-1200:])
 
 
 def verify_media(path: Path, mode: str = "packet", *, require_audio: bool = True) -> IntegrityResult:
-    quick = probe_media(path, require_audio=require_audio)
+    quick = probe_media(path, require_audio=require_audio, quick=(mode == "quick"))
     if not quick.ok or mode == "quick":
         return quick
     try:
@@ -315,9 +334,15 @@ def generate_live_preview(path: Path, output: Path) -> bool:
         "-update", "1", "-threads:v", "1", "-q:v", "6", str(candidate),
     ]
     try:
-        # Prefer a recent frame. The second attempt also works with unusual
-        # fragmented MP4s whose duration is unavailable while they are growing.
-        for seek_args in (["-sseof", "-6"], ["-ss", "0.5"]):
+        # For growing fragmented MP4s, seeking from EOF can force FFmpeg to scan
+        # a large part of the file. Probe duration briefly and input-seek near the
+        # end instead; on real captures this is several times faster.
+        duration = _probe_duration(path, timeout_seconds=3)
+        attempts: list[list[str]] = []
+        if duration is not None and math.isfinite(duration) and duration > 1:
+            attempts.append(["-ss", f"{max(0.5, duration - 4.0):.3f}"])
+        attempts.extend((["-sseof", "-6"], ["-ss", "0.5"]))
+        for seek_args in attempts:
             candidate.unlink(missing_ok=True)
             try:
                 result = subprocess.run(
@@ -328,7 +353,7 @@ def generate_live_preview(path: Path, output: Path) -> bool:
                     ],
                     capture_output=True,
                     text=True,
-                    timeout=12,
+                    timeout=8,
                     check=False,
                 )
             except subprocess.TimeoutExpired:
