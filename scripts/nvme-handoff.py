@@ -119,6 +119,13 @@ def switch(source):
     # Reassert the host side as rshared before every switch so a drifted mount
     # propagation flag cannot strand the container on the previous filesystem.
     run('mount', '--make-rshared', str(ROOT.parent))
+    # A container-side bind can keep the current host bind busy even while the
+    # application is fully quiesced. Move each LiveVault container to the new
+    # filesystem first using the kernel mount-clone primitive; only then replace
+    # the host bind. This keeps eject/attach independent of propagation timing.
+    containers = livevault_containers()
+    if containers:
+        preposition_container_views(containers, source)
     if os.path.ismount(RECORDINGS):
         run('umount', str(RECORDINGS))
     run('mount', '--bind', str(source), str(RECORDINGS))
@@ -265,6 +272,16 @@ def _mount_clone_into_namespace(pid, source, target, expected):
         raise RuntimeError(f'Riallineamento mount namespace fallito: {detail}')
 
 
+def preposition_container_views(containers, source):
+    """Move containers to the next filesystem before the host bind is replaced."""
+    expected = Path(source).stat().st_dev
+    for container in containers:
+        pid = run('docker', 'inspect', '-f', '{{.State.Pid}}', container)
+        if not pid.isdigit() or int(pid) <= 0:
+            raise RuntimeError(f'Container LiveVault non eseguibile durante handoff: {container}')
+        _mount_clone_into_namespace(int(pid), source, CONTAINER_RECORDINGS_PATH, expected)
+
+
 def repair_container_views(containers, expected):
     """Replace stale /data/recordings mounts without relying on propagation."""
     for container in containers:
@@ -351,6 +368,105 @@ def set_service(name, action):
 
 
 
+def wait_storage_ready(token, timeout=8.0):
+    """Give LiveVault a short chance to close writers; emergency failover must not depend on it."""
+    deadline = time.monotonic() + max(0.0, float(timeout))
+    while time.monotonic() < deadline:
+        try:
+            if json.loads((ROOT / 'storage-ready.json').read_text()).get('token') == token:
+                return True
+        except (OSError, ValueError):
+            pass
+        time.sleep(.20)
+    return False
+
+
+def emergency_detach(path):
+    """Detach an already-failed removable filesystem without waiting forever on dead I/O."""
+    if not os.path.ismount(path):
+        return
+    result = subprocess.run(['umount', str(path)], text=True, capture_output=True, timeout=8)
+    if result.returncode == 0:
+        return
+    # Lazy detach is forbidden for normal/manual eject, but is appropriate after
+    # the kernel has already lost or shut down the removable medium.
+    result = subprocess.run(['umount', '-l', str(path)], text=True, capture_output=True, timeout=5)
+    if result.returncode != 0:
+        raise RuntimeError(f'Impossibile sganciare filesystem guasto {path}: {(result.stderr or result.stdout).strip()}')
+
+
+def emergency_failover(reason='NVMe fault'):
+    """Move recording writes to the eMMC buffer after an unexpected NVMe failure.
+
+    Keep Docker and all system state on eMMC. Prefer a live mount-namespace move
+    so the LiveVault container stays running; stop/start only that container as a
+    last resort if an old dead-file handle prevents namespace repair.
+    """
+    previous = json.loads((ROOT / 'storage-state.json').read_text()).get('mode')
+    if previous != 'nvme':
+        return
+    if not os.path.ismount(BUFFER):
+        run('mount', str(BUFFER))
+    token = uuid.uuid4().hex
+    publish('quiesce', token=token, reason=str(reason)[:1200])
+    subprocess.run(['systemctl', 'stop', 'livevault-backup.timer', 'livevault-backup.service'], capture_output=True)
+    wait_storage_ready(token, 8.0)
+    run('mount', '--make-rshared', '/data')
+
+    containers = livevault_containers()
+    stopped = []
+    try:
+        if containers:
+            try:
+                preposition_container_views(containers, BUFFER)
+            except Exception:
+                # Last resort only: Docker itself stays online; restart just the
+                # LiveVault application container after host storage is on eMMC.
+                for container in containers:
+                    result = subprocess.run(['docker', 'stop', '--time', '15', container], text=True, capture_output=True)
+                    if result.returncode == 0:
+                        stopped.append(container)
+                if len(stopped) != len(containers):
+                    raise RuntimeError('Impossibile liberare il container LiveVault dal filesystem NVMe guasto')
+
+        # With containers already moved/stopped, replace the host recording bind.
+        emergency_detach(RECORDINGS)
+        RECORDINGS.mkdir(parents=True, exist_ok=True)
+        run('mount', '--bind', str(BUFFER), str(RECORDINGS))
+        if containers and not stopped:
+            verify_container_view()
+
+        # SHARE is on the same physical server disk. GPT Harness has an optional
+        # NVMe workspace view, so restart it from eMMC after detaching the disk.
+        harness_was_active = service_active(GPT_HARNESS_SERVICE)
+        if harness_was_active:
+            set_service(GPT_HARNESS_SERVICE, 'stop')
+        try:
+            emergency_detach('/share')
+            emergency_detach(NVME)
+        finally:
+            if harness_was_active:
+                set_service(GPT_HARNESS_SERVICE, 'start')
+
+        publish('buffer', limit_bytes=BUFFER_LIMIT_BYTES, reason=str(reason)[:1200])
+        for container in stopped:
+            result = subprocess.run(['docker', 'start', container], text=True, capture_output=True)
+            if result.returncode != 0:
+                raise RuntimeError(f'Buffer attivo ma LiveVault non ripartito: {(result.stderr or result.stdout).strip()}')
+        if stopped:
+            verify_container_view()
+        print('Failover automatico completato: registrazioni sul buffer interno eMMC da 4 GiB; Docker resta online.')
+    except Exception:
+        # Never claim NVMe mode after a physical fault. If the eMMC bind exists,
+        # publish buffer even if cleanup/restart of an ancillary component failed.
+        try:
+            if RECORDINGS.stat().st_dev == BUFFER.stat().st_dev:
+                publish('buffer', limit_bytes=BUFFER_LIMIT_BYTES, reason=str(reason)[:1200], degraded=True)
+        except OSError:
+            pass
+        raise
+
+
 def wait_closed_device_handles():
     deadline = time.monotonic() + 20
     blockers = []
@@ -384,6 +500,9 @@ def main(action):
             RECORDINGS.mkdir(parents=True, exist_ok=True)
             switch(NVME / 'livevault/recordings' if mode == 'nvme' else BUFFER)
             publish(mode)
+            return
+        if action == 'failover':
+            emergency_failover(sys.argv[2] if len(sys.argv) > 2 else 'NVMe fault')
             return
         previous = json.loads((ROOT / 'storage-state.json').read_text())['mode']
         backup_timer_was_active = service_active('livevault-backup.timer')

@@ -381,12 +381,14 @@ It detects, among other things:
 
 - recordings source device missing;
 - NVMe mount source missing;
-- filesystem UUID mismatch;
+- UUID device path missing/mismatched;
 - `ro`, `shutdown`, `emergency_ro` mount state;
 - missing `rw`;
-- failed filesystem stat.
+- kernel block device no longer in a running/live state.
 
-On a real fault it fails closed, quiesces/stops relevant writers, detaches the dead mount, binds the internal 4 GiB buffer at `/data/livevault/recordings`, publishes `mode=buffer`, restarts the LiveVault container and GPT Harness, and logs the failover.
+The watchdog deliberately avoids filesystem data probes such as `statvfs`/`blkid` on the suspect USB-NVMe device: after a bridge/controller failure those probes can themselves block in uninterruptible I/O. On a real fault it delegates to the same serialized handoff helper used for normal storage transitions. The helper publishes `quiesce`, gives LiveVault a short chance to close writers, then prepositions each running LiveVault container directly onto the internal 4 GiB eMMC buffer with the kernel mount-clone namespace path before replacing the host recordings bind. Docker stays online. Only if a dead mount prevents namespace repair is the LiveVault application container itself stop/started as a last resort; the Docker daemon is never stopped for automatic failover. The failed NVMe and its `SHARE` partition are then detached, `mode=buffer` is published, and GPT Harness restarts eMMC-only. UUID-specific udev/systemd attach restores the NVMe automatically when it returns and performs the verified buffer merge.
+
+Storage-tier invariant: operating system, Docker runtime, dependencies, databases/configuration and Control Center state belong to internal eMMC; the SERVER NVMe carries heavy LiveVault recordings; removable media USB carries films/media. Losing either removable tier must not make the base system or Docker disappear. USB media loss simply makes that library offline; LiveVault NVMe loss switches recording writes to the bounded internal buffer.
 
 ### Critical USB behavior discovered in testing
 

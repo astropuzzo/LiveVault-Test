@@ -44,6 +44,21 @@ systemctl daemon-reload
 mount /mnt/livevault-nvme
 mount /data
 mount /var/lib/livevault-buffer
+# Docker is system runtime and must remain on the internal eMMC tier. Preserve
+# every existing daemon option while enforcing the internal data-root.
+python3 - <<'PY_DOCKER'
+import json
+from pathlib import Path
+p = Path('/etc/docker/daemon.json')
+try:
+    payload = json.loads(p.read_text()) if p.exists() else {}
+except (ValueError, OSError):
+    payload = {}
+payload['data-root'] = '/data/docker'
+p.parent.mkdir(parents=True, exist_ok=True)
+p.write_text(json.dumps(payload, indent=2) + '\n')
+PY_DOCKER
+mkdir -p /data/docker
 cat > /usr/local/sbin/livevault-storage-eject <<'EOF'
 #!/bin/sh
 exec /usr/bin/python3 /usr/local/libexec/nvme-handoff.py eject

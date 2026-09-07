@@ -105,14 +105,24 @@ def test_transfer_refuses_conflicting_media(tmp_path, transfer):
     assert (dest / 'part.mp4').read_bytes() == b'different'
 
 
-def test_switch_reasserts_shared_data_mount_before_bind(monkeypatch, transfer):
+def test_switch_moves_container_before_replacing_host_bind(monkeypatch, transfer, tmp_path):
+    source = tmp_path / 'fake-buffer'
+    source.mkdir()
     calls = []
-    monkeypatch.setattr(transfer, 'run', lambda *args: calls.append(args) or '')
+    monkeypatch.setattr(transfer, 'run', lambda *args: calls.append(('run', args)) or '')
+    monkeypatch.setattr(transfer, 'livevault_containers', lambda: ['live'])
+    monkeypatch.setattr(
+        transfer, 'preposition_container_views',
+        lambda containers, value: calls.append(('preposition', tuple(containers), str(value))),
+    )
     monkeypatch.setattr(transfer.os.path, 'ismount', lambda _path: True)
-    transfer.switch(Path('/tmp/fake-buffer'))
-    assert calls[0] == ('mount', '--make-rshared', '/data')
-    assert calls[1] == ('umount', '/data/livevault/recordings')
-    assert calls[2] == ('mount', '--bind', '/tmp/fake-buffer', '/data/livevault/recordings')
+    transfer.switch(source)
+    assert calls == [
+        ('run', ('mount', '--make-rshared', '/data')),
+        ('preposition', ('live',), str(source)),
+        ('run', ('umount', '/data/livevault/recordings')),
+        ('run', ('mount', '--bind', str(source), '/data/livevault/recordings')),
+    ]
 
 
 def test_container_view_transient_propagation_needs_no_repair(monkeypatch, tmp_path, transfer):

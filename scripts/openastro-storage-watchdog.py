@@ -1,7 +1,12 @@
 #!/usr/bin/env python3
+"""OpenAstro recording-storage watchdog.
+
+System/Docker/state live on internal eMMC. The server NVMe is only the heavy
+recording tier. If that removable tier disappears or becomes unusable, request
+a serialized emergency handoff to the bounded eMMC recording buffer.
+"""
 from __future__ import annotations
 
-import fcntl
 import json
 import os
 from pathlib import Path
@@ -12,12 +17,9 @@ import time
 UUID = '5fe2d0f6-b485-44e9-8e26-31fb0d217db2'
 STATE = Path('/data/livevault/storage-state.json')
 REC = Path('/data/livevault/recordings')
-INTERNAL_REC = Path('/srv/openastro-internal/livevault/recordings')
 NVME = Path('/mnt/livevault-nvme')
-SHARE = Path('/share')
 BUFFER = Path('/var/lib/livevault-buffer')
-LOCK = Path('/run/lock/livevault-storage.lock')
-LIMIT = 4 * 1024**3
+HANDOFF = Path('/usr/local/libexec/nvme-handoff.py')
 LOG = Path('/var/log/openastro-storage-watchdog.log')
 
 
@@ -31,7 +33,7 @@ def log(message: str) -> None:
         pass
 
 
-def run(args: list[str], timeout: int = 10) -> subprocess.CompletedProcess[str]:
+def run(args: list[str], timeout: int = 5) -> subprocess.CompletedProcess[str]:
     try:
         return subprocess.run(args, text=True, capture_output=True, timeout=timeout, check=False)
     except (OSError, subprocess.TimeoutExpired):
@@ -46,7 +48,7 @@ def mode() -> str:
 
 
 def mount_info(path: Path) -> tuple[str | None, set[str]]:
-    result = run(['findmnt', '-nro', 'SOURCE,OPTIONS', '--mountpoint', str(path)], 3)
+    result = run(['findmnt', '-nro', 'SOURCE,OPTIONS', '--mountpoint', str(path)], 2)
     if result.returncode != 0 or not result.stdout.strip():
         return None, set()
     source, _, options = result.stdout.strip().partition(' ')
@@ -64,111 +66,94 @@ def device_from_source(source: str | None) -> str | None:
     return device if stat.S_ISBLK(info.st_mode) else None
 
 
-def uuid_of(device: str | None) -> str | None:
-    if not device:
+def expected_device() -> str | None:
+    """Resolve the UUID symlink without probing filesystem media."""
+    link = Path('/dev/disk/by-uuid') / UUID
+    try:
+        return str(link.resolve(strict=True))
+    except OSError:
         return None
-    result = run(['blkid', '-s', 'UUID', '-o', 'value', device], 3)
-    return result.stdout.strip() if result.returncode == 0 else None
+
+
+def kernel_device_running(device: str | None) -> bool:
+    if not device:
+        return False
+    name = Path(device).name
+    # Partitions do not have their own SCSI state; resolve their parent via lsblk.
+    result = run(['lsblk', '-nro', 'PKNAME', device], 2)
+    parent = result.stdout.strip() if result.returncode == 0 else ''
+    if parent:
+        name = parent
+    state = Path('/sys/class/block') / name / 'device/state'
+    if not state.exists():
+        return True
+    try:
+        return state.read_text().strip().lower() in {'running', 'live'}
+    except OSError:
+        return False
 
 
 def healthy_nvme() -> tuple[bool, str]:
+    """Use mount-table/devfs/sysfs checks only; never block on data I/O to a dead USB disk."""
     rec_source, rec_options = mount_info(REC)
     nvme_source, nvme_options = mount_info(NVME)
     rec_dev = device_from_source(rec_source)
     nvme_dev = device_from_source(nvme_source)
+    expected = expected_device()
+    if not expected:
+        return False, 'NVMe UUID device missing'
     if not rec_dev:
         return False, 'recordings source device missing'
     if not nvme_dev:
         return False, 'NVMe mount source device missing'
-    if uuid_of(rec_dev) != UUID or uuid_of(nvme_dev) != UUID:
-        return False, 'filesystem UUID mismatch'
+    try:
+        if Path(rec_dev).resolve() != Path(expected).resolve() or Path(nvme_dev).resolve() != Path(expected).resolve():
+            return False, 'filesystem UUID device mismatch'
+    except OSError:
+        return False, 'filesystem device disappeared'
     bad = {'ro', 'shutdown', 'emergency_ro'}
-    if rec_options & bad or nvme_options & bad:
-        return False, f'filesystem unhealthy options={sorted((rec_options | nvme_options) & bad)}'
+    unhealthy = (rec_options | nvme_options) & bad
+    if unhealthy:
+        return False, f'filesystem unhealthy options={sorted(unhealthy)}'
     if 'rw' not in rec_options or 'rw' not in nvme_options:
         return False, 'filesystem not writable'
-    try:
-        os.statvfs(REC)
-        os.statvfs(NVME)
-    except OSError as exc:
-        return False, f'filesystem stat failed: {exc}'
+    if not kernel_device_running(expected):
+        return False, 'kernel block device not running'
+    # Do not call statvfs/blkid/read/write here. Those calls can themselves enter
+    # uninterruptible D-state when a USB-NVMe bridge has failed.
     return True, 'ok'
 
 
-def publish_buffer(reason: str) -> None:
-    temporary = STATE.with_suffix('.tmp')
-    with temporary.open('w', encoding='utf-8') as handle:
-        json.dump({'mode': 'buffer', 'limit_bytes': LIMIT, 'reason': reason}, handle)
-        handle.flush()
-        os.fsync(handle.fileno())
-    temporary.replace(STATE)
-
-
-def container_id() -> str | None:
-    result = run(['docker', 'ps', '-a', '--filter', 'name=ahul2vdjkyvjiwgzpcrmxzfe', '--format', '{{.ID}}'], 5)
-    return result.stdout.splitlines()[0].strip() if result.stdout.strip() else None
-
-
-def detach(path: Path) -> None:
-    if not mount_info(path)[0]:
-        return
-    result = run(['umount', str(path)], 8)
-    if result.returncode != 0:
-        # Lazy detach is reserved only for an already-failed/disconnected medium.
-        run(['umount', '-l', str(path)], 5)
-
-
-def emergency_failover(reason: str) -> None:
-    LOCK.parent.mkdir(parents=True, exist_ok=True)
-    with LOCK.open('w') as lock:
-        try:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            return
-        if mode() != 'nvme':
-            return
-        ok, current = healthy_nvme()
-        if ok:
-            return
-        reason = f'{reason}; {current}'
-        log(f'NVMe fault detected: {reason}')
-        cid = container_id()
-        # Make workers fail closed immediately, then release dead filesystem handles.
-        STATE.write_text(json.dumps({'mode': 'quiesce', 'reason': reason}), encoding='utf-8')
-        run(['systemctl', 'stop', 'livevault-backup.timer'], 5)
-        run(['systemctl', 'stop', 'gpt-harness.service'], 15)
-        if cid:
-            run(['docker', 'stop', '--time', '20', cid], 30)
-        detach(REC)
-        detach(INTERNAL_REC)
-        detach(SHARE)
-        detach(NVME)
-        REC.mkdir(parents=True, exist_ok=True)
-        if not mount_info(BUFFER)[0]:
-            raise RuntimeError('Internal recording buffer is not mounted')
-        result = run(['mount', '--bind', str(BUFFER), str(REC)], 8)
-        if result.returncode != 0:
-            raise RuntimeError('Cannot bind internal recording buffer')
-        run(['mount', '--make-rshared', '/data'], 5)
-        publish_buffer(reason)
-        if cid:
-            run(['docker', 'start', cid], 20)
-        run(['systemctl', 'start', 'gpt-harness.service'], 15)
-        log('Failover complete: LiveVault on internal 4 GiB buffer')
+def request_failover(reason: str) -> tuple[bool, str]:
+    if not HANDOFF.is_file():
+        return False, 'handoff helper missing'
+    result = run(['/usr/bin/python3', str(HANDOFF), 'failover', reason[:1200]], 120)
+    detail = (result.stdout or result.stderr or '').strip()
+    return result.returncode == 0, detail
 
 
 def main() -> None:
     last_report = ''
     while True:
         try:
-            if mode() == 'nvme':
+            current_mode = mode()
+            if current_mode == 'nvme':
                 ok, reason = healthy_nvme()
                 if not ok:
-                    emergency_failover(reason)
+                    log(f'NVMe fault detected: {reason}')
+                    succeeded, detail = request_failover(reason)
+                    if succeeded:
+                        log(f'Failover complete: {detail or "recordings on internal eMMC buffer"}')
+                    else:
+                        log(f'Failover request failed: {detail or "unknown error"}')
                     last_report = ''
                 elif last_report != 'ok':
                     log('NVMe watchdog healthy')
                     last_report = 'ok'
+            elif current_mode == 'buffer':
+                # Buffer mode is healthy degraded operation. Reattachment is driven
+                # by the UUID-specific udev/systemd attach service when NVMe returns.
+                last_report = 'buffer'
             else:
                 last_report = ''
         except Exception as exc:

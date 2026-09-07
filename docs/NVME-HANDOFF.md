@@ -65,3 +65,35 @@ The handoff takes time to close streams and drain work; it is not a zero-frame
 gap guarantee. A restart chooses a nonempty internal buffer before NVMe, so
 interrupted transfers cannot silently strand footage. The existing UUID udev
 attach service invokes the new helper on physical reconnection.
+
+## Automatic failure path
+
+`openastro-storage-watchdog.service` runs from internal eMMC and checks the host
+mount table, `/dev/disk/by-uuid` and block-device state while storage mode is
+`nvme`. It intentionally does not issue filesystem data reads/probes against a
+suspect NVMe because a failed USB bridge can leave such calls blocked in D-state.
+When the expected recording device disappears, becomes read-only/shutdown, or is
+no longer a running kernel block device, the watchdog calls
+`nvme-handoff.py failover` under the same storage lock used by manual handoff.
+
+Emergency failover first tries the same kernel mount-clone namespace primitive
+used by normal handoff, but points every running LiveVault container directly at
+the internal buffer *before* replacing the host `/data/livevault/recordings`
+bind. Therefore the Docker daemon remains on the eMMC runtime and is not stopped.
+If a dead filesystem prevents the namespace move, only the LiveVault application
+container may be stop/started as a last resort after the host bind has moved to
+eMMC. The dead SERVER/SHARE filesystem mounts are lazily detached only in this
+unexpected-failure path; normal user eject remains strict and never uses lazy
+unmount.
+
+The storage tiers are a hard architectural contract:
+
+- internal eMMC: OS, `/data`, Docker `/data/docker`, dependencies, databases,
+  configuration, Control Center state/cache and the bounded 4 GiB failover buffer;
+- SERVER NVMe: heavy LiveVault recording payloads;
+- removable USB media: films and other Media Hub payloads only.
+
+Removing a media USB does not migrate the film contents into the emergency
+buffer; the Media Hub catalog/runtime stays on eMMC and the library becomes
+offline cleanly. Removing/failing the SERVER NVMe redirects new LiveVault capture
+to the bounded eMMC buffer until automatic UUID reattach succeeds.
