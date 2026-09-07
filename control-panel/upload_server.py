@@ -12,6 +12,7 @@ from urllib.parse import parse_qs, urlparse
 
 import media_center
 import media_streaming_patch
+import nina_monitor
 import server as panel
 
 
@@ -94,6 +95,20 @@ def _remember_uploaded_file(uuid: str, root: Path, target: Path, client: str) ->
 
 
 class Handler(panel.Handler):
+    def do_GET(self) -> None:
+        parsed = urlparse(self.path)
+        if parsed.path == '/api/nina/state':
+            if not self.require_session():
+                return
+            self.send_json(nina_monitor.state(force=parse_qs(parsed.query).get('force', ['0'])[0] == '1'))
+            return
+        if parsed.path == '/api/nina/diagnostics':
+            if not self.require_session():
+                return
+            self.send_json(nina_monitor.diagnostics())
+            return
+        return super().do_GET()
+
     def do_POST(self) -> None:
         parsed = urlparse(self.path)
         if parsed.path != '/api/media/upload':
