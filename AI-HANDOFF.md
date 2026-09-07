@@ -724,6 +724,14 @@ Seeking inside the already buffered HLS range is local/immediate. Seeking outsid
 
 Real Longlegs QA after the v18 player change verified exactly **one** range input in the dialog/stage, no `FILM COMPLETO` duplicate, no native video controls, no mobile horizontal overflow at 412 px, and a far seek to `4500 s` completing end-to-end in about `1.57 s` in the isolated browser QA. A production backend probe at the same position produced the first MPEG-TS HLS segment in about `2.03 s`; `ffprobe` reported H.264 1920x1008 + AAC stereo and FFmpeg decoded the segment successfully. Timing varies with source keyframe placement and current CM4 load, but the old 5-6 second forced-real-time startup path is no longer used.
 
+### Media Player v20 — subtitle clock + true fullscreen (2026-09-07)
+
+Do **not** attach embedded subtitles to the rolling HLS `<video>` as a native `<track>` and assume its timebase is the movie time. HLS sessions restart locally near `0` after a far seek, while extracted WebVTT cues keep absolute movie timestamps. The v20 player therefore parses the authenticated WebVTT in the browser and renders a text-only subtitle overlay against the logical movie clock `mediaPlaybackBase + video.currentTime`. The overlay survives HLS restarts/audio changes, supports Off/Forced/ITA/ENG selection, and uses `textContent` rather than HTML injection.
+
+Fullscreen is requested on `.media-video-shell`, not the modal/dialog or bare video. In fullscreen the shell and video are forced to `100vw x 100vh`, controls become an overlay at the bottom, subtitles stay above those controls, border radius/padding are removed, WebKit fullscreen is supported, and a fixed-position pseudo-fullscreen is the final fallback. On mobile the player attempts a best-effort landscape orientation lock but does not fail fullscreen if the browser refuses it.
+
+Real Longlegs subtitle QA used the generated embedded ITA WebVTT (845 cues): with logical base `3000 s`, local HLS time `1.5 s` rendered `Ti ho già visto.` at movie time 50:01.5; local time `5.2 s` rendered `Vero?`. Chromium fullscreen QA measured desktop viewport/shell/video all `1280x720` and mobile viewport/shell/video all `412x915`, with the subtitle overlay visible inside the fullscreen element. The CM4 Playwright browser still lacks H.264/AAC playback codecs, so these QA checks validate subtitle timing/DOM/fullscreen geometry independently of film pixel decoding.
+
 ## Level 10 status
 
 Do **not** assume experimental “Level 10” features are deployed merely because they were discussed in chat. The stable deployed baseline documented here is Level 3 + Level 5. Verify Git before resurrecting any experimental share-link / TV-control work.

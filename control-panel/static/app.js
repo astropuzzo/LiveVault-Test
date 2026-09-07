@@ -315,6 +315,35 @@ function mediaProbeUrl(path, uuid = mediaUuid) {
 function mediaPlanUrl(path, uuid = mediaUuid, audioStream = null) { const q=new URLSearchParams({uuid,path}); if(audioStream!==null&&audioStream!==undefined&&audioStream!=='')q.set('audio_stream',audioStream); return `/api/media/play-plan?${q}`; }
 function mediaSubtitleUrl(track, uuid = mediaUuid) { const q=new URLSearchParams({uuid,path:track.path}); if(track.kind==='embedded'&&track.stream_index!==undefined)q.set('stream',track.stream_index); return `/api/media/subtitle?${q}`; }
 function mediaSubtitleKey(track) { return track.kind==='embedded' ? `embedded:${track.stream_index}` : `sidecar:${track.path}`; }
+function mediaVttSeconds(value) {
+  const match=String(value||'').trim().match(/^(?:(\d+):)?(\d{2}):(\d{2})[.,](\d{3})$/);
+  if(!match)return NaN; return (Number(match[1]||0)*3600)+(Number(match[2])*60)+Number(match[3])+(Number(match[4])/1000);
+}
+function mediaSubtitleText(value) {
+  const stripped=String(value||'').replace(/<[^>]*>/g,''); const node=document.createElement('textarea'); node.innerHTML=stripped; return node.value.trim();
+}
+function parseMediaWebVtt(value) {
+  const blocks=String(value||'').replace(/\r/g,'').split(/\n{2,}/), cues=[];
+  for(const block of blocks){const lines=block.split('\n').map(line=>line.trimEnd());const timingIndex=lines.findIndex(line=>line.includes('-->'));if(timingIndex<0)continue;const timing=lines[timingIndex].split(/\s+-->\s+/);if(timing.length<2)continue;const start=mediaVttSeconds(timing[0]);const end=mediaVttSeconds(timing[1].trim().split(/\s+/)[0]);if(!Number.isFinite(start)||!Number.isFinite(end)||end<=start)continue;const text=mediaSubtitleText(lines.slice(timingIndex+1).join('\n'));if(text)cues.push({start,end,text});}
+  cues.sort((a,b)=>a.start-b.start||a.end-b.end); return cues;
+}
+function mediaSubtitleCueAt(cues,time) {
+  if(!cues?.length||!Number.isFinite(time))return null; let lo=0,hi=cues.length;
+  while(lo<hi){const mid=(lo+hi)>>1;if(cues[mid].start<=time)lo=mid+1;else hi=mid;}
+  for(let i=Math.min(cues.length-1,lo-1);i>=0&&i>=lo-8;i--){if(cues[i].start<=time&&time<cues[i].end)return cues[i];}
+  return null;
+}
+function createMediaSubtitleController(video,shell,tracks,uuid,getGlobalTime) {
+  const overlay=shell?.querySelector('#mediaSubtitleOverlay'); let cues=[],requestId=0,lastText='';
+  const render=()=>{if(!overlay)return;const cue=mediaSubtitleCueAt(cues,Number(getGlobalTime?.()));const text=cue?.text||'';if(text===lastText)return;lastText=text;overlay.textContent=text;overlay.hidden=!text;overlay.setAttribute('aria-hidden',text?'false':'true');if(cue)overlay.dataset.cueStart=String(cue.start);else delete overlay.dataset.cueStart;};
+  const clear=()=>{lastText='';if(overlay){overlay.textContent='';overlay.hidden=true;overlay.setAttribute('aria-hidden','true');delete overlay.dataset.cueStart;}};
+  ['timeupdate','seeking','seeked','loadedmetadata','play'].forEach(name=>video?.addEventListener(name,render));
+  return {
+    async set(key){const id=++requestId;cues=[];clear();if(!key||key==='off')return 0;const track=(tracks||[]).find(item=>mediaSubtitleKey(item)===key);if(!track)throw new Error('Traccia sottotitoli non trovata.');const response=await fetch(mediaSubtitleUrl(track,uuid),{cache:'no-store',signal:AbortSignal.timeout(15000)});if(!response.ok)throw new Error(`Sottotitoli non disponibili (HTTP ${response.status}).`);const parsed=parseMediaWebVtt(await response.text());if(id!==requestId)return 0;if(!parsed.length)throw new Error('Traccia sottotitoli vuota.');cues=parsed;render();return cues.length;},
+    update:render, clear,
+    destroy(){requestId++;['timeupdate','seeking','seeked','loadedmetadata','play'].forEach(name=>video?.removeEventListener(name,render));cues=[];clear();}
+  };
+}
 async function stopMediaHls() {
   if (mediaHls) { try { mediaHls.destroy(); } catch (_) {} mediaHls=null; }
   const token=mediaHlsToken; mediaHlsToken='';
@@ -335,7 +364,7 @@ function mediaTransportIcon(kind){
   }; return icons[kind]||'';
 }
 function mediaHlsPlayerMarkup(){
-  return `<div class="media-video-shell"><video playsinline preload="metadata"></video><div class="media-video-controls" id="mediaPlayerControls"><button type="button" id="mediaPlayerPlayPause" class="media-transport-button" aria-label="Riproduci">${mediaTransportIcon('play')}</button><div class="media-player-seek" id="mediaPlayerSeek"><input id="mediaPlayerSeekInput" type="range" min="0" max="0" step="1" value="0" aria-label="Posizione nel film"></div><strong class="media-player-clock"><b id="mediaPlayerSeekCurrent">0:00</b><span>/</span><b id="mediaPlayerSeekDuration">0:00</b></strong><button type="button" id="mediaPlayerMute" class="media-transport-button" aria-label="Disattiva audio">${mediaTransportIcon('volume')}</button><button type="button" id="mediaPlayerFullscreen" class="media-transport-button" aria-label="Schermo intero">${mediaTransportIcon('fullscreen')}</button></div></div>`;
+  return `<div class="media-video-shell"><video playsinline preload="metadata"></video><div class="media-subtitle-overlay" id="mediaSubtitleOverlay" aria-hidden="true" hidden></div><div class="media-video-controls" id="mediaPlayerControls"><button type="button" id="mediaPlayerPlayPause" class="media-transport-button" aria-label="Riproduci">${mediaTransportIcon('play')}</button><div class="media-player-seek" id="mediaPlayerSeek"><input id="mediaPlayerSeekInput" type="range" min="0" max="0" step="1" value="0" aria-label="Posizione nel film"></div><strong class="media-player-clock"><b id="mediaPlayerSeekCurrent">0:00</b><span>/</span><b id="mediaPlayerSeekDuration">0:00</b></strong><button type="button" id="mediaPlayerMute" class="media-transport-button" aria-label="Disattiva audio">${mediaTransportIcon('volume')}</button><button type="button" id="mediaPlayerFullscreen" class="media-transport-button" aria-label="Schermo intero">${mediaTransportIcon('fullscreen')}</button></div></div>`;
 }
 function renderMediaFullSeek(media, duration, initialPosition, onSeek){
   const host=$('#mediaPlayerSeek'), input=$('#mediaPlayerSeekInput'), current=$('#mediaPlayerSeekCurrent'), total=$('#mediaPlayerSeekDuration');
@@ -343,16 +372,36 @@ function renderMediaFullSeek(media, duration, initialPosition, onSeek){
   const max=Math.max(0,Math.floor(Number(duration)||0)), initial=Math.max(0,Math.min(max,Number(initialPosition)||0));
   if(!media||!host||!input||!current||!total||max<=0)return{update:()=>{},destroy:()=>{}};
   host.classList.remove('seeking'); input.max=String(max); input.value=String(Math.floor(initial)); current.textContent=mediaDuration(initial); total.textContent=mediaDuration(max);
-  let dragging=false,busy=false;
+  let dragging=false,busy=false,pseudoFullscreen=false,orientationLocked=false;
   const syncPlay=()=>{if(!play)return;const paused=media.paused;play.innerHTML=mediaTransportIcon(paused?'play':'pause');play.setAttribute('aria-label',paused?'Riproduci':'Pausa');};
   const syncMute=()=>{if(!mute)return;mute.innerHTML=mediaTransportIcon(media.muted?'muted':'volume');mute.setAttribute('aria-label',media.muted?'Riattiva audio':'Disattiva audio');};
   const preview=()=>{dragging=true;current.textContent=mediaDuration(Number(input.value)||0);};
   const commit=async()=>{const target=Math.max(0,Math.min(max,Number(input.value)||0));dragging=false;if(busy)return;busy=true;host.classList.add('seeking');input.disabled=true;try{await onSeek(target);}catch(error){toast(error.message||'Seek non riuscito.',true);}finally{busy=false;host.classList.remove('seeking');input.disabled=false;}};
   const togglePlay=()=>media.paused?media.play().catch(()=>{}):media.pause();
   const toggleMute=()=>{media.muted=!media.muted;syncMute();};
-  const toggleFullscreen=()=>{const target=shell||media;if(document.fullscreenElement)document.exitFullscreen?.();else target.requestFullscreen?.();};
-  input.addEventListener('input',preview); input.addEventListener('change',commit); play?.addEventListener('click',togglePlay); mute?.addEventListener('click',toggleMute); fullscreen?.addEventListener('click',toggleFullscreen); media.addEventListener('play',syncPlay);media.addEventListener('pause',syncPlay);media.addEventListener('volumechange',syncMute);syncPlay();syncMute();
-  return{update(position){if(dragging||busy)return;const value=Math.max(0,Math.min(max,Number(position)||0));input.value=String(Math.floor(value));current.textContent=mediaDuration(value);},destroy(){input.removeEventListener('input',preview);input.removeEventListener('change',commit);play?.removeEventListener('click',togglePlay);mute?.removeEventListener('click',toggleMute);fullscreen?.removeEventListener('click',toggleFullscreen);media.removeEventListener('play',syncPlay);media.removeEventListener('pause',syncPlay);media.removeEventListener('volumechange',syncMute);}};
+  const fullElement=()=>document.fullscreenElement||document.webkitFullscreenElement||null;
+  const unlockOrientation=()=>{if(!orientationLocked)return;try{screen.orientation?.unlock?.();}catch(_){}orientationLocked=false;};
+  const lockLandscape=async()=>{if(!matchMedia('(max-width: 1000px)').matches||!screen.orientation?.lock)return;try{await screen.orientation.lock('landscape');orientationLocked=true;}catch(_){}};
+  const leaveFullscreen=async()=>{
+    try{
+      if(pseudoFullscreen){shell?.classList.remove('media-video-shell--pseudo-fullscreen');document.documentElement.classList.remove('media-player-pseudo-fullscreen');pseudoFullscreen=false;}
+      else if(document.exitFullscreen)await document.exitFullscreen();
+      else if(document.webkitExitFullscreen)document.webkitExitFullscreen();
+    }catch(_){}finally{unlockOrientation();}
+  };
+  const enterFullscreen=async()=>{
+    const target=shell||media;
+    try{
+      if(target.requestFullscreen)await target.requestFullscreen({navigationUI:'hide'});
+      else if(target.webkitRequestFullscreen)target.webkitRequestFullscreen();
+      else {target.classList.add('media-video-shell--pseudo-fullscreen');document.documentElement.classList.add('media-player-pseudo-fullscreen');pseudoFullscreen=true;}
+      await lockLandscape();
+    }catch(error){toast('Schermo intero non disponibile in questo browser.',true);}
+  };
+  const toggleFullscreen=()=>{if(fullElement()||pseudoFullscreen)leaveFullscreen();else enterFullscreen();};
+  const onFullscreenChange=()=>{if(!fullElement()&&!pseudoFullscreen)unlockOrientation();};
+  input.addEventListener('input',preview); input.addEventListener('change',commit); play?.addEventListener('click',togglePlay); mute?.addEventListener('click',toggleMute); fullscreen?.addEventListener('click',toggleFullscreen); media.addEventListener('play',syncPlay);media.addEventListener('pause',syncPlay);media.addEventListener('volumechange',syncMute);document.addEventListener('fullscreenchange',onFullscreenChange);document.addEventListener('webkitfullscreenchange',onFullscreenChange);syncPlay();syncMute();
+  return{update(position){if(dragging||busy)return;const value=Math.max(0,Math.min(max,Number(position)||0));input.value=String(Math.floor(value));current.textContent=mediaDuration(value);},destroy(){input.removeEventListener('input',preview);input.removeEventListener('change',commit);play?.removeEventListener('click',togglePlay);mute?.removeEventListener('click',toggleMute);fullscreen?.removeEventListener('click',toggleFullscreen);media.removeEventListener('play',syncPlay);media.removeEventListener('pause',syncPlay);media.removeEventListener('volumechange',syncMute);document.removeEventListener('fullscreenchange',onFullscreenChange);document.removeEventListener('webkitfullscreenchange',onFullscreenChange);if(pseudoFullscreen){shell?.classList.remove('media-video-shell--pseudo-fullscreen');document.documentElement.classList.remove('media-player-pseudo-fullscreen');}unlockOrientation();}};
 }
 function renderMediaTrackControls(plan, selectedAudio, selectedSubtitle, onAudio, onSubtitle){
   const host=$('#mediaPlayerTracks'), audios=plan.audio_tracks||[], subtitles=plan.subtitles||[]; const parts=[];
@@ -436,6 +485,7 @@ let mediaPlayerPath = '';
 let mediaPlayerName = '';
 let mediaPlayerUuid = '';
 let mediaResumeTimer = null;
+let mediaSubtitleController = null;
 
 function mediaFilteredItems() {
   let items = [...mediaItems];
@@ -506,13 +556,13 @@ async function loadMediaDirectory(path = mediaPath) {
 }
 function closeMediaPlayer() {
   const stage=$('#mediaPlayerStage'), media=stage.querySelector('video,audio'); if(media) saveMediaProgress(media,true);
-  if(mediaResumeTimer)clearInterval(mediaResumeTimer); mediaResumeTimer=null; stopMediaHls(); stage.innerHTML='';
+  if(mediaResumeTimer)clearInterval(mediaResumeTimer); mediaResumeTimer=null; mediaSubtitleController?.destroy?.(); mediaSubtitleController=null; stopMediaHls(); stage.innerHTML='';
   mediaPlaybackBase=0; mediaPlaybackDuration=0; if($('#mediaPlayerDialog').open)$('#mediaPlayerDialog').close(); setTimeout(()=>loadMediaHome(true),500);
 }
 async function openMediaPlayer(path,name,category,uuid=mediaUuid,options={}){
   if(!uuid||!path)return; const device=(latestState?.media?.devices||[]).find(item=>item.uuid===uuid); if(!device?.mounted)return toast('Il supporto che contiene questo file non è collegato.',true);
-  const requestedAudio=options.audioStream??null, selectedSubtitle=options.subtitleKey||'off';
-  await stopMediaHls(); mediaPlayerUuid=uuid; mediaPlayerPath=path; mediaPlayerName=name||path.split('/').at(-1); mediaPlaybackBase=0; mediaPlaybackDuration=0;
+  const requestedAudio=options.audioStream??null; let selectedSubtitle=options.subtitleKey||'off';
+  await stopMediaHls(); mediaSubtitleController?.destroy?.(); mediaSubtitleController=null; mediaPlayerUuid=uuid; mediaPlayerPath=path; mediaPlayerName=name||path.split('/').at(-1); mediaPlaybackBase=0; mediaPlaybackDuration=0;
   $('#mediaPlayerTitle').textContent=mediaPlayerName; $('#mediaPlayerType').textContent=mediaCategoryLabel(category); $('#mediaPlayerPlan').textContent='ANALISI'; $('#mediaPlayerNote').textContent='Analisi compatibilità codec e carico del nodo…'; $('#mediaPlayerTracks').hidden=true; $('#mediaPlayerTracks').innerHTML='';
   $('#mediaPlayerDownload').href=mediaUrl(path,true,uuid); $('#mediaPlayerMeta').innerHTML='<span>Analisi file…</span>'; $('#mediaPlayerFavorite').textContent=isMediaFavorite(path,uuid)?'★ Preferito':'☆ Preferito';
   if(!$('#mediaPlayerDialog').open)$('#mediaPlayerDialog').showModal(); const stage=$('#mediaPlayerStage'); stage.innerHTML='<div class="media-playback-wait"><strong>Preparazione playback…</strong><small>OpenAstro sta scegliendo il percorso più efficiente.</small></div>';
@@ -523,18 +573,18 @@ async function openMediaPlayer(path,name,category,uuid=mediaUuid,options={}){
   let fullSeek={update:()=>{},destroy:()=>{}};
   const bindProgress=()=>{ if(!media)return; if(mediaResumeTimer)clearInterval(mediaResumeTimer); media.addEventListener('pause',()=>saveMediaProgress(media,true)); media.addEventListener('ended',()=>saveMediaProgress(media,true)); mediaResumeTimer=setInterval(()=>{const pos=logicalPosition();fullSeek.update(pos);if(!media.paused)saveMediaProgress(media);},500); };
   const attachHls=manifest=>{if(window.Hls&&Hls.isSupported()){mediaHls=new Hls({maxBufferLength:60,backBufferLength:90,enableWorker:true});mediaHls.loadSource(manifest);mediaHls.attachMedia(media);}else if(media.canPlayType('application/vnd.apple.mpegurl')){media.src=manifest;}else throw new Error('Questo browser non supporta HLS/MSE');};
-  const startHlsAt=async(position,audio=selectedAudio)=>{const oldToken=mediaHlsToken,oldHls=mediaHls;if(oldHls){try{oldHls.destroy();}catch(_){}}mediaHls=null;const payload={uuid,path,position};if(audio!==null&&audio!==undefined)payload.audio_stream=audio;const r=await fetch('/api/media/hls/start',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:JSON.stringify(payload),signal:AbortSignal.timeout(15000)});const h=await r.json();if(!r.ok||!h.ok){mediaHlsToken=oldToken;throw new Error(h.error||'HLS non disponibile');}mediaHlsToken=h.token||'';mediaPlaybackBase=Number(h.offset||0);mediaPlaybackDuration=Number(h.plan?.duration||plan.duration||0);selectedAudio=h.plan?.selected_audio_stream??audio;plan=h.plan||plan;attachHls(h.manifest);return h;};
+  const startHlsAt=async(position,audio=selectedAudio)=>{mediaSubtitleController?.clear?.();const oldToken=mediaHlsToken,oldHls=mediaHls;if(oldHls){try{oldHls.destroy();}catch(_){}}mediaHls=null;const payload={uuid,path,position};if(audio!==null&&audio!==undefined)payload.audio_stream=audio;const r=await fetch('/api/media/hls/start',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:JSON.stringify(payload),signal:AbortSignal.timeout(15000)});const h=await r.json();if(!r.ok||!h.ok){mediaHlsToken=oldToken;throw new Error(h.error||'HLS non disponibile');}mediaHlsToken=h.token||'';mediaPlaybackBase=Number(h.offset||0);mediaPlaybackDuration=Number(h.plan?.duration||plan.duration||0);selectedAudio=h.plan?.selected_audio_stream??audio;plan=h.plan||plan;attachHls(h.manifest);return h;};
   const localSeek=position=>{if(!media||!media.seekable)return false;const local=position-mediaPlaybackBase;if(local<0)return false;for(let i=0;i<media.seekable.length;i++){const start=media.seekable.start(i),end=media.seekable.end(i);if(local>=start-.25&&local<=end+.25){media.currentTime=Math.max(start,Math.min(end,local));fullSeek.update(position);return true;}}return false;};
   const restartAt=async position=>{if(localSeek(position))return;await startHlsAt(position,selectedAudio);fullSeek.update(position);};
   const bindFullSeek=()=>{fullSeek.destroy();fullSeek=renderMediaFullSeek(media,mediaPlaybackDuration,logicalPosition()||resume,restartAt);};
-  const bindTrackControls=()=>renderMediaTrackControls(plan,selectedAudio,selectedSubtitle,async nextAudio=>{const pos=logicalPosition();await startHlsAt(pos,nextAudio);fullSeek.update(pos);},key=>{if(media)setMediaSubtitle(media,key,plan.subtitles,uuid);});
+  const bindTrackControls=()=>renderMediaTrackControls(plan,selectedAudio,selectedSubtitle,async nextAudio=>{const pos=logicalPosition();await startHlsAt(pos,nextAudio);fullSeek.update(pos);},async key=>{selectedSubtitle=key;if(!mediaSubtitleController)return;try{await mediaSubtitleController.set(key);}catch(error){toast(error.message||'Sottotitoli non disponibili.',true);}});
   const originalVideo=()=>{ stage.innerHTML='<video controls playsinline preload="metadata"></video>'; media=stage.querySelector('video'); media.src=directUrl; addMediaSubtitleTracks(media,plan.subtitles,uuid,selectedSubtitle); media.addEventListener('loadedmetadata',()=>{if(resume>5&&resume<media.duration-10)media.currentTime=resume;},{once:true}); mediaPlaybackBase=0; if(!mediaPlaybackDuration)mediaPlaybackDuration=media.duration||0; bindProgress(); bindTrackControls(); };
   if(category==='image'){stage.innerHTML=`<img src="${escapeHtml(directUrl)}" alt="${escapeHtml(mediaPlayerName)}">`;$('#mediaPlayerPlan').textContent='DIRECT';$('#mediaPlayerNote').textContent='Immagine servita direttamente dal supporto USB.';}
   else if(category==='audio'){stage.innerHTML='<audio controls preload="metadata"></audio>';media=stage.querySelector('audio');media.src=directUrl;media.addEventListener('loadedmetadata',()=>{if(resume>5&&resume<media.duration-10)media.currentTime=resume;},{once:true});bindProgress();$('#mediaPlayerPlan').textContent='DIRECT';$('#mediaPlayerNote').textContent=plan.reason||'Audio Direct Play.';}
   else if(plan.mode==='direct'){originalVideo();$('#mediaPlayerPlan').textContent='DIRECT PLAY';$('#mediaPlayerNote').textContent=plan.reason||'Nessuna conversione: il file passa direttamente dalla USB al browser.';}
   else if(plan.available&&String(plan.mode).startsWith('hls_')){
     $('#mediaPlayerPlan').textContent=plan.mode==='hls_copy'?'REMUX HLS':plan.mode==='hls_audio'?'AUDIO → AAC':'TRANSCODE HLS'; $('#mediaPlayerNote').textContent=`${plan.reason}. Seek rapido sull'intera durata; il video resta in copia quando compatibile.`;
-    try{stage.innerHTML=mediaHlsPlayerMarkup();media=stage.querySelector('video');addMediaSubtitleTracks(media,plan.subtitles,uuid,selectedSubtitle);await startHlsAt(resume,selectedAudio);bindProgress();bindTrackControls();bindFullSeek();}catch(error){stage.innerHTML=`<div class="media-playback-blocked"><strong>Fallback HLS non disponibile</strong><small>${escapeHtml(error.message||'Errore HLS')}</small><button id="mediaTryOriginal" class="button secondary">Prova comunque il file originale</button></div>`;$('#mediaTryOriginal').addEventListener('click',originalVideo);}
+    try{stage.innerHTML=mediaHlsPlayerMarkup();media=stage.querySelector('video');mediaSubtitleController=createMediaSubtitleController(media,media.closest('.media-video-shell'),plan.subtitles,uuid,logicalPosition);await startHlsAt(resume,selectedAudio);if(selectedSubtitle!=='off')await mediaSubtitleController.set(selectedSubtitle);bindProgress();bindTrackControls();bindFullSeek();}catch(error){mediaSubtitleController?.destroy?.();mediaSubtitleController=null;stage.innerHTML=`<div class="media-playback-blocked"><strong>Fallback HLS non disponibile</strong><small>${escapeHtml(error.message||'Errore HLS')}</small><button id="mediaTryOriginal" class="button secondary">Prova comunque il file originale</button></div>`;$('#mediaTryOriginal').addEventListener('click',originalVideo);}
   }else{stage.innerHTML=`<div class="media-playback-blocked"><strong>Transcode protetto</strong><small>${escapeHtml(plan.reason||'Playback non disponibile')}</small><button id="mediaTryOriginal" class="button secondary">Prova Direct Play</button></div>`;$('#mediaTryOriginal').addEventListener('click',originalVideo);$('#mediaPlayerPlan').textContent='PROTECTED';$('#mediaPlayerNote').textContent=plan.reason||'OpenAstro evita di sottrarre risorse a LiveVault.';}
   try{const response=await fetch(mediaProbeUrl(path,uuid),{cache:'no-store',signal:AbortSignal.timeout(12000)});const data=await response.json();const probe=data.probe||{},format=probe.format||{},streams=probe.streams||[];const video=streams.find(x=>x.codec_type==='video'),audio=streams.find(x=>x.index===selectedAudio)||streams.find(x=>x.codec_type==='audio');const bits=[];if(format.duration)bits.push(mediaDuration(format.duration));if(video?.width)bits.push(`${video.width}×${video.height}`);if(video?.codec_name)bits.push(video.codec_name.toUpperCase());if(audio?.codec_name)bits.push(audio.codec_name.toUpperCase());if(format.bit_rate)bits.push(`${(Number(format.bit_rate)/1e6).toFixed(1)} Mb/s`);bits.push(bytes(data.size));$('#mediaPlayerMeta').innerHTML=bits.map(value=>`<span>${escapeHtml(value)}</span>`).join('');}catch(_){$('#mediaPlayerMeta').innerHTML=`<span>${bytes(mediaItems.find(i=>i.path===path)?.size||0)}</span>`;}
 }
@@ -825,7 +875,7 @@ $('#mediaGridView').addEventListener('click', () => { mediaView='grid'; $('#medi
 $('#mediaListView').addEventListener('click', () => { mediaView='list'; $('#mediaListView').classList.add('active'); $('#mediaGridView').classList.remove('active'); renderMediaFiles(); });
 $('#mediaLibraryRefresh').addEventListener('click', () => loadMediaLibrary(true));
 $('#mediaPlayerClose').addEventListener('click', closeMediaPlayer);
-$('#mediaPlayerDialog').addEventListener('close', () => { const media=$('#mediaPlayerStage').querySelector('video,audio'); if(media) saveMediaProgress(media,true); if(mediaResumeTimer) clearInterval(mediaResumeTimer); mediaResumeTimer=null; stopMediaHls(); mediaPlaybackBase=0; mediaPlaybackDuration=0; $('#mediaPlayerStage').innerHTML=''; setTimeout(()=>loadMediaHome(true),500); });
+$('#mediaPlayerDialog').addEventListener('close', () => { const media=$('#mediaPlayerStage').querySelector('video,audio'); if(media) saveMediaProgress(media,true); if(mediaResumeTimer) clearInterval(mediaResumeTimer); mediaResumeTimer=null; mediaSubtitleController?.destroy?.(); mediaSubtitleController=null; stopMediaHls(); mediaPlaybackBase=0; mediaPlaybackDuration=0; $('#mediaPlayerStage').innerHTML=''; setTimeout(()=>loadMediaHome(true),500); });
 $('#mediaPlayerFavorite').addEventListener('click', async () => { const state=await toggleMediaFavorite(mediaPlayerPath,mediaPlayerName,mediaPlayerUuid); $('#mediaPlayerFavorite').textContent=state?'★ Preferito':'☆ Preferito'; });
 $('#mediaBack').addEventListener('click', () => loadMediaDirectory($('#mediaBack').dataset.parent || ''));
 $('#mediaCredentials').addEventListener('click', async () => {

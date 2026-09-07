@@ -37,6 +37,34 @@ def test_custom_transport_is_mobile_compact_and_cache_bumped():
     assert '.media-video-controls{' in CSS
     assert '.media-player-clock{' in CSS
     assert '.media-transport-button{' in CSS
-    assert '/app.js?v=18.1-pihole' in INDEX
-    assert '/app.css?v=18.1-pihole' in INDEX
-    assert 'openastro-control-v18.1-pihole' in SW
+    assert '/app.js?v=20.0-media' in INDEX
+    assert '/app.css?v=20.0-media' in INDEX
+    assert 'openastro-control-v20.0-media' in SW
+
+
+
+def test_hls_subtitles_render_in_global_time_overlay_not_native_track():
+    markup = APP.split('function mediaHlsPlayerMarkup(){', 1)[1].split('\n}', 1)[0]
+    assert 'id="mediaSubtitleOverlay"' in markup
+    assert 'createMediaSubtitleController' in APP
+    assert 'parseMediaWebVtt' in APP
+    assert 'mediaSubtitleCueAt(cues,Number(getGlobalTime?.()))' in APP
+    assert 'mediaPlaybackBase+(Number(media?.currentTime)||0)' in APP
+    hls_branch = APP.split("else if(plan.available&&String(plan.mode).startsWith('hls_'))", 1)[1].split("}else{stage.innerHTML", 1)[0]
+    assert 'createMediaSubtitleController' in hls_branch
+    assert 'addMediaSubtitleTracks' not in hls_branch
+    assert 'selectedSubtitle=key' in APP
+
+
+def test_fullscreen_targets_video_stage_and_fills_viewport():
+    assert "const target=shell||media" in APP
+    assert 'target.requestFullscreen' in APP
+    assert 'target.webkitRequestFullscreen' in APP
+    assert "screen.orientation.lock('landscape')" in APP
+    assert '.media-video-shell:fullscreen' in CSS
+    assert '.media-video-shell:-webkit-full-screen' in CSS
+    assert 'width:100vw!important' in CSS
+    assert 'height:100vh!important' in CSS
+    assert 'position:absolute!important;inset:0!important' in CSS
+    assert 'object-fit:contain!important' in CSS
+    assert '.media-subtitle-overlay' in CSS
