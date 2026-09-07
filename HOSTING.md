@@ -26,9 +26,12 @@ Keep existing credentials and system configuration. Never replace the LiveVault
 
 1. Run the Python suite and JavaScript checks in `.github/workflows/ci.yml`.
 2. Push the reviewed commit and wait for **Core tests** to pass on GitHub.
-3. Promote the tested commit to `main`. The Coolify GitHub webhook queues deployment
-   automatically. Confirm its commit before starting any manual deployment. Retain
-   the previous image for rollback.
+3. Promote the tested commit to `main`. Coolify auto-deploy is enabled, but the
+   LiveVault application has **Watch Paths** restricted to the actual Docker image
+   inputs: `app/**`, `requirements.txt`, `Dockerfile`, and `.dockerignore`.
+   Documentation, host scripts, tests and `control-panel/**` pushes must therefore
+   not recreate the LiveVault container. Confirm the deployed commit when one of
+   the watched paths changes and retain the previous image for rollback.
 4. Copy the versioned panel assets and `server.py` to `/opt/openastro-control`,
    keeping ownership and existing service configuration. Restart only the panel
    process; its systemd unit restarts it automatically. A panel restart invalidates
@@ -38,6 +41,8 @@ Keep existing credentials and system configuration. Never replace the LiveVault
 
 GitHub CI validates both apps. Coolify's main webhook does not wait for CI, so test
 on a branch before promotion. A green GitHub run alone is not proof of deployment.
+Do not clear the LiveVault Watch Paths unless deliberately restoring every-commit
+auto-deploy; doing so can interrupt an active recorder for docs/control-panel-only changes.
 
 ## Backup and rollback
 

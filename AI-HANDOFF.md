@@ -435,6 +435,22 @@ https://openastro.tailf2871c.ts.net:10000 -> http://127.0.0.1:8000
 
 Current source also exposes Coolify from the Control Center through that URL.
 
+LiveVault Coolify auto-deploy has a production **Watch Paths** guard. The application
+UUID `ahul2vdjkyvjiwgzpcrmxzfe` must have exactly these relevant build triggers:
+
+```text
+app/**
+requirements.txt
+Dockerfile
+.dockerignore
+```
+
+The Dockerfile copies only `requirements.txt` and `app/`, so pushes that modify only
+host scripts, tests, documentation or `control-panel/**` must not recreate the
+LiveVault container. This is intentional because a GitHub push during an active
+recorder previously caused an unnecessary Coolify redeploy. If the guard is changed,
+verify the reason first rather than reverting to `watch_paths=NULL`.
+
 Do not restart all Docker containers as a generic troubleshooting step. `restart_docker` is consequential and must be task-specific.
 
 ---
