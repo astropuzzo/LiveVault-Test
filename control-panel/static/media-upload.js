@@ -167,3 +167,15 @@
   routeState(); syncTarget(); renderQueue();
   setInterval(syncTarget, 1000);
 })();
+
+// NINA Monitor is intentionally loaded as an extension of the existing shell.
+// This keeps LiveVault and the large Control Center core untouched while the
+// mobile monitor is developed and field-tested.
+(() => {
+  if (window.__openastroNinaMonitorRequested) return;
+  window.__openastroNinaMonitorRequested = true;
+  const script = document.createElement('script');
+  script.src = '/nina-monitor.js?v=1.0';
+  script.defer = true;
+  document.head.appendChild(script);
+})();
