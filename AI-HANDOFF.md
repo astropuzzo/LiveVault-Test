@@ -294,6 +294,31 @@ Main user-facing action wrapper:
 /usr/local/sbin/openastro-action
 ```
 
+### Manual NVMe eject/attach transaction
+
+`nvme-handoff.py` must keep `/data` `rshared` and the LiveVault Docker bind is
+`rslave`. Every mount switch reasserts host propagation before replacing
+`/data/livevault/recordings`. Container verification is not a single-shot
+comparison: it waits for propagation and, only if exactly one stable LiveVault
+container retains a stale view, restarts that already-quiesced container and
+verifies the filesystem device again. Docker is not restarted. A persistent
+mismatch aborts the eject and the NVMe must remain connected.
+
+Rollback after a failed manual eject is a **complete state rollback**, not just
+a recordings rebind: when the expected NVMe is still present it restores the
+NVMe recordings bind, `storage-state.json`, `/share`, and the prior active state
+of `livevault-backup.timer`. This matters because the timer is intentionally
+stopped before detaching storage.
+
+Real end-to-end QA on 2026-09-07 verified the user-facing action path:
+`eject_nvme` reached `mode=buffer`, `/mnt/livevault-nvme` and `/share` were truly
+unmounted, host and container recordings both used the 4 GiB loop filesystem,
+LiveVault stayed healthy, and GPT Harness restarted eMMC-only. `attach_nvme`
+then remounted the expected UUID, restored host/container recordings to the
+NVMe, remounted `/share`, restarted the backup timer and returned to
+`mode=nvme`. A forced propagation failure was also injected before physical
+unmount and verified to restore NVMe + `/share` + backup timer automatically.
+
 Control Center actions include:
 
 - `eject_nvme`

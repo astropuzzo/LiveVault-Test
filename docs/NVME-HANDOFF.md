@@ -15,13 +15,19 @@ eject/attach operations do not stop Docker.
 Eject writes a tokenized quiesce request. The leader stops recording processes
 cleanly, blocks new media work, and drains existing jobs without cancelling
 threads that still hold files. Archive finalization/upload is deferred during
-buffering. After acknowledgement the host switches the recording mount, checks
-the container sees the new filesystem, checks remaining device file handles,
-and normally unmounts the NVMe. GPT Harness is stopped immediately before the
-unmount so its private sandbox cannot retain the removable filesystem, then
-restarted eMMC-only; attach restarts it again after the NVMe is mounted so its
-optional heavy-workspace path becomes writable again. No lazy unmount is used.
-A busy device produces an error and restores the prior recording mount.
+buffering. After acknowledgement the host reasserts `/data` as `rshared`, switches the
+recording mount and positively verifies that every running LiveVault container
+sees the same filesystem device. Propagation verification is bounded/retried;
+if one stable LiveVault container retains a stale submount, the helper restarts
+only that already-quiesced container and verifies again. Docker itself remains
+online. Only after that check passes does it inspect remaining device handles
+and unmount the NVMe. GPT Harness is stopped immediately before the unmount so
+its private sandbox cannot retain the removable filesystem, then restarted
+eMMC-only; attach restarts it again after the NVMe is mounted so its optional
+heavy-workspace path becomes writable again. No lazy unmount is used for a
+manual eject. A failure remains fail-closed and restores the complete prior
+state when the medium is still present: recordings bind, `/share`, storage
+state and `livevault-backup.timer`.
 
 Buffer captures use short parts and reserve 128 MiB per active camera plus
 one spare slot for closing files. The full state stays latched until NVMe

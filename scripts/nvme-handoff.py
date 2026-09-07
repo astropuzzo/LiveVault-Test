@@ -19,6 +19,9 @@ BUFFER_LIMIT_BYTES = 4 * 1024**3
 RECORDINGS = ROOT / 'recordings'
 DATA_UUID = '5fe2d0f6-b485-44e9-8e26-31fb0d217db2'
 GPT_HARNESS_SERVICE = 'gpt-harness.service'
+CONTAINER_VIEW_SETTLE_SECONDS = 3.0
+CONTAINER_VIEW_RESTART_SECONDS = 20.0
+CONTAINER_VIEW_POLL_SECONDS = 0.25
 
 
 def run(*args):
@@ -103,21 +106,71 @@ def merge_buffer(source, destination):
 
 
 def switch(source):
+    # Docker receives recording submount changes through an rslave bind of /data.
+    # Reassert the host side as rshared before every switch so a drifted mount
+    # propagation flag cannot strand the container on the previous filesystem.
+    run('mount', '--make-rshared', str(ROOT.parent))
     if os.path.ismount(RECORDINGS):
         run('umount', str(RECORDINGS))
     run('mount', '--bind', str(source), str(RECORDINGS))
 
 
+def livevault_containers():
+    return [item for item in run('docker', 'ps', '-q', '--filter', 'name=ahul2vdjkyvjiwgzpcrmxzfe').splitlines() if item]
+
+
+def container_recordings_device(container):
+    return int(run('docker', 'exec', container, 'python', '-c',
+                   'import os; print(os.stat("/data/recordings").st_dev)'))
+
+
+def wait_container_view(expected, timeout):
+    """Wait for shared-subtree propagation, tolerating brief container churn."""
+    deadline = time.monotonic() + timeout
+    last = {}
+    while True:
+        containers = livevault_containers()
+        if containers:
+            current = {}
+            for container in containers:
+                try:
+                    current[container] = container_recordings_device(container)
+                except (subprocess.CalledProcessError, ValueError):
+                    current[container] = None
+            last = current
+            if current and all(actual == expected for actual in current.values()):
+                return True, current
+        else:
+            last = {}
+        if time.monotonic() >= deadline:
+            return False, last
+        time.sleep(CONTAINER_VIEW_POLL_SECONDS)
+
+
 def verify_container_view():
-    containers = run('docker', 'ps', '-q', '--filter', 'name=ahul2vdjkyvjiwgzpcrmxzfe').splitlines()
+    expected = RECORDINGS.stat().st_dev
+    ok, seen = wait_container_view(expected, CONTAINER_VIEW_SETTLE_SECONDS)
+    if ok:
+        return
+
+    # A manual handoff is already quiesced at this point. If exactly one stable
+    # LiveVault container has retained a stale submount, restart only that
+    # container as a bounded fallback. Docker itself stays online and the state
+    # remains fail-closed until the new filesystem is positively verified.
+    containers = livevault_containers()
+    if len(containers) == 1:
+        container = containers[0]
+        run('docker', 'restart', '--time', '30', container)
+        ok, seen = wait_container_view(expected, CONTAINER_VIEW_RESTART_SECONDS)
+        if ok:
+            return
+
     if not containers:
         raise RuntimeError('LiveVault non disponibile: handoff annullato')
-    expected = RECORDINGS.stat().st_dev
-    for container in containers:
-        actual = int(run('docker', 'exec', container, 'python', '-c',
-                         'import os; print(os.stat("/data/recordings").st_dev)'))
-        if actual != expected:
-            raise RuntimeError('Mount propagation non valida: NVMe NON espulso')
+    detail = ', '.join(f'{container}={actual}' for container, actual in sorted(seen.items())) or 'nessuna vista leggibile'
+    raise RuntimeError(
+        f'Mount propagation non valida dopo retry: host={expected}; container={detail}. NVMe NON espulso'
+    )
 
 
 def device_blockers():
@@ -201,6 +254,8 @@ def main(action):
             publish(mode)
             return
         previous = json.loads((ROOT / 'storage-state.json').read_text())['mode']
+        backup_timer_was_active = service_active('livevault-backup.timer')
+        share_was_mounted = os.path.ismount('/share')
         if action == 'eject' and previous == 'buffer' and not os.path.ismount(NVME):
             print('NVMe già espulso; buffer interno attivo.')
             return
@@ -260,11 +315,24 @@ def main(action):
                     set_service(GPT_HARNESS_SERVICE, 'restart')
                 print('NVMe operativo: buffer trasferito e verificato; registrazioni riprese, stitching in coda; GPT Harness riallineato al workspace NVMe.')
         except Exception:
-            # Roll back only when the expected storage can actually be restored.
+            # Restore the complete pre-action service/storage state whenever the
+            # expected medium is still physically present. A failed eject must
+            # not silently leave backup disabled or /share detached.
+            if previous == 'nvme' and not os.path.ismount(NVME) and Path('/dev/disk/by-uuid', DATA_UUID).exists():
+                try:
+                    run('mount', str(NVME))
+                except subprocess.CalledProcessError:
+                    pass
             source = NVME / 'livevault/recordings' if previous == 'nvme' else BUFFER
-            if (previous != 'nvme' or os.path.ismount(NVME)) and source.is_dir():
+            restored = (previous != 'nvme' or os.path.ismount(NVME)) and source.is_dir()
+            if restored:
                 switch(source)
                 publish(previous)
+                if previous == 'nvme':
+                    if share_was_mounted and not os.path.ismount('/share'):
+                        subprocess.run(['mount', '/share'], capture_output=True)
+                    if backup_timer_was_active:
+                        subprocess.run(['systemctl', 'start', 'livevault-backup.timer'], capture_output=True)
             raise
 
 

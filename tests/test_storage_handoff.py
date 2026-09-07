@@ -103,3 +103,81 @@ def test_transfer_refuses_conflicting_media(tmp_path, transfer):
         transfer.merge_buffer(source, dest)
     assert (source / 'part.mp4').read_bytes() == b'original'
     assert (dest / 'part.mp4').read_bytes() == b'different'
+
+
+def test_switch_reasserts_shared_data_mount_before_bind(monkeypatch, transfer):
+    calls = []
+    monkeypatch.setattr(transfer, 'run', lambda *args: calls.append(args) or '')
+    monkeypatch.setattr(transfer.os.path, 'ismount', lambda _path: True)
+    transfer.switch(Path('/tmp/fake-buffer'))
+    assert calls[0] == ('mount', '--make-rshared', '/data')
+    assert calls[1] == ('umount', '/data/livevault/recordings')
+    assert calls[2] == ('mount', '--bind', '/tmp/fake-buffer', '/data/livevault/recordings')
+
+
+def test_container_view_transient_propagation_does_not_restart(monkeypatch, tmp_path, transfer):
+    monkeypatch.setattr(transfer, 'RECORDINGS', tmp_path)
+    expected = tmp_path.stat().st_dev
+    monkeypatch.setattr(transfer, 'wait_container_view', lambda _expected, _timeout: (True, {'live': expected}))
+    monkeypatch.setattr(transfer, 'livevault_containers', lambda: ['live'])
+    calls = []
+    monkeypatch.setattr(transfer, 'run', lambda *args: calls.append(args) or '')
+    transfer.verify_container_view()
+    assert not any(call[:2] == ('docker', 'restart') for call in calls)
+
+
+def test_container_view_stale_mount_restarts_only_livevault_then_rechecks(monkeypatch, tmp_path, transfer):
+    monkeypatch.setattr(transfer, 'RECORDINGS', tmp_path)
+    expected = tmp_path.stat().st_dev
+    results = iter([(False, {'live': expected + 1}), (True, {'live': expected})])
+    monkeypatch.setattr(transfer, 'wait_container_view', lambda _expected, _timeout: next(results))
+    monkeypatch.setattr(transfer, 'livevault_containers', lambda: ['live'])
+    calls = []
+    monkeypatch.setattr(transfer, 'run', lambda *args: calls.append(args) or '')
+    transfer.verify_container_view()
+    assert ('docker', 'restart', '--time', '30', 'live') in calls
+
+
+def test_container_view_persistent_mismatch_fails_closed(monkeypatch, tmp_path, transfer):
+    monkeypatch.setattr(transfer, 'RECORDINGS', tmp_path)
+    expected = tmp_path.stat().st_dev
+    monkeypatch.setattr(transfer, 'wait_container_view', lambda _expected, _timeout: (False, {'live': expected + 1}))
+    monkeypatch.setattr(transfer, 'livevault_containers', lambda: ['live'])
+    monkeypatch.setattr(transfer, 'run', lambda *args: '')
+    with pytest.raises(RuntimeError, match='NVMe NON espulso'):
+        transfer.verify_container_view()
+
+
+def test_failed_eject_rollback_restores_backup_timer_and_share(monkeypatch, transfer, tmp_path):
+    root = tmp_path / 'data' / 'livevault'
+    nvme = tmp_path / 'nvme'
+    buffer = tmp_path / 'buffer'
+    rec = root / 'recordings'
+    (nvme / 'livevault' / 'recordings').mkdir(parents=True)
+    buffer.mkdir(parents=True)
+    rec.mkdir(parents=True)
+    (root / 'storage-state.json').write_text(json.dumps({'mode': 'nvme'}))
+    monkeypatch.setattr(transfer, 'ROOT', root)
+    monkeypatch.setattr(transfer, 'NVME', nvme)
+    monkeypatch.setattr(transfer, 'BUFFER', buffer)
+    monkeypatch.setattr(transfer, 'RECORDINGS', rec)
+    monkeypatch.setattr(transfer, 'service_active', lambda name: name in {'livevault-backup.timer'})
+    monkeypatch.setattr(transfer.os, 'geteuid', lambda: 0)
+    monkeypatch.setattr(transfer, 'open', lambda *_args, **_kwargs: (tmp_path / 'handoff.lock').open('w'), raising=False)
+    mounted = {str(nvme): True, '/share': True, str(rec): True}
+    monkeypatch.setattr(transfer.os.path, 'ismount', lambda path: mounted.get(str(path), False))
+    monkeypatch.setattr(transfer, 'quiesce', lambda: None)
+    monkeypatch.setattr(transfer, 'switch', lambda source: None)
+    monkeypatch.setattr(transfer, 'verify_container_view', lambda: (_ for _ in ()).throw(RuntimeError('propagation failed')))
+    calls = []
+    def fake_run(*args, **kwargs):
+        calls.append(tuple(args))
+        if args[:2] == ('systemctl', 'stop'):
+            return ''
+        return ''
+    monkeypatch.setattr(transfer, 'run', fake_run)
+    popen_calls = []
+    monkeypatch.setattr(transfer.subprocess, 'run', lambda args, **kwargs: popen_calls.append(tuple(args)) or SimpleNamespace(returncode=0, stdout='', stderr=''))
+    with pytest.raises(RuntimeError, match='propagation failed'):
+        transfer.main('eject')
+    assert ('systemctl', 'start', 'livevault-backup.timer') in popen_calls
