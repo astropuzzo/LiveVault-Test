@@ -109,18 +109,27 @@ class WorkerManager(_legacy.WorkerManager):
 
         self._processing_clear_task = asyncio.create_task(clear_later(), name="processing-progress-clear")
 
-    @staticmethod
-    def _stitch_group_ready(items: list[Any], now: Any) -> bool:
-        """A quiet session or 15 minutes of immutable media is ready to publish."""
+    def _stitch_group_ready(self, items: list[Any], now: Any) -> bool:
+        """Publish rolling batches, or quiet sessions only when no continuation is active."""
         usable = [item for item in items if _legacy.fragment_usable_for_stitch(item)]
         if not usable:
             return False
         ready_seconds = sum(float(item.duration_seconds or 0) for item in usable)
+        if ready_seconds >= _legacy.SESSION_STITCH_READY_SECONDS:
+            return True
+
+        first = usable[0]
+        source_id = getattr(first, "source_id", None)
+        session_id = getattr(first, "session_id", None)
+        active = self.active.get(int(source_id)) if source_id is not None else None
+        if active is not None and session_id and active.session_id == session_id:
+            # A reconnect may already be writing a new mutable part that is not yet
+            # represented in RecordingFragment. Do not mistake the age of the last
+            # closed part for silence and publish the earlier batch prematurely.
+            return False
+
         latest = max(item.finalized_at for item in items)
-        return (
-            ready_seconds >= _legacy.SESSION_STITCH_READY_SECONDS
-            or not stitch_gap_open(latest, now)
-        )
+        return not stitch_gap_open(latest, now)
 
     def _oldest_eligible_fragment(self) -> Any | None:
         """Return the oldest batch that processing can claim immediately."""

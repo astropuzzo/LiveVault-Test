@@ -121,3 +121,25 @@ def test_active_session_batch_becomes_ready_after_fifteen_minutes(tmp_path):
     assert manager._stitch_group_ready(
         [fragment(2 * 60, now - timedelta(minutes=21))], now
     )
+
+
+def test_active_continuation_prevents_premature_quiet_publish(tmp_path):
+    manager = workers.WorkerManager()
+    now = datetime(2026, 9, 7, 16, 13, tzinfo=timezone.utc)
+    path = tmp_path / "capture_part000.mp4"
+    path.write_bytes(b"media")
+    fragment = SimpleNamespace(
+        source_id=17,
+        session_id="indulgencex_2026-09-07_17-53-40",
+        local_path=str(path),
+        integrity_status="passed",
+        integrity_error="",
+        duration_seconds=204.8,
+        finalized_at=now - timedelta(minutes=21),
+    )
+    manager.active[17] = SimpleNamespace(session_id=fragment.session_id)
+
+    assert not manager._stitch_group_ready([fragment], now)
+
+    manager.active.clear()
+    assert manager._stitch_group_ready([fragment], now)
