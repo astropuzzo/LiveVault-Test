@@ -9,8 +9,9 @@ import urllib.request
 from pathlib import Path
 
 CONFIG_FILE = Path('/etc/openastro-nina-monitor.json')
-CACHE_SECONDS = 1.0
+CACHE_SECONDS = 0.5
 _TIMEOUT = 2.5
+_MAX_PREVIEW_BYTES = 4 * 1024 * 1024
 _lock = threading.Lock()
 _cached: dict | None = None
 _cached_at = 0.0
@@ -34,13 +35,20 @@ def _config() -> dict:
     return {'base_url': base_url, 'token': token}
 
 
+def _request(url: str, token: str, accept: str) -> urllib.request.Request:
+    return urllib.request.Request(
+        url,
+        headers={
+            'Accept': accept,
+            'User-Agent': 'OpenAstro-NINA-Monitor/1',
+            'X-QSM-Token': token,
+        },
+        method='GET',
+    )
+
+
 def _fetch_json(url: str, token: str) -> tuple[dict, float]:
-    headers = {
-        'Accept': 'application/json',
-        'User-Agent': 'OpenAstro-NINA-Monitor/1',
-        'X-QSM-Token': token,
-    }
-    request = urllib.request.Request(url, headers=headers, method='GET')
+    request = _request(url, token, 'application/json')
     started = time.monotonic()
     with urllib.request.urlopen(request, timeout=_TIMEOUT) as response:
         if response.status != 200:
@@ -52,6 +60,27 @@ def _fetch_json(url: str, token: str) -> tuple[dict, float]:
         if not isinstance(payload, dict):
             raise RuntimeError('invalid QSM payload')
         return payload, (time.monotonic() - started) * 1000.0
+
+
+def preview() -> tuple[bytes, dict[str, str]]:
+    config = _config()
+    if not config['base_url'] or not config['token']:
+        raise FileNotFoundError('NINA/QSM non configurato')
+    request = _request(f"{config['base_url']}/api/v1/preview.jpg", config['token'], 'image/jpeg')
+    with urllib.request.urlopen(request, timeout=_TIMEOUT) as response:
+        if response.status != 200:
+            raise RuntimeError(f'HTTP {response.status}')
+        content_type = str(response.headers.get('Content-Type') or '').split(';', 1)[0].strip().lower()
+        if content_type != 'image/jpeg':
+            raise RuntimeError('invalid preview content type')
+        raw = response.read(_MAX_PREVIEW_BYTES + 1)
+        if not raw or len(raw) > _MAX_PREVIEW_BYTES:
+            raise RuntimeError('invalid preview size')
+        metadata = {
+            'preview_utc': str(response.headers.get('X-QSM-Preview-Utc') or ''),
+            'image_id': str(response.headers.get('X-QSM-Image-Id') or ''),
+        }
+        return raw, metadata
 
 
 def state(force: bool = False) -> dict:
@@ -130,5 +159,6 @@ def diagnostics() -> dict:
         'token_present': bool(config['token']),
         'cache_seconds': CACHE_SECONDS,
         'timeout_seconds': _TIMEOUT,
+        'preview_max_bytes': _MAX_PREVIEW_BYTES,
         'policy': 'read-only',
     }
