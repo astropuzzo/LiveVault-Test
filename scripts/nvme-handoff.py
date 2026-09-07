@@ -114,7 +114,7 @@ def merge_buffer(source, destination):
                 pass
 
 
-def switch(source):
+def switch(source, *, preposition=True):
     # Docker receives recording submount changes through an rslave bind of /data.
     # Reassert the host side as rshared before every switch so a drifted mount
     # propagation flag cannot strand the container on the previous filesystem.
@@ -123,7 +123,7 @@ def switch(source):
     # application is fully quiesced. Move each LiveVault container to the new
     # filesystem first using the kernel mount-clone primitive; only then replace
     # the host bind. This keeps eject/attach independent of propagation timing.
-    containers = livevault_containers()
+    containers = livevault_containers() if preposition else []
     if containers:
         preposition_container_views(containers, source)
     if os.path.ismount(RECORDINGS):
@@ -498,7 +498,9 @@ def main(action):
             pending = any(p.is_file() for p in BUFFER.rglob('*') if 'lost+found' not in p.parts)
             mode = 'nvme' if os.path.ismount(NVME) and not pending else 'buffer'
             RECORDINGS.mkdir(parents=True, exist_ok=True)
-            switch(NVME / 'livevault/recordings' if mode == 'nvme' else BUFFER)
+            # Docker is ordered after this boot unit; querying Docker here would
+            # deadlock boot (Docker waits for storage, storage waits for Docker).
+            switch(NVME / 'livevault/recordings' if mode == 'nvme' else BUFFER, preposition=False)
             publish(mode)
             return
         if action == 'failover':

@@ -377,6 +377,10 @@ Deployed binary:
 
 It runs from internal storage and checks approximately every 2 seconds when mode is `nvme`.
 
+Boot invariant: `openastro-storage-boot.service` runs before `docker.service`; the boot action must call the host switch with container prepositioning disabled and must not execute `docker ps`. Runtime eject/attach/failover may preposition LiveVault container mounts only after Docker is available. This was verified after a real reboot on 2026-09-07 after an earlier implementation deadlocked boot.
+Boot USB-settle invariant: SERVER (`5fe2d0f6-...`) and SHARE (`7EBD-F531`) are `noauto` in fstab. Boot starts LiveVault on the eMMC buffer; the UUID-triggered `livevault-storage-attach.service` has a 30-second `ExecStartPre` debounce before mounting SERVER/SHARE. This was added after a real reboot showed the RTL9210 and Lexar re-enumerating on the shared USB3 controller ~18 seconds after first discovery, which caused an I/O/JBD2 error when SERVER had already been mounted.
+A repeat real reboot with Lexar connected and the debounce/noauto policy active completed without USB disconnect, block I/O, JBD2 or EXT4 errors; boot stayed on buffer until the delayed attach, then host/container recordings matched on NVMe and recovery returned idle.
+
 It detects, among other things:
 
 - recordings source device missing;

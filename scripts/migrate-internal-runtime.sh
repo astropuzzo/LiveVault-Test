@@ -35,6 +35,21 @@ python3 - <<'PY'
 from pathlib import Path
 p=Path('/etc/fstab')
 s=p.read_text().replace(' /data ext4 ', ' /mnt/livevault-nvme ext4 ')
+# SERVER/SHARE share the same removable USB-NVMe device. Never mount them in
+# early local-fs while the USB3 topology is still enumerating; LiveVault boots
+# on the internal buffer and the UUID-triggered attach service mounts them after
+# a debounce window.
+lines=[]
+for line in s.splitlines():
+    fields=line.split()
+    if len(fields) >= 4 and fields[0] in {'UUID=7EBD-F531', 'UUID=5fe2d0f6-b485-44e9-8e26-31fb0d217db2'}:
+        opts=fields[3].split(',')
+        if 'noauto' not in opts:
+            opts.append('noauto')
+        fields[3]=','.join(opts)
+        line=' '.join(fields)
+    lines.append(line)
+s='\n'.join(lines).rstrip()+'\n'
 s += '\n# OpenAstro internal runtime and bounded removable-storage buffer\n'
 s += '/srv/openastro-internal /data none bind 0 0\n'
 s += '/var/lib/livevault-buffer.img /var/lib/livevault-buffer ext4 loop,noatime 0 0\n'
@@ -92,6 +107,8 @@ Description=Restore recording storage after NVMe reconnect
 After=docker.service
 [Service]
 Type=oneshot
+# Debounce boot/hotplug churn on the shared USB3 controller before mounting SERVER/SHARE.
+ExecStartPre=/usr/bin/sleep 30
 ExecStart=/usr/local/sbin/livevault-storage-attach
 TimeoutStartSec=300
 EOF

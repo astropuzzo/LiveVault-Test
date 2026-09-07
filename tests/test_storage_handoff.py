@@ -105,6 +105,20 @@ def test_transfer_refuses_conflicting_media(tmp_path, transfer):
     assert (dest / 'part.mp4').read_bytes() == b'different'
 
 
+def test_boot_switch_skips_container_preposition(monkeypatch, transfer, tmp_path):
+    source = tmp_path / 'fake-buffer'
+    source.mkdir()
+    calls = []
+    monkeypatch.setattr(transfer, 'run', lambda *args: calls.append(args) or '')
+    monkeypatch.setattr(transfer.os.path, 'ismount', lambda _path: False)
+    monkeypatch.setattr(transfer, 'livevault_containers', lambda: (_ for _ in ()).throw(AssertionError('docker queried during boot')))
+    transfer.switch(source, preposition=False)
+    assert calls == [
+        ('mount', '--make-rshared', '/data'),
+        ('mount', '--bind', str(source), '/data/livevault/recordings'),
+    ]
+
+
 def test_switch_moves_container_before_replacing_host_bind(monkeypatch, transfer, tmp_path):
     source = tmp_path / 'fake-buffer'
     source.mkdir()

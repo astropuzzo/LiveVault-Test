@@ -73,3 +73,12 @@ def test_internal_runtime_migration_places_docker_on_data_emmc_tier():
     source = (ROOT / "scripts/migrate-internal-runtime.sh").read_text(encoding="utf-8")
     assert "payload['data-root'] = '/data/docker'" in source
     assert "/srv/openastro-internal /data" in source or "/srv/openastro-internal" in source
+
+
+def test_boot_defers_removable_server_mount_until_usb_settles():
+    source = (ROOT / "scripts/migrate-internal-runtime.sh").read_text(encoding="utf-8")
+    assert "fields[0] in {'UUID=7EBD-F531', 'UUID=5fe2d0f6-b485-44e9-8e26-31fb0d217db2'}" in source
+    assert "opts.append('noauto')" in source
+    assert "ExecStartPre=/usr/bin/sleep 30" in source
+    assert "Before=docker.service" in source
+

@@ -6,6 +6,10 @@ mount. Only `/data/livevault/recordings` switches between the NVMe and a separat
 4 GiB ext4 loop filesystem on eMMC. The application bind must use `rslave`
 propagation; the host `/data` mount is shared.
 
+At boot, SERVER and SHARE are intentionally `noauto`. LiveVault starts on the internal 4 GiB buffer, while the UUID-triggered attach service waits 30 seconds before mounting the NVMe and SHARE. This debounce prevents the early USB3 re-enumeration of co-attached media (for example the Lexar drive) from tearing down an already-mounted ext4 journal. Manual attach/eject actions do not use this delay.
+
+Real QA on 2026-09-07 reproduced the failure first: even with RTL9210 forced to `usb-storage`, early mounting let a boot-time USB3 re-enumeration disconnect the NVMe and produce `Buffer I/O error`/`JBD2` journal errors. SERVER/SHARE were then fsck-verified clean, changed to `noauto`, and a repeat reboot with the Lexar still attached showed no USB disconnect, no block I/O error and no JBD2/EXT4 error. Storage boot completed on the eMMC buffer, the debounced attach later returned host and container recordings to the NVMe, `/share` and backup were restored, and recovery returned idle.
+
 `scripts/migrate-internal-runtime.sh` performs the one-time host migration.
 Install `scripts/nvme-handoff.py` at `/usr/local/libexec/nvme-handoff.py` first.
 Run migration as a host systemd job, never as a process inside the Docker daemon
