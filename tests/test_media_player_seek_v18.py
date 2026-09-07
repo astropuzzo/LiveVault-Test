@@ -38,8 +38,8 @@ def test_custom_transport_is_mobile_compact_and_cache_bumped():
     assert '.media-player-clock{' in CSS
     assert '.media-transport-button{' in CSS
     assert '/app.js?v=20.0-media' in INDEX
-    assert '/app.css?v=20.0-media' in INDEX
-    assert 'openastro-control-v20.0-media' in SW
+    assert '/app.css?v=20.1-media-fill' in INDEX
+    assert 'openastro-control-v20.1-media-fill' in SW
 
 
 
@@ -66,5 +66,5 @@ def test_fullscreen_targets_video_stage_and_fills_viewport():
     assert 'width:100vw!important' in CSS
     assert 'height:100vh!important' in CSS
     assert 'position:absolute!important;inset:0!important' in CSS
-    assert 'object-fit:contain!important' in CSS
+    assert 'object-fit:cover!important' in CSS
     assert '.media-subtitle-overlay' in CSS
