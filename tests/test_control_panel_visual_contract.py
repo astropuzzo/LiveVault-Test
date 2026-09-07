@@ -5,7 +5,7 @@ ROOT = Path(__file__).parents[1] / 'control-panel' / 'static'
 
 def test_product_visual_layers_are_explicit_and_ordered():
     html = (ROOT / 'index.html').read_text(encoding='utf-8')
-    app = html.index('/app.css?v=4.0-control')
+    app = html.index('/app.css?v=')
     shell = html.index('/shell.css?v=4.0-control')
     theme = html.index('/theme.css?v=5.0-feel')
     premium = html.index('/premium.css?v=10.0-product')

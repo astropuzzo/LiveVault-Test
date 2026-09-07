@@ -27,6 +27,7 @@ if _CONTROL_DIR not in sys.path:
     sys.path.insert(0, _CONTROL_DIR)
 import media_center
 import media_streaming
+import pihole_status as pihole_runtime
 
 
 ROOT = Path(__file__).resolve().parent
@@ -53,6 +54,9 @@ ALLOWED_ACTIONS = {
     "restart_docker",
     "backup_now",
     "restart_pihole",
+    "pihole_enable",
+    "pihole_disable",
+    "pihole_gravity",
     "power_profile",
     "media_mount",
     "media_eject",
@@ -620,7 +624,7 @@ def state() -> dict:
     uptime = float(read_text("/proc/uptime", "0").split()[0])
     mem = memory()
     containers = docker_containers()
-    pihole = service_state("pihole-FTL.service")
+    pihole = pihole_runtime.status()
     docker = service_state("docker.service")
     cpu = cpu_percent()
     network = network_totals()
@@ -654,16 +658,17 @@ def state() -> dict:
             "docker": docker,
             "tailscale": service_state("tailscaled.service"),
             "backup": service_state("livevault-backup.timer"),
-            "pihole": pihole,
+            "pihole": pihole["service"],
         },
         "power": power,
         "media": media,
+        "pihole": pihole,
         "containers": containers,
         "livevault": livevault_health(),
         "interfaces": [
             {"name": "LiveVault", "detail": "Registrazioni e archivio", "url": "https://openastro.tailf2871c.ts.net/", "available": True},
             {"name": "Coolify", "detail": "Deploy e container · richiede Tailscale", "url": "https://openastro.tailf2871c.ts.net:10000/", "available": docker == "active"},
-            {"name": "Pi-hole", "detail": "DNS e blocco pubblicità", "url": "http://100.85.86.96/admin/", "available": pihole == "active"},
+            {"name": "Pi-hole", "detail": "DNS e blocco pubblicità · solo LAN", "url": pihole["lan"]["admin_url"], "available": pihole["installed"] and pihole["dns_online"]},
             {"name": "GitHub", "detail": "Codice LiveVault", "url": "https://github.com/astropuzzo/LiveVault-Test", "available": True},
             {"name": "Tailscale", "detail": "Rete privata", "url": "https://login.tailscale.com/admin/machines", "available": True},
         ],
@@ -818,6 +823,11 @@ class Handler(BaseHTTPRequestHandler):
             payload = cached_state()
             payload["csrf"] = session["csrf"]
             self.send_json(payload)
+            return
+        if path == "/api/pihole/status":
+            if not self.require_session():
+                return
+            self.send_json(pihole_runtime.status())
             return
         if path == "/api/media/credentials":
             if not self.require_session(): return
@@ -1028,6 +1038,32 @@ class Handler(BaseHTTPRequestHandler):
                     _sessions.pop(cookie["openastro_session"].value, None)
             self.send_json({"ok": True}, headers={"Set-Cookie": "openastro_session=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Strict"})
             return
+        pihole_actions = {
+            "/api/pihole/blocking/enable": "pihole_enable",
+            "/api/pihole/blocking/disable": "pihole_disable",
+            "/api/pihole/restart": "restart_pihole",
+            "/api/pihole/gravity": "pihole_gravity",
+        }
+        if self.path in pihole_actions:
+            session = self.require_session()
+            if not session:
+                return
+            if self.headers.get("X-CSRF-Token") != session["csrf"]:
+                self.send_json({"ok": False, "error": "Sessione scaduta: ricarica la pagina."}, 403)
+                return
+            action = pihole_actions[self.path]
+            if not _action_lock.acquire(blocking=False):
+                self.send_json({"ok": False, "error": "Un’operazione è già in corso."}, 409)
+                return
+            try:
+                code, output = run(["sudo", "-n", "/usr/local/sbin/openastro-action", action], 290)
+                with _state_lock:
+                    _state_cache.clear()
+            finally:
+                _action_lock.release()
+            self.send_json({"ok": code == 0, "action": action, "message": output[-1200:]}, 200 if code == 0 else 500)
+            return
+
         if self.path in {"/api/media/progress", "/api/media/favorite", "/api/media/hls/start", "/api/media/hls/stop"}:
             session = self.require_session()
             if not session:

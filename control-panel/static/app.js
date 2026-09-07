@@ -13,6 +13,7 @@ let refreshBusy = false;
 let historyBusy = false;
 let signedIn = true;
 let actionBusy = false;
+let piholeBusy = false;
 let latestState = null;
 let latestHistory = [];
 let mediaUuid = '';
@@ -72,6 +73,95 @@ function serviceCard(name, state, detail, action = '') {
 }
 function escapeHtml(value) {
   return String(value ?? '').replace(/[&<>'"]/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[char]));
+}
+function renderPihole(pihole = {}) {
+  const installed = Boolean(pihole.installed);
+  const dnsOnline = Boolean(pihole.dns_online);
+  const ftlActive = Boolean(pihole.ftl_active);
+  const blockingOn = pihole.blocking === 'on';
+  const blockingOff = pihole.blocking === 'off';
+  const stats = pihole.stats || {};
+  const versions = pihole.versions || {};
+  const lan = pihole.lan || {};
+  const remote = pihole.remote || {};
+  const installState = $('#piholeInstallState');
+  if (installState) {
+    installState.textContent = installed ? 'Installato' : 'Non installato';
+    installState.className = `status-chip ${installed ? 'good' : 'bad'}`;
+  }
+  const title = $('#piholeBlockingTitle');
+  const detail = $('#piholeDnsDetail');
+  if (!installed) {
+    title.textContent = 'Pi-hole non installato';
+    detail.textContent = 'DNS e filtering non disponibili.';
+  } else if (!ftlActive) {
+    title.textContent = 'FTL fermo';
+    detail.textContent = 'Il servizio DNS Pi-hole non è attivo.';
+  } else if (!dnsOnline) {
+    title.textContent = 'DNS non raggiungibile';
+    detail.textContent = 'FTL è attivo ma la query locale non riceve risposta.';
+  } else if (blockingOn) {
+    title.textContent = 'DNS + blocking attivi';
+    detail.textContent = 'Il DNS resta online anche quando spegni il filtering.';
+  } else if (blockingOff) {
+    title.textContent = 'DNS attivo · blocking OFF';
+    detail.textContent = 'Risoluzione attiva senza filtraggio; Internet non viene interrotto.';
+  } else {
+    title.textContent = 'Configurazione incompleta';
+    detail.textContent = 'DNS attivo, stato blocking non determinato.';
+  }
+  const toggle = $('#piholeToggle');
+  if (toggle) {
+    toggle.checked = blockingOn;
+    toggle.disabled = piholeBusy || !installed || !dnsOnline;
+  }
+  $('#piholeToggleLabel').textContent = blockingOn ? 'ON' : blockingOff ? 'OFF' : '—';
+  const count = value => Number(value || 0).toLocaleString('it-IT');
+  $('#piholeQueries').textContent = installed ? count(stats.queries) : '—';
+  $('#piholeBlocked').textContent = installed ? count(stats.blocked) : '—';
+  $('#piholePercent').textContent = installed ? `${Number(stats.percent_blocked || 0).toFixed(1)}%` : '—';
+  $('#piholeClients').textContent = installed ? count(stats.active_clients) : '—';
+  $('#piholeGravity').textContent = installed ? count(stats.gravity_domains) : '—';
+  $('#piholeDnsState').textContent = dnsOnline ? 'Online' : installed ? 'Offline' : 'Non installato';
+  $('#piholeFtlState').textContent = ftlActive ? 'Attivo' : installed ? (pihole.service || 'Inattivo') : 'Non installato';
+  $('#piholeVersion').textContent = installed ? `Core ${versions.core || '—'} · Web ${versions.web || '—'} · FTL ${versions.ftl || '—'}` : '—';
+  $('#piholeLanDns').textContent = lan.dns || '—';
+  $('#piholeRemoteState').textContent = remote.configured ? (remote.reachable ? 'Online' : 'Non raggiungibile') : 'Non configurato';
+  $('#piholeDotState').textContent = remote.dot === 'active' ? 'Attivo' : remote.dot === 'error' ? 'Errore' : 'Non configurato';
+  const tlsText = remote.tls === 'active' ? 'Valido' : remote.tls === 'expired' ? 'Scaduto' : 'Non configurato';
+  $('#piholeTlsState').textContent = remote.certificate_expires ? `${tlsText} · ${availabilityDate(remote.certificate_expires)}` : tlsText;
+  $('#piholeRemoteHost').textContent = remote.hostname || '—';
+  $('#piholeRemoteNote').textContent = remote.reason || 'Remote DNS non configurato.';
+  const admin = $('#piholeAdminLink');
+  if (admin) {
+    admin.href = installed && lan.admin_url ? lan.admin_url : '#';
+    admin.setAttribute('aria-disabled', installed && lan.admin_url ? 'false' : 'true');
+  }
+  ['#piholeRestart','#piholeGravityAction'].forEach(selector => { const button=$(selector); if(button) button.disabled=piholeBusy || !installed || !ftlActive; });
+}
+
+async function postPihole(endpoint) {
+  if (piholeBusy) return;
+  piholeBusy = true;
+  if ($('#piholeToggle')) $('#piholeToggle').disabled = true;
+  $('#piholeRestart').disabled = true;
+  $('#piholeGravityAction').disabled = true;
+  try {
+    const response = await fetch(endpoint, {method:'POST', headers:{'Content-Type':'application/json','X-CSRF-Token':csrf}, body:'{}', signal:AbortSignal.timeout(300000)});
+    if (response.status === 401) return showLogin();
+    const result = await response.json();
+    if (!response.ok || !result.ok) throw new Error(result.error || result.message || `HTTP ${response.status}`);
+    toast(result.message || 'Pi-hole aggiornato.');
+  } catch (error) {
+    toast(error.message || 'Operazione Pi-hole non riuscita.', true);
+  } finally {
+    piholeBusy = false;
+    setTimeout(refresh, 500);
+  }
+}
+
+async function setPiholeState(enabled) {
+  return postPihole(enabled ? '/api/pihole/blocking/enable' : '/api/pihole/blocking/disable');
 }
 
 function mean(points, key) {
@@ -578,6 +668,7 @@ function render(data) {
   $('#wattValue').title = 'Potenza DC dai sensori ASIAIR, inclusi i carichi collegati. Conversione del driver INDI; non calibrata con wattmetro esterno.';
   renderPower(data.power);
   renderMedia(data.media || {});
+  renderPihole(data.pihole || {});
   if (currentView === 'media') loadMediaHome();
 
   const mounted = storage.data.mounted && storage.share.mounted;
@@ -607,7 +698,6 @@ function render(data) {
     ['Docker', data.services.docker, data.services.docker, 'restart_docker'],
     ['Tailscale', data.services.tailscale, 'rete privata e HTTPS'],
     ['Backup', data.services.backup, data.services.backup],
-    ['Pi-hole', data.services.pihole, data.services.pihole === 'active' ? 'DNS attivo' : 'non installato', 'restart_pihole'],
   ];
   $('#serviceGrid').innerHTML = services.map(item => serviceCard(...item)).join('');
   $('#serviceCount').textContent = `${services.filter(item => item[1] === true || item[1] === 'active').length}/${services.length} attivi`;
@@ -749,6 +839,8 @@ $('#mediaCredentials').addEventListener('click', async () => {
 ${result.password}`).catch(() => {});
   } catch (_) { toast('Credenziali SMB non disponibili.', true); }
 });
+$('#piholeToggle').addEventListener('change', event => setPiholeState(Boolean(event.target.checked)));
+$$('[data-pihole-endpoint]').forEach(button => button.addEventListener('click', () => postPihole(button.dataset.piholeEndpoint)));
 $('#cancelAction').addEventListener('click', () => $('#confirmDialog').close());
 $('#confirmDialog').addEventListener('close', () => { stopHold(); pendingAction = null; pendingPayload = {}; });
 $('#confirmDialog').addEventListener('cancel', stopHold);

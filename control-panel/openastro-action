@@ -42,6 +42,30 @@ case "$action" in
         record completed
         echo "Pi-hole riavviato."
         ;;
+    pihole_enable)
+        pihole enable >/dev/null
+        record blocking-enabled
+        echo "Blocking Pi-hole attivato."
+        ;;
+    pihole_disable)
+        pihole disable >/dev/null
+        record blocking-disabled
+        echo "Blocking Pi-hole disattivato; DNS resta attivo."
+        ;;
+    pihole_gravity)
+        gravity_log=$(mktemp)
+        if pihole -g >"$gravity_log" 2>&1; then
+            rm -f "$gravity_log"
+            record gravity-updated
+            echo "Gravity Pi-hole aggiornata."
+        else
+            code=$?
+            sed -r 's/\x1B\[[0-9;]*[mK]//g' "$gravity_log" | tail -40 >&2 || true
+            rm -f "$gravity_log"
+            record gravity-failed
+            exit "$code"
+        fi
+        ;;
     media_mount)
         uuid=${2:-}
         [[ -n "$uuid" ]] || { echo "UUID media mancante." >&2; exit 2; }

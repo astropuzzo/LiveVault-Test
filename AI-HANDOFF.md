@@ -2,7 +2,7 @@
 
 > **Purpose:** this file is the canonical handoff for a future AI chat working on the OpenAstro / LiveVault server. Read this file first, then verify the live state before making changes. Do not make the user re-explain architecture, access, root, GitHub, storage safety, or UI QA conventions already documented here.
 >
-> **Last live verification:** 2026-09-06. Snapshot values can become stale; architecture and safety rules are authoritative unless the live node proves otherwise.
+> **Last live verification:** 2026-09-07. Snapshot values can become stale; architecture and safety rules are authoritative unless the live node proves otherwise.
 
 ---
 
@@ -845,3 +845,264 @@ A future AI should update `AI-HANDOFF.md` whenever it makes a meaningful archite
 - replaced Git repository/path/remote.
 
 Do not fill this document with temporary implementation chatter. Keep it as the durable source of truth for the next session.
+
+---
+
+# 18. Pi-hole DNS infrastructure — verified 2026-09-07
+
+## Architecture and rationale
+
+Pi-hole is installed **natively on Debian**, not in Docker and not in Coolify. This is deliberate: DNS is node infrastructure, must survive LiveVault/Coolify deployments, and should not depend on Docker networking or create a DNS dependency cycle. The native install is lighter and the host had no pre-existing resolver on TCP/UDP 53.
+
+Verified versions at installation/QA:
+
+```text
+Pi-hole Core 6.4.3
+Pi-hole Web  6.6
+FTL          6.7
+```
+
+Primary services/files:
+
+```text
+pihole-FTL.service
+openastro-pihole-firewall.service
+/etc/pihole/pihole.toml
+/etc/pihole/gravity.db
+/usr/local/sbin/openastro-pihole-firewall
+/usr/local/sbin/openastro-action
+```
+
+Repository copies of the OpenAstro-specific integration are:
+
+```text
+control-panel/pihole_status.py
+control-panel/openastro-pihole-firewall
+control-panel/openastro-pihole-firewall.service
+control-panel/openastro-action
+control-panel/server.py
+control-panel/static/index.html
+control-panel/static/app.js
+control-panel/static/app.css
+tests/test_pihole_control.py
+```
+
+Do not move Pi-hole into Coolify merely for UI convenience.
+
+## LAN DNS configuration
+
+OpenAstro LAN interface/IP at verification:
+
+```text
+eth0
+192.168.1.27
+```
+
+FTL configuration verified with `pihole-FTL --config`:
+
+```text
+dns.interface=eth0
+dns.listeningMode=LOCAL
+dns.upstreams=[ 1.1.1.1, 1.0.0.1 ]
+webserver.port=127.0.0.1:80,192.168.1.27:80,[::1]:80
+ntp.ipv4.active=false
+ntp.ipv6.active=false
+```
+
+Pi-hole DHCP is **not enabled**. The iliadbox remains the DHCP server.
+
+To make the whole home LAN use Pi-hole, configure the iliadbox DHCP/LAN DNS as follows after keeping a static DHCP reservation for OpenAstro:
+
+```text
+OpenAstro reservation: 192.168.1.27
+DNS primary:           192.168.1.27
+DNS secondary:         leave empty if the UI permits
+```
+
+Do not use `1.1.1.1`, `8.8.8.8`, etc. as DHCP secondary DNS if the goal is guaranteed Pi-hole filtering: many clients may bypass Pi-hole through the secondary resolver. If the router UI forces a second address, verify its behavior rather than inventing a second public resolver.
+
+The admin UI is intentionally LAN-only:
+
+```text
+http://192.168.1.27/admin/
+```
+
+Pi-hole's web server binds only loopback and `192.168.1.27:80`; it is not bound to the public IPv6 address or a wildcard web address. Remote DNS availability does **not** imply remote admin access.
+
+## Host resolver and failure isolation
+
+OpenAstro itself does **not** use Pi-hole as its system resolver. `/etc/resolv.conf` is Tailscale-managed and at verification contained:
+
+```text
+nameserver 100.100.100.100
+nameserver fd7a:115c:a1e0::53
+search tailf2871c.ts.net
+```
+
+This is intentional. If FTL is stopped or broken, the CM4 must still resolve package repositories, GitHub, Tailscale control traffic, Coolify dependencies, etc. Do not change the host resolver to `127.0.0.1` or `192.168.1.27` without designing an equally robust fallback first.
+
+## Blocking semantics
+
+The main Control Center Pi-hole toggle controls **filtering only**:
+
+```text
+ON  = DNS service running + Pi-hole blocking enabled
+OFF = DNS service remains running + Pi-hole blocking disabled
+```
+
+It must never be implemented as `systemctl stop pihole-FTL`.
+
+Verified runtime behavior:
+
+- blocking ON: `doubleclick.net` answered `0.0.0.0`;
+- blocking OFF through the Control Center API: FTL remained `active`, `google.com` resolved, and `doubleclick.net` resolved to a public address;
+- blocking ON again through the Control Center API: `doubleclick.net` returned `0.0.0.0` again;
+- Pi-hole restart through the fixed Control Center API returned HTTP 200 and FTL returned/stayed active.
+
+## Control Center integration and privilege boundary
+
+The existing Pi-hole stub was completed rather than adding a parallel subsystem. Runtime status is collected by `control-panel/pihole_status.py` from local FTL/API/DNS probes.
+
+Authenticated endpoints:
+
+```text
+GET  /api/pihole/status
+POST /api/pihole/blocking/enable
+POST /api/pihole/blocking/disable
+POST /api/pihole/restart
+POST /api/pihole/gravity
+```
+
+POST routes require an authenticated Control Center session and the existing CSRF token. They map only to fixed actions in `/usr/local/sbin/openastro-action`:
+
+```text
+pihole_enable
+pihole_disable
+restart_pihole
+pihole_gravity
+```
+
+There is no arbitrary shell/command endpoint and no Pi-hole password/token is exposed to browser JavaScript. Keep it this way.
+
+The card distinguishes at least installed/service/DNS/blocking/API/remote states and displays Core/Web/FTL versions, LAN DNS, query/blocked/client/gravity statistics, DoT/TLS/remote state, restart, gravity update, and the LAN admin link.
+
+## DNS exposure firewall
+
+Pi-hole FTL owns TCP/UDP 53 on IPv4/IPv6, but Internet exposure is constrained by the dedicated nftables table installed by `openastro-pihole-firewall.service`. The table is independent of Docker/Tailscale rules and **must not use `flush ruleset`**.
+
+Allowed DNS sources:
+
+```text
+loopback
+eth0 + IPv4 source 192.168.1.0/24
+tailscale0
+```
+
+Everything else to TCP/UDP 53 is dropped. TCP 853 is also dropped until a secure remote design exists.
+
+Inspect with:
+
+```bash
+sudo nft list table inet openastro_pihole
+systemctl status openastro-pihole-firewall.service
+```
+
+The firewall unit is enabled at boot and is also `RequiredBy=pihole-FTL.service`, so the protective rules are applied as part of the Pi-hole boot dependency.
+
+## Remote DNS / Android Private DNS / DoT
+
+Current WAN snapshot at verification (these addresses can change; re-check live before relying on them):
+
+```text
+IPv4: 81.56.120.143
+IPv6: 2a01:e11:2008:d4d0:f9fb:6d65:80bf:1cf9
+```
+
+A real external IPv4 TCP-853 test was performed **while a listener was genuinely active on OpenAstro:853**. The connection to `81.56.120.143:853` was refused. The iliadbox/Freebox family supports shared-IPv4 assigned port ranges; the current IPv4 path therefore cannot be assumed to forward TCP 853 merely because the node has Internet access.
+
+The node has a global IPv6 address, but the external probe environment used during this installation did not have IPv6 connectivity, so an inbound IPv6 853 test was not falsely claimed as completed.
+
+More importantly, Android's native **Private DNS** configuration supplies a provider hostname and uses DNS-over-TLS, but it does not provide a per-user password or a general client-certificate/mTLS configuration field. Publishing an ordinary recursive DoT listener for a phone that roams between arbitrary Wi-Fi/4G/5G source addresses would therefore make that resolver usable by unrelated Internet clients unless a separate Android-compatible authentication mechanism existed. Moving the same unauthenticated DoT listener to a VPS relay would merely move the open-resolver problem to the relay.
+
+For this reason the secure current state is intentional:
+
+```text
+Remote DNS:           not configured
+DNS-over-TLS:         not exposed
+TCP 853:              firewall drop
+Public DoT hostname:  none
+TLS certificate:      none (no endpoint is published)
+Relay:                none
+```
+
+Do **not** create `dns.<domain>`, obtain a certificate, or expose 853 just to make the UI say “online”. The user's simultaneous requirements are: native Android Private DNS with no app/VPN **and** no open recursive resolver. With the currently available Android client-auth surface, those requirements do not produce a safe personal-only public resolver. Re-evaluate only if Android/DoT capabilities or the available infrastructure change in a way that provides real client authorization.
+
+Tailscale remains server-side infrastructure and is not required on the user's phone/PC for normal Control Center access. It is not being proposed as a hidden client requirement for Pi-hole.
+
+## Recovery and uninstall order
+
+If Pi-hole is unhealthy, first remember that the host resolver is independent, so OpenAstro itself should retain Internet/DNS access.
+
+Useful recovery checks:
+
+```bash
+systemctl status openastro-pihole-firewall.service pihole-FTL.service
+pihole status
+dig @127.0.0.1 example.com
+dig @192.168.1.27 example.com
+sudo nft list table inet openastro_pihole
+```
+
+Restart only Pi-hole when needed:
+
+```bash
+sudo /usr/local/sbin/openastro-action restart_pihole
+```
+
+For full removal, **first restore the iliadbox DHCP DNS to its previous/default resolver** so LAN clients do not retain `192.168.1.27` as a dead DNS server. Then disable/remove the OpenAstro firewall integration and uninstall Pi-hole using the current official Pi-hole uninstall path (`pihole uninstall`). Do not remove or alter Docker, Tailscale, LiveVault, SMB, MiniDLNA, or storage services as part of Pi-hole recovery.
+
+To remove only the dedicated OpenAstro nftables layer:
+
+```bash
+sudo systemctl disable --now openastro-pihole-firewall.service
+sudo /usr/local/sbin/openastro-pihole-firewall remove || true
+```
+
+Then remove the unit/script only if Pi-hole integration is intentionally being retired, followed by `systemctl daemon-reload`.
+
+## Verified QA / regression expectations
+
+The Pi-hole installation is not considered verified merely because systemd says `active`. The release verification performed for this integration includes:
+
+- DNS query through loopback and `192.168.1.27`;
+- real blocked-domain response;
+- blocking OFF -> DNS remains active -> domain no longer blocked;
+- blocking ON -> filtering restored;
+- authenticated Control Center status and fixed mutation endpoints;
+- Pi-hole restart path;
+- gravity update path;
+- LAN admin HTTP reachability;
+- nftables protection inspection;
+- desktop 1440×1000 and mobile 412×915 Chromium/Playwright rendering of the live Pi-hole card;
+- rendered screenshot visual inspection, not DOM-only QA;
+- no horizontal viewport overflow in either tested viewport;
+- post-change LiveVault/storage/Docker/Coolify/SMB/MiniDLNA/Tailscale/network checks.
+
+At visual QA, the Pi-hole card showed real runtime values, a usable filtering toggle, the admin action, and Remote DNS/DoT as explicitly **not configured** rather than presenting a false healthy remote state.
+
+A full host reboot may be performed only when `active_recorders == 0`; if recording is active, defer the reboot rather than interrupting a recording. Record the actual result in the release/final report rather than claiming an unperformed reboot.
+
+Final release QA on 2026-09-07:
+
+```text
+259 Python tests passed
+6/6 frontend Node tests passed
+Pi-hole targeted/integration tests: 38 passed in the merged Media+Pi-hole tree
+Chromium desktop 1440x1000: no horizontal overflow
+Chromium mobile 412x915: no horizontal overflow
+Gravity update through Control Center: passed
+LAN Pi-hole admin HTTP check: 200
+Source/deploy hashes for Pi-hole/Control files: matched at deployment
+```
+
+At the final pre-release health check LiveVault still had `active_recorders=1`, so the full-host reboot was **intentionally deferred** rather than interrupting that recording. Boot persistence is configured (`pihole-FTL.service` and `openastro-pihole-firewall.service` are enabled), but a future maintenance window with zero recorders should perform the one remaining physical reboot verification.

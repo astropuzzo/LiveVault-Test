@@ -1,0 +1,51 @@
+#!/bin/bash
+set -Eeuo pipefail
+
+TABLE="openastro_pihole"
+
+remove_table() {
+    if nft list table inet "$TABLE" >/dev/null 2>&1; then
+        nft delete table inet "$TABLE"
+    fi
+}
+
+apply_rules() {
+    remove_table
+    nft -f - <<'NFT'
+table inet openastro_pihole {
+    chain input {
+        type filter hook input priority -20; policy accept;
+
+        iifname "lo" accept
+
+        # DNS is infrastructure for the home LAN. Tailscale is server-side only,
+        # but allowing its private interface is useful for administration/tests.
+        iifname "tailscale0" udp dport 53 accept
+        iifname "tailscale0" tcp dport 53 accept
+        iifname "eth0" ip saddr 192.168.1.0/24 udp dport 53 accept
+        iifname "eth0" ip saddr 192.168.1.0/24 tcp dport 53 accept
+
+        # No Internet-facing classic DNS, on either IP family.
+        udp dport 53 drop
+        tcp dport 53 drop
+
+        # Android Private DNS is intentionally unpublished until an authenticated
+        # remote design exists; this prevents accidental public DoT exposure.
+        tcp dport 853 drop
+    }
+}
+NFT
+}
+
+case "${1:-apply}" in
+    apply|reload)
+        apply_rules
+        ;;
+    remove)
+        remove_table
+        ;;
+    *)
+        echo "Usage: $0 {apply|reload|remove}" >&2
+        exit 2
+        ;;
+esac

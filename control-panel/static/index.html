@@ -11,7 +11,7 @@
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" href="/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="/icon.svg">
-  <link rel="stylesheet" href="/app.css?v=18.0-player"><link rel="stylesheet" href="/shell.css?v=4.0-control"><link rel="stylesheet" href="/theme.css?v=5.0-feel"><link rel="stylesheet" href="/premium.css?v=10.0-product"><link rel="stylesheet" href="/magic.css?v=13.0-ops"><link rel="stylesheet" href="/media-upload.css?v=14.0-import">
+  <link rel="stylesheet" href="/app.css?v=18.1-pihole"><link rel="stylesheet" href="/shell.css?v=4.0-control"><link rel="stylesheet" href="/theme.css?v=5.0-feel"><link rel="stylesheet" href="/premium.css?v=10.0-product"><link rel="stylesheet" href="/magic.css?v=13.0-ops"><link rel="stylesheet" href="/media-upload.css?v=14.0-import">
 </head>
 <body data-view="dashboard" class="is-loading">
   <div class="app-shell">
@@ -323,6 +323,47 @@
       </div>
     </section>
 
+    <section class="panel pihole-panel" id="piholePanel" aria-labelledby="piholeTitle">
+      <div class="panel-head">
+        <div><p class="eyebrow">DNS DI RETE</p><h2 id="piholeTitle">Pi-hole</h2></div>
+        <span class="status-chip" id="piholeInstallState">Verifica…</span>
+      </div>
+      <div class="pihole-primary">
+        <div>
+          <strong id="piholeBlockingTitle">Stato in verifica</strong>
+          <small id="piholeDnsDetail">Controllo DNS e FTL…</small>
+        </div>
+        <label class="pihole-switch" title="Disattiva solo il filtering: il DNS resta online">
+          <input id="piholeToggle" type="checkbox" disabled aria-label="Attiva o disattiva il blocking Pi-hole">
+          <span aria-hidden="true"></span>
+          <b id="piholeToggleLabel">—</b>
+        </label>
+      </div>
+      <div class="pihole-stats" aria-label="Statistiche Pi-hole">
+        <article><span>Query</span><strong id="piholeQueries">—</strong></article>
+        <article><span>Bloccate</span><strong id="piholeBlocked">—</strong></article>
+        <article><span>Filtro</span><strong id="piholePercent">—</strong></article>
+        <article><span>Client attivi</span><strong id="piholeClients">—</strong></article>
+        <article><span>Gravity</span><strong id="piholeGravity">—</strong></article>
+      </div>
+      <div class="pihole-facts">
+        <div><span>DNS service</span><strong id="piholeDnsState">—</strong></div>
+        <div><span>FTL</span><strong id="piholeFtlState">—</strong></div>
+        <div><span>Versione</span><strong id="piholeVersion">—</strong></div>
+        <div><span>DNS LAN</span><strong id="piholeLanDns">—</strong></div>
+        <div><span>Remote DNS</span><strong id="piholeRemoteState">—</strong></div>
+        <div><span>DoT · TCP 853</span><strong id="piholeDotState">—</strong></div>
+        <div><span>TLS</span><strong id="piholeTlsState">—</strong></div>
+        <div><span>Hostname remoto</span><strong id="piholeRemoteHost">—</strong></div>
+      </div>
+      <p class="pihole-remote-note" id="piholeRemoteNote">Verifica percorso remoto…</p>
+      <div class="action-row pihole-actions">
+        <a class="button secondary" id="piholeAdminLink" href="#" target="_blank" rel="noopener">Apri Pi-hole ↗</a>
+        <button class="button secondary" id="piholeRestart" type="button" data-pihole-endpoint="/api/pihole/restart">Riavvia servizio</button>
+        <button class="button secondary" id="piholeGravityAction" type="button" data-pihole-endpoint="/api/pihole/gravity">Aggiorna Gravity</button>
+      </div>
+    </section>
+
     <section class="panel" id="interfaces">
       <div class="panel-head"><div><p class="eyebrow">WORKSPACE</p><h2>Interfacce</h2></div></div>
       <div class="link-grid" id="interfaceGrid"></div>
@@ -387,7 +428,7 @@
   </div>
 
   <script src="/hls.min.js?v=1.7.2" defer></script>
-  <script src="/app.js?v=18.0-player" defer></script>
+  <script src="/app.js?v=18.1-pihole" defer></script>
   <script src="/media-upload.js?v=14.0-import" defer></script>
 </body>
 </html>

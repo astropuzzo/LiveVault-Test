@@ -1,0 +1,15 @@
+[Unit]
+Description=OpenAstro Pi-hole DNS exposure firewall
+After=network-pre.target
+Before=pihole-FTL.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/openastro-pihole-firewall apply
+ExecReload=/usr/local/sbin/openastro-pihole-firewall reload
+ExecStop=/usr/local/sbin/openastro-pihole-firewall remove
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+RequiredBy=pihole-FTL.service

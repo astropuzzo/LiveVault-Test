@@ -37,6 +37,6 @@ def test_custom_transport_is_mobile_compact_and_cache_bumped():
     assert '.media-video-controls{' in CSS
     assert '.media-player-clock{' in CSS
     assert '.media-transport-button{' in CSS
-    assert '/app.js?v=18.0-player' in INDEX
-    assert '/app.css?v=18.0-player' in INDEX
-    assert 'openastro-control-v18-player' in SW
+    assert '/app.js?v=18.1-pihole' in INDEX
+    assert '/app.css?v=18.1-pihole' in INDEX
+    assert 'openastro-control-v18.1-pihole' in SW
