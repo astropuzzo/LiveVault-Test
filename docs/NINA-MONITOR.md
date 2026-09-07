@@ -28,16 +28,15 @@ QSM_REMOTE_PORT=18973
 QSM_REMOTE_BIND=*
 ```
 
-`QSM_REMOTE_TOKEN` is mandatory. If it is absent the QSM HTTP bridge does not start. V1 exposes only:
+`QSM_REMOTE_TOKEN` is mandatory. If it is absent the QSM HTTP bridge does not start. The bridge exposes only read operations:
 
 ```text
 GET /healthz
 GET /api/v1/snapshot
+GET /api/v1/preview.jpg
 ```
 
-The snapshot route requires `X-QSM-Token` or `Authorization: Bearer ...`. There are no write/control routes.
-
-Keep Windows Firewall limited to the trusted LAN/Tailscale path used by the OpenAstro node.
+The `/api/v1/*` routes require `X-QSM-Token` or `Authorization: Bearer ...`. There are no write/control routes. Keep Windows Firewall limited to the trusted LAN/Tailscale path used by the OpenAstro node.
 
 ## OpenAstro side
 
@@ -62,6 +61,7 @@ OpenAstro exposes authenticated same-origin endpoints to its frontend:
 ```text
 GET /api/nina/state
 GET /api/nina/diagnostics
+GET /api/nina/preview.jpg
 ```
 
 The QSM token is never returned to the browser.
@@ -73,21 +73,35 @@ The `NINA` section currently shows:
 - QSM connectivity and ASIAIR-to-PC latency;
 - session active/idle state;
 - current Quality and Confidence;
-- latest exposure-integrated Guide RMS;
-- captured / usable / rejected counters and acceptance rate;
-- target and filter;
-- star/background deltas;
-- current QSM frame state/cause;
-- recent Quality/Confidence/RMS graph;
-- recent warning/reject/error list.
+- full-session captured / usable / rejected counters and acceptance rate;
+- target, filter, exposure, gain/binning and camera;
+- star/background deltas and current QSM status/cause;
+- **real live guiding** from N.I.N.A. `GuideEvent`, not reconstructed from the last exposure:
+  - last 20 seconds;
+  - RA RMS;
+  - DEC RMS;
+  - total RMS;
+  - max excursion;
+  - timestamped RA/DEC trace;
+- recent Quality/Confidence/exposure-RMS session trend;
+- recent warning/reject/error list;
+- latest LIGHT preview through an authenticated same-origin image route.
 
-Polling is 2 seconds and only runs while the NINA page is active.
+The state poll runs every second only while the NINA page is active.
 
-## Next channels
+## Preview policy
 
-Two data channels remain intentionally separate instead of being faked from QSM frame summaries:
+The browser never receives a FITS path or the QSM secret. QSM generates a display-only JPEG from the N.I.N.A. `ImageSaved` bitmap:
 
-1. **real-time guiding** — direct PHD2 telemetry (RA/DEC/total RMS and guide trace);
-2. **latest-image preview** — lightweight JPEG/WebP generated from the current N.I.N.A. image, never the full FITS payload.
+- maximum width 1280 px;
+- JPEG quality 82;
+- encoded in RAM;
+- FITS is not re-read;
+- no preview file is persisted on ASIAIR/eMMC/NVMe;
+- OpenAstro fetches the JPEG only when the QSM frame index advances.
 
-The monitoring surface stays read-only until those channels are stable and field-tested.
+This avoids high remote bandwidth and keeps preview traffic independent from LiveVault storage.
+
+## Safety boundary
+
+The monitor remains read-only. Remote sequence control, threshold changes, file mutation and other write actions are intentionally outside this first release until the monitoring path has been field-tested.
