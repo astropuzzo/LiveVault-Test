@@ -8,6 +8,7 @@ from pathlib import Path
 import secrets
 import shutil
 import time
+import urllib.error
 from urllib.parse import parse_qs, urlparse
 
 import media_center
@@ -106,6 +107,31 @@ class Handler(panel.Handler):
             if not self.require_session():
                 return
             self.send_json(nina_monitor.diagnostics())
+            return
+        if parsed.path == '/api/nina/preview.jpg':
+            if not self.require_session():
+                return
+            try:
+                raw, metadata = nina_monitor.preview()
+            except urllib.error.HTTPError as exc:
+                status = 404 if exc.code == 404 else 502
+                self.send_json({'ok': False, 'error': 'Preview non ancora disponibile.' if status == 404 else f'QSM preview HTTP {exc.code}.'}, status)
+                return
+            except (urllib.error.URLError, TimeoutError, OSError, ValueError, RuntimeError) as exc:
+                self.send_json({'ok': False, 'error': f'Preview NINA non raggiungibile: {str(exc)[:160]}'}, 502)
+                return
+
+            self.send_response(200)
+            self.send_header('Content-Type', 'image/jpeg')
+            self.send_header('Content-Length', str(len(raw)))
+            self.send_header('Cache-Control', 'no-store')
+            self.send_header('X-Content-Type-Options', 'nosniff')
+            if metadata.get('preview_utc'):
+                self.send_header('X-QSM-Preview-Utc', metadata['preview_utc'])
+            if metadata.get('image_id'):
+                self.send_header('X-QSM-Image-Id', metadata['image_id'])
+            self.end_headers()
+            self.wfile.write(raw)
             return
         return super().do_GET()
 
