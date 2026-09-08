@@ -9,6 +9,7 @@ SMB access remain read-only so normal playback clients cannot modify files.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -16,8 +17,11 @@ import pwd
 import re
 import subprocess
 import sys
+import time
 
 MEDIA_ROOT = Path("/srv/openastro-media")
+RECONCILE_STATE = Path("/run/openastro-media-reconcile-state.json")
+MOUNTINFO = Path("/proc/1/mountinfo")
 EXCLUDED_UUIDS = {
     "5fe2d0f6-b485-44e9-8e26-31fb0d217db2",
     "7EBD-F531",
@@ -106,9 +110,38 @@ def get_info(uuid: str) -> dict:
     raise RuntimeError("Supporto rimovibile non presente o non consentito")
 
 
-def source_for_target(target: Path) -> str | None:
-    result = run(["findmnt", "-nro", "SOURCE", "--mountpoint", str(target)], check=False)
-    return result.stdout.strip() if result.returncode == 0 else None
+def _mount_unescape(value: str) -> str:
+    for encoded, literal in (("\\040", " "), ("\\011", "\t"), ("\\012", "\n"), ("\\134", "\\")):
+        value = value.replace(encoded, literal)
+    return value
+
+
+def mount_table() -> dict[str, dict]:
+    """Read the host mount namespace once; normal reconciliation needs no findmnt forks."""
+    rows: dict[str, dict] = {}
+    try:
+        lines = MOUNTINFO.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return rows
+    for line in lines:
+        left, sep, right = line.partition(" - ")
+        if not sep:
+            continue
+        fields = left.split(); tail = right.split()
+        if len(fields) < 6 or len(tail) < 3:
+            continue
+        target = _mount_unescape(fields[4])
+        rows[target] = {
+            "source": _mount_unescape(tail[1]),
+            "options": set(fields[5].split(',')) | set(tail[2].split(',')),
+            "major_minor": fields[2],
+        }
+    return rows
+
+
+def source_for_target(target: Path, mounts: dict[str, dict] | None = None) -> str | None:
+    row = (mounts or mount_table()).get(str(target))
+    return str(row.get("source")) if row else None
 
 
 def _astro_ids() -> tuple[int, int]:
@@ -134,18 +167,21 @@ def restart_indexer() -> None:
     subprocess.run(["systemctl", "try-restart", "minidlna.service"], check=False, capture_output=True)
 
 
-def mount_media(uuid: str, *, quiet: bool = False) -> dict:
-    info = get_info(uuid)
+def mount_media(uuid: str, *, quiet: bool = False, info: dict | None = None) -> dict:
+    info = info or get_info(uuid)
+    if str(info.get("uuid") or "") != uuid:
+        raise RuntimeError("Identità supporto media incoerente")
     target = Path(info["mountpoint"])
     MEDIA_ROOT.mkdir(parents=True, exist_ok=True, mode=0o755)
     target.mkdir(parents=True, exist_ok=True, mode=0o755)
-    current = source_for_target(target)
+    mounts = mount_table()
+    current = source_for_target(target, mounts)
     real_device = str(Path(f"/dev/disk/by-uuid/{uuid}").resolve())
     if current:
         if Path(current).resolve() != Path(real_device).resolve():
             raise RuntimeError(f"Mountpoint già usato da {current}")
         # Upgrade an older read-only Media Center mount in place.
-        options = run(["findmnt", "-nro", "OPTIONS", "--mountpoint", str(target)], check=False).stdout.split(',')
+        options = set((mounts.get(str(target)) or {}).get("options") or [])
         if "ro" in options:
             run(["mount", "-o", "remount,rw", str(target)])
         return info
@@ -215,42 +251,83 @@ def eject_media(uuid: str) -> None:
     print(f"{info['label']} espulsa in sicurezza: ora puoi rimuoverla.")
 
 
-def mounted_media_targets() -> list[Path]:
-    targets: list[Path] = []
-    result = run(["findmnt", "-rn", "-o", "TARGET"], check=False)
-    for line in result.stdout.splitlines():
-        path = Path(line.strip())
-        if str(path).startswith(str(MEDIA_ROOT) + "/") and path not in targets:
-            targets.append(path)
-    return targets
+def mounted_media_targets(mounts: dict[str, dict] | None = None) -> list[Path]:
+    rows = mounts or mount_table()
+    prefix = str(MEDIA_ROOT) + "/"
+    return [Path(target) for target in rows if target.startswith(prefix)]
+
+
+def _reconcile_signature(present: dict[str, dict], mounts: dict[str, dict]) -> str:
+    """Fingerprint only kernel identity/mount facts; unchanged passes do no work."""
+    devices = [
+        {
+            "uuid": uuid, "device": item.get("device"), "disk": item.get("disk"),
+            "fstype": item.get("fstype"), "mountpoint": item.get("mountpoint"),
+        }
+        for uuid, item in sorted(present.items())
+    ]
+    media_mounts = [
+        {"target": target, "source": row.get("source"), "major_minor": row.get("major_minor"),
+         "options": sorted(row.get("options") or [])}
+        for target, row in sorted(mounts.items())
+        if target.startswith(str(MEDIA_ROOT) + "/")
+    ]
+    payload = json.dumps({"devices": devices, "mounts": media_mounts}, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _read_reconcile_signature() -> str:
+    try:
+        return str(json.loads(RECONCILE_STATE.read_text(encoding="utf-8")).get("signature") or "")
+    except (OSError, ValueError, json.JSONDecodeError):
+        return ""
+
+
+def _write_reconcile_signature(signature: str) -> None:
+    try:
+        RECONCILE_STATE.parent.mkdir(parents=True, exist_ok=True)
+        tmp = RECONCILE_STATE.with_suffix(".tmp")
+        tmp.write_text(json.dumps({"signature": signature, "at": int(time.time())}, separators=(",", ":")), encoding="utf-8")
+        tmp.replace(RECONCILE_STATE)
+    except OSError:
+        pass
 
 
 def reconcile() -> None:
     MEDIA_ROOT.mkdir(parents=True, exist_ok=True, mode=0o755)
     present = {item["uuid"]: item for item in discover()}
+    mounts = mount_table()
+    initial_signature = _reconcile_signature(present, mounts)
+    if initial_signature == _read_reconcile_signature():
+        return
+
     expected_targets = {Path(item["mountpoint"]) for item in present.values()}
     changed = False
-    for target in mounted_media_targets():
+    for target in mounted_media_targets(mounts):
         if target not in expected_targets:
             subprocess.run(["umount", str(target)], check=False, capture_output=True)
-            if source_for_target(target):
+            mounts = mount_table()
+            if source_for_target(target, mounts):
                 subprocess.run(["umount", "-l", str(target)], check=False, capture_output=True)
             changed = True
-    for uuid in present:
+    for uuid, info in present.items():
         try:
-            before = source_for_target(Path(present[uuid]["mountpoint"]))
-            mount_media(uuid, quiet=True)
+            mounts = mount_table()
+            before = source_for_target(Path(info["mountpoint"]), mounts)
+            mount_media(uuid, quiet=True, info=info)
             changed = changed or not before
         except RuntimeError as exc:
             print(f"media {uuid}: {exc}", file=sys.stderr)
+    mounts = mount_table()
     for child in MEDIA_ROOT.iterdir():
-        if child.is_dir() and not source_for_target(child):
+        if child.is_dir() and not source_for_target(child, mounts):
             try:
                 child.rmdir()
             except OSError:
                 pass
     if changed:
         restart_indexer()
+    _write_reconcile_signature(_reconcile_signature(present, mount_table()))
 
 
 def main() -> int:

@@ -4,6 +4,11 @@
 System/Docker/state live on internal eMMC. The server NVMe is only the heavy
 recording tier. If that removable tier disappears or becomes unusable, request
 a serialized emergency handoff to the bounded eMMC recording buffer.
+
+The steady-state check is intentionally fork-free: it reads PID-1/host mount
+information from procfs and block state from sysfs. Never add filesystem data
+reads against the SERVER NVMe here; a failed USB bridge can make them block in
+uninterruptible D-state.
 """
 from __future__ import annotations
 
@@ -21,6 +26,9 @@ NVME = Path('/mnt/livevault-nvme')
 BUFFER = Path('/var/lib/livevault-buffer')
 HANDOFF = Path('/usr/local/libexec/nvme-handoff.py')
 LOG = Path('/var/log/openastro-storage-watchdog.log')
+MOUNTINFO = Path('/proc/1/mountinfo')
+SYS_DEV_BLOCK = Path('/sys/dev/block')
+SYS_CLASS_BLOCK = Path('/sys/class/block')
 
 
 def log(message: str) -> None:
@@ -34,6 +42,7 @@ def log(message: str) -> None:
 
 
 def run(args: list[str], timeout: int = 5) -> subprocess.CompletedProcess[str]:
+    """Reserved for the exceptional failover helper, never the 2-second health path."""
     try:
         return subprocess.run(args, text=True, capture_output=True, timeout=timeout, check=False)
     except (OSError, subprocess.TimeoutExpired):
@@ -47,23 +56,40 @@ def mode() -> str:
         return 'unknown'
 
 
-def mount_info(path: Path) -> tuple[str | None, set[str]]:
-    result = run(['findmnt', '-nro', 'SOURCE,OPTIONS', '--mountpoint', str(path)], 2)
-    if result.returncode != 0 or not result.stdout.strip():
-        return None, set()
-    source, _, options = result.stdout.strip().partition(' ')
-    return source, set(options.split(','))
+def _mount_unescape(value: str) -> str:
+    """Decode the octal escapes used by /proc/*/mountinfo."""
+    for encoded, literal in (('\\040', ' '), ('\\011', '\t'), ('\\012', '\n'), ('\\134', '\\')):
+        value = value.replace(encoded, literal)
+    return value
 
 
-def device_from_source(source: str | None) -> str | None:
-    if not source:
-        return None
-    device = source.split('[', 1)[0]
+def mount_table() -> dict[str, dict]:
+    """Return host mount metadata keyed by target without spawning findmnt."""
+    rows: dict[str, dict] = {}
     try:
-        info = os.stat(device)
+        lines = MOUNTINFO.read_text(encoding='utf-8').splitlines()
     except OSError:
-        return None
-    return device if stat.S_ISBLK(info.st_mode) else None
+        return rows
+    for line in lines:
+        left, sep, right = line.partition(' - ')
+        if not sep:
+            continue
+        fields = left.split()
+        tail = right.split()
+        if len(fields) < 6 or len(tail) < 3:
+            continue
+        target = _mount_unescape(fields[4])
+        major_minor = fields[2]
+        root = _mount_unescape(fields[3])
+        options = set(fields[5].split(',')) | set(tail[2].split(','))
+        rows[target] = {
+            'major_minor': major_minor,
+            'root': root,
+            'source': _mount_unescape(tail[1]),
+            'fstype': tail[0],
+            'options': options,
+        }
+    return rows
 
 
 def expected_device() -> str | None:
@@ -75,52 +101,78 @@ def expected_device() -> str | None:
         return None
 
 
-def kernel_device_running(device: str | None) -> bool:
+def device_major_minor(device: str | None) -> str | None:
     if not device:
+        return None
+    try:
+        info = os.stat(device)
+    except OSError:
+        return None
+    if not stat.S_ISBLK(info.st_mode):
+        return None
+    return f'{os.major(info.st_rdev)}:{os.minor(info.st_rdev)}'
+
+
+def _block_name(major_minor: str) -> str | None:
+    try:
+        return (SYS_DEV_BLOCK / major_minor).resolve(strict=True).name
+    except OSError:
+        return None
+
+
+def _parent_block_name(name: str) -> str:
+    """Resolve a partition to its disk parent through sysfs, without lsblk."""
+    node = SYS_CLASS_BLOCK / name
+    try:
+        if (node / 'partition').exists():
+            resolved = node.resolve(strict=True)
+            return resolved.parent.name
+    except OSError:
+        pass
+    return name
+
+
+def kernel_device_running(major_minor: str | None) -> bool:
+    if not major_minor:
         return False
-    name = Path(device).name
-    # Partitions do not have their own SCSI state; resolve their parent via lsblk.
-    result = run(['lsblk', '-nro', 'PKNAME', device], 2)
-    parent = result.stdout.strip() if result.returncode == 0 else ''
-    if parent:
-        name = parent
-    state = Path('/sys/class/block') / name / 'device/state'
+    name = _block_name(major_minor)
+    if not name:
+        return False
+    parent = _parent_block_name(name)
+    state = SYS_CLASS_BLOCK / parent / 'device/state'
     if not state.exists():
         return True
     try:
-        return state.read_text().strip().lower() in {'running', 'live'}
+        return state.read_text(encoding='utf-8').strip().lower() in {'running', 'live'}
     except OSError:
         return False
 
 
 def healthy_nvme() -> tuple[bool, str]:
-    """Use mount-table/devfs/sysfs checks only; never block on data I/O to a dead USB disk."""
-    rec_source, rec_options = mount_info(REC)
-    nvme_source, nvme_options = mount_info(NVME)
-    rec_dev = device_from_source(rec_source)
-    nvme_dev = device_from_source(nvme_source)
+    """Use host mount-table/devfs/sysfs checks only; never issue data I/O to SERVER."""
     expected = expected_device()
-    if not expected:
+    expected_mm = device_major_minor(expected)
+    if not expected or not expected_mm:
         return False, 'NVMe UUID device missing'
-    if not rec_dev:
-        return False, 'recordings source device missing'
-    if not nvme_dev:
-        return False, 'NVMe mount source device missing'
-    try:
-        if Path(rec_dev).resolve() != Path(expected).resolve() or Path(nvme_dev).resolve() != Path(expected).resolve():
-            return False, 'filesystem UUID device mismatch'
-    except OSError:
-        return False, 'filesystem device disappeared'
+
+    mounts = mount_table()
+    rec = mounts.get(str(REC))
+    nvme = mounts.get(str(NVME))
+    if not rec:
+        return False, 'recordings mount missing'
+    if not nvme:
+        return False, 'NVMe mount missing'
+    if rec['major_minor'] != expected_mm or nvme['major_minor'] != expected_mm:
+        return False, 'filesystem UUID device mismatch'
+
     bad = {'ro', 'shutdown', 'emergency_ro'}
-    unhealthy = (rec_options | nvme_options) & bad
+    unhealthy = (rec['options'] | nvme['options']) & bad
     if unhealthy:
         return False, f'filesystem unhealthy options={sorted(unhealthy)}'
-    if 'rw' not in rec_options or 'rw' not in nvme_options:
+    if 'rw' not in rec['options'] or 'rw' not in nvme['options']:
         return False, 'filesystem not writable'
-    if not kernel_device_running(expected):
+    if not kernel_device_running(expected_mm):
         return False, 'kernel block device not running'
-    # Do not call statvfs/blkid/read/write here. Those calls can themselves enter
-    # uninterruptible D-state when a USB-NVMe bridge has failed.
     return True, 'ok'
 
 

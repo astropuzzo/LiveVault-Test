@@ -23,6 +23,8 @@ DB_PATH = STATE_ROOT / 'media.sqlite3'
 UUID_RE = re.compile(r'^[A-Za-z0-9._:-]{2,128}$')
 MAX_LIBRARY_FILES = 20000
 SCAN_TTL = 60
+DISCOVERY_TTL = 2.0
+SERVICE_TTL = 5.0
 _LIBRARY_CACHE: dict[str, tuple[float, dict]] = {}
 _DB_INIT_LOCK = threading.Lock()
 _STREAM_LOCK = threading.Lock()
@@ -30,6 +32,10 @@ _ACTIVE_STREAMS: dict[str, dict] = {}
 _PROBE_CACHE_LOCK = threading.Lock()
 _PROBE_CACHE: dict[tuple[str, str, int, int], dict] = {}
 _PROBE_CACHE_MAX = 64
+_DISCOVERY_LOCK = threading.Lock()
+_DISCOVERY_CACHE: tuple[float, list[dict]] = (0.0, [])
+_SERVICE_LOCK = threading.Lock()
+_SERVICE_CACHE: dict[str, tuple[float, str]] = {}
 
 VIDEO_EXT = {'.mp4','.mkv','.avi','.mov','.m4v','.webm','.ts','.m2ts','.mts','.wmv','.flv','.mpg','.mpeg'}
 AUDIO_EXT = {'.mp3','.flac','.aac','.m4a','.wav','.ogg','.opus','.wma','.alac'}
@@ -119,7 +125,14 @@ def _db() -> sqlite3.Connection:
     return conn
 
 
-def _discover() -> list[dict]:
+def _discover(*, force: bool = False) -> list[dict]:
+    """Share one short-lived block-device snapshot across a UI refresh burst."""
+    global _DISCOVERY_CACHE
+    now = time.monotonic()
+    with _DISCOVERY_LOCK:
+        cached_at, cached = _DISCOVERY_CACHE
+        if not force and cached and now - cached_at < DISCOVERY_TTL:
+            return cached
     result = _run([str(MANAGER), 'list'])
     if result.returncode != 0:
         return []
@@ -127,12 +140,30 @@ def _discover() -> list[dict]:
         payload = json.loads(result.stdout or '[]')
     except json.JSONDecodeError:
         return []
-    return payload if isinstance(payload, list) else []
+    value = payload if isinstance(payload, list) else []
+    with _DISCOVERY_LOCK:
+        _DISCOVERY_CACHE = (now, value)
+    return value
+
+
+def invalidate_device_cache() -> None:
+    global _DISCOVERY_CACHE
+    with _DISCOVERY_LOCK:
+        _DISCOVERY_CACHE = (0.0, [])
+    _LIBRARY_CACHE.clear()
 
 
 def _service(name: str) -> str:
+    now = time.monotonic()
+    with _SERVICE_LOCK:
+        cached = _SERVICE_CACHE.get(name)
+        if cached and now - cached[0] < SERVICE_TTL:
+            return cached[1]
     result = _run(['systemctl', 'is-active', name], 3)
-    return result.stdout.strip() or 'unknown'
+    value = result.stdout.strip() or 'unknown'
+    with _SERVICE_LOCK:
+        _SERVICE_CACHE[name] = (now, value)
+    return value
 
 
 def _remember_device(item: dict) -> None:
@@ -143,6 +174,9 @@ def _remember_device(item: dict) -> None:
             VALUES(?,?,?,?,?,?)
             ON CONFLICT(uuid) DO UPDATE SET label=excluded.label,model=excluded.model,
                 fstype=excluded.fstype,size=excluded.size,last_seen=excluded.last_seen
+            WHERE media_devices.label<>excluded.label OR media_devices.model<>excluded.model
+               OR media_devices.fstype<>excluded.fstype OR media_devices.size<>excluded.size
+               OR excluded.last_seen-media_devices.last_seen>=60
         ''', (item['uuid'], item.get('label') or 'USB', item.get('model') or '', item.get('fstype') or '', int(item.get('size') or 0), now))
 
 
@@ -215,7 +249,7 @@ def credentials() -> dict:
 def _device(uuid: str, *, require_mounted: bool = True) -> dict:
     if not valid_uuid(uuid):
         raise ValueError('UUID media non valido')
-    for item in _discover():
+    for item in _discover(force=require_mounted):
         if item.get('uuid') == uuid:
             target = Path(item['mountpoint'])
             if require_mounted and not os.path.ismount(target):

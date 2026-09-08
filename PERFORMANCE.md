@@ -22,6 +22,29 @@ Prepared against GitHub `origin/main` at `dfde126`, in branch
 Linux CI passed. Authenticated active-capture playback returned an uncompressed
 1024-byte HTTP 206 response. Both applications were healthy.
 
+
+## September 8 video-efficiency follow-up
+
+The dedicated `codex/video-efficiency` branch now removes two fixed-cost polling
+patterns without lowering detection cadence. The recording-storage watchdog still
+checks every two seconds, but its healthy path reads `/proc/1/mountinfo`, the UUID
+symlink and sysfs directly instead of spawning two `findmnt` processes plus `lsblk`
+on every pass. It still delegates faults to the serialized handoff helper and never
+issues filesystem data I/O against a suspect SERVER NVMe.
+
+The 15-second removable-media reconcile timer remains as a safety fallback to udev.
+A compact signature in `/run` lets an unchanged pass return after one `lsblk` device
+snapshot plus mountinfo read; mount/remount/indexer work is only performed when the
+block topology or media mount state changes. The Control Center also shares a 2 s
+device-discovery snapshot and 5 s service-state snapshot across one UI refresh burst,
+and device `last_seen` persistence is rate-limited to once/minute when metadata is
+unchanged. Safety-sensitive mounted-file operations still request a fresh discovery.
+
+Targeted validation: 43 storage/media fixed-cost tests passed on Python 3.13.5.
+Steady-state watchdog tests assert that `healthy_nvme()` has no `findmnt`, `lsblk` or
+subprocess path. Runtime deployment and before/after host CPU counters remain pending
+until the full branch suite/CI is green.
+
 ## Findings and changes
 
 - Active capture playback (`/api/sources/{id}/capture`) incorrectly entered the

@@ -22,7 +22,7 @@ Accessi/vincoli: [AI-HANDOFF.md](../AI-HANDOFF.md).
 | Ricevute integrità / fast path | Implementato, testato | Receipt JSON versionata legata a SHA-256/dimensione/mode; hash completo pre-upload resta obbligatorio; scan media riusata solo su match; hash coopera con quiesce. Incluso split oversized |
 | Anteprime / code / cancellazione | Implementato, testato | Video indicizzato prima dello storyboard; coda SQLite persistente pending/processing/ready/failed con retry/recovery; stato visibile UI; FFmpeg thumbnail coopera con quiesce; auto/manual delete bloccate mentre il file serve alla preview; split oversized allineato |
 | Telemetria incrementale | Implementato, testato | SQLite/WAL a tier 10 s/24 h, 5 min/7 g, 30 min/90 g; batch 6 campioni/minuto; import JSON una tantum senza cancellarlo; export JSON compatibile per rollback; API/cadenze invariate. Baseline live history.json 1.634.479 B |
-| Watchdog / catalogo | Da fare | Stessi controlli UUID/namespace e intervallo di rilevamento |
+| Watchdog / catalogo | Implementato, testato | Watchdog 2 s fork-free via `/proc/1/mountinfo` + sysfs; reconcile USB 15 s salta passate invarianti; cache breve sonde Media Center. 43 test mirati verdi |
 | CI e confronto prestazioni | Da fare | Linux/Python 3.13; confronti sul medesimo workload |
 | Deploy / prova live / documenti host | Da fare | Backup, commit CI verde, verifica capture e ciclo storage |
 | UAS / overclock | Non abilitati | Restano condizionati ai prerequisiti del piano |

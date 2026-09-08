@@ -26,6 +26,35 @@ def test_storage_watchdog_never_probes_dead_media_with_data_io():
     assert "'failover'" in source
 
 
+def test_watchdog_steady_state_is_fork_free_and_uses_proc_sysfs():
+    source = (ROOT / "scripts/openastro-storage-watchdog.py").read_text(encoding="utf-8")
+    start = source.index("def healthy_nvme")
+    end = source.index("def request_failover", start)
+    body = source[start:end]
+    assert "findmnt" not in body
+    assert "lsblk" not in body
+    assert "subprocess" not in body
+    assert "mount_table()" in body
+    assert "kernel_device_running" in body
+    assert "MOUNTINFO = Path('/proc/1/mountinfo')" in source
+
+
+def test_watchdog_mount_table_decodes_bind_mount_metadata(monkeypatch, tmp_path):
+    watchdog = _load_watchdog()
+    mountinfo = tmp_path / "mountinfo"
+    mountinfo.write_text(
+        "101 1 8:2 / /mnt/livevault-nvme rw,relatime shared:1 - ext4 /dev/sda2 rw\n"
+        "102 1 8:2 /recordings /data/livevault/recordings rw,relatime shared:1 - ext4 /dev/sda2 rw\n"
+        "103 1 8:1 /with\\040space /some\\040target rw - ext4 /dev/sda1 rw\n"
+    )
+    monkeypatch.setattr(watchdog, 'MOUNTINFO', mountinfo)
+    rows = watchdog.mount_table()
+    assert rows['/mnt/livevault-nvme']['major_minor'] == '8:2'
+    assert rows['/data/livevault/recordings']['root'] == '/recordings'
+    assert 'rw' in rows['/data/livevault/recordings']['options']
+    assert '/some target' in rows
+
+
 def test_watchdog_delegates_fault_to_serialized_handoff(monkeypatch):
     watchdog = _load_watchdog()
     watchdog.HANDOFF = Path("/tmp/nvme-handoff.py")
