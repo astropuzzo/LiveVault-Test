@@ -65,7 +65,7 @@
 
       <div class="two-col analysis-row">
         <article class="panel">
-          <div class="panel-title split"><span>Trend sessione</span><small>Quality · Confidence · RMS posa</small></div><div id="trendPlot" class="plot"></div>
+          <div class="panel-title split"><span>Trend sessione</span><small>assi, unità, soglie e frame · hover per dettagli</small></div><div id="trendPlot" class="plot"></div>
         </article>
         <article class="panel inspector-panel">
           <div class="panel-title split"><span>Frame inspector</span><small id="inspectorHint">clicca una riga sotto</small></div>
@@ -74,13 +74,13 @@
       </div>
 
       <article id="guidePanel" class="panel full live-only">
-        <div class="panel-title split"><span>Guida live · ultimi 20 secondi</span><small><i class="legend ra"></i>RA <i class="legend dec"></i>DEC · arcsec</small></div>
+        <div class="panel-title split"><span>Guida PHD2 live · ultimi 20 secondi</span><small>telemetria reale · resta visibile anche nel Synthetic Lab</small></div>
         <div class="guide-facts"><span>Total RMS <b id="guideTotalValue">—</b></span><span>RA RMS <b id="guideRaValue">—</b></span><span>DEC RMS <b id="guideDecValue">—</b></span><span>Max <b id="guideMaxValue">—</b></span><span>Samples <b id="guideSamplesValue">—</b></span></div>
         <div id="guidePlot" class="plot guide-plot"></div>
       </article>
 
       <article id="previewPanel" class="panel full preview-panel live-only">
-        <div class="panel-title split"><span>Ultima esposizione</span><small>JPEG 1280 px · RAM · FITS non trasferiti</small></div>
+        <div class="panel-title split"><span>Preview ultimo LIGHT reale</span><small>JPEG 1280 px · RAM · indipendente dal Synthetic Lab</small></div>
         <div class="preview-wrap"><div id="previewPlaceholder" class="preview-placeholder"><b>Preview in attesa</b><span>Comparirà al prossimo LIGHT.</span></div><img id="previewImage" alt="Preview ultima esposizione NINA" hidden></div>
         <div class="preview-meta"><span id="previewState">Nessuna preview ricevuta</span><span>Read-only</span></div>
       </article>

@@ -111,6 +111,12 @@ def test_standalone_assets_and_docker_contract_exist():
     assert 'href="app.css"' in html and 'src="app.js"' in html
     assert '[hidden]{display:none!important}' in css
     assert 'guidingLive' in js
+    assert 'FRAME QSM' in js
+    assert 'Quality <b>0–100</b>' in js
+    assert 'Guide RMS <b>arcsec</b>' in js
+    assert 'PHD2 live' in js
+    assert '.synthetic-mode .live-only{display:block}' in css
+    assert 'Preview ultimo LIGHT reale' in html
     assert 'id="currentFileValue"' in html
     assert 'id="rejectedTableBody"' in html
     assert 'id="frameHistoryBody"' in html

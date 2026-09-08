@@ -75,36 +75,73 @@
     }).filter(Boolean).join(' ');
   }
 
-  function renderGuide(guide, syntheticMode) {
+  function chartAxisLabels(values, suffix = '') {
+    return `<div class="chart-y-labels">${values.map(v => `<span>${esc(v)}${esc(suffix)}</span>`).join('')}</div>`;
+  }
+
+  function chartXLabels(items) {
+    const list = Array.isArray(items) ? items : [];
+    if (!list.length) return '<div class="chart-x-labels"><span>—</span></div>';
+    const picks = [...new Set([0, Math.floor((list.length - 1) * .25), Math.floor((list.length - 1) * .5), Math.floor((list.length - 1) * .75), list.length - 1])];
+    return `<div class="chart-x-labels">${picks.map(i => { const f = list[i] || {}; return `<span title="${esc(fileName(f))}">#${esc(num(f.frameIndex, 0))}</span>`; }).join('')}</div>`;
+  }
+
+  function chartHoverBands(items, width, height) {
+    const list = Array.isArray(items) ? items : [];
+    if (!list.length) return '';
+    const step = width / Math.max(1, list.length - 1);
+    return list.map((f, i) => {
+      const x = list.length === 1 ? 0 : Math.max(0, i * step - step / 2);
+      const w = list.length === 1 ? width : Math.min(width - x, step);
+      const details = `${fileName(f)} · ${text(f.status)}\nQ ${num(f.quality,0)} · Conf ${num(f.confidence,0,'%')} · RMS ${num(f.guideRmsArcsec,2,'"')}\nStars Δ ${signed(f.starDeltaPercent)} · BG Δ ${signed(f.backgroundDeltaPercent)}\n${text(f.probableCause || f.reason, 'nessuna causa')}`;
+      return `<rect class="chart-hit" x="${x.toFixed(1)}" y="0" width="${Math.max(1,w).toFixed(1)}" height="${height}"><title>${esc(details)}</title></rect>`;
+    }).join('');
+  }
+
+  function renderGuide(guide, settings = {}) {
     guide = guide || {}; const series = Array.isArray(guide.series) ? guide.series : [];
     $('#guideTotalValue').textContent = num(guide.rmsTotalArcsec, 2, '"');
     $('#guideRaValue').textContent = num(guide.rmsRaArcsec, 2, '"');
     $('#guideDecValue').textContent = num(guide.rmsDecArcsec, 2, '"');
     $('#guideMaxValue').textContent = num(guide.maxExcursionArcsec, 2, '"');
     $('#guideSamplesValue').textContent = num(guide.samples, 0);
-    if (syntheticMode) { $('#guideValue').textContent = 'LAB'; $('#guideDetail').textContent = 'Guida live nascosta in Synthetic Lab'; return; }
     const age = guide.latestUtc ? Math.max(0, (Date.now() - Date.parse(guide.latestUtc)) / 1000) : Infinity;
     const fresh = Boolean(guide.hasData) && age < 6;
     $('#guideValue').textContent = guide.hasData ? num(guide.rmsTotalArcsec, 2, '"') : '—';
-    $('#guideDetail').textContent = guide.hasData ? (fresh ? `live · ultimo step ${age.toFixed(1)} s fa` : `dato guida fermo · ${age.toFixed(0)} s fa`) : 'Nessun guide step negli ultimi 20 s';
+    $('#guideDetail').textContent = guide.hasData ? (fresh ? `PHD2 live · ultimo step ${age.toFixed(1)} s fa` : `PHD2 fermo · ultimo step ${age.toFixed(0)} s fa`) : 'Nessun GuideEvent PHD2 negli ultimi 20 s';
     const plot = $('#guidePlot');
-    if (series.length < 2) { plot.innerHTML = '<div class="plot-empty"><div><b>Guida non disponibile</b><span>In attesa dei GuideEvent di N.I.N.A.</span></div></div>'; return; }
+    if (series.length < 2) { plot.innerHTML = '<div class="plot-empty"><div><b>PHD2 live non sta inviando campioni</b><span>Il pannello non è stato rimosso: comparirà appena N.I.N.A. riceve nuovi GuideEvent.</span></div></div>'; return; }
     const values = series.flatMap(p => [Number(p.raArcsec), Number(p.decArcsec)]).filter(Number.isFinite);
-    const maxAbs = Math.max(.5, ...values.map(Math.abs)) * 1.15, width = 1000, height = 180;
-    plot.innerHTML = `<svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="none"><g>${gridLines(width, height)}</g><line class="zero-line" x1="0" y1="${height / 2}" x2="${width}" y2="${height / 2}"/><polyline class="line-ra" points="${polyPoints(series, 'raArcsec', -maxAbs, maxAbs, width, height)}"/><polyline class="line-dec" points="${polyPoints(series, 'decArcsec', -maxAbs, maxAbs, width, height)}"/></svg>`;
+    const excursion = Number(settings.excursionThreshold);
+    const observed = Math.max(.5, ...values.map(Math.abs));
+    const maxAbs = Math.max(observed * 1.15, Number.isFinite(excursion) ? excursion * 1.15 : .5);
+    const width = 1000, height = 180;
+    const yFor = value => height - ((value + maxAbs) / (2 * maxAbs)) * height;
+    const limitLines = Number.isFinite(excursion) && excursion > 0 ? `<line class="limit-line" x1="0" y1="${yFor(excursion).toFixed(1)}" x2="${width}" y2="${yFor(excursion).toFixed(1)}"/><line class="limit-line" x1="0" y1="${yFor(-excursion).toFixed(1)}" x2="${width}" y2="${yFor(-excursion).toFixed(1)}"/>` : '';
+    const legend = `<div class="chart-legend"><span><i class="legend ra"></i>RA</span><span><i class="legend dec"></i>DEC</span>${Number.isFinite(excursion) ? `<span class="limit-key">Escursione ±${esc(num(excursion,2,'"'))}</span>` : ''}<b>Y = arcsec</b></div>`;
+    const body = `<div class="chart-body"><div class="chart-y-title">arcsec</div>${chartAxisLabels([maxAbs.toFixed(1),(maxAbs/2).toFixed(1),'0.0',(-maxAbs/2).toFixed(1),(-maxAbs).toFixed(1)])}<div class="chart-canvas"><svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" aria-label="PHD2 RA DEC live"><g>${gridLines(width, height)}</g><line class="zero-line" x1="0" y1="${height / 2}" x2="${width}" y2="${height / 2}"/>${limitLines}<polyline class="line-ra" points="${polyPoints(series, 'raArcsec', -maxAbs, maxAbs, width, height)}"/><polyline class="line-dec" points="${polyPoints(series, 'decArcsec', -maxAbs, maxAbs, width, height)}"/></svg><div class="chart-x-labels"><span>−20 s</span><span>−15 s</span><span>−10 s</span><span>−5 s</span><span>adesso</span></div></div></div>`;
+    plot.innerHTML = legend + body;
   }
 
-  function renderTrend(frames) {
+  function renderTrend(frames, settings = {}) {
     const plot = $('#trendPlot'), recent = (Array.isArray(frames) ? frames : []).slice(-80);
     if (recent.length < 2) { plot.innerHTML = '<div class="plot-empty"><div><b>Raccolta dati…</b><span>Servono almeno due frame QSM.</span></div></div>'; return; }
     const width = 1000, height = 200;
-    const rmsValues = recent.map(f => Number(f.guideRmsArcsec)).filter(Number.isFinite), rmsMax = Math.max(2, ...rmsValues, 2);
+    const rmsValues = recent.map(f => Number(f.guideRmsArcsec)).filter(Number.isFinite);
+    const configuredRms = Number(settings.maxGuideRms);
+    const rmsMax = Math.max(1, ...rmsValues, Number.isFinite(configuredRms) ? configuredRms * 1.25 : 0);
     const markers = recent.map((f, i) => {
       if (!isAttention(f)) return '';
       const x = recent.length <= 1 ? width : i / (recent.length - 1) * width;
-      return `<circle class="trend-marker ${statusClass(f.status)}" cx="${x.toFixed(1)}" cy="${height - 7}" r="4"><title>${esc(fileName(f))} · ${esc(text(f.status))} · ${esc(text(f.probableCause))}</title></circle>`;
+      return `<circle class="trend-marker ${statusClass(f.status)}" cx="${x.toFixed(1)}" cy="${height - 7}" r="5"><title>${esc(fileName(f))} · ${esc(text(f.status))} · ${esc(text(f.probableCause || f.reason))}</title></circle>`;
     }).join('');
-    plot.innerHTML = `<svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="none"><g>${gridLines(width, height)}</g><polyline class="line-q" points="${polyPoints(recent, 'quality', 0, 100, width, height)}"/><polyline class="line-c" points="${polyPoints(recent, 'confidence', 0, 100, width, height)}"/><polyline class="line-rms" points="${polyPoints(recent, 'guideRmsArcsec', 0, rmsMax, width, height)}"/>${markers}</svg>`;
+    const thresholdY = Number.isFinite(configuredRms) && configuredRms > 0 && configuredRms <= rmsMax ? height - configuredRms / rmsMax * height : null;
+    const threshold = thresholdY == null ? '' : `<line class="rms-limit-line" x1="0" y1="${thresholdY.toFixed(1)}" x2="${width}" y2="${thresholdY.toFixed(1)}"><title>Limite Guide RMS ${esc(num(configuredRms,2,'"'))}</title></line>`;
+    const legend = `<div class="chart-legend"><span><i class="legend q"></i>Quality <b>0–100</b></span><span><i class="legend c"></i>Confidence <b>0–100%</b></span><span><i class="legend rms"></i>Guide RMS <b>arcsec</b></span>${thresholdY == null ? '' : `<span class="limit-key">Limite RMS ${esc(num(configuredRms,2,'"'))}</span>`}</div>`;
+    const leftAxis = chartAxisLabels(['100','75','50','25','0']);
+    const rightAxis = chartAxisLabels([rmsMax.toFixed(2),(rmsMax*.75).toFixed(2),(rmsMax*.5).toFixed(2),(rmsMax*.25).toFixed(2),'0.00'], '"');
+    const svg = `<svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" aria-label="Trend Quality Confidence Guide RMS"><g>${gridLines(width, height)}</g>${threshold}<polyline class="line-q" points="${polyPoints(recent, 'quality', 0, 100, width, height)}"/><polyline class="line-c" points="${polyPoints(recent, 'confidence', 0, 100, width, height)}"/><polyline class="line-rms" points="${polyPoints(recent, 'guideRmsArcsec', 0, rmsMax, width, height)}"/>${markers}${chartHoverBands(recent,width,height)}</svg>`;
+    plot.innerHTML = `${legend}<div class="chart-dual-axis"><div class="axis-caption left">Q / CONF.</div>${leftAxis}<div class="chart-canvas">${svg}${chartXLabels(recent)}<div class="chart-x-title">FRAME QSM · passa il mouse per file e valori</div></div>${rightAxis}<div class="axis-caption right">RMS</div></div>`;
   }
 
   function inspectorMetric(label, value, wide = false) { return `<div class="inspector-metric${wide ? ' wide' : ''}"><span>${esc(label)}</span><b>${esc(value)}</b></div>`; }
@@ -154,21 +191,25 @@
     selectedFrameIndex = Number(frame.frameIndex); renderFrameInspector(frame); renderTables(frames);
   }
 
-  function resetPreviewForSynthetic() {
-    previewFrame = null; previewPending = null;
-    const image = $('#previewImage'), placeholder = $('#previewPlaceholder');
-    image.hidden = true; placeholder.hidden = false; $('#previewState').textContent = 'Synthetic Lab · nessun file immagine reale';
-  }
-
   function requestPreview(frame, syntheticMode) {
-    if (syntheticMode) { resetPreviewForSynthetic(); return; }
     const frameId = Number(frame?.frameIndex);
-    if (!Number.isFinite(frameId) || frameId <= 0 || previewFrame === frameId || previewPending === frameId) return;
-    previewPending = frameId; const image = $('#previewImage'), placeholder = $('#previewPlaceholder'), state = $('#previewState');
-    state.textContent = `Carico preview ${fileName(frame)}…`;
-    image.onload = () => { previewFrame = frameId; previewPending = null; image.hidden = false; placeholder.hidden = true; state.textContent = `${fileName(frame)} · ${text(frame.filter, 'senza filtro')} · ${num(frame.exposureSeconds, 1, ' s')}`; };
-    image.onerror = () => { previewPending = null; if (previewFrame === null) { image.hidden = true; placeholder.hidden = false; } state.textContent = 'Preview non ancora pronta · nuovo tentativo automatico'; };
-    image.src = `api/preview.jpg?frame=${encodeURIComponent(frameId)}&t=${Date.now()}`;
+    const now = Date.now();
+    const probeKey = syntheticMode ? `real-${Math.floor(now / 5000)}` : (Number.isFinite(frameId) && frameId > 0 ? String(frameId) : 'latest');
+    if (previewPending === probeKey || previewFrame === probeKey) return;
+    previewPending = probeKey;
+    const image = $('#previewImage'), placeholder = $('#previewPlaceholder'), state = $('#previewState');
+    state.textContent = syntheticMode ? 'Verifico l’ultimo LIGHT reale ricevuto da N.I.N.A.…' : `Carico preview ${fileName(frame)}…`;
+    const probe = new Image();
+    probe.onload = () => {
+      previewFrame = probeKey; previewPending = null; image.src = probe.src; image.hidden = false; placeholder.hidden = true;
+      state.textContent = syntheticMode ? 'Ultimo LIGHT reale ricevuto da N.I.N.A. · indipendente dal Synthetic Lab' : `${fileName(frame)} · ${text(frame.filter, 'senza filtro')} · ${num(frame.exposureSeconds, 1, ' s')}`;
+    };
+    probe.onerror = () => {
+      previewPending = null;
+      if (image.hidden || !image.getAttribute('src')) { image.hidden = true; placeholder.hidden = false; }
+      state.textContent = syntheticMode ? 'Nessun LIGHT reale disponibile da quando QSM è stato avviato · la preview live resta attiva' : 'Preview non ancora pronta · nuovo tentativo automatico';
+    };
+    probe.src = `api/preview.jpg?t=${now}${syntheticMode ? '&source=latest-real' : `&frame=${encodeURIComponent(frameId)}`}`;
   }
 
   function render(payload) {
@@ -207,7 +248,7 @@
 
     const frames = Array.isArray(snapshot.frames) ? snapshot.frames : [];
     if (selectedFrameIndex == null || !frames.some(f => Number(f.frameIndex) === selectedFrameIndex)) selectedFrameIndex = Number(frame.frameIndex) || null;
-    renderGuide(guide, syntheticMode); renderTrend(frames); renderTables(frames); renderEvents(frames);
+    renderGuide(guide, snapshot.settings || {}); renderTrend(frames, snapshot.settings || {}); renderTables(frames); renderEvents(frames);
     renderFrameInspector(frames.find(f => Number(f.frameIndex) === selectedFrameIndex) || frame);
     requestPreview(frame, syntheticMode);
   }
