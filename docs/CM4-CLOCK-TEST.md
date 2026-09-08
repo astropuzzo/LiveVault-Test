@@ -56,6 +56,8 @@ overclock GPU/RAM o `force_turbo`.
   di stabilità: possibile boot fallito. Se serve una riaccensione fisica, il boot
   seguente deve usare il config normale a 2 GHz. Dopo riconnessione eseguire
   `cm4-clock-trial.py resume` e verificare la ripresa delle capture.
+  Richiesta riaccensione fisica all'utente dopo timeout sia LAN sia Tailscale.
+  Non provare 2,2 GHz prima di distinguere problema tryboot da instabilità CPU.
 - 2,2 GHz: non provati.
 - Backup normale `/var/backups/openastro/20260908-clock/config-2000.txt`, SHA-256
   `0e26639d67471b5f39854f70e3bdf82d4e656e3959d7ccbfe7aa007b1aed2950`.

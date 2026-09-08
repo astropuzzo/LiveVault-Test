@@ -44,12 +44,17 @@ Accessi/vincoli: [AI-HANDOFF.md](../AI-HANDOFF.md).
 
 ## Condizione host rilevata durante la validazione
 
+Le note seguenti descrivono un avvio precedente alle prove OC. Nel nuovo avvio
+a 2 GHz il nodo era in modalità NVMe e senza errori kernel osservati; non è
+stata verificata la procedura di fsck eseguita nel frattempo. Non lanciare fsck
+o cambiare mount sulla base del solo stato storico: ricontrollare host/namespace.
+
 - Alle 15:31 (timezone host Europe/London) il SERVER NVMe ha registrato reset USB e I/O error reali; ext4 `sdc2` è entrato in `emergency_ro`. Il watchdog live ha effettuato failover automatico al buffer eMMC come progettato.
 - Tre recorder hanno continuato sul buffer; al controllo il loop da 3,9 GiB era al 39% (1,5 GiB usati). Il mount host del SERVER è stato smontato per fsck, ma `e2fsck` ha rifiutato correttamente perché il namespace privato di `gpt-harness.service` mantiene ancora il device. Nessuna riparazione filesystem è stata eseguita finora.
 - Prima di deploy/merge runtime: completare fsck offline tramite unità host indipendente che ferma temporaneamente Harness, rimonta solo se pulito, quindi usare `nvme-handoff.py attach` per quiesce, copia SHA-256 del buffer e ritorno a NVMe.
 
 ## Rollback e lavori attivi
 
-- Runtime ancora invariato. Branch aggiunge migrazioni SQLite additive `recordings.validation_receipt` e stato coda thumbnail (`thumbnail_status`, attempts/error/next attempt); rollback applicativo al commit precedente ignora le colonne senza perdita dei dati esistenti.
+- Runtime LiveVault verificato a `56ce014`. Migrazioni SQLite additive `recordings.validation_receipt` e stato coda thumbnail (`thumbnail_status`, attempts/error/next attempt); rollback applicativo al commit precedente ignora le colonne senza perdita dei dati esistenti. Deploy dei componenti host ancora da confrontare con i sorgenti.
 - Rollback preesistenti: `/var/backups/openastro/20260908-maintenance` (preservare).
 - Test locali media dopo la coda anteprime: 73 passed su Python 3.13.5. Telemetria SQLite: 37 test Control/telemetry verdi, inclusi import legacy non distruttivo, tier retention, persistenza senza riscrivere JSON ed export rollback. Nessun job/deploy host ancora.
