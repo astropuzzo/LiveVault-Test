@@ -118,6 +118,8 @@ def test_standalone_assets_and_docker_contract_exist():
     assert 'GUIDA PHD2 LIVE' in html
     assert 'PREVIEW ULTIMO LIGHT REALE' in html
     assert 'id="pluginTimeline"' in html
+    assert 'H=420' in js
+    assert 'min-width:1000px' in css and 'min-width:760px' in css
     assert 'id="sessionEventsBody"' in html
     assert 'id="bestAcceptedBody"' in html and 'id="worstAcceptedBody"' in html
     assert 'id="rejectedTableBody"' in html
@@ -144,12 +146,15 @@ def test_web_monitor_mirrors_qsm_dockable_hierarchy_before_remote_extensions():
         'BEST ACCEPTED',
         'REJECTED REVIEW',
         'FRAME HISTORY',
-        'OPENASTRO REMOTE LIVE EXTENSIONS',
+        'TELEMETRIA REMOTA',
         'GUIDA PHD2 LIVE',
         'PREVIEW ULTIMO LIGHT REALE',
     ]
     positions = [html.index(marker) for marker in order]
     assert positions == sorted(positions)
+    assert 'stesse metriche' not in html
+    assert 'QSM PLUGIN MIRROR' not in html
+    assert 'non sostituiscono' not in html
     js = (ROOT / 'static' / 'app.js').read_text(encoding='utf-8')
     assert "[top,rms,img].forEach" in js
     assert "0% rolling baseline" in js

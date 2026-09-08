@@ -24,19 +24,17 @@
 
   <main id="appView" class="app-shell" hidden>
     <header class="topbar">
-      <div class="brand-row"><div class="brand-mark small">N</div><div><p class="eyebrow">OPENASTRO · QSM MIRROR</p><h1>QualitySessionMeter</h1></div></div>
+      <div class="brand-row"><div class="brand-mark small">N</div><div><p class="eyebrow">OPENASTRO · QSM</p><h1>QualitySessionMeter</h1></div></div>
       <div class="top-actions"><span id="modeTag" class="mode-tag">LIVE</span><span id="linkState" class="link-state"><i></i><b>Verifica…</b></span><button id="logoutButton" class="ghost" type="button">Esci</button></div>
     </header>
 
     <section id="statusBanner" class="status-banner">
-      <div><strong id="bannerTitle">In attesa di N.I.N.A.</strong><span id="bannerText">Il modulo remoto replica la stessa sessione mostrata dal plugin.</span></div><i class="status-dot"></i>
+      <div><strong id="bannerTitle">In attesa di N.I.N.A.</strong><span id="bannerText">In attesa dei dati QualitySessionMeter.</span></div><i class="status-dot"></i>
     </section>
 
     <section id="emptyState" class="empty-state" hidden><div><strong id="emptyTitle">N.I.N.A. non disponibile</strong><p id="emptyText">Verifica collegamento QSM e rete.</p></div></section>
 
     <section id="dashboard" class="dashboard" hidden>
-      <div class="mirror-note">QSM PLUGIN MIRROR · stessa gerarchia, stesse metriche, stessa timeline multicanale. Le sezioni PHD2/Preview in fondo sono estensioni remote OpenAstro.</div>
-
       <article class="qsm-card qsm-primary-card">
         <div class="qsm-primary-grid">
           <section><span class="qsm-label">QUALITY</span><strong id="qualityValue" class="qsm-quality-value">—</strong><b id="qualityLabel" class="qsm-accent-line">Waiting for frame</b></section>
@@ -97,22 +95,22 @@
         <div class="table-wrap plugin-table-wrap history-wrap"><table class="frame-table plugin-table"><thead><tr><th>#</th><th>Q</th><th>Conf.</th><th>Status</th><th>File</th><th>RMS</th><th>Pattern</th><th>Trend</th><th>Stars Δ</th><th>BG Δ</th><th>Cause</th></tr></thead><tbody id="frameHistoryBody"></tbody></table></div>
       </article>
 
-      <div class="remote-divider"><span>OPENASTRO REMOTE LIVE EXTENSIONS</span><small>non sostituiscono i pannelli QSM sopra</small></div>
+      <div class="remote-divider"><span>TELEMETRIA REMOTA</span></div>
 
       <article id="guidePanel" class="qsm-card remote-card">
-        <div class="qsm-title split-title"><span>GUIDA PHD2 LIVE · ultimi 20 secondi</span><small>GuideEvent reali di N.I.N.A. · sempre visibile anche nel Synthetic Lab</small></div>
+        <div class="qsm-title split-title"><span>GUIDA PHD2 LIVE · ultimi 20 secondi</span><small>GuideEvent reali di N.I.N.A.</small></div>
         <div class="guide-facts"><span>Total RMS <b id="guideTotalValue">—</b></span><span>RA RMS <b id="guideRaValue">—</b></span><span>DEC RMS <b id="guideDecValue">—</b></span><span>Max <b id="guideMaxValue">—</b></span><span>Samples <b id="guideSamplesValue">—</b></span></div>
         <div id="guidePlot" class="plot guide-plot"></div>
       </article>
 
       <article id="previewPanel" class="qsm-card remote-card preview-panel">
-        <div class="qsm-title split-title"><span>PREVIEW ULTIMO LIGHT REALE</span><small>JPEG 1280 px · RAM · indipendente dal Synthetic Lab</small></div>
+        <div class="qsm-title split-title"><span>PREVIEW ULTIMO LIGHT REALE</span><small>JPEG 1280 px · RAM</small></div>
         <div class="preview-wrap"><div id="previewPlaceholder" class="preview-placeholder"><b>Preview in attesa</b><span>Comparirà al prossimo LIGHT reale salvato da N.I.N.A.</span></div><img id="previewImage" alt="Preview ultima esposizione NINA" hidden></div>
         <div class="preview-meta"><span id="previewState">Nessuna preview ricevuta</span><span>Read-only · FITS/XISF non trasferiti</span></div>
       </article>
     </section>
 
-    <footer><span>Servizio isolato <b>openastro-nina-monitor.service</b> · porta <b>9091</b></span><span>QSM core mirror + estensioni remote read-only</span></footer>
+    <footer><span>Servizio isolato <b>openastro-nina-monitor.service</b> · porta <b>9091</b></span><span>Read-only</span></footer>
   </main>
   <script src="app.js" defer></script>
 </body>

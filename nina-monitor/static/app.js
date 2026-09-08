@@ -136,7 +136,7 @@
 
   function renderPluginTimeline(frames, settings) {
     const host = $('#pluginTimeline'); const list = (Array.isArray(frames)?frames:[]).slice(-160);
-    const W=1200,H=270,L=185,marker=38,gap=6,plotW=W-L-2,bandH=(H-marker-gap*2-2)/3;
+    const W=1200,H=420,L=185,marker=44,gap=10,plotW=W-L-2,bandH=(H-marker-gap*2-2)/3;
     const top=marker,rms=marker+bandH+gap,img=marker+2*(bandH+gap);
     if (!list.length) { host.innerHTML = '<div class="timeline-empty">Waiting for assessed LIGHT frames</div>'; return; }
     const maxObsRms = Math.max(0,...list.map(f=>n(f.guideRmsArcsec)??0)); const maxGuide = n(settings?.maxGuideRms)??1.5; const rmsMax=Math.max(2,maxObsRms*1.15,maxGuide*1.30);
@@ -199,7 +199,7 @@
   function requestPreview(frame, syntheticMode) {
     const frameId=n(frame?.frameIndex); if(previewPending===frameId && frameId!=null)return; previewPending=frameId;
     const image=$('#previewImage'),placeholder=$('#previewPlaceholder'),state=$('#previewState'); state.textContent=syntheticMode?'Cerco l’ultimo LIGHT reale ricevuto da N.I.N.A.…':`Carico preview ${fileName(frame)}…`;
-    image.onload=()=>{previewFrame=frameId;previewPending=null;image.hidden=false;placeholder.hidden=true;state.textContent=syntheticMode?'Ultimo LIGHT reale ricevuto da N.I.N.A. · indipendente dal Synthetic Lab':`${fileName(frame)} · ${text(frame.filter,'senza filtro')} · ${num(frame.exposureSeconds,1,' s')}`;};
+    image.onload=()=>{previewFrame=frameId;previewPending=null;image.hidden=false;placeholder.hidden=true;state.textContent=syntheticMode?'Ultimo LIGHT reale ricevuto da N.I.N.A.':`${fileName(frame)} · ${text(frame.filter,'senza filtro')} · ${num(frame.exposureSeconds,1,' s')}`;};
     image.onerror=()=>{previewPending=null;if(previewFrame==null){image.hidden=true;placeholder.hidden=false;}state.textContent=syntheticMode?'Nessun LIGHT reale disponibile da questa istanza N.I.N.A.':'Preview non ancora pronta · nuovo tentativo automatico';};
     image.src=`api/preview.jpg?t=${Date.now()}`;
   }
