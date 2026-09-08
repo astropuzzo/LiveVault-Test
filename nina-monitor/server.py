@@ -24,6 +24,7 @@ PORT = int(os.environ.get('OPENASTRO_NINA_MONITOR_PORT', '9091'))
 PASSWORD_HASH = os.environ.get('OPENASTRO_NINA_MONITOR_PASSWORD_HASH', '').strip()
 SECRET = os.environ.get('OPENASTRO_NINA_MONITOR_SECRET', '').strip().encode('utf-8')
 COOKIE_SECURE = os.environ.get('OPENASTRO_NINA_MONITOR_COOKIE_SECURE', '0').strip() == '1'
+FRAME_ANCESTORS = os.environ.get('OPENASTRO_NINA_MONITOR_FRAME_ANCESTORS', "'none'").strip() or "'none'"
 SESSION_SECONDS = 12 * 60 * 60
 MAX_JSON_BODY = 4096
 COOKIE_NAME = 'openastro_nina_session'
@@ -118,13 +119,14 @@ class Handler(BaseHTTPRequestHandler):
 
     def _security_headers(self) -> None:
         self.send_header('X-Content-Type-Options', 'nosniff')
-        self.send_header('X-Frame-Options', 'DENY')
+        if FRAME_ANCESTORS == "'none'":
+            self.send_header('X-Frame-Options', 'DENY')
         self.send_header('Referrer-Policy', 'no-referrer')
         self.send_header('Permissions-Policy', 'camera=(), microphone=(), geolocation=()')
         self.send_header(
             'Content-Security-Policy',
             "default-src 'self'; img-src 'self' data: blob:; style-src 'self'; script-src 'self'; "
-            "connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
+            f"connect-src 'self'; frame-ancestors {FRAME_ANCESTORS}; base-uri 'none'; form-action 'self'",
         )
 
     def _send_bytes(self, status: int, body: bytes, content_type: str, extra: dict[str, str] | None = None) -> None:

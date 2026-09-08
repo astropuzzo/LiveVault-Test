@@ -11,7 +11,7 @@
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" href="/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="/icon.svg">
-  <link rel="stylesheet" href="/app.css?v=20.1-media-fill"><link rel="stylesheet" href="/shell.css?v=4.0-control"><link rel="stylesheet" href="/theme.css?v=5.0-feel"><link rel="stylesheet" href="/premium.css?v=10.0-product"><link rel="stylesheet" href="/magic.css?v=13.1-nina"><link rel="stylesheet" href="/media-upload.css?v=14.0-import">
+  <link rel="stylesheet" href="/app.css?v=20.1-media-fill"><link rel="stylesheet" href="/shell.css?v=4.0-control"><link rel="stylesheet" href="/theme.css?v=5.0-feel"><link rel="stylesheet" href="/premium.css?v=10.0-product"><link rel="stylesheet" href="/magic.css?v=13.2-nina-embed"><link rel="stylesheet" href="/media-upload.css?v=14.0-import">
 </head>
 <body data-view="dashboard" class="is-loading">
   <div class="app-shell">
@@ -315,34 +315,18 @@
       </section>
 
       <section class="app-view" data-view-panel="nina" aria-labelledby="view-nina-title">
-        <div class="view-heading"><div><p class="eyebrow">ASTRO SESSION LIVE</p><h1 id="view-nina-title">NINA</h1><p>QualitySessionMeter in tempo reale, servito da un'app Coolify indipendente.</p></div></div>
-        <div class="nina-workspace">
-          <section class="panel nina-launch-panel">
-            <div class="nina-hero">
-              <div class="nina-hero-copy"><p class="eyebrow">OPENASTRO · NINA MONITOR</p><h2>La sessione astronomica, ovunque.</h2><p>Quality, Confidence, guida RA/DEC live, frame buoni e scartati, stelle, background e ultima LIGHT in un pannello separato dal lifecycle di LiveVault.</p></div>
-              <div class="nina-orbit" aria-hidden="true"><i></i><i></i><span></span></div>
-            </div>
-            <div class="nina-access-grid">
-              <article><span>LOCALE</span><strong>192.168.1.27:9091</strong><small>Accesso diretto dalla LAN di casa.</small></article>
-              <article><span>FUORI CASA</span><strong>HTTPS Funnel</strong><small>Nessun client Tailscale richiesto sul telefono.</small></article>
-              <article><span>RUNTIME</span><strong>Coolify isolato</strong><small>Container NINA indipendente da LiveVault.</small></article>
-            </div>
-            <div class="nina-actions">
-              <a class="button nina-primary" href="https://openastro.tailf2871c.ts.net:9091/" target="_blank" rel="noopener">Apri NINA Monitor <span>↗</span></a>
-              <a class="button secondary" href="http://192.168.1.27:9091/" target="_blank" rel="noopener">LAN diretto</a>
-            </div>
-          </section>
-          <section class="panel nina-info-panel">
-            <div class="panel-head"><div><p class="eyebrow">LIVE SESSION</p><h2>Cosa controlli</h2></div><span>READ-ONLY</span></div>
-            <div class="nina-capabilities">
-              <article><b>Q</b><div><strong>Quality + Confidence</strong><small>Valutazione corrente e trend della sessione.</small></div></article>
-              <article><b>G</b><div><strong>Guida live</strong><small>RA, DEC, RMS totale e massima escursione.</small></div></article>
-              <article><b>Δ</b><div><strong>Stelle + background</strong><small>Variazioni rispetto alla baseline robusta.</small></div></article>
-              <article><b>▣</b><div><strong>Preview LIGHT</strong><small>JPEG in RAM, nessun FITS trasferito al telefono.</small></div></article>
-            </div>
-            <p class="nina-note">Il token QSM resta sul server. Il browser parla solo con NINA Monitor e non espone direttamente il PC N.I.N.A. a Internet.</p>
-          </section>
+        <div class="view-heading nina-view-heading">
+          <div><p class="eyebrow">ASTRO SESSION LIVE</p><h1 id="view-nina-title">NINA</h1><p>QualitySessionMeter live dentro OpenAstro. Runtime separato in Coolify.</p></div>
+          <div class="nina-head-actions"><span class="status-chip">READ-ONLY</span><a class="button secondary" href="https://openastro.tailf2871c.ts.net:9091/" target="_blank" rel="noopener">Apri separato ↗</a></div>
         </div>
+        <section class="panel nina-embedded-panel">
+          <div class="nina-embed-bar">
+            <div><span class="nina-live-dot" aria-hidden="true"></span><strong>NINA Monitor</strong><small>Container Coolify indipendente · QSM sul PC N.I.N.A.</small></div>
+            <div class="nina-embed-links"><a href="http://192.168.1.27:9091/" target="_blank" rel="noopener">LAN</a><a href="https://openastro.tailf2871c.ts.net:9091/" target="_blank" rel="noopener">Esterno</a></div>
+          </div>
+          <div class="nina-frame-wrap"><iframe id="ninaMonitorFrame" title="OpenAstro NINA Monitor" src="https://openastro.tailf2871c.ts.net:9091/" loading="lazy" referrerpolicy="no-referrer" allow=""></iframe></div>
+          <p class="nina-note">Il browser non contatta direttamente N.I.N.A.: il token QSM resta nel container NINA Monitor. L'autenticazione NINA resta indipendente dal Control Center.</p>
+        </section>
       </section>
 
       <section class="app-view" data-view-panel="pihole" aria-labelledby="view-pihole-title">

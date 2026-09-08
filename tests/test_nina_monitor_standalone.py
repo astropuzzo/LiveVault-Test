@@ -83,6 +83,19 @@ def test_password_hash_and_signed_session(monkeypatch):
     assert server._valid_session(tampered) is False
 
 
+def test_frame_ancestors_defaults_to_deny(monkeypatch):
+    monkeypatch.delenv('OPENASTRO_NINA_MONITOR_FRAME_ANCESTORS', raising=False)
+    server = _load_server(monkeypatch)
+    assert server.FRAME_ANCESTORS == "'none'"
+
+
+def test_frame_ancestors_can_allow_control_center(monkeypatch):
+    origin = 'https://openastro.tailf2871c.ts.net:8443'
+    monkeypatch.setenv('OPENASTRO_NINA_MONITOR_FRAME_ANCESTORS', origin)
+    server = _load_server(monkeypatch)
+    assert server.FRAME_ANCESTORS == origin
+
+
 def test_standalone_assets_and_docker_contract_exist():
     assert (ROOT / 'Dockerfile').is_file()
     assert (ROOT / 'docker-compose.yml').is_file()

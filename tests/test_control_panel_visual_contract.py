@@ -9,7 +9,7 @@ def test_product_visual_layers_are_explicit_and_ordered():
     shell = html.index('/shell.css?v=4.0-control')
     theme = html.index('/theme.css?v=5.0-feel')
     premium = html.index('/premium.css?v=10.0-product')
-    magic = html.index('/magic.css?v=13.1-nina')
+    magic = html.index('/magic.css?v=13.2-nina-embed')
     assert app < shell < theme < premium < magic
 
 
