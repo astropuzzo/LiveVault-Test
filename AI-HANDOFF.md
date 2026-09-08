@@ -139,7 +139,11 @@ dagli originali preservati. Storico: [PERFORMANCE.md](PERFORMANCE.md).
 
 Kernel: undervoltage in questo avvio. vcgencmd: 0x50000, flag storici senza
 throttling attuale. Alimentatore/cavo non verificabili tramite pulizia software.
-Non aumentare frequenza/undervolt esistenti (profilo massimo 1500 MHz).
+Il profilo è stato successivamente portato dall'utente a 2000 MHz rimuovendo
+l'undervolt. Il nuovo boot riporta 0x0; non equivale a stabilità certificata.
+Prove superiori ora richieste dall'utente: leggere il checkpoint
+[CM4 clock](docs/CM4-CLOCK-TEST.md). Conservare il boot normale a 2 GHz,
+nessuna modifica a tensione/GPU/RAM; prove temporanee con recupero documentato.
 
 DNS cifrato attivo, contrariamente al vecchio handoff. Preservare nftables dedicato,
 autenticazione/rate limit DoH e openastro-dot-network.timer per IPv6 DoT.
