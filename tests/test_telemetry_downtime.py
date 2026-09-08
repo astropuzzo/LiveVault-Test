@@ -77,3 +77,88 @@ def test_history_compaction_keeps_long_term_points_without_raw_90_day_growth():
     assert compact[-1]['t'] == now
     assert len(compact) < 15000
     assert min(row['t'] for row in compact) >= now - 90*86400
+
+
+def _set_history_paths(monkeypatch, tmp_path: Path):
+    monkeypatch.setattr(panel, 'STATE_DIR', tmp_path)
+    monkeypatch.setattr(panel, 'HISTORY_FILE', tmp_path / 'history.json')
+    monkeypatch.setattr(panel, 'HISTORY_DB', tmp_path / 'history.sqlite3')
+    panel._history = []
+    panel._history_pending = []
+
+
+def test_sqlite_history_import_preserves_legacy_json(monkeypatch, tmp_path):
+    _set_history_paths(monkeypatch, tmp_path)
+    now = 10_000_000
+    monkeypatch.setattr(panel.time, 'time', lambda: now)
+    rows = [
+        {'t': now - 20, 'cpu': 10, 'watts': 5.0},
+        {'t': now - 2 * 86400, 'cpu': 20, 'watts': 6.0},
+        {'t': now - 20 * 86400, 'cpu': 30, 'watts': 7.0},
+    ]
+    original = json.dumps(rows, separators=(',', ':'))
+    panel.HISTORY_FILE.write_text(original)
+
+    panel.load_history()
+
+    assert panel.HISTORY_FILE.read_text() == original
+    assert panel.HISTORY_DB.exists()
+    assert [row['t'] for row in panel._history] == sorted(row['t'] for row in rows)
+    # Legacy power samples keep the old compatibility semantics in memory.
+    assert all(row['power_measurement'] == 'estimated' for row in panel._history)
+    assert all(row['watts'] is None for row in panel._history)
+
+
+def test_save_history_appends_sqlite_without_rewriting_legacy_json(monkeypatch, tmp_path):
+    _set_history_paths(monkeypatch, tmp_path)
+    now = 20_000_000
+    monkeypatch.setattr(panel.time, 'time', lambda: now)
+    legacy = '[{"t":19999900,"cpu":1}]'
+    panel.HISTORY_FILE.write_text(legacy)
+    panel.load_history()
+
+    sample = {'t': now, 'cpu': 42, 'ram': 20, 'temp': 40, 'disk': 50,
+              'rx': 1, 'tx': 2, 'watts': None, 'power_measurement': 'unavailable'}
+    panel._history.append(sample)
+    panel._history_pending.append(sample)
+    panel.save_history()
+
+    assert panel.HISTORY_FILE.read_text() == legacy
+    assert panel._history_pending == []
+    panel._history = []
+    panel.load_history()
+    assert any(row.get('t') == now and row.get('cpu') == 42 for row in panel._history)
+
+
+def test_sqlite_history_uses_same_three_retention_tiers(monkeypatch, tmp_path):
+    _set_history_paths(monkeypatch, tmp_path)
+    now = 30_000_000
+    with panel.closing(panel._history_db_connect()) as conn, conn:
+        rows = [
+            {'t': now - 60, 'cpu': 1},
+            {'t': now - 2 * 86400, 'cpu': 2},
+            {'t': now - 20 * 86400, 'cpu': 3},
+            {'t': now - 91 * 86400, 'cpu': 4},
+        ]
+        for row in rows:
+            panel._history_store_row(conn, row, now)
+        counts = [conn.execute(f'SELECT count(*) FROM {table}').fetchone()[0]
+                  for table in ('history_raw', 'history_5m', 'history_30m')]
+    assert counts == [1, 1, 1]
+
+
+def test_history_export_produces_old_format_with_new_sqlite_samples(monkeypatch, tmp_path):
+    _set_history_paths(monkeypatch, tmp_path)
+    now = 40_000_000
+    monkeypatch.setattr(panel.time, 'time', lambda: now)
+    panel.HISTORY_FILE.write_text('[]')
+    panel.load_history()
+    sample = {'t': now, 'cpu': 55, 'power_measurement': 'unavailable', 'watts': None}
+    panel._history.append(sample)
+    panel._history_pending.append(sample)
+    panel.save_history()
+
+    exported = tmp_path / 'rollback-history.json'
+    panel.export_history_json(exported)
+    payload = json.loads(exported.read_text())
+    assert any(row.get('t') == now and row.get('cpu') == 55 for row in payload)

@@ -21,7 +21,7 @@ Accessi/vincoli: [AI-HANDOFF.md](../AI-HANDOFF.md).
 | Baseline e misure ripetibili | In corso | Fixture/test isolati attivi su Python 3.13; benchmark host comparabile ancora da eseguire |
 | Ricevute integrità / fast path | Implementato, testato | Receipt JSON versionata legata a SHA-256/dimensione/mode; hash completo pre-upload resta obbligatorio; scan media riusata solo su match; hash coopera con quiesce. Incluso split oversized |
 | Anteprime / code / cancellazione | Implementato, testato | Video indicizzato prima dello storyboard; coda SQLite persistente pending/processing/ready/failed con retry/recovery; stato visibile UI; FFmpeg thumbnail coopera con quiesce; auto/manual delete bloccate mentre il file serve alla preview; split oversized allineato |
-| Telemetria incrementale | Da fare | Migrazione JSON reversibile, frequenze/retention invariate |
+| Telemetria incrementale | Implementato, testato | SQLite/WAL a tier 10 s/24 h, 5 min/7 g, 30 min/90 g; batch 6 campioni/minuto; import JSON una tantum senza cancellarlo; export JSON compatibile per rollback; API/cadenze invariate. Baseline live history.json 1.634.479 B |
 | Watchdog / catalogo | Da fare | Stessi controlli UUID/namespace e intervallo di rilevamento |
 | CI e confronto prestazioni | Da fare | Linux/Python 3.13; confronti sul medesimo workload |
 | Deploy / prova live / documenti host | Da fare | Backup, commit CI verde, verifica capture e ciclo storage |
@@ -40,4 +40,4 @@ Accessi/vincoli: [AI-HANDOFF.md](../AI-HANDOFF.md).
 
 - Runtime ancora invariato. Branch aggiunge migrazioni SQLite additive `recordings.validation_receipt` e stato coda thumbnail (`thumbnail_status`, attempts/error/next attempt); rollback applicativo al commit precedente ignora le colonne senza perdita dei dati esistenti.
 - Rollback preesistenti: `/var/backups/openastro/20260908-maintenance` (preservare).
-- Test locali branch dopo la coda anteprime: 73 passed su Python 3.13.5 includendo receipt/integrità, thumbnail queue, storage handoff, size policy/oversized, stitching, upload, processing controls, recovery e cleanup. Nessun job/deploy host ancora.
+- Test locali media dopo la coda anteprime: 73 passed su Python 3.13.5. Telemetria SQLite: 37 test Control/telemetry verdi, inclusi import legacy non distruttivo, tier retention, persistenza senza riscrivere JSON ed export rollback. Nessun job/deploy host ancora.

@@ -11,10 +11,12 @@ import os
 import re
 import secrets
 import shutil
+import sqlite3
 import subprocess
 import threading
 import time
 import urllib.request
+from contextlib import closing
 from http import HTTPStatus
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -39,6 +41,7 @@ STARTED_AT = time.time()
 ACTION_LOG = Path("/var/log/openastro-control-actions.log")
 STATE_DIR = Path("/var/lib/openastro-control")
 HISTORY_FILE = STATE_DIR / "history.json"
+HISTORY_DB = STATE_DIR / "history.sqlite3"
 AVAILABILITY_FILE = STATE_DIR / "availability.json"
 HISTORY_RAW_SECONDS = 86400
 HISTORY_RETENTION_SECONDS = 90 * 86400
@@ -71,6 +74,7 @@ _network_lock = threading.Lock()
 _network_last: tuple[float, int, int] | None = None
 _history_lock = threading.Lock()
 _history: list[dict] = []
+_history_pending: list[dict] = []
 _availability_lock = threading.Lock()
 _availability: dict = {}
 _session_lock = threading.Lock()
@@ -480,34 +484,190 @@ def _compact_history(rows: list[dict], now: int) -> list[dict]:
     return kept
 
 
-def load_history() -> None:
-    global _history
+def _history_db_connect() -> sqlite3.Connection:
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(HISTORY_DB, timeout=5)
+    conn.execute("PRAGMA busy_timeout=5000")
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA synchronous=NORMAL")
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS history_raw (
+            t INTEGER PRIMARY KEY,
+            payload TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS history_5m (
+            bucket INTEGER PRIMARY KEY,
+            t INTEGER NOT NULL,
+            payload TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS history_30m (
+            bucket INTEGER PRIMARY KEY,
+            t INTEGER NOT NULL,
+            payload TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS history_meta (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS ix_history_5m_t ON history_5m(t);
+        CREATE INDEX IF NOT EXISTS ix_history_30m_t ON history_30m(t);
+    """)
+    return conn
+
+
+def _history_store_row(conn: sqlite3.Connection, row: dict, now: int) -> None:
+    t = int(row.get("t", 0))
+    if t <= 0 or t < now - HISTORY_RETENTION_SECONDS:
+        return
+    payload = json.dumps(row, separators=(",", ":"), sort_keys=True)
+    if t >= now - HISTORY_RAW_SECONDS:
+        conn.execute("INSERT OR REPLACE INTO history_raw(t,payload) VALUES (?,?)", (t, payload))
+    elif t >= now - 7 * 86400:
+        bucket = t // 300
+        conn.execute(
+            """INSERT INTO history_5m(bucket,t,payload) VALUES (?,?,?)
+               ON CONFLICT(bucket) DO UPDATE SET t=excluded.t,payload=excluded.payload
+               WHERE excluded.t > history_5m.t""",
+            (bucket, t, payload),
+        )
+    else:
+        bucket = t // 1800
+        conn.execute(
+            """INSERT INTO history_30m(bucket,t,payload) VALUES (?,?,?)
+               ON CONFLICT(bucket) DO UPDATE SET t=excluded.t,payload=excluded.payload
+               WHERE excluded.t > history_30m.t""",
+            (bucket, t, payload),
+        )
+
+
+def _history_compact_db(conn: sqlite3.Connection, now: int) -> None:
+    recent_cutoff = now - HISTORY_RAW_SECONDS
+    week_cutoff = now - 7 * 86400
+    retention_cutoff = now - HISTORY_RETENTION_SECONDS
+
+    raw = conn.execute(
+        "SELECT t,payload FROM history_raw WHERE t < ? ORDER BY t", (recent_cutoff,)
+    ).fetchall()
+    for t, payload in raw:
+        bucket = int(t) // 300
+        conn.execute(
+            """INSERT INTO history_5m(bucket,t,payload) VALUES (?,?,?)
+               ON CONFLICT(bucket) DO UPDATE SET t=excluded.t,payload=excluded.payload
+               WHERE excluded.t > history_5m.t""",
+            (bucket, int(t), payload),
+        )
+    if raw:
+        conn.execute("DELETE FROM history_raw WHERE t < ?", (recent_cutoff,))
+
+    medium = conn.execute(
+        "SELECT bucket,t,payload FROM history_5m WHERE t < ? ORDER BY t", (week_cutoff,)
+    ).fetchall()
+    for _bucket, t, payload in medium:
+        bucket = int(t) // 1800
+        conn.execute(
+            """INSERT INTO history_30m(bucket,t,payload) VALUES (?,?,?)
+               ON CONFLICT(bucket) DO UPDATE SET t=excluded.t,payload=excluded.payload
+               WHERE excluded.t > history_30m.t""",
+            (bucket, int(t), payload),
+        )
+    if medium:
+        conn.execute("DELETE FROM history_5m WHERE t < ?", (week_cutoff,))
+    conn.execute("DELETE FROM history_30m WHERE t < ?", (retention_cutoff,))
+
+
+def _history_rows_from_db(conn: sqlite3.Connection) -> list[dict]:
+    stored = []
+    for table in ("history_30m", "history_5m", "history_raw"):
+        for (payload,) in conn.execute(f"SELECT payload FROM {table}"):
+            try:
+                row = json.loads(payload)
+            except (TypeError, ValueError, json.JSONDecodeError):
+                continue
+            if isinstance(row, dict):
+                stored.append(row)
+    stored.sort(key=lambda row: int(row.get("t", 0)))
+    return stored
+
+
+def _import_legacy_history(conn: sqlite3.Connection, now: int) -> None:
+    imported = conn.execute(
+        "SELECT value FROM history_meta WHERE key='legacy_json_imported'"
+    ).fetchone()
+    if imported:
+        return
     try:
         loaded = json.loads(HISTORY_FILE.read_text(encoding="utf-8"))
-        now = int(time.time())
-        _history = _compact_history([item for item in loaded if isinstance(item, dict)], now)
-        for item in _history:
-            if "power_measurement" not in item:
-                item["estimated_watts"] = item.get("watts")
-                item["watts"] = None
-                item["power_measurement"] = "estimated"
+        rows = [item for item in loaded if isinstance(item, dict)] if isinstance(loaded, list) else []
     except (OSError, ValueError, json.JSONDecodeError):
-        _history = []
+        rows = []
+    for row in _compact_history(rows, now):
+        _history_store_row(conn, row, now)
+    # Marker means "migration attempted". The source JSON is deliberately preserved
+    # so an application rollback can still inspect/export it.
+    conn.execute(
+        "INSERT OR REPLACE INTO history_meta(key,value) VALUES ('legacy_json_imported',?)",
+        (str(now),),
+    )
+
+
+def load_history() -> None:
+    global _history, _history_pending
+    now = int(time.time())
+    try:
+        with closing(_history_db_connect()) as conn, conn:
+            _import_legacy_history(conn, now)
+            _history_compact_db(conn, now)
+            loaded = _history_rows_from_db(conn)
+    except (OSError, sqlite3.Error):
+        try:
+            legacy = json.loads(HISTORY_FILE.read_text(encoding="utf-8"))
+            loaded = [item for item in legacy if isinstance(item, dict)] if isinstance(legacy, list) else []
+        except (OSError, ValueError, json.JSONDecodeError):
+            loaded = []
+    _history = _compact_history(loaded, now)
+    _history_pending = []
+    for item in _history:
+        if "power_measurement" not in item:
+            item["estimated_watts"] = item.get("watts")
+            item["watts"] = None
+            item["power_measurement"] = "estimated"
 
 
 def save_history() -> None:
-    global _history
+    global _history, _history_pending
+    now = int(time.time())
+    with _history_lock:
+        _history = _compact_history(_history, now)
+        pending = [dict(row) for row in _history_pending]
+    if not pending:
+        return
     try:
-        STATE_DIR.mkdir(parents=True, exist_ok=True)
-        with _history_lock:
-            _history = _compact_history(_history, int(time.time()))
-            payload = json.dumps(_history, separators=(",", ":"))
-        temporary = HISTORY_FILE.with_suffix(".tmp")
-        temporary.write_text(payload, encoding="utf-8")
-        temporary.replace(HISTORY_FILE)
-    except OSError:
-        pass
+        with closing(_history_db_connect()) as conn, conn:
+            for row in pending:
+                _history_store_row(conn, row, now)
+            _history_compact_db(conn, now)
+    except (OSError, sqlite3.Error):
+        return
+    with _history_lock:
+        pending_ids = {int(row.get("t", 0)) for row in pending}
+        _history_pending = [row for row in _history_pending if int(row.get("t", 0)) not in pending_ids]
 
+
+def export_history_json(path: Path | None = None) -> Path:
+    """Create an old-format JSON snapshot for rollback without resuming rewrite churn."""
+    destination = path or HISTORY_FILE
+    try:
+        with closing(_history_db_connect()) as conn:
+            rows = _history_rows_from_db(conn)
+    except (OSError, sqlite3.Error):
+        with _history_lock:
+            rows = [dict(row) for row in _history]
+    payload = json.dumps(rows, separators=(",", ":"))
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    temporary = destination.with_suffix(destination.suffix + ".tmp")
+    temporary.write_text(payload, encoding="utf-8")
+    temporary.replace(destination)
+    return destination
 
 def history_loop() -> None:
     writes = 0
@@ -520,6 +680,7 @@ def history_loop() -> None:
             continue
         with _history_lock:
             _history.append(sample)
+            _history_pending.append(sample)
         writes += 1
         # Persist detailed telemetry every minute and the tiny availability heartbeat
         # every minute. If power is lost, downtime start precision is therefore <=60 s.
@@ -1222,6 +1383,11 @@ class Handler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
+    if len(sys.argv) >= 2 and sys.argv[1] == "--export-history-json":
+        load_history()
+        destination = Path(sys.argv[2]) if len(sys.argv) >= 3 else HISTORY_FILE
+        print(export_history_json(destination))
+        raise SystemExit(0)
     mimetypes.add_type("application/manifest+json", ".webmanifest")
     load_history()
     load_availability()

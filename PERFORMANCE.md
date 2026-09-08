@@ -127,3 +127,25 @@ trim to their common duration passed the existing media validator in 2.98 second
 on the live host, using a disposable output and leaving the original untouched.
 Tail-only timing repair now tries this before any video transcode. The integration
 test asserts that a tail-only mismatch never needs the encoder when copy validates.
+
+## September 8 telemetry persistence optimization (branch only)
+
+Read-only production baseline before this change: `/var/lib/openastro-control/history.json`
+was 1,634,479 bytes and was being atomically rewritten once per minute. At constant
+size that is about 2.35 GB/day of logical file replacement, before filesystem effects;
+this is not a NAND-wear measurement.
+
+The optimization branch replaces the minute-wide history rewrite with SQLite/WAL tiers:
+10-second samples for 24 hours, 5-minute samples through 7 days, and 30-minute samples
+through 90 days. Six new samples are committed together once per minute; only rows that
+cross a retention boundary are promoted between tiers. The existing `history.json` is
+imported once and deliberately left untouched. Availability heartbeat cadence remains
+one minute and sampling remains 10 seconds. The history API still uses the same in-memory
+shape, ordering, downtime gaps, power semantics and retention.
+
+Before rolling back to a release that only understands JSON, export current SQLite data
+in the old format with the deployed control script:
+`python3 /opt/openastro-control/upload_server.py --export-history-json /var/lib/openastro-control/history.json`.
+This is an explicit rollback step; normal operation does not resume the large JSON rewrite.
+No production after-measurement is claimed until this branch is deployed and observed on
+a matched workload.
