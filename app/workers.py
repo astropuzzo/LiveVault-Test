@@ -511,7 +511,7 @@ class WorkerManager:
             for rec in rows:
                 db.expunge(rec)
         for rec in rows:
-            if self._stopping:
+            if self._stopping or not storage_handoff.media_online():
                 return
             path = Path(rec.local_path)
             if path.suffix.lower() != ".mp4" or not path.is_file():
@@ -590,7 +590,7 @@ class WorkerManager:
                 for rec in rows:
                     db.expunge(rec)
             for rec in rows:
-                if self._stopping or not runtime().generate_thumbnails:
+                if self._stopping or not storage_handoff.media_online() or not runtime().generate_thumbnails:
                     return
                 path = Path(rec.local_path)
                 if not path.exists() or not path.is_file():
@@ -639,7 +639,7 @@ class WorkerManager:
         """Resolve remux leftovers without ever deleting the original capture."""
         cutoff = time.time() - 30 * 60
         for temporary in sorted(settings.recordings_dir.rglob(".*.finalizing.mp4")):
-            if self._stopping:
+            if self._stopping or not storage_handoff.media_online():
                 return
             if not temporary.is_file():
                 continue
@@ -665,6 +665,7 @@ class WorkerManager:
     async def _recover_orphans(self) -> None:
         candidates = sorted(settings.recordings_dir.rglob("*.mkv")) + sorted(settings.recordings_dir.rglob("*.mp4"))
         for path in candidates:
+            storage_handoff.checkpoint()
             active_directories = {session.directory.resolve() for session in self.active.values()}
             if path.name.startswith(".") or path.name.endswith(".tmp.mp4") or "_complete" in path.stem:
                 continue
@@ -1593,7 +1594,7 @@ class WorkerManager:
                 continue
             grouped.setdefault((int(profile_id), key), []).append((int(recording.id), str(recording.remote_id)))
         for (profile_id, day_key), items in grouped.items():
-            if self._stopping:
+            if self._stopping or not storage_handoff.media_online():
                 return
             remote_ids = list(dict.fromkeys(remote_id for _recording_id, remote_id in items if remote_id))
             old_id, old_count = existing.get((profile_id, day_key), ("", 0))
@@ -1831,9 +1832,7 @@ class WorkerManager:
                             current.upload_status = "failed"
                             current.last_error = (" | ".join(errors)[-1600:] or "Upload verification failed") + f" · retry ~{int(delay)}s"
                 await asyncio.sleep(0.5)
-            except asyncio.CancelledError:
-                raise
-            except UploadCancelled:
+            except (UploadCancelled, storage_handoff.StorageQuiesced):
                 if rec:
                     with contextlib.suppress(Exception):
                         with db_session() as db:
@@ -1842,6 +1841,8 @@ class WorkerManager:
                                 current.upload_status = "pending"
                                 current.last_error = "Upload interrotto in sicurezza per riavvio; rimesso in coda"
                 continue
+            except asyncio.CancelledError:
+                raise
             except Exception as exc:
                 self.last_errors["uploader"] = str(exc)[-1400:]
                 if rec:

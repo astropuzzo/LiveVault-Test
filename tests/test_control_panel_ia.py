@@ -1,4 +1,6 @@
 from pathlib import Path
+import json
+import re
 import re
 
 ROOT = Path(__file__).parents[1]
@@ -34,7 +36,7 @@ def test_expensive_views_are_lazy_loaded():
 
 def test_pwa_shell_contains_new_layout_css():
     assert '/shell.css' in SW
-    assert 'openastro-control-v20.1-media-fill' in SW
+    assert 'openastro-control-v20.2-cache-repair' in SW
     assert '/magic.css' in SW
 
 
@@ -47,3 +49,8 @@ def test_nina_monitor_is_embedded_with_separate_runtime_and_local_public_entrypo
     assert 'Container Coolify indipendente' in HTML
     assert 'Il browser non contatta direttamente N.I.N.A.' in HTML
     assert 'il token QSM resta nel container NINA Monitor' in HTML
+def test_service_worker_precache_contains_only_existing_assets():
+    static = Path(__file__).resolve().parents[1] / 'control-panel' / 'static'
+    worker = (static / 'sw.js').read_text()
+    assets = json.loads(re.search(r'const SHELL = (\[.*?\]);', worker).group(1))
+    assert all((static / asset.lstrip('/')).is_file() for asset in assets)

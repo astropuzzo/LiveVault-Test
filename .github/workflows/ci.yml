@@ -14,6 +14,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13'
@@ -22,6 +24,10 @@ jobs:
           node-version: '22'
       - name: Install FFmpeg
         run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - name: Require operations documentation
+        env:
+          OPS_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: python scripts/check-ops-docs.py "$OPS_BASE"
       - name: Install dependencies
         run: pip install -r requirements-dev.txt
       - name: Compile Python

@@ -1,5 +1,8 @@
 # LiveVault v3.0.0
 
+Manutenzione e istruzioni IA: [AGENTS.md](AGENTS.md),
+[guida operativa centrale](AI-HANDOFF.md).
+
 > **AI / future-session handoff:** read [`AI-HANDOFF.md`](AI-HANDOFF.md) first, verify the live node, and continue from there. Do not ask the user to repeat completed infrastructure setup.
 
 LiveVault è un recorder remoto 24/7 con dashboard web/PWA. Monitora sorgenti autorizzate, registra tramite FFmpeg in stream-copy, verifica i media, crea miniature, gestisce il buffer locale e carica automaticamente su Gofile/Pixeldrain.

@@ -1,5 +1,5 @@
-const CACHE = "openastro-control-v20.1-media-fill";
-const SHELL = ["/app.css", "/pihole.css", "/shell.css", "/theme.css", "/premium.css", "/magic.css", "/media-upload.css", "/app.js", "/media-upload.js", "/hls.min.js", "/icon.svg", "/manifest.webmanifest"];
+const CACHE = "openastro-control-v20.2-cache-repair";
+const SHELL = ["/app.css", "/shell.css", "/theme.css", "/premium.css", "/magic.css", "/media-upload.css", "/app.js", "/media-upload.js", "/hls.min.js", "/icon.svg", "/manifest.webmanifest"];
 self.addEventListener("install", event => event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(SHELL)).then(() => self.skipWaiting())));
 self.addEventListener("activate", event => event.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(key => key.startsWith("openastro-control-") && key !== CACHE).map(key => caches.delete(key)))).then(() => self.clients.claim())));
 self.addEventListener("fetch", event => {

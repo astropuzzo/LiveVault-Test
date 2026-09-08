@@ -14,6 +14,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from .config import settings
+from . import storage_handoff
 from .db import Source
 from .settings_store import runtime
 from .source_providers import ResolvedInput, audit_inputs, resolve_inputs
@@ -47,6 +48,7 @@ async def _wait_media_process(
             done, _ = await asyncio.wait({communication}, timeout=MEDIA_PROGRESS_POLL_SECONDS)
             if done:
                 break
+            storage_handoff.checkpoint()
             now = time.monotonic()
             try:
                 stat = output.stat()

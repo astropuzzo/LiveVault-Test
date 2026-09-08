@@ -1,5 +1,30 @@
 # Removable NVMe recording storage
 
+## September 8 handoff repair
+
+The host helper enters PID 1's mount namespace before taking the storage lock.
+sudo alone does not escape the Control Center's private systemd mount namespace.
+An interrupted quiesce can be recovered with
+`gpt-root -- python3 /usr/local/libexec/nvme-handoff.py recover`.
+Recovery requires the existing token acknowledgement, a recognized host recording
+device, the expected NVMe UUID and a matching container view. Pending buffer files
+with an NVMe recording bind cause a safe refusal; do not delete them to force it.
+Eject/attach also recover an acknowledged interrupted transaction before retrying.
+
+If quiesce times out before any recording mount change, restore the previous mode
+without rebinding the still-busy original mount. The old rollback could itself
+fail EBUSY and leave recordings paused indefinitely.
+
+Read-only packet/gap scans and archive remux processes cooperate with quiesce:
+terminate and join subprocesses before releasing the job; keep original inputs
+and requeue uploads. Thread tasks are never abandoned with open files. Background
+backfill stops between files. The ready token is written once, rather than
+rewritten four times per second. Live recorder closure and verified buffer copy
+remain mandatory. Manual eject never uses lazy unmount.
+
+Host rollback copies for this repair are in
+`/var/backups/openastro/20260908-maintenance`.
+
 The ASIAIR host keeps Docker, Coolify, SQLite, settings and previews on internal
 eMMC. The existing `/data` runtime paths are retained through an internal bind
 mount. Only `/data/livevault/recordings` switches between the NVMe and a separate

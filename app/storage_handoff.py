@@ -1,13 +1,56 @@
 """Host-controlled storage handoff; metadata stays on the internal drive."""
 from __future__ import annotations
 
+import asyncio
 import json
+import subprocess
+import time
 from functools import wraps
 
 from .config import settings
 
 BUFFER_RESERVE = 128 * 1024**2
 BUFFER_SEGMENT_GB = 0.125  # leaves 64 MiB after the recorder's trailer reserve
+
+
+class StorageQuiesced(asyncio.CancelledError):
+    """An archive operation closed its handles and can safely be retried."""
+
+
+def checkpoint():
+    if state()['mode'] == 'quiesce':
+        raise StorageQuiesced('Operazione archivio rinviata per cambio storage')
+
+
+def run_probe(args, *, timeout, **kwargs):
+    """Cooperatively stop a read-only scan; join it before releasing the job."""
+    if state()['mode'] == 'legacy':
+        return subprocess.run(args, timeout=timeout, **kwargs)
+    checkpoint()
+    kwargs.pop('check', None)
+    kwargs.pop('capture_output', None)
+    deadline = time.monotonic() + timeout
+    with subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, **kwargs) as proc:
+        try:
+            while True:
+                checkpoint()
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise subprocess.TimeoutExpired(args, timeout)
+                try:
+                    stdout, stderr = proc.communicate(timeout=min(.5, remaining))
+                    return subprocess.CompletedProcess(args, proc.returncode, stdout, stderr)
+                except subprocess.TimeoutExpired:
+                    continue
+        except BaseException:
+            if proc.poll() is None:
+                proc.terminate()
+                try:
+                    proc.communicate(timeout=3)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    proc.communicate()
+            raise
 
 
 def state() -> dict:
@@ -56,6 +99,10 @@ def media_job(function=None, *, buffering=False):
         self._storage_jobs += 1
         try:
             return await function(self, *args, **kwargs)
+        except StorageQuiesced:
+            # Cooperative checkpoints have already joined subprocesses/threads.
+            # Preserve original media and let NVMe recovery retry this job.
+            return None
         finally:
             self._storage_jobs -= 1
     return wrapped
@@ -63,6 +110,11 @@ def media_job(function=None, *, buffering=False):
 
 def acknowledge(token: str) -> None:
     path = settings.data_dir / "storage-ready.json"
+    try:
+        if json.loads(path.read_text()).get('token') == token:
+            return
+    except (OSError, ValueError):
+        pass
     temporary = path.with_suffix(".tmp")
     temporary.write_text(json.dumps({"token": token}))
     temporary.replace(path)

@@ -6,8 +6,10 @@ The active server is the OpenAstro home node (`astro@192.168.1.27`).
 - OpenAstro Control: https://openastro.tailf2871c.ts.net:8443/
 - Coolify, on the LAN: http://192.168.1.27:8000/
 - Coolify, inside Tailscale: http://100.85.86.96:8000/
+- Coolify HTTPS: https://openastro.tailf2871c.ts.net:10000/
+- NINA Monitor: https://openastro.tailf2871c.ts.net:9091/
 
-Application URLs use HTTPS through Tailscale Funnel and application authentication. Coolify itself remains private. The retired TierHive/CapRover instance is not a deployment target.
+Application URLs, including Coolify, use HTTPS through Tailscale Funnel and application authentication (verified 2026-09-08). The retired TierHive/CapRover instance is not a deployment target. Read [AGENTS.md](AGENTS.md) and [AI-HANDOFF.md](AI-HANDOFF.md) before administration.
 
 ## Deployment model
 
@@ -86,6 +88,11 @@ Keep existing credentials and system configuration. Never replace the LiveVault 
 7. For host-control changes, deploy only the affected host helper/service; do not bounce unrelated Coolify applications.
 
 A green GitHub run proves source validation, not live deployment. A queued Coolify deployment is also not enough: verify that the replacement becomes healthy.
+
+Coolify webhooks do not wait for CI: validate on a branch before promotion.
+Check the queued commit before any manual deployment and retain the previous
+image for rollback. Host panel updates remain separate and invalidate its
+in-memory login sessions; sign in again with the existing credentials.
 
 ## Backup and rollback
 

@@ -10,6 +10,8 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
+from . import storage_handoff
+
 SAFE_RE = re.compile(r"[^a-zA-Z0-9._-]+")
 
 
@@ -102,7 +104,7 @@ def _video_gap_error(path: Path, streams: list[dict]) -> str:
     expected = _rate_seconds(video.get("avg_frame_rate")) if video else None
     threshold = max(0.75, (expected or (1 / 30)) * 12)
     try:
-        probe = subprocess.run(
+        probe = storage_handoff.run_probe(
             [
                 "ffprobe", "-v", "error", "-select_streams", "v:0",
                 "-show_entries", "packet=dts_time,pts_time", "-of", "csv=p=0", str(path),
@@ -208,11 +210,12 @@ def probe_media(path: Path, *, require_audio: bool = True, quick: bool = False) 
 
 
 def verify_media(path: Path, mode: str = "packet", *, require_audio: bool = True) -> IntegrityResult:
+    storage_handoff.checkpoint()
     quick = probe_media(path, require_audio=require_audio, quick=(mode == "quick"))
     if not quick.ok or mode == "quick":
         return quick
     try:
-        p = subprocess.run(
+        p = storage_handoff.run_probe(
             ["ffmpeg", "-hide_banner", "-v", "error", "-i", str(path), "-map", "0", "-c", "copy", "-f", "null", "-"],
             capture_output=True,
             text=True,

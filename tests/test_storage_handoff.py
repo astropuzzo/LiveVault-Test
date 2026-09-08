@@ -2,6 +2,8 @@ import asyncio
 import importlib.util
 import json
 import os
+import subprocess
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -62,6 +64,34 @@ def test_quiesce_drains_existing_job_without_cancelling_it(control):
         finish.set()
         assert await running == 42
         assert owner._storage_jobs == 0
+    asyncio.run(exercise())
+
+
+def test_quiesce_joins_read_only_probe_before_releasing_job(control, tmp_path):
+    async def exercise():
+        owner = SimpleNamespace(_storage_jobs=0)
+        started = tmp_path / 'started'
+        original = tmp_path / 'original.mp4'
+        original.write_bytes(b'preserve-original')
+        @h.media_job
+        async def job(self):
+            return await asyncio.to_thread(
+                h.run_probe,
+                [sys.executable, '-c', 'from pathlib import Path; import time,sys; Path(sys.argv[1]).touch(); time.sleep(30)', str(started)],
+                timeout=40, text=True, capture_output=True, check=False,
+            )
+        control('nvme')
+        task = asyncio.create_task(job(owner))
+        for _ in range(300):
+            if started.exists():
+                break
+            await asyncio.sleep(.01)
+        assert started.exists()
+        assert owner._storage_jobs == 1
+        control('quiesce')
+        assert await asyncio.wait_for(task, timeout=6) is None
+        assert owner._storage_jobs == 0
+        assert original.read_bytes() == b'preserve-original'
     asyncio.run(exercise())
 
 
@@ -242,3 +272,58 @@ def test_failed_eject_rollback_restores_backup_timer_and_share(monkeypatch, tran
         transfer.main('eject')
     assert verify_calls['count'] == 2
     assert ('systemctl', 'start', 'livevault-backup.timer') in popen_calls
+
+
+def test_quiesce_timeout_restores_mode_without_touching_busy_mount(monkeypatch, transfer, tmp_path):
+    (tmp_path / 'storage-state.json').write_text(json.dumps({'mode': 'nvme'}))
+    monkeypatch.setattr(transfer, 'ROOT', tmp_path)
+    monkeypatch.setattr(transfer.os, 'geteuid', lambda: 0)
+    monkeypatch.setattr(transfer, 'open', lambda *a, **k: (tmp_path / 'lock').open('w'), raising=False)
+    monkeypatch.setattr(transfer, 'service_active', lambda _: False)
+    monkeypatch.setattr(transfer.os.path, 'ismount', lambda _: True)
+    def timeout():
+        transfer.publish('quiesce', token='new')
+        raise RuntimeError('still uploading')
+    monkeypatch.setattr(transfer, 'quiesce', timeout)
+    monkeypatch.setattr(transfer, 'switch', lambda _: pytest.fail('untouched busy mount must not be rebound'))
+    with pytest.raises(RuntimeError, match='still uploading'):
+        transfer.main('eject')
+    assert json.loads((tmp_path / 'storage-state.json').read_text())['mode'] == 'nvme'
+
+
+def test_interrupted_handoff_requires_acknowledgement(monkeypatch, transfer, tmp_path):
+    (tmp_path / 'storage-state.json').write_text(json.dumps({'mode': 'quiesce', 'token': 'current'}))
+    monkeypatch.setattr(transfer, 'ROOT', tmp_path)
+    monkeypatch.setattr(transfer, 'wait_storage_ready', lambda token: False)
+    monkeypatch.setattr(transfer, 'verify_container_view', lambda: pytest.fail('not acknowledged'))
+    with pytest.raises(RuntimeError, match='chiusura non confermata'):
+        transfer.recover_interrupted()
+    assert json.loads((tmp_path / 'storage-state.json').read_text())['mode'] == 'quiesce'
+
+
+def test_recovery_requires_matching_container_before_resuming(monkeypatch, transfer, tmp_path):
+    (tmp_path / 'storage-state.json').write_text(json.dumps({'mode': 'quiesce', 'token': 'current'}))
+    monkeypatch.setattr(transfer, 'ROOT', tmp_path)
+    monkeypatch.setattr(transfer, 'BUFFER', tmp_path)
+    monkeypatch.setattr(transfer, 'RECORDINGS', tmp_path)
+    monkeypatch.setattr(transfer.os.path, 'ismount', lambda _: True)
+    monkeypatch.setattr(transfer, 'wait_storage_ready', lambda token: token == 'current')
+    def mismatch():
+        raise RuntimeError('container mismatch')
+    monkeypatch.setattr(transfer, 'verify_container_view', mismatch)
+    with pytest.raises(RuntimeError, match='container mismatch'):
+        transfer.recover_interrupted()
+    assert json.loads((tmp_path / 'storage-state.json').read_text())['mode'] == 'quiesce'
+    monkeypatch.setattr(transfer, 'verify_container_view', lambda: None)
+    assert transfer.recover_interrupted() == 'buffer'
+
+
+def test_host_namespace_is_entered_before_any_storage_operation(monkeypatch, transfer):
+    calls = []
+    monkeypatch.setattr(transfer.os, 'readlink', lambda p: 'host' if p == '/proc/1/ns/mnt' else 'panel')
+    monkeypatch.setattr(transfer.os, 'open', lambda *args: 42)
+    monkeypatch.setattr(transfer.os, 'close', lambda fd: calls.append(('close', fd)))
+    monkeypatch.setattr(transfer.os, 'chdir', lambda p: calls.append(('chdir', p)))
+    monkeypatch.setattr(transfer.ctypes, 'CDLL', lambda *a, **k: SimpleNamespace(setns=lambda fd, flags: calls.append(('setns', fd, flags)) or 0))
+    transfer.enter_host_mount_namespace()
+    assert calls == [('setns', 42, 0), ('close', 42), ('chdir', '/')]

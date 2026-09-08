@@ -37,6 +37,48 @@ def run(*args):
     return subprocess.run(args, check=True, text=True, capture_output=True).stdout.strip()
 
 
+def enter_host_mount_namespace():
+    """sudo retains the panel's private mounts; storage must use PID 1's view."""
+    if os.readlink('/proc/self/ns/mnt') == os.readlink('/proc/1/ns/mnt'):
+        return
+    fd = os.open('/proc/1/ns/mnt', os.O_RDONLY | os.O_CLOEXEC)
+    try:
+        libc = ctypes.CDLL(None, use_errno=True)
+        if libc.setns(fd, 0) != 0:
+            code = ctypes.get_errno()
+            raise OSError(code, f'host setns: {os.strerror(code)}')
+    finally:
+        os.close(fd)
+    os.chdir('/')
+
+
+def recover_interrupted():
+    """Resume only an acknowledged, unambiguous mounted recording filesystem."""
+    state = json.loads((ROOT / 'storage-state.json').read_text())
+    token = state.get('token')
+    if not token or not wait_storage_ready(token):
+        raise RuntimeError('Handoff interrotto: chiusura non confermata; nessun mount modificato')
+    device = RECORDINGS.stat().st_dev
+    if os.path.ismount(BUFFER) and device == BUFFER.stat().st_dev:
+        mode = 'buffer'
+    elif os.path.ismount(NVME) and device == NVME.stat().st_dev:
+        source = run('findmnt', '-nro', 'SOURCE', '--mountpoint', str(NVME))
+        if run('blkid', '-s', 'UUID', '-o', 'value', source) != DATA_UUID:
+            raise RuntimeError('Recupero rifiutato: UUID NVMe errato')
+        if any(p.is_file() for p in BUFFER.rglob('*') if 'lost+found' not in p.parts):
+            raise RuntimeError('Recupero rifiutato: buffer pendente con mount NVMe; preservate entrambe le copie')
+        mode = 'nvme'
+    else:
+        raise RuntimeError('Recupero rifiutato: mount registrazioni non riconosciuto')
+    verify_container_view()
+    publish(mode, recovered=True)
+    if mode == 'nvme':
+        if not os.path.ismount('/share'):
+            run('mount', '/share')
+        run('systemctl', 'start', 'livevault-backup.timer')
+    return mode
+
+
 def publish(mode, **fields):
     if mode == 'nvme':
         (ROOT / '.storage-buffer-full').unlink(missing_ok=True)
@@ -507,6 +549,13 @@ def main(action):
             emergency_failover(sys.argv[2] if len(sys.argv) > 2 else 'NVMe fault')
             return
         previous = json.loads((ROOT / 'storage-state.json').read_text())['mode']
+        if action not in {'eject', 'attach', 'recover'}:
+            raise RuntimeError('Unknown action')
+        if previous == 'quiesce':
+            previous = recover_interrupted()
+        if action == 'recover':
+            print(f'Storage verificato e ripreso: {previous}.')
+            return
         backup_timer_was_active = service_active('livevault-backup.timer')
         share_was_mounted = os.path.ismount('/share')
         if action == 'eject' and previous == 'buffer' and not os.path.ismount(NVME):
@@ -519,6 +568,7 @@ def main(action):
             raise RuntimeError('Unknown action')
         if previous not in {'nvme', 'buffer'}:
             raise RuntimeError('Handoff incompleto: mantenuto in pausa per recupero amministratore')
+        mount_change_started = False
         try:
             if action == 'attach':
                 if not Path('/dev/disk/by-uuid', DATA_UUID).exists():
@@ -531,6 +581,7 @@ def main(action):
             quiesce()
             if action == 'eject':
                 run('systemctl', 'stop', 'livevault-backup.timer', 'livevault-backup.service')
+                mount_change_started = True
                 switch(BUFFER)
                 verify_container_view()
                 verify_containers_detached_from_device(NVME.stat().st_dev)
@@ -558,6 +609,7 @@ def main(action):
                 # Close all buffer writers before copying. Same stable paths and
                 # session IDs let the existing recovery/stitcher join the parts.
                 merge_buffer(BUFFER, NVME / 'livevault/recordings')
+                mount_change_started = True
                 switch(NVME / 'livevault/recordings')
                 verify_container_view()
                 publish('nvme')
@@ -569,6 +621,13 @@ def main(action):
                     set_service(GPT_HARNESS_SERVICE, 'restart')
                 print('NVMe operativo: buffer trasferito e verificato; registrazioni riprese, stitching in coda; GPT Harness riallineato al workspace NVMe.')
         except Exception:
+            if not mount_change_started:
+                # Quiesce timeout leaves existing jobs holding files. Rebinding
+                # the untouched mount here fails EBUSY and strands quiesce.
+                publish(previous)
+                if backup_timer_was_active:
+                    set_service('livevault-backup.timer', 'start')
+                raise
             # Restore the complete pre-action service/storage state whenever the
             # expected medium is still physically present. A failed eject must
             # not silently leave backup disabled or /share detached.
@@ -599,6 +658,9 @@ def main(action):
 
 if __name__ == '__main__':
     try:
+        if os.geteuid() != 0:
+            raise RuntimeError('Root required')
+        enter_host_mount_namespace()
         main(sys.argv[1])
     except Exception as exc:
         print(str(exc), file=sys.stderr)
