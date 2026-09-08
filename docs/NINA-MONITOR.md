@@ -1,6 +1,6 @@
 # OpenAstro NINA Monitor
 
-The NINA view is a read-only remote session monitor hosted by OpenAstro Control on the modified ASIAIR node.
+The NINA Monitor is a **standalone read-only Coolify application** running on the modified ASIAIR/OpenAstro node. It is deliberately isolated from LiveVault, OpenAstro Control Center, Media Center and host-control helpers.
 
 ## Architecture
 
@@ -9,18 +9,18 @@ N.I.N.A. + QualitySessionMeter (Windows)
         |
         | trusted LAN / Tailscale, tokenized HTTP
         v
-OpenAstro Control (ASIAIR, eMMC runtime)
+openastro-nina-monitor (dedicated Coolify container)
         |
-        | existing authenticated HTTPS panel
+        | HTTPS + its own login/session
         v
 phone / tablet / remote browser
 ```
 
-The browser never connects directly to the N.I.N.A. PC. OpenAstro Control is the only remote-facing frontend. The feature does not depend on the SERVER NVMe or removable Media USB; configuration and runtime remain on internal eMMC with the rest of Control Center.
+The browser never connects directly to the N.I.N.A. PC and never receives the QSM token. The monitor container has no SERVER NVMe mount, no Media USB mount and no Docker socket. Preview/session state is memory-only.
 
 ## QSM side
 
-Install a QualitySessionMeter build containing `QualitySessionHttpBridge` and start N.I.N.A. with these environment variables:
+Install QualitySessionMeter 1.1+ and start N.I.N.A. with:
 
 ```text
 QSM_REMOTE_TOKEN=<long-random-secret>
@@ -28,7 +28,9 @@ QSM_REMOTE_PORT=18973
 QSM_REMOTE_BIND=*
 ```
 
-`QSM_REMOTE_TOKEN` is mandatory. If it is absent the QSM HTTP bridge does not start. The bridge exposes only read operations:
+`QSM_REMOTE_TOKEN` is mandatory. If it is absent, the remote QSM HTTP bridge does not start.
+
+QSM exposes only read operations:
 
 ```text
 GET /healthz
@@ -36,39 +38,54 @@ GET /api/v1/snapshot
 GET /api/v1/preview.jpg
 ```
 
-The `/api/v1/*` routes require `X-QSM-Token` or `Authorization: Bearer ...`. There are no write/control routes. Keep Windows Firewall limited to the trusted LAN/Tailscale path used by the OpenAstro node.
+The `/api/v1/*` routes require `X-QSM-Token` or `Authorization: Bearer ...`. There are no remote write/control routes. Keep port `18973` reachable only from the trusted LAN/Tailscale path used by the ASIAIR/OpenAstro node; do not forward it publicly.
 
-## OpenAstro side
+## Coolify side
 
-Create `/etc/openastro-nina-monitor.env`:
-
-```bash
-OPENASTRO_NINA_QSM_URL=http://<NINA-PC-LAN-OR-TAILSCALE-IP>:18973
-OPENASTRO_NINA_QSM_TOKEN=<same-long-random-secret>
-```
-
-Protect it:
-
-```bash
-sudo chown root:astro /etc/openastro-nina-monitor.env
-sudo chmod 0640 /etc/openastro-nina-monitor.env
-sudo systemctl daemon-reload
-sudo systemctl restart openastro-control
-```
-
-OpenAstro exposes authenticated same-origin endpoints to its frontend:
+Create a **new Coolify Application**, separate from LiveVault:
 
 ```text
-GET /api/nina/state
-GET /api/nina/diagnostics
-GET /api/nina/preview.jpg
+Repository: astropuzzo/LiveVault-Test
+Branch: main
+Base directory: /nina-monitor
+Build pack: Dockerfile
+Dockerfile: /Dockerfile
+Container port: 9091
+Health check: /healthz
+Auto Deploy: ON
+Watch Paths: nina-monitor/**
 ```
 
-The QSM token is never returned to the browser.
+The application should be named `openastro-nina-monitor` and should have its own domain/HTTPS route, logs, resource limits and deployment history.
 
-## Current UI slice
+Required application secrets/environment variables:
 
-The `NINA` section currently shows:
+```text
+OPENASTRO_NINA_MONITOR_HOST=0.0.0.0
+OPENASTRO_NINA_MONITOR_PORT=9091
+OPENASTRO_NINA_MONITOR_PASSWORD_HASH=<PBKDF2 hash>
+OPENASTRO_NINA_MONITOR_SECRET=<random session signing secret>
+OPENASTRO_NINA_MONITOR_COOKIE_SECURE=1
+OPENASTRO_NINA_QSM_URL=http://<NINA-PC-LAN-OR-TAILSCALE-IP>:18973
+OPENASTRO_NINA_QSM_TOKEN=<same QSM token configured on Windows>
+```
+
+See [`../nina-monitor/COOLIFY.md`](../nina-monitor/COOLIFY.md) for the exact secret-generation procedure and deployment checks.
+
+## Auto-update behavior
+
+This repository is a monorepo. Coolify Auto Deploy must use module-specific Watch Paths:
+
+```text
+LiveVault       -> app/**, requirements.txt, Dockerfile, .dockerignore
+NINA Monitor    -> nina-monitor/**
+```
+
+Therefore a commit that changes only `nina-monitor/**` updates only NINA Monitor. It must not restart LiveVault or any host service. Feature changes are validated by GitHub CI before merging to `main`; the merge then becomes the production deployment trigger.
+
+## Current UI
+
+The NINA Monitor currently shows:
 
 - QSM connectivity and ASIAIR-to-PC latency;
 - session active/idle state;
@@ -87,21 +104,34 @@ The `NINA` section currently shows:
 - recent warning/reject/error list;
 - latest LIGHT preview through an authenticated same-origin image route.
 
-The state poll runs every second only while the NINA page is active.
+The browser polls the monitor once per second while visible.
 
 ## Preview policy
 
-The browser never receives a FITS path or the QSM secret. QSM generates a display-only JPEG from the N.I.N.A. `ImageSaved` bitmap:
+The browser never receives a FITS/XISF path or QSM secret. QSM generates a display-only JPEG from N.I.N.A.'s `ImageSaved` bitmap:
 
 - maximum width 1280 px;
 - JPEG quality 82;
 - encoded in RAM;
-- FITS is not re-read;
+- FITS/XISF is not re-read;
 - no preview file is persisted on ASIAIR/eMMC/NVMe;
-- OpenAstro fetches the JPEG only when the QSM frame index advances.
+- the browser requests the preview only when the QSM frame index advances.
 
-This avoids high remote bandwidth and keeps preview traffic independent from LiveVault storage.
+This keeps remote traffic small and makes the feature independent from LiveVault storage.
+
+## Isolation contract
+
+Redeploying, restarting or crashing `openastro-nina-monitor` must not affect:
+
+- LiveVault;
+- OpenAstro Control Center;
+- Media Center;
+- NVMe/storage failover;
+- Docker/Coolify itself;
+- recording processes.
+
+The container runs as an unprivileged user, with a read-only filesystem in the tested compose model, all Linux capabilities dropped, and no host mounts.
 
 ## Safety boundary
 
-The monitor remains read-only. Remote sequence control, threshold changes, file mutation and other write actions are intentionally outside this first release until the monitoring path has been field-tested.
+The first release remains read-only. Remote sequence control, threshold changes, file mutation and other write actions are intentionally outside this release until monitoring has been field-tested on real sessions.
