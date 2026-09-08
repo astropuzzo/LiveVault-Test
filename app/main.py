@@ -34,6 +34,7 @@ from .db import (
     init_db,
 )
 from .file_cleanup import cleanup_empty_parents, cleanup_orphan_videos, safe_unlink
+from .media_validation import build_validation_receipt
 from .http_compression import TextCompressionMiddleware
 from .recorder import (
     LIVE_PREVIEW_MAX_AGE_SECONDS,
@@ -47,7 +48,7 @@ from .source_providers import audit_inputs, normalize_source, probe, provider_ca
 from .statistics import build_activity_statistics
 from .storage import disk_state
 from .uploaders import UploadError, create_gofile_folder, move_gofile_contents, test_provider
-from .utils import generate_thumbnail, human_bytes, sha256_file, utcnow, verify_media
+from .utils import human_bytes, sha256_file, utcnow, verify_media
 from .workers import manager
 
 BASE = Path(__file__).parent
@@ -2068,6 +2069,7 @@ def _recording_json(r: Recording) -> dict:
         "has_video": r.has_video, "has_audio": r.has_audio,
         "video_codec": r.video_codec, "audio_codec": r.audio_codec,
         "last_error": r.last_error, "local_available": local_available, "thumbnail_available": thumb_available,
+        "thumbnail_status": r.thumbnail_status, "thumbnail_error": r.thumbnail_error,
         "thumbnail_url": thumbnail_url,
         "view_url": f"/api/recordings/{r.id}/view" if local_available else "",
     }
@@ -2358,11 +2360,9 @@ async def convert_mp4(recording_id: int, request: Request):
         raise HTTPException(500, f"Conversione MP4 fallita: {exc}") from exc
     integrity = await asyncio.to_thread(verify_media, new_path, runtime().integrity_mode)
     digest = await asyncio.to_thread(sha256_file, new_path)
+    receipt = build_validation_receipt(new_path, digest, runtime().integrity_mode, integrity) if integrity.ok else ""
     thumb_path = ""
-    if runtime().generate_thumbnails and integrity.ok:
-        candidate = settings.data_dir / "thumbnails" / f"{digest[:24]}-sheet-v1.jpg"
-        if await asyncio.to_thread(generate_thumbnail, new_path, candidate, integrity.duration):
-            thumb_path = str(candidate)
+    thumbnail_status = "pending" if runtime().generate_thumbnails and integrity.ok else "disabled"
     with db_session() as db:
         rec = db.get(Recording, recording_id)
         if rec:
@@ -2372,6 +2372,7 @@ async def convert_mp4(recording_id: int, request: Request):
             rec.container_format = "mp4"
             rec.size_bytes = new_path.stat().st_size
             rec.sha256 = digest
+            rec.validation_receipt = receipt
             rec.duration_seconds = integrity.duration
             rec.has_video = integrity.has_video
             rec.has_audio = integrity.has_audio
@@ -2380,8 +2381,11 @@ async def convert_mp4(recording_id: int, request: Request):
             rec.integrity_status = "passed" if integrity.ok else "failed"
             rec.integrity_error = integrity.error
             rec.integrity_checked_at = utcnow()
-            if thumb_path:
-                rec.thumbnail_path = thumb_path
+            rec.thumbnail_path = thumb_path
+            rec.thumbnail_status = thumbnail_status
+            rec.thumbnail_attempts = 0
+            rec.thumbnail_error = ""
+            rec.thumbnail_next_attempt_at = None
             # The bytes changed, so the new MP4 always needs a fresh upload verification.
             rec.upload_status = "pending" if integrity.ok else "integrity_failed"
             rec.upload_attempts = 0
@@ -2409,7 +2413,7 @@ def _remove_local_copy(recording_id: int, *, force: bool = False, delete_thumbna
         previous_status = rec.upload_status
         local_path = Path(rec.local_path)
         thumbnail_path = Path(rec.thumbnail_path) if rec.thumbnail_path else None
-        if previous_status in {"uploading", "converting", "deleting"}:
+        if previous_status in {"uploading", "converting", "deleting"} or rec.thumbnail_status == "processing":
             raise HTTPException(409, "File occupato: attendi la fine dell'operazione in corso")
         if previous_status != "uploaded" and not force:
             raise HTTPException(400, "File non caricato: usa la cancellazione forzata per eliminarlo definitivamente")
@@ -2468,7 +2472,7 @@ def delete_recording(recording_id: int, request: Request, delete_file: bool = Tr
         rec = db.get(Recording, recording_id)
         if not rec:
             raise HTTPException(404, "Registrazione non trovata")
-        if rec.upload_status in {"uploading", "converting", "deleting"}:
+        if rec.upload_status in {"uploading", "converting", "deleting"} or rec.thumbnail_status == "processing":
             raise HTTPException(409, "File occupato: attendi la fine dell'operazione in corso")
         thumbnail_path = Path(rec.thumbnail_path) if rec.thumbnail_path else None
 

@@ -316,14 +316,14 @@ def generate_thumbnail(path: Path, output: Path, duration: float | None = None) 
                 "-frames:v", "1", "-update", "1", "-pix_fmt", "yuvj420p",
                 "-threads:v", "1", "-q:v", "4", str(candidate),
             ])
-            result = subprocess.run(
+            result = storage_handoff.run_probe(
                 command, capture_output=True, text=True, timeout=120, check=False,
             )
             if result.returncode == 0 and candidate.exists() and candidate.stat().st_size > 0:
                 candidate.replace(output)
                 return True
 
-        result = subprocess.run(
+        result = storage_handoff.run_probe(
             [
                 "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
                 "-filter_threads", "1", "-threads", "1",
@@ -341,6 +341,9 @@ def generate_thumbnail(path: Path, output: Path, duration: float | None = None) 
         if result.returncode == 0 and candidate.exists() and candidate.stat().st_size > 0:
             candidate.replace(output)
             return True
+    except storage_handoff.StorageQuiesced:
+        candidate.unlink(missing_ok=True)
+        raise
     except Exception:
         pass
     candidate.unlink(missing_ok=True)

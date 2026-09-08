@@ -218,6 +218,7 @@ def _apply_split_metadata(row: Any, info: dict[str, Any], started_at: Any, uploa
     row.duration_seconds = duration
     row.size_bytes = info["path"].stat().st_size
     row.sha256 = info["sha256"]
+    row.validation_receipt = info["validation_receipt"]
     row.upload_status = "pending"
     row.upload_provider = ""
     row.remote_id = ""
@@ -228,7 +229,11 @@ def _apply_split_metadata(row: Any, info: dict[str, Any], started_at: Any, uploa
     row.upload_attempts = 0
     row.last_error = ""
     row.local_deleted = False
-    row.thumbnail_path = info["thumbnail"]
+    row.thumbnail_path = ""
+    row.thumbnail_status = "pending" if runtime().generate_thumbnails else "disabled"
+    row.thumbnail_attempts = 0
+    row.thumbnail_error = ""
+    row.thumbnail_next_attempt_at = None
     row.integrity_status = "passed"
     row.integrity_error = ""
     row.integrity_checked_at = _legacy.utcnow()
@@ -300,17 +305,13 @@ async def _split_oversized_recording(manager: Any, recording: Any) -> bool:
             if not integrity.ok:
                 raise RuntimeError(f"Parte {index} non valida: {integrity.error}")
             digest = await asyncio.to_thread(_legacy.sha256_file, chunk)
-            thumbnail = ""
-            if runtime().generate_thumbnails:
-                candidate = _legacy.settings.data_dir / "thumbnails" / f"{digest[:24]}-sheet-v2.jpg"
-                if await asyncio.to_thread(_legacy.generate_thumbnail, chunk, candidate, integrity.duration):
-                    thumbnail = str(candidate)
-                    generated_thumbnails.append(candidate)
+            receipt = _legacy.build_validation_receipt(chunk, digest, runtime().integrity_mode, integrity)
             verified.append({
                 "staging": chunk,
                 "integrity": integrity,
                 "sha256": digest,
-                "thumbnail": thumbnail,
+                "validation_receipt": receipt,
+                "thumbnail": "",
             })
             manager._set_processing(
                 stage="Verifica parti",

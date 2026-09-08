@@ -372,12 +372,7 @@ class WorkerManager(_legacy.WorkerManager):
         receipt = _legacy.build_validation_receipt(output, digest, runtime().integrity_mode, integrity)
 
         thumb_path = ""
-        if runtime().generate_thumbnails:
-            self._set_processing(stage="Anteprima", percent=95.0)
-            self.wake()
-            candidate = _legacy.settings.data_dir / "thumbnails" / f"{digest[:24]}-sheet-v2.jpg"
-            if await asyncio.to_thread(_legacy.generate_thumbnail, output, candidate, integrity.duration):
-                thumb_path = str(candidate)
+        thumbnail_status = "pending" if runtime().generate_thumbnails else "disabled"
 
         self._set_processing(stage="Indicizzazione", percent=98.0)
         self.wake()
@@ -399,6 +394,7 @@ class WorkerManager(_legacy.WorkerManager):
                     validation_receipt=receipt,
                     upload_status="pending",
                     thumbnail_path=thumb_path,
+                    thumbnail_status=thumbnail_status,
                     integrity_status="passed",
                     integrity_error="",
                     integrity_checked_at=_legacy.utcnow(),

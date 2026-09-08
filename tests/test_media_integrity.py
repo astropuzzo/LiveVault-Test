@@ -22,7 +22,7 @@ def test_thumbnail_storyboard_uses_nine_fast_seeks(tmp_path: Path, monkeypatch):
         Path(command[-1]).write_bytes(b"new-storyboard")
         return SimpleNamespace(returncode=0, stdout="", stderr="")
 
-    monkeypatch.setattr("app.utils.subprocess.run", fake_run)
+    monkeypatch.setattr("app.utils.storage_handoff.run_probe", fake_run)
     assert generate_thumbnail(media, thumb, 100.0)
 
     command = calls[0]

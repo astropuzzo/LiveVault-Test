@@ -9,7 +9,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 
 from .config import settings
 from .db import CloudDay, LiveSession, Profile, Recording, RecordingFragment, Source, db_session
@@ -176,9 +176,11 @@ class WorkerManager:
                     await asyncio.sleep(1)
                     continue
                 self._recover_interrupted_uploads()
+                self._recover_interrupted_thumbnails()
                 self.tasks = [
                     asyncio.create_task(self._poll_loop(), name="source-poller"),
                     asyncio.create_task(self._upload_loop(), name="uploader"),
+                    asyncio.create_task(self._thumbnail_loop(), name="thumbnail-worker"),
                     asyncio.create_task(self._cleanup_loop(), name="storage-guard"),
                 ]
                 # Recording must resume immediately after a reboot. Multi-GB
@@ -280,7 +282,7 @@ class WorkerManager:
             "leader": self._leader_file is not None,
             "mode": "leader" if self._leader_file is not None else "standby",
             "active_recorders": len(self.active),
-            "thumbnail_backfill": "done" if self.backfill_task and self.backfill_task.done() else "running" if self.backfill_task else "idle",
+            "thumbnail_queue": "running" if any(task.get_name() == "thumbnail-worker" and not task.done() for task in self.tasks) else "idle",
             "recovery": "running" if self.recovery_task and not self.recovery_task.done() else "idle",
         }
 
@@ -292,6 +294,16 @@ class WorkerManager:
             for rec in rows:
                 rec.upload_status = "pending" if rec.integrity_status == "passed" else "integrity_failed"
                 rec.last_error = "Elaborazione interrotta da un riavvio; rimessa in coda"
+
+    def _recover_interrupted_thumbnails(self) -> None:
+        with db_session() as db:
+            rows = list(db.scalars(
+                select(Recording).where(Recording.thumbnail_status == "processing")
+            ).all())
+            for rec in rows:
+                rec.thumbnail_status = "pending"
+                rec.thumbnail_next_attempt_at = None
+                rec.thumbnail_error = "Anteprima interrotta da un riavvio; rimessa in coda"
 
     async def _sleep_or_wake(self, seconds: float) -> None:
         try:
@@ -495,7 +507,6 @@ class WorkerManager:
         async with self._recovery_lock:
             await self._finalize_closed_stitch_sessions()
         await self._repair_local_mp4s()
-        await self._backfill_thumbnails()
         await self._finalize_closed_pixeldrain_days()
 
     async def _repair_local_mp4s(self) -> None:
@@ -559,6 +570,10 @@ class WorkerManager:
                     current.last_error = "" if integrity.ok else f"Integrità fallita: {integrity.error}"[-1600:]
                     if integrity.ok:
                         current.thumbnail_path = ""
+                        current.thumbnail_status = "pending" if runtime().generate_thumbnails else "disabled"
+                        current.thumbnail_attempts = 0
+                        current.thumbnail_error = ""
+                        current.thumbnail_next_attempt_at = None
                 if integrity.ok:
                     self._retry_after.pop(rec.id, None)
                     self.last_errors.pop(f"mp4-repair:{rec.id}", None)
@@ -579,42 +594,119 @@ class WorkerManager:
                         current.integrity_error = detail
                         current.last_error = detail
 
-    async def _backfill_thumbnails(self) -> None:
-        """Generate persistent previews for local recordings created by older releases."""
+    def _next_thumbnail_job(self) -> Recording | None:
+        if not runtime().generate_thumbnails or not storage_handoff.media_online():
+            return None
+        now = utcnow()
+        with db_session() as db:
+            rec = db.scalar(
+                select(Recording)
+                .where(
+                    Recording.local_deleted.is_(False),
+                    Recording.integrity_status == "passed",
+                    Recording.thumbnail_status.in_(["pending", "failed"]),
+                    or_(Recording.thumbnail_next_attempt_at.is_(None), Recording.thumbnail_next_attempt_at <= now),
+                )
+                .order_by(Recording.finalized_at.asc(), Recording.id.asc())
+                .limit(1)
+            )
+            if rec is None:
+                return None
+            rec.thumbnail_status = "processing"
+            rec.thumbnail_attempts = int(rec.thumbnail_attempts or 0) + 1
+            rec.thumbnail_error = ""
+            db.flush()
+            db.expunge(rec)
+            return rec
+
+    def _delete_uploaded_local_if_ready(self, recording_id: int, path: Path) -> bool:
+        cfg = runtime()
+        if not cfg.delete_after_upload:
+            return False
+        with db_session() as db:
+            current = db.get(Recording, recording_id)
+            if not current or current.local_deleted or current.upload_status != "uploaded":
+                return False
+            if current.thumbnail_status == "processing":
+                return False
+            if cfg.generate_thumbnails and current.thumbnail_status not in {"ready", "disabled"}:
+                return False
         try:
-            if not runtime().generate_thumbnails:
-                return
+            path.unlink(missing_ok=True)
+        except OSError as exc:
+            self.last_errors[f"delete-after-upload:{recording_id}"] = str(exc)[-900:]
+            return False
+        with db_session() as db:
+            current = db.get(Recording, recording_id)
+            if current and current.upload_status == "uploaded":
+                current.local_deleted = True
+        self.last_errors.pop(f"delete-after-upload:{recording_id}", None)
+        return True
+
+    @storage_handoff.media_job
+    async def _process_thumbnail_job(self, rec: Recording) -> None:
+        path = Path(rec.local_path)
+        try:
+            if not path.is_file():
+                raise FileNotFoundError("File locale non disponibile per l'anteprima")
+            digest = rec.sha256 or await asyncio.to_thread(sha256_file, path)
+            candidate = settings.data_dir / "thumbnails" / f"{digest[:24]}-sheet-v2.jpg"
+            ready = candidate.is_file() and candidate.stat().st_size > 0
+            if not ready:
+                ready = await asyncio.to_thread(generate_thumbnail, path, candidate, rec.duration_seconds)
+            if not ready:
+                raise RuntimeError("Generazione storyboard non riuscita")
             with db_session() as db:
-                rows = list(db.scalars(
-                    select(Recording)
-                    .where(Recording.local_deleted.is_(False))
-                    .order_by(Recording.finalized_at.desc())
-                ).all())
-                for rec in rows:
-                    db.expunge(rec)
-            for rec in rows:
-                if self._stopping or not storage_handoff.media_online() or not runtime().generate_thumbnails:
-                    return
-                path = Path(rec.local_path)
-                if not path.exists() or not path.is_file():
-                    continue
-                digest = rec.sha256 or await asyncio.to_thread(sha256_file, path)
-                candidate = settings.data_dir / "thumbnails" / f"{digest[:24]}-sheet-v2.jpg"
-                if rec.thumbnail_path == str(candidate) and candidate.is_file():
-                    continue
-                ok = await asyncio.to_thread(generate_thumbnail, path, candidate, rec.duration_seconds)
-                if ok:
-                    with db_session() as db:
-                        current = db.get(Recording, rec.id)
-                        if current:
-                            current.thumbnail_path = str(candidate)
-                            if not current.sha256:
-                                current.sha256 = digest
-                await asyncio.sleep(0.03)
-        except asyncio.CancelledError:
+                current = db.get(Recording, rec.id)
+                if current:
+                    current.thumbnail_path = str(candidate)
+                    current.thumbnail_status = "ready"
+                    current.thumbnail_error = ""
+                    current.thumbnail_next_attempt_at = None
+                    if not current.sha256:
+                        current.sha256 = digest
+            self.last_errors.pop(f"thumbnail:{rec.id}", None)
+            self._delete_uploaded_local_if_ready(rec.id, path)
+        except storage_handoff.StorageQuiesced:
+            with db_session() as db:
+                current = db.get(Recording, rec.id)
+                if current and current.thumbnail_status == "processing":
+                    current.thumbnail_status = "pending"
+                    current.thumbnail_attempts = max(0, int(current.thumbnail_attempts or 0) - 1)
+                    current.thumbnail_next_attempt_at = None
             raise
         except Exception as exc:
-            self.last_errors["thumbnail-backfill"] = str(exc)[-1000:]
+            delay = min(3600, 30 * (2 ** min(max(int(rec.thumbnail_attempts or 1) - 1, 0), 6)))
+            with db_session() as db:
+                current = db.get(Recording, rec.id)
+                if current:
+                    current.thumbnail_status = "failed"
+                    current.thumbnail_error = str(exc)[-1000:]
+                    current.thumbnail_next_attempt_at = utcnow() + timedelta(seconds=delay)
+            self.last_errors[f"thumbnail:{rec.id}"] = str(exc)[-900:]
+            if not runtime().generate_thumbnails:
+                self._delete_uploaded_local_if_ready(rec.id, path)
+
+    async def _thumbnail_loop(self) -> None:
+        while not self._stopping:
+            try:
+                if not storage_handoff.media_online() or not runtime().generate_thumbnails:
+                    await self._sleep_or_wake(1.0)
+                    continue
+                rec = self._next_thumbnail_job()
+                if rec is None:
+                    await self._sleep_or_wake(2.0)
+                    continue
+                await self._process_thumbnail_job(rec)
+                self.wake()
+                await asyncio.sleep(0)
+            except storage_handoff.StorageQuiesced:
+                await asyncio.sleep(0.25)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                self.last_errors["thumbnail-worker"] = str(exc)[-1000:]
+                await asyncio.sleep(2)
 
     @storage_handoff.media_job
     async def _run_recovery_pass(self) -> None:
@@ -1061,10 +1153,7 @@ class WorkerManager:
         digest = await asyncio.to_thread(sha256_file, output)
         receipt = build_validation_receipt(output, digest, runtime().integrity_mode, integrity)
         thumb_path = ""
-        if runtime().generate_thumbnails:
-            candidate = settings.data_dir / "thumbnails" / f"{digest[:24]}-sheet-v2.jpg"
-            if await asyncio.to_thread(generate_thumbnail, output, candidate, integrity.duration):
-                thumb_path = str(candidate)
+        thumbnail_status = "pending" if runtime().generate_thumbnails else "disabled"
         finalized = max(item.finalized_at for item in good)
         with db_session() as db:
             existing = db.scalar(select(Recording).where(Recording.local_path == str(output)))
@@ -1083,6 +1172,7 @@ class WorkerManager:
                     validation_receipt=receipt,
                     upload_status="pending",
                     thumbnail_path=thumb_path,
+                    thumbnail_status=thumbnail_status,
                     integrity_status="passed",
                     integrity_error="",
                     integrity_checked_at=utcnow(),
@@ -1134,11 +1224,7 @@ class WorkerManager:
         else:
             start = finalized
         thumb_path = ""
-        if cfg.generate_thumbnails and integrity and integrity.ok:
-            candidate = settings.data_dir / "thumbnails" / f"{digest[:24]}-sheet-v2.jpg"
-            ok = await asyncio.to_thread(generate_thumbnail, path, candidate, integrity.duration)
-            if ok:
-                thumb_path = str(candidate)
+        thumbnail_status = "pending" if cfg.generate_thumbnails and integrity and integrity.ok else "disabled"
         with db_session() as db:
             if db.scalar(select(Recording).where(Recording.local_path == str(path))):
                 return True
@@ -1156,6 +1242,7 @@ class WorkerManager:
                 validation_receipt=receipt,
                 upload_status="pending" if integrity and integrity.ok else "integrity_failed",
                 thumbnail_path=thumb_path,
+                thumbnail_status=thumbnail_status,
                 integrity_status="passed" if integrity and integrity.ok else "failed",
                 integrity_error=normalization_error or (integrity.error if integrity else "Finalizzazione MP4 fallita"),
                 integrity_checked_at=utcnow(),
@@ -1854,12 +1941,7 @@ class WorkerManager:
                                     day.file_count = int(day.file_count or 0) + 1
                                     day.updated_at = utcnow()
                     self._retry_after.pop(rec.id, None)
-                    if runtime().delete_after_upload:
-                        path.unlink(missing_ok=True)
-                        with db_session() as db:
-                            current = db.get(Recording, rec.id)
-                            if current:
-                                current.local_deleted = True
+                    self._delete_uploaded_local_if_ready(rec.id, path)
                 else:
                     delay = min(3600, max(30, cfg.upload_retry_seconds) * (2 ** min(max(rec.upload_attempts - 1, 0), 4)))
                     self._retry_after[rec.id] = time.monotonic() + delay

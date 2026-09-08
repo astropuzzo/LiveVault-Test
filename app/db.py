@@ -129,6 +129,10 @@ class Recording(Base):
     last_error: Mapped[str] = mapped_column(Text, default="")
     local_deleted: Mapped[bool] = mapped_column(Boolean, default=False)
     thumbnail_path: Mapped[str] = mapped_column(Text, default="")
+    thumbnail_status: Mapped[str] = mapped_column(String(30), default="pending", index=True)
+    thumbnail_attempts: Mapped[int] = mapped_column(Integer, default=0)
+    thumbnail_error: Mapped[str] = mapped_column(Text, default="")
+    thumbnail_next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     integrity_status: Mapped[str] = mapped_column(String(30), default="pending", index=True)
     integrity_error: Mapped[str] = mapped_column(Text, default="")
     integrity_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -217,6 +221,10 @@ def _migrate_recordings() -> None:
     existing = _columns("recordings")
     additions = {
         "thumbnail_path": "TEXT NOT NULL DEFAULT ''",
+        "thumbnail_status": "VARCHAR(30) NOT NULL DEFAULT 'pending'",
+        "thumbnail_attempts": "INTEGER NOT NULL DEFAULT 0",
+        "thumbnail_error": "TEXT NOT NULL DEFAULT ''",
+        "thumbnail_next_attempt_at": "DATETIME",
         "validation_receipt": "TEXT NOT NULL DEFAULT ''",
         "integrity_status": "VARCHAR(30) NOT NULL DEFAULT 'passed'",
         "integrity_error": "TEXT NOT NULL DEFAULT ''",
@@ -237,6 +245,8 @@ def _migrate_recordings() -> None:
             if name not in existing:
                 conn.execute(text(f"ALTER TABLE recordings ADD COLUMN {name} {ddl}"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS ix_recordings_integrity_status ON recordings (integrity_status)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_recordings_thumbnail_status ON recordings (thumbnail_status)"))
+        conn.execute(text("UPDATE recordings SET thumbnail_status = 'ready' WHERE thumbnail_path <> ''"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS ix_recordings_upload_priority ON recordings (upload_priority)"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS ix_recordings_cloud_day_key ON recordings (cloud_day_key)"))
         # Older releases mixed local wall-clock values with UTC in started_at.

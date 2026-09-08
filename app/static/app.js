@@ -944,6 +944,13 @@ function renderRecordings() {
     const thumbnail = recording.thumbnail_available && safeUrl(recording.thumbnail_url)
       ? `<img src="${esc(safeUrl(recording.thumbnail_url))}" loading="lazy" alt="Miniatura ${esc(recording.filename)}">` : '';
     const error = recording.integrity_error || recording.last_error || '';
+    const thumbnailState = !thumbnail && recording.thumbnail_status === 'processing'
+      ? '<span class="chip">Anteprima in corso</span>'
+      : !thumbnail && recording.thumbnail_status === 'failed'
+        ? '<span class="chip">Anteprima da riprovare</span>'
+        : !thumbnail && recording.thumbnail_status === 'pending'
+          ? '<span class="chip">Anteprima in coda</span>'
+          : '';
     const recordingSource = sources.find(source => source.id === recording.source_id);
     const creatorName = recordingSource?.display_name || recording.source_name;
     const thumbControl = remote
@@ -953,7 +960,7 @@ function renderRecordings() {
       ${thumbControl}
       <div class="rec-body">
         <div class="rec-title">${creatorLinkMarkup(recordingSource?.id || 0, creatorName)}</div><div class="rec-file">${esc(recording.filename)}</div><div class="rec-date">${esc(dateText(recording.started_at))} · ${esc(recording.session_id)}</div>
-        <div class="rec-meta"><span class="chip">${esc(recording.size_human)}</span><span class="chip">${esc(duration(recording.duration_seconds))}</span><span class="chip">${esc((recording.container_format || '').toUpperCase())}</span>${recordingStreamMarkup(recording)}<span class="integrity ${esc(recording.integrity_status)}">${recording.integrity_status === 'passed' ? '✓ Integro' : recording.integrity_status === 'failed' || recording.integrity_status === 'integrity_failed' ? '✕ Fallita' : `… ${esc(recording.integrity_status)}`}</span><span class="upload-status ${esc(recording.upload_status)}">${esc(uploadLabel(recording.upload_status))}${recording.upload_provider ? ` · ${esc(recording.upload_provider)}` : ''}</span></div>
+        <div class="rec-meta"><span class="chip">${esc(recording.size_human)}</span><span class="chip">${esc(duration(recording.duration_seconds))}</span><span class="chip">${esc((recording.container_format || '').toUpperCase())}</span>${recordingStreamMarkup(recording)}${thumbnailState}<span class="integrity ${esc(recording.integrity_status)}">${recording.integrity_status === 'passed' ? '✓ Integro' : recording.integrity_status === 'failed' || recording.integrity_status === 'integrity_failed' ? '✕ Fallita' : `… ${esc(recording.integrity_status)}`}</span><span class="upload-status ${esc(recording.upload_status)}">${esc(uploadLabel(recording.upload_status))}${recording.upload_provider ? ` · ${esc(recording.upload_provider)}` : ''}</span></div>
         ${error ? `<div class="rec-error" title="${esc(error)}">${esc(error)}</div>` : ''}
         <div class="rec-actions rec-actions-primary">
           ${remote ? `<a class="btn accent" href="${esc(remote)}" target="_blank" rel="noopener">Apri ${esc(recording.upload_provider || 'cloud')} ↗</a>` : recording.local_available ? `<button class="btn accent" data-rec-action="preview" data-id="${recording.id}" type="button">▶ Riproduci</button>` : ''}
