@@ -38,9 +38,12 @@ def test_pwa_shell_contains_new_layout_css():
     assert '/magic.css' in SW
 
 
-def test_nina_launcher_is_separate_and_has_local_and_public_entrypoints():
+def test_nina_monitor_is_embedded_with_separate_runtime_and_local_public_entrypoints():
     assert 'data-view-panel="nina"' in HTML
+    assert 'id="ninaMonitorFrame"' in HTML
+    assert 'src="https://openastro.tailf2871c.ts.net:9091/"' in HTML
     assert 'https://openastro.tailf2871c.ts.net:9091/' in HTML
     assert 'http://192.168.1.27:9091/' in HTML
-    assert 'Coolify isolato' in HTML
-    assert 'Il token QSM resta sul server' in HTML
+    assert 'Container Coolify indipendente' in HTML
+    assert 'Il browser non contatta direttamente N.I.N.A.' in HTML
+    assert 'il token QSM resta nel container NINA Monitor' in HTML
