@@ -117,6 +117,7 @@ class Recording(Base):
     duration_seconds: Mapped[float | None] = mapped_column(Float, nullable=True)
     size_bytes: Mapped[int] = mapped_column(Integer, default=0)
     sha256: Mapped[str] = mapped_column(String(64), default="")
+    validation_receipt: Mapped[str] = mapped_column(Text, default="")
     upload_status: Mapped[str] = mapped_column(String(30), default="pending", index=True)
     upload_provider: Mapped[str] = mapped_column(String(30), default="")
     remote_id: Mapped[str] = mapped_column(String(255), default="")
@@ -216,6 +217,7 @@ def _migrate_recordings() -> None:
     existing = _columns("recordings")
     additions = {
         "thumbnail_path": "TEXT NOT NULL DEFAULT ''",
+        "validation_receipt": "TEXT NOT NULL DEFAULT ''",
         "integrity_status": "VARCHAR(30) NOT NULL DEFAULT 'passed'",
         "integrity_error": "TEXT NOT NULL DEFAULT ''",
         "integrity_checked_at": "DATETIME",

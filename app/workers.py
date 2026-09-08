@@ -27,6 +27,7 @@ from .recorder import (
     stream_transport_fault,
 )
 from .settings_store import runtime
+from .media_validation import build_validation_receipt, integrity_from_validation_receipt, validation_receipt_matches
 from .source_providers import probe
 from .storage import disk_state
 from . import storage_handoff
@@ -537,6 +538,7 @@ class WorkerManager:
                 await self._prepare_mp4(path)
                 integrity = await asyncio.to_thread(verify_media, path, runtime().integrity_mode)
                 digest = await asyncio.to_thread(sha256_file, path) if integrity.ok else ""
+                receipt = build_validation_receipt(path, digest, runtime().integrity_mode, integrity) if integrity.ok else ""
                 with db_session() as db:
                     current = db.get(Recording, rec.id)
                     if not current:
@@ -544,6 +546,7 @@ class WorkerManager:
                     current.duration_seconds = integrity.duration
                     current.size_bytes = path.stat().st_size
                     current.sha256 = digest
+                    current.validation_receipt = receipt
                     current.has_video = integrity.has_video
                     current.has_audio = integrity.has_audio
                     current.video_codec = integrity.codec("video")
@@ -1056,6 +1059,7 @@ class WorkerManager:
             raise RuntimeError(f"Sessione consolidata non valida: {integrity.error}")
         temporary.replace(output)
         digest = await asyncio.to_thread(sha256_file, output)
+        receipt = build_validation_receipt(output, digest, runtime().integrity_mode, integrity)
         thumb_path = ""
         if runtime().generate_thumbnails:
             candidate = settings.data_dir / "thumbnails" / f"{digest[:24]}-sheet-v2.jpg"
@@ -1076,6 +1080,7 @@ class WorkerManager:
                     duration_seconds=integrity.duration,
                     size_bytes=output.stat().st_size,
                     sha256=digest,
+                    validation_receipt=receipt,
                     upload_status="pending",
                     thumbnail_path=thumb_path,
                     integrity_status="passed",
@@ -1119,6 +1124,7 @@ class WorkerManager:
             normalization_error = f"Finalizzazione MP4 fallita: {exc}"[-1500:]
         integrity = None if normalization_error else await asyncio.to_thread(verify_media, path, cfg.integrity_mode)
         digest = "" if normalization_error else await asyncio.to_thread(sha256_file, path)
+        receipt = build_validation_receipt(path, digest, cfg.integrity_mode, integrity) if integrity and integrity.ok else ""
         finalized = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc)
         if integrity and integrity.duration:
             start = finalized - timedelta(seconds=integrity.duration)
@@ -1147,6 +1153,7 @@ class WorkerManager:
                 duration_seconds=integrity.duration if integrity else None,
                 size_bytes=path.stat().st_size,
                 sha256=digest,
+                validation_receipt=receipt,
                 upload_status="pending" if integrity and integrity.ok else "integrity_failed",
                 thumbnail_path=thumb_path,
                 integrity_status="passed" if integrity and integrity.ok else "failed",
@@ -1644,18 +1651,55 @@ class WorkerManager:
             with db_session() as db:
                 current = db.get(Recording, rec.id)
                 if current:
+                    current.validation_receipt = ""
                     current.integrity_status = "failed"
                     current.integrity_error = detail
                     current.integrity_checked_at = utcnow()
                     current.upload_status = "integrity_failed"
                     current.last_error = detail
             return False
+
         baseline = path.stat()
-        integrity = await asyncio.to_thread(verify_media, path, cfg.integrity_mode)
+        digest = await asyncio.to_thread(sha256_file, path)
+        after_hash = path.stat()
+        if (after_hash.st_size, after_hash.st_mtime_ns) != (baseline.st_size, baseline.st_mtime_ns):
+            with db_session() as db:
+                current = db.get(Recording, rec.id)
+                if current:
+                    current.upload_status = "failed"
+                    current.last_error = "Upload rinviato: il file è cambiato durante il checksum"
+            self._retry_after[rec.id] = time.monotonic() + 30
+            return False
+
+        if rec.sha256 and digest != rec.sha256 and not normalized:
+            with db_session() as db:
+                current = db.get(Recording, rec.id)
+                if current:
+                    current.validation_receipt = ""
+                    current.integrity_status = "failed"
+                    current.integrity_error = "SHA-256 cambiato dopo la finalizzazione"
+                    current.integrity_checked_at = utcnow()
+                    current.upload_status = "integrity_failed"
+                    current.last_error = "SHA-256 non coincide: file locale modificato o corrotto"
+            return False
+
+        reuse_receipt = (
+            not normalized
+            and validation_receipt_matches(
+                rec.validation_receipt,
+                digest=digest,
+                size_bytes=after_hash.st_size,
+                mode=cfg.integrity_mode,
+            )
+        )
+        integrity = integrity_from_validation_receipt(rec.validation_receipt) if reuse_receipt else await asyncio.to_thread(
+            verify_media, path, cfg.integrity_mode
+        )
         if not integrity.ok:
             with db_session() as db:
                 current = db.get(Recording, rec.id)
                 if current:
+                    current.validation_receipt = ""
                     current.has_video = integrity.has_video
                     current.has_audio = integrity.has_audio
                     current.video_codec = integrity.codec("video")
@@ -1666,6 +1710,7 @@ class WorkerManager:
                     current.upload_status = "integrity_failed"
                     current.last_error = f"Controllo integrità fallito: {integrity.error}"[-1600:]
             return False
+
         current_stat = path.stat()
         if (current_stat.st_size, current_stat.st_mtime_ns) != (baseline.st_size, baseline.st_mtime_ns):
             with db_session() as db:
@@ -1675,17 +1720,8 @@ class WorkerManager:
                     current.last_error = "Upload rinviato: il file è cambiato durante la verifica"
             self._retry_after[rec.id] = time.monotonic() + 30
             return False
-        digest = await asyncio.to_thread(sha256_file, path)
-        if rec.sha256 and digest != rec.sha256 and not normalized:
-            with db_session() as db:
-                current = db.get(Recording, rec.id)
-                if current:
-                    current.integrity_status = "failed"
-                    current.integrity_error = "SHA-256 cambiato dopo la finalizzazione"
-                    current.integrity_checked_at = utcnow()
-                    current.upload_status = "integrity_failed"
-                    current.last_error = "SHA-256 non coincide: file locale modificato o corrotto"
-            return False
+
+        receipt = rec.validation_receipt if reuse_receipt else build_validation_receipt(path, digest, cfg.integrity_mode, integrity)
         with db_session() as db:
             current = db.get(Recording, rec.id)
             if current:
@@ -1694,8 +1730,9 @@ class WorkerManager:
                 current.video_codec = integrity.codec("video")
                 current.audio_codec = integrity.codec("audio")
                 current.duration_seconds = integrity.duration
-                current.size_bytes = path.stat().st_size
+                current.size_bytes = current_stat.st_size
                 current.sha256 = digest
+                current.validation_receipt = receipt
                 current.integrity_status = "passed"
                 current.integrity_error = ""
                 current.integrity_checked_at = utcnow()

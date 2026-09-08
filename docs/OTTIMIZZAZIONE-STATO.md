@@ -1,6 +1,6 @@
 # Ottimizzazione — checkpoint per ripresa
 
-Aggiornato: 2026-09-08. **In corso; nessuna ottimizzazione distribuita ancora.**
+Aggiornato: 2026-09-08. **In corso; prima ottimizzazione implementata e testata sul branch, non ancora distribuita.**
 Richiesta utente: applicare il piano e documentare ogni passaggio riprendibile.
 Piano: [PIANO-OTTIMIZZAZIONE.md](PIANO-OTTIMIZZAZIONE.md).
 Accessi/vincoli: [AI-HANDOFF.md](../AI-HANDOFF.md).
@@ -18,8 +18,8 @@ Accessi/vincoli: [AI-HANDOFF.md](../AI-HANDOFF.md).
 | Passo | Stato | Evidenza / prossimo passo |
 | --- | --- | --- |
 | Stato remoto e documenti | Completato | `main=ab895fd`, creato branch dedicato e questo checkpoint |
-| Baseline e misure ripetibili | In corso | Verificare host; preparare fixture isolate e contatori delle fasi |
-| Ricevute integrità / fast path | Da fare | Hash indipendente prima dell'upload, test corruzione e quiesce |
+| Baseline e misure ripetibili | In corso | Fixture/test isolati attivi su Python 3.13; benchmark host comparabile ancora da eseguire |
+| Ricevute integrità / fast path | Implementato, testato | Receipt JSON versionata legata a SHA-256/dimensione/mode; hash completo pre-upload resta obbligatorio; scan media riusata solo su match; hash coopera con quiesce. 30 test mirati verdi |
 | Anteprime / code / cancellazione | Da fare | Preservare ordine upload, recovery e file richiesti dalle anteprime |
 | Telemetria incrementale | Da fare | Migrazione JSON reversibile, frequenze/retention invariate |
 | Watchdog / catalogo | Da fare | Stessi controlli UUID/namespace e intervallo di rilevamento |
@@ -38,6 +38,6 @@ Accessi/vincoli: [AI-HANDOFF.md](../AI-HANDOFF.md).
 
 ## Rollback e lavori attivi
 
-- Per ora solo documentazione: runtime invariato; nessuna migrazione DB.
+- Runtime ancora invariato. Branch aggiunge migrazione SQLite additiva `recordings.validation_receipt` con default vuoto; rollback applicativo al commit precedente ignora la colonna senza perdita dei dati esistenti.
 - Rollback preesistenti: `/var/backups/openastro/20260908-maintenance` (preservare).
-- Nuovi backup/job/risultati: nessuno ancora. Registrarli qui prima del deploy.
+- Test locali branch: `tests/test_media_validation_receipts.py`, `test_media_integrity.py`, `test_storage_handoff.py` -> 30 passed su Python 3.13.5. Nessun job/deploy host ancora.

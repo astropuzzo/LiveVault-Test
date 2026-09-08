@@ -49,9 +49,15 @@ def utcnow() -> datetime:
 
 def sha256_file(path: Path, chunk_size: int = 1024 * 1024) -> str:
     h = hashlib.sha256()
+    storage_handoff.checkpoint()
     with path.open("rb") as f:
+        chunks = 0
         while chunk := f.read(chunk_size):
             h.update(chunk)
+            chunks += 1
+            if chunks % 16 == 0:
+                storage_handoff.checkpoint()
+    storage_handoff.checkpoint()
     return h.hexdigest()
 
 

@@ -369,6 +369,7 @@ class WorkerManager(_legacy.WorkerManager):
         self._set_processing(stage="Checksum", percent=91.0)
         self.wake()
         digest = await asyncio.to_thread(_legacy.sha256_file, output)
+        receipt = _legacy.build_validation_receipt(output, digest, runtime().integrity_mode, integrity)
 
         thumb_path = ""
         if runtime().generate_thumbnails:
@@ -395,6 +396,7 @@ class WorkerManager(_legacy.WorkerManager):
                     duration_seconds=integrity.duration,
                     size_bytes=output.stat().st_size,
                     sha256=digest,
+                    validation_receipt=receipt,
                     upload_status="pending",
                     thumbnail_path=thumb_path,
                     integrity_status="passed",
