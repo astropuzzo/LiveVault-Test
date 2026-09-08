@@ -105,8 +105,11 @@ def test_standalone_assets_and_docker_contract_exist():
     compose = (ROOT / 'docker-compose.yml').read_text(encoding='utf-8')
     dockerfile = (ROOT / 'Dockerfile').read_text(encoding='utf-8')
     assert 'NINA Monitor' in html
-    assert '/api/state' in js
-    assert '/api/preview.jpg' in js
+    css = (ROOT / 'static' / 'app.css').read_text(encoding='utf-8')
+    assert 'api/state' in js and '/api/state' not in js
+    assert 'api/preview.jpg' in js and '/api/preview.jpg' not in js
+    assert 'href="app.css"' in html and 'src="app.js"' in html
+    assert '[hidden]{display:none!important}' in css
     assert 'guidingLive' in js
     assert 'read_only: true' in compose
     assert 'cap_drop:' in compose and 'ALL' in compose

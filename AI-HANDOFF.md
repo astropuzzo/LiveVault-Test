@@ -46,16 +46,18 @@ d'installazione precedente; esistenza non verificata.
 | --- | --- | --- |
 | LiveVault | Coolify UUID ahul2vdjkyvjiwgzpcrmxzfe; /data/livevault | https://openastro.tailf2871c.ts.net/ |
 | Control Center / Media Hub | openastro-control.service; /opt/openastro-control/upload_server.py; /var/lib/openastro-control | https://openastro.tailf2871c.ts.net:8443/ |
-| NINA Monitor | Coolify separato UUID ctrzdfqqsdljdcb2sbdrc7ug, nessun mount host | https://openastro.tailf2871c.ts.net:9091/ |
+| NINA Monitor | Coolify separato UUID ctrzdfqqsdljdcb2sbdrc7ug, nessun mount host | remoto https://openastro.tailf2871c.ts.net:8443/nina/ · LAN http://192.168.1.27:9091/ |
 | Coolify | Docker + Postgres/Redis/realtime/sentinel su eMMC | https://openastro.tailf2871c.ts.net:10000/ |
 | Pi-hole | pihole-FTL.service; /etc/pihole | amministrazione LAN porta 80 |
 | DNS cifrato | openastro-dns.service; /opt/openastro-dns/dns_gateway.py | DoH tramite /dns-query sul Funnel Control |
 | Media LAN | smbd, nmbd, minidlna, wsdd2 | SMB OPENASTRO/Media; DLNA OpenAstro Media |
 
-Tutti e quattro gli URL applicativi hanno Funnel attivo. La vecchia indicazione
-Coolify privato-only era errata. Preservare autenticazione ed esposizione configurata.
-Control usa control-panel/ e helper host distribuiti separatamente. NINA è isolato
-anche se la sua UI è incorporata nel Control Center.
+Gli ingressi HTTPS pubblici principali hanno Funnel attivo. NINA non usa più una
+porta Funnel dedicata: `/nina/` sul Funnel `:8443` viene instradato direttamente
+al container Coolify NINA, mentre `192.168.1.27:9091` resta l’accesso LAN.
+Preservare autenticazione ed esposizione configurata. Control usa `control-panel/`
+e helper host distribuiti separatamente. NINA resta isolato anche se la sua UI è
+incorporata nel Control Center.
 Deploy: [HOSTING.md](HOSTING.md), [nina-monitor/COOLIFY.md](nina-monitor/COOLIFY.md).
 
 ## Storage: contratto da mantenere

@@ -317,14 +317,13 @@
       <section class="app-view" data-view-panel="nina" aria-labelledby="view-nina-title">
         <div class="view-heading nina-view-heading">
           <div><p class="eyebrow">ASTRO SESSION LIVE</p><h1 id="view-nina-title">NINA</h1><p>QualitySessionMeter live dentro OpenAstro. Runtime separato in Coolify.</p></div>
-          <div class="nina-head-actions"><span class="status-chip">READ-ONLY</span><a class="button secondary" href="https://openastro.tailf2871c.ts.net:9091/" target="_blank" rel="noopener">Apri separato ↗</a></div>
+          <div class="nina-head-actions"><a class="button secondary" href="/nina/" target="_blank" rel="noopener">Apri Monitor ↗</a></div>
         </div>
         <section class="panel nina-embedded-panel">
           <div class="nina-embed-bar">
-            <div><span class="nina-live-dot" aria-hidden="true"></span><strong>NINA Monitor</strong><small>Container Coolify indipendente · QSM sul PC N.I.N.A.</small></div>
-            <div class="nina-embed-links"><a href="http://192.168.1.27:9091/" target="_blank" rel="noopener">LAN</a><a href="https://openastro.tailf2871c.ts.net:9091/" target="_blank" rel="noopener">Esterno</a></div>
+            <div><span class="nina-live-dot" aria-hidden="true"></span><strong>NINA Monitor</strong><small>Container Coolify indipendente · QSM sul PC N.I.N.A. · read-only</small></div>
           </div>
-          <div class="nina-frame-wrap"><iframe id="ninaMonitorFrame" title="OpenAstro NINA Monitor" src="https://openastro.tailf2871c.ts.net:9091/" loading="lazy" referrerpolicy="no-referrer" allow=""></iframe></div>
+          <div class="nina-frame-wrap"><iframe id="ninaMonitorFrame" title="OpenAstro NINA Monitor" src="/nina/" loading="eager" referrerpolicy="no-referrer" allow=""></iframe></div>
           <p class="nina-note">Il browser non contatta direttamente N.I.N.A.: il token QSM resta nel container NINA Monitor. L'autenticazione NINA resta indipendente dal Control Center.</p>
         </section>
       </section>

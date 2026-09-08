@@ -56,7 +56,7 @@ Auto Deploy: ON
 Watch Paths: nina-monitor/**
 ```
 
-The application should be named `openastro-nina-monitor` and should have its own domain/HTTPS route, logs, resource limits and deployment history.
+The application should be named `openastro-nina-monitor` and keeps its own logs, resource limits and deployment history. On this OpenAstro node the canonical remote browser route is `https://openastro.tailf2871c.ts.net:8443/nina/`, published by Tailscale Funnel to the dedicated container. The direct LAN route remains `http://192.168.1.27:9091/`.
 
 Required application secrets/environment variables:
 

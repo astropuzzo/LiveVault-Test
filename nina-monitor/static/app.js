@@ -188,7 +188,7 @@
       }
       state.textContent = 'Preview non ancora pronta · nuovo tentativo automatico';
     };
-    image.src = `/api/preview.jpg?frame=${encodeURIComponent(frameId)}&t=${Date.now()}`;
+    image.src = `api/preview.jpg?frame=${encodeURIComponent(frameId)}&t=${Date.now()}`;
   }
 
   function render(payload) {
@@ -256,7 +256,7 @@
     if (busy || document.hidden) return;
     busy = true;
     try {
-      const payload = await jsonFetch(`/api/state${force ? '?force=1' : ''}`);
+      const payload = await jsonFetch(`api/state${force ? '?force=1' : ''}`);
       render(payload);
     } catch (error) {
       if (error.status === 401) {
@@ -275,7 +275,7 @@
     const button = event.submitter || event.currentTarget.querySelector('button');
     button.disabled = true;
     try {
-      await jsonFetch('/api/login', {
+      await jsonFetch('api/login', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({password}),
@@ -292,7 +292,7 @@
   });
 
   $('#logoutButton').addEventListener('click', async () => {
-    try { await jsonFetch('/api/logout', {method: 'POST'}); } catch (_) {}
+    try { await jsonFetch('api/logout', {method: 'POST'}); } catch (_) {}
     showLogin();
   });
 
@@ -302,7 +302,7 @@
 
   (async () => {
     try {
-      const session = await jsonFetch('/api/session');
+      const session = await jsonFetch('api/session');
       if (session.authenticated) showApp(); else showLogin();
     } catch (_) {
       showLogin('Il servizio non risponde correttamente.');
