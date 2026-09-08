@@ -51,7 +51,11 @@ overclock GPU/RAM o `force_turbo`.
 - 2 GHz: 180 s CPU 4 + VM 128 MiB, **passato**; picco 76,445 C, mediana
   2000,478 MHz, flag iniziali/finali 0, nessun errore kernel o stress.
   Registrazioni attive in questa baseline; nelle prove superiori saranno in pausa.
-- 2,1 GHz: non provati.
+- 2,1 GHz: prepare completato, capture chiuse e pause salvate; reboot tryboot
+  inviato. SSH non ritorna su LAN nei primi controlli. Non è ancora una prova
+  di stabilità: possibile boot fallito. Se serve una riaccensione fisica, il boot
+  seguente deve usare il config normale a 2 GHz. Dopo riconnessione eseguire
+  `cm4-clock-trial.py resume` e verificare la ripresa delle capture.
 - 2,2 GHz: non provati.
 - Backup normale `/var/backups/openastro/20260908-clock/config-2000.txt`, SHA-256
   `0e26639d67471b5f39854f70e3bdf82d4e656e3959d7ccbfe7aa007b1aed2950`.
