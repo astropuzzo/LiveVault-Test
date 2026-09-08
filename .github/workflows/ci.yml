@@ -25,13 +25,47 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements-dev.txt
       - name: Compile Python
-        run: python -m compileall -q app control-panel tests
+        run: python -m compileall -q app control-panel nina-monitor tests
       - name: Run tests
         run: PYTHONPATH=. pytest -q
       - name: Check JavaScript
         run: |
-          for file in app/static/*.js control-panel/static/*.js; do node --check "$file"; done
+          for file in app/static/*.js control-panel/static/*.js nina-monitor/static/*.js; do node --check "$file"; done
           node --test tests/test_panel_frontend.cjs
       - name: Check shell scripts
         run: |
           for file in scripts/*.sh control-panel/openastro-action control-panel/openastro-power-profile; do bash -n "$file"; done
+      - name: Build standalone NINA monitor image
+        run: docker build -t openastro-nina-monitor:ci nina-monitor
+      - name: Smoke-test isolated NINA monitor container
+        run: |
+          PASSWORD_HASH="$(python - <<'PY'
+          import base64, hashlib
+          salt=b'ci-openastro-salt-1'
+          iterations=120000
+          digest=hashlib.pbkdf2_hmac('sha256', b'ci-monitor-password', salt, iterations)
+          b64=lambda raw: base64.urlsafe_b64encode(raw).decode().rstrip('=')
+          print(f'pbkdf2_sha256:{iterations}:{b64(salt)}:{b64(digest)}')
+          PY
+          )"
+          docker run -d --name openastro-nina-monitor-ci \
+            -p 127.0.0.1:19091:9091 \
+            --read-only \
+            --tmpfs /tmp:rw,noexec,nosuid,size=16m \
+            --cap-drop ALL \
+            --security-opt no-new-privileges:true \
+            -e OPENASTRO_NINA_MONITOR_HOST=0.0.0.0 \
+            -e OPENASTRO_NINA_MONITOR_PORT=9091 \
+            -e OPENASTRO_NINA_MONITOR_PASSWORD_HASH="$PASSWORD_HASH" \
+            -e OPENASTRO_NINA_MONITOR_SECRET=ci-session-secret-0123456789abcdefghijklmnopqrstuvwxyz \
+            -e OPENASTRO_NINA_QSM_URL=http://127.0.0.1:18973 \
+            -e OPENASTRO_NINA_QSM_TOKEN=ci-qsm-token-0123456789abcdefghijklmnopqrstuvwxyz \
+            openastro-nina-monitor:ci
+          trap 'docker logs openastro-nina-monitor-ci || true; docker rm -f openastro-nina-monitor-ci >/dev/null 2>&1 || true' EXIT
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:19091/healthz | grep -q '"isolated":true'; then break; fi
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:19091/healthz | grep -q '"isolated":true'
+          test "$(docker inspect -f '{{len .Mounts}}' openastro-nina-monitor-ci)" = "0"
+          test "$(docker inspect -f '{{.Config.User}}' openastro-nina-monitor-ci)" = "openastro"
