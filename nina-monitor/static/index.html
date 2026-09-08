@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#08111b">
+  <title>NINA Monitor · OpenAstro</title>
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+  <div class="backdrop"></div>
+
+  <section id="loginView" class="login-shell" hidden>
+    <form id="loginForm" class="login-card" autocomplete="on">
+      <div class="brand-mark">N</div>
+      <p class="eyebrow">OPENASTRO · ISOLATED MODULE</p>
+      <h1>NINA Monitor</h1>
+      <p class="muted">Monitor remoto read-only separato dagli altri servizi ASIAIR.</p>
+      <label>
+        <span>Password</span>
+        <input id="loginPassword" type="password" autocomplete="current-password" required autofocus>
+      </label>
+      <button type="submit">Accedi</button>
+      <p id="loginError" class="error" hidden></p>
+    </form>
+  </section>
+
+  <main id="appView" class="app-shell" hidden>
+    <header class="topbar">
+      <div class="brand-row">
+        <div class="brand-mark small">N</div>
+        <div>
+          <p class="eyebrow">OPENASTRO · STANDALONE</p>
+          <h1>NINA Monitor</h1>
+        </div>
+      </div>
+      <div class="top-actions">
+        <span id="linkState" class="link-state"><i></i><b>Verifica…</b></span>
+        <button id="logoutButton" class="ghost" type="button">Esci</button>
+      </div>
+    </header>
+
+    <section id="statusBanner" class="status-banner">
+      <div>
+        <strong id="bannerTitle">In attesa di NINA</strong>
+        <span id="bannerText">Il modulo continua a funzionare anche se il PC di acquisizione è offline.</span>
+      </div>
+      <i class="status-dot"></i>
+    </section>
+
+    <section id="emptyState" class="empty-state" hidden>
+      <div>
+        <strong id="emptyTitle">NINA non disponibile</strong>
+        <p id="emptyText">Verifica collegamento QSM e rete.</p>
+      </div>
+    </section>
+
+    <section id="dashboard" class="dashboard" hidden>
+      <div class="metric-grid">
+        <article class="metric quality"><span>Quality</span><strong id="qualityValue">—</strong><small id="qualityDetail">Ultimo frame</small></article>
+        <article class="metric confidence"><span>Confidence</span><strong id="confidenceValue">—</strong><small>Affidabilità QSM</small></article>
+        <article class="metric guiding"><span>Guide RMS · LIVE</span><strong id="guideValue">—</strong><small id="guideDetail">In attesa guide step</small></article>
+        <article class="metric rejected"><span>Rejected</span><strong id="rejectedValue">—</strong><small id="acceptanceValue">—</small></article>
+      </div>
+
+      <div class="two-col">
+        <article class="panel">
+          <div class="panel-title"><span>Sessione corrente</span></div>
+          <div class="facts six">
+            <div><span>Target</span><strong id="targetValue">—</strong></div>
+            <div><span>Filtro</span><strong id="filterValue">—</strong></div>
+            <div><span>Esposizione</span><strong id="exposureValue">—</strong></div>
+            <div><span>Gain / Bin</span><strong id="gainBinValue">—</strong></div>
+            <div><span>Frame</span><strong id="capturedValue">—</strong></div>
+            <div><span>Usabili</span><strong id="usableValue">—</strong></div>
+          </div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-title"><span>Segnale immagine</span></div>
+          <div class="facts six">
+            <div><span>Stelle Δ</span><strong id="starsDeltaValue">—</strong></div>
+            <div><span>Background Δ</span><strong id="backgroundDeltaValue">—</strong></div>
+            <div><span>Stato</span><strong id="frameStatusValue">—</strong></div>
+            <div><span>Camera</span><strong id="cameraValue">—</strong></div>
+            <div><span>Latenza</span><strong id="latencyValue">—</strong></div>
+            <div><span>Frame QSM</span><strong id="frameIndexValue">—</strong></div>
+          </div>
+        </article>
+      </div>
+
+      <article class="panel full">
+        <div class="panel-title split">
+          <span>Guida live · ultimi 20 secondi</span>
+          <small><i class="legend ra"></i>RA <i class="legend dec"></i>DEC · arcsec</small>
+        </div>
+        <div class="guide-facts">
+          <span>Total RMS <b id="guideTotalValue">—</b></span>
+          <span>RA RMS <b id="guideRaValue">—</b></span>
+          <span>DEC RMS <b id="guideDecValue">—</b></span>
+          <span>Max <b id="guideMaxValue">—</b></span>
+          <span>Samples <b id="guideSamplesValue">—</b></span>
+        </div>
+        <div id="guidePlot" class="plot guide-plot"></div>
+      </article>
+
+      <div class="two-col">
+        <article class="panel preview-panel">
+          <div class="panel-title split"><span>Ultima esposizione</span><small>JPEG 1280 px · RAM</small></div>
+          <div class="preview-wrap">
+            <div id="previewPlaceholder" class="preview-placeholder"><b>Preview in attesa</b><span>Comparirà al prossimo LIGHT.</span></div>
+            <img id="previewImage" alt="Preview ultima esposizione NINA" hidden>
+          </div>
+          <div class="preview-meta"><span id="previewState">Nessuna preview ricevuta</span><span>FITS non trasferiti</span></div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-title split"><span>Trend sessione</span><small>Quality · Confidence · RMS posa</small></div>
+          <div id="trendPlot" class="plot"></div>
+        </article>
+      </div>
+
+      <article class="panel full">
+        <div class="panel-title"><span>Ultimi eventi</span></div>
+        <div id="eventList" class="event-list"></div>
+      </article>
+    </section>
+
+    <footer>
+      <span>Servizio isolato <b>openastro-nina-monitor.service</b> · porta <b>9091</b></span>
+      <span>Read-only · nessuna dipendenza da NVMe/Media USB/Docker</span>
+    </footer>
+  </main>
+
+  <script src="/app.js" defer></script>
+</body>
+</html>
