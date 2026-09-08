@@ -42,8 +42,17 @@ unchanged. Safety-sensitive mounted-file operations still request a fresh discov
 
 Targeted validation: 43 storage/media fixed-cost tests passed on Python 3.13.5.
 Steady-state watchdog tests assert that `healthy_nvme()` has no `findmnt`, `lsblk` or
-subprocess path. Runtime deployment and before/after host CPU counters remain pending
-until the full branch suite/CI is green.
+subprocess path. The complete branch suite then passed 318/318 tests; Python/JS compile,
+shell syntax and six Node frontend tests also passed.
+
+On the live node before deployment, three steady invocations of the old 15-second media
+reconcile took 0.270061, 0.256936 and 0.274311 s wall time (average 0.267103 s). After
+changing the warm fast path to fingerprint `/dev/disk/by-uuid` plus mountinfo before
+calling `lsblk`, three warm invocations of the branch script took 0.227438, 0.177355 and
+0.179724 s (average 0.194839 s); the first cold pass was 0.263866 s. This is a same-node
+wall-time microbenchmark, not a server-wide energy measurement. The old watchdog cgroup
+consumed 0.004299 s CPU during a 20.041 s observation; post-deploy measurement is still
+required for a direct before/after comparison.
 
 ## Findings and changes
 

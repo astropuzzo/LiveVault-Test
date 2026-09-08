@@ -10,7 +10,10 @@ def test_storyboard_is_nine_frame_v2():
     assert "for index in range(9)" in utils
     assert "[v6][v7][v8]hstack=inputs=3[row2]" in utils
     assert "[row0][row1][row2]vstack=inputs=3[sheet]" in utils
-    assert workers.count("-sheet-v2.jpg") == 3
+    # Final media is published before storyboard generation; one persistent queue worker owns v2 thumbnails.
+    assert workers.count("-sheet-v2.jpg") == 1
+    assert 'thumbnail_status == "processing"' in workers
+    assert "_thumbnail_loop" in workers
     assert "-sheet-v1.jpg" not in workers
 
 

@@ -22,6 +22,7 @@ import time
 MEDIA_ROOT = Path("/srv/openastro-media")
 RECONCILE_STATE = Path("/run/openastro-media-reconcile-state.json")
 MOUNTINFO = Path("/proc/1/mountinfo")
+UUID_DIR = Path("/dev/disk/by-uuid")
 EXCLUDED_UUIDS = {
     "5fe2d0f6-b485-44e9-8e26-31fb0d217db2",
     "7EBD-F531",
@@ -257,22 +258,28 @@ def mounted_media_targets(mounts: dict[str, dict] | None = None) -> list[Path]:
     return [Path(target) for target in rows if target.startswith(prefix)]
 
 
-def _reconcile_signature(present: dict[str, dict], mounts: dict[str, dict]) -> str:
-    """Fingerprint only kernel identity/mount facts; unchanged passes do no work."""
-    devices = [
-        {
-            "uuid": uuid, "device": item.get("device"), "disk": item.get("disk"),
-            "fstype": item.get("fstype"), "mountpoint": item.get("mountpoint"),
-        }
-        for uuid, item in sorted(present.items())
-    ]
+def _kernel_reconcile_signature(mounts: dict[str, dict] | None = None) -> str:
+    """Cheap hotplug fingerprint: no lsblk and no filesystem data reads."""
+    uuid_links = []
+    try:
+        for link in sorted(UUID_DIR.iterdir(), key=lambda path: path.name):
+            if not link.is_symlink():
+                continue
+            try:
+                target = str(link.resolve(strict=True))
+            except OSError:
+                target = "missing"
+            uuid_links.append((link.name, target))
+    except OSError:
+        pass
+    rows = mounts or mount_table()
     media_mounts = [
         {"target": target, "source": row.get("source"), "major_minor": row.get("major_minor"),
          "options": sorted(row.get("options") or [])}
-        for target, row in sorted(mounts.items())
+        for target, row in sorted(rows.items())
         if target.startswith(str(MEDIA_ROOT) + "/")
     ]
-    payload = json.dumps({"devices": devices, "mounts": media_mounts}, sort_keys=True, separators=(",", ":"))
+    payload = json.dumps({"uuid_links": uuid_links, "mounts": media_mounts}, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
@@ -295,12 +302,12 @@ def _write_reconcile_signature(signature: str) -> None:
 
 def reconcile() -> None:
     MEDIA_ROOT.mkdir(parents=True, exist_ok=True, mode=0o755)
-    present = {item["uuid"]: item for item in discover()}
     mounts = mount_table()
-    initial_signature = _reconcile_signature(present, mounts)
+    initial_signature = _kernel_reconcile_signature(mounts)
     if initial_signature == _read_reconcile_signature():
         return
 
+    present = {item["uuid"]: item for item in discover()}
     expected_targets = {Path(item["mountpoint"]) for item in present.values()}
     changed = False
     for target in mounted_media_targets(mounts):
@@ -327,7 +334,7 @@ def reconcile() -> None:
                 pass
     if changed:
         restart_indexer()
-    _write_reconcile_signature(_reconcile_signature(present, mount_table()))
+    _write_reconcile_signature(_kernel_reconcile_signature(mount_table()))
 
 
 def main() -> int:

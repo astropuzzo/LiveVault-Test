@@ -29,9 +29,11 @@ def test_media_reconcile_unchanged_snapshot_does_no_mount_work(monkeypatch, tmp_
     mounts = {
         item['mountpoint']: {'source': '/dev/sdb1', 'major_minor': '8:17', 'options': {'rw', 'nosuid'}}
     }
-    signature = manager._reconcile_signature(present, mounts)
+    manager.UUID_DIR = tmp_path / 'by-uuid'
+    manager.UUID_DIR.mkdir()
+    signature = manager._kernel_reconcile_signature(mounts)
     manager.RECONCILE_STATE.write_text(json.dumps({'signature': signature}))
-    monkeypatch.setattr(manager, 'discover', lambda: [item])
+    monkeypatch.setattr(manager, 'discover', lambda: (_ for _ in ()).throw(AssertionError('lsblk discovery should be skipped')))
     monkeypatch.setattr(manager, 'mount_table', lambda: mounts)
     monkeypatch.setattr(manager, 'mount_media', lambda *a, **k: (_ for _ in ()).throw(AssertionError('mount work should be skipped')))
     monkeypatch.setattr(manager, 'restart_indexer', lambda: (_ for _ in ()).throw(AssertionError('indexer should not restart')))

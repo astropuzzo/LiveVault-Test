@@ -23,7 +23,7 @@ Accessi/vincoli: [AI-HANDOFF.md](../AI-HANDOFF.md).
 | Anteprime / code / cancellazione | Implementato, testato | Video indicizzato prima dello storyboard; coda SQLite persistente pending/processing/ready/failed con retry/recovery; stato visibile UI; FFmpeg thumbnail coopera con quiesce; auto/manual delete bloccate mentre il file serve alla preview; split oversized allineato |
 | Telemetria incrementale | Implementato, testato | SQLite/WAL a tier 10 s/24 h, 5 min/7 g, 30 min/90 g; batch 6 campioni/minuto; import JSON una tantum senza cancellarlo; export JSON compatibile per rollback; API/cadenze invariate. Baseline live history.json 1.634.479 B |
 | Watchdog / catalogo | Implementato, testato | Watchdog 2 s fork-free via `/proc/1/mountinfo` + sysfs; reconcile USB 15 s salta passate invarianti; cache breve sonde Media Center. 43 test mirati verdi |
-| CI e confronto prestazioni | Da fare | Linux/Python 3.13; confronti sul medesimo workload |
+| CI e confronto prestazioni | Locale completo verde | Python 3.13: 318/318; Node frontend 6/6; compile JS/Python + shell lint verdi. Reconcile vecchio steady avg 0,267 s vs nuovo warm avg 0,195 s sul nodo; watchdog vecchio 0,004299 s CPU cgroup/20,041 s. CI GitHub/benchmark post-deploy da verificare |
 | Deploy / prova live / documenti host | Da fare | Backup, commit CI verde, verifica capture e ciclo storage |
 | UAS / overclock | Non abilitati | Restano condizionati ai prerequisiti del piano |
 
@@ -35,6 +35,12 @@ Accessi/vincoli: [AI-HANDOFF.md](../AI-HANDOFF.md).
    senza cambiamenti o dubbi nuovi. Verificare eventuali job CI/host ancora attivi.
 4. Aggiornare questo file dopo ogni implementazione, prova e deploy, distinguendo
    codice locale, commit validato e runtime. Tenere checkpoint Git sul branch.
+
+## Condizione host rilevata durante la validazione
+
+- Alle 15:31 (timezone host Europe/London) il SERVER NVMe ha registrato reset USB e I/O error reali; ext4 `sdc2` è entrato in `emergency_ro`. Il watchdog live ha effettuato failover automatico al buffer eMMC come progettato.
+- Tre recorder hanno continuato sul buffer; al controllo il loop da 3,9 GiB era al 39% (1,5 GiB usati). Il mount host del SERVER è stato smontato per fsck, ma `e2fsck` ha rifiutato correttamente perché il namespace privato di `gpt-harness.service` mantiene ancora il device. Nessuna riparazione filesystem è stata eseguita finora.
+- Prima di deploy/merge runtime: completare fsck offline tramite unità host indipendente che ferma temporaneamente Harness, rimonta solo se pulito, quindi usare `nvme-handoff.py attach` per quiesce, copia SHA-256 del buffer e ritorno a NVMe.
 
 ## Rollback e lavori attivi
 
