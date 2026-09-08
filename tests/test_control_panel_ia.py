@@ -1,7 +1,6 @@
 from pathlib import Path
 import json
 import re
-import re
 
 ROOT = Path(__file__).parents[1]
 HTML = (ROOT / 'control-panel/static/index.html').read_text(encoding='utf-8')

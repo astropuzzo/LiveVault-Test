@@ -24,10 +24,6 @@ jobs:
           node-version: '22'
       - name: Install FFmpeg
         run: sudo apt-get update && sudo apt-get install -y ffmpeg
-      - name: Require operations documentation
-        env:
-          OPS_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
-        run: python scripts/check-ops-docs.py "$OPS_BASE"
       - name: Install dependencies
         run: pip install -r requirements-dev.txt
       - name: Compile Python
@@ -75,3 +71,7 @@ jobs:
           curl -fsS http://127.0.0.1:19091/healthz | grep -q '"isolated":true'
           test "$(docker inspect -f '{{len .Mounts}}' openastro-nina-monitor-ci)" = "0"
           test "$(docker inspect -f '{{.Config.User}}' openastro-nina-monitor-ci)" = "openastro"
+      - name: Require operations documentation
+        env:
+          OPS_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: python scripts/check-ops-docs.py "$OPS_BASE"

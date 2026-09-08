@@ -136,6 +136,11 @@ Ogni modifica a runtime, servizi, storage, accessi, dipendenze o deploy deve
 aggiornare nello stesso commit questa guida o il documento operativo collegato.
 Correggere i fatti esistenti; non aggiungere repliche cronologiche contraddittorie.
 CI richiede documentazione per modifiche operative, ma non può verificarne la verità.
+Il controllo documentale viene dopo i test, così un'omissione non nasconde problemi
+di codice. La revisione finale comprende anche i successivi aggiornamenti archivio,
+timeline touch e monitor NINA/QSM (baseline GitHub ba26e23): conservarli.
+Le verifiche packet scan scalano ora con la dimensione del file, fino a 1800 secondi;
+restano interrompibili dal cambio storage. Non ripristinare il timeout fisso di 300 s.
 Verificare su Linux/Python 3.13; Windows Python 3.14 non equivale alla produzione.
 Separare test unitari, CI, deploy e prove fisiche. Non dichiarare assenza di perdita
 dati dal solo healthcheck: controllare capture e trasferimento del buffer.

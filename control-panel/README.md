@@ -67,7 +67,7 @@ disponibile separatamente nell'API e nel CSV, mai come sostituto di un sensore.
 
 ## Media Center USB
 
-`sudo bash scripts/install-media-center.sh` abilita supporti USB rimovibili in sola lettura.
+`sudo bash scripts/install-media-center.sh` abilita supporti USB rimovibili con import in scrittura autenticati.
 Il manager accetta soltanto filesystem USB con flag kernel `RM=1` e rifiuta esplicitamente
 gli UUID di `SERVER`, `SHARE`, buffer interno, root e boot. I supporti vengono montati sotto
 `/srv/openastro-media/<label>-<uuid>` e condivisi come `\\OPENASTRO\Media` via SMB e
