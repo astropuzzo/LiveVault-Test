@@ -1,5 +1,8 @@
 # OpenAstro — fonte di verità operativa
 Verifica host: **2026-09-08**. Leggere [AGENTS.md](AGENTS.md) prima di intervenire.
+Prova storage sulla release live ba26e23: eject 11,05 s, crescita capture su buffer,
+attach 11,82 s, due file verificati SHA-256, buffer vuoto, container invariato.
+Verbale privato: /var/backups/openastro/20260908-maintenance/live-cycle.json.
 Le vecchie indagini restano nella cronologia Git: non prevalgono sullo stato verificato.
 
 ## Accesso e repository
@@ -7,6 +10,8 @@ Le vecchie indagini restano nella cronologia Git: non prevalgono sullo stato ver
   eMMC interna da 32 GB. È il server domestico; il vecchio VPS è dismesso.
 - SSH LAN: `ssh -o BatchMode=yes astro@192.168.1.27`. Tailscale: `100.85.86.96`.
   Chiave Windows: `%USERPROFILE%/.ssh/id_ed25519`. GitHub: login `gh` esistente.
+- Il fuso orario del nodo è Europe/London: tenerne conto leggendo journal e timer;
+  non confonderlo con Europe/Rome del client o con il giorno cloud applicativo.
 - GitHub: https://github.com/astropuzzo/LiveVault-Test.git, produzione `main`.
   Prima di modificare: fetch, status, confronto HEAD/origin/main. Branch `codex/`.
 - Checkout sul nodo: `/mnt/livevault-nvme/gpt-harness/work/LiveVault-Test`.
@@ -109,6 +114,10 @@ SQLite backup API, destinazione /share/livevault-backups, timer giornaliero;
 i video non sono inclusi. Mantenere APP_SECRET nei backup sicuri esistenti.
 Rollback manutenzione host: /var/backups/openastro/20260908-maintenance.
 Rollback applicazioni: immagini/commit precedenti Coolify.
+Pulizia verificata: 23 script monouso archiviati con checksum in
+retired-one-shot-scripts.tar.gz e cleanup-manifest.json nella directory rollback;
+due directory di debug vuote eliminate; cache apt da 133 MB a 20 KB.
+Non cancellati checkout sporchi, media, database, segreti o immagini di rollback.
 
 Pulire solo residui verificati. Archiviare privatamente gli script monouso prima
 di rimuoverli. Conservare checkout sporchi, video originali, file ignoti e rollback.

@@ -25,6 +25,13 @@ remain mandatory. Manual eject never uses lazy unmount.
 Host rollback copies for this repair are in
 `/var/backups/openastro/20260908-maintenance`.
 
+Live verification on release ba26e23 (after subsequent project changes): eject
+completed in 11.05 seconds from the Control Center mount namespace. Actual capture
+files grew on the internal buffer. Attach completed in 11.82 seconds; two files
+matched their pre-transfer SHA-256 and the buffer was empty. The LiveVault
+container ID was unchanged throughout. Evidence: `live-cycle.json` in the host
+rollback directory. This verifies software eject/attach, not a physical cable pull.
+
 The ASIAIR host keeps Docker, Coolify, SQLite, settings and previews on internal
 eMMC. The existing `/data` runtime paths are retained through an internal bind
 mount. Only `/data/livevault/recordings` switches between the NVMe and a separate
