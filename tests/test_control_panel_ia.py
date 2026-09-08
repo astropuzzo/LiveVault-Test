@@ -9,11 +9,11 @@ SW = (ROOT / 'control-panel/static/sw.js').read_text(encoding='utf-8')
 
 def test_control_center_has_exact_primary_views():
     views = re.findall(r'data-view-panel="([a-z]+)"', HTML)
-    assert views == ['dashboard', 'media', 'storage', 'system', 'advanced']
+    assert views == ['dashboard', 'media', 'storage', 'system', 'nina', 'pihole', 'advanced']
 
 
 def test_desktop_and_mobile_navigation_match_views():
-    expected = ['dashboard','media','storage','system','advanced']
+    expected = ['dashboard','media','storage','system','nina','pihole','advanced']
     side = re.search(r'<nav class="side-nav".*?</nav>', HTML, re.S)
     mobile = re.search(r'<nav class="mobile-nav".*?</nav>', HTML, re.S)
     assert side and mobile
@@ -36,3 +36,11 @@ def test_pwa_shell_contains_new_layout_css():
     assert '/shell.css' in SW
     assert 'openastro-control-v20.1-media-fill' in SW
     assert '/magic.css' in SW
+
+
+def test_nina_launcher_is_separate_and_has_local_and_public_entrypoints():
+    assert 'data-view-panel="nina"' in HTML
+    assert 'https://openastro.tailf2871c.ts.net:9091/' in HTML
+    assert 'http://192.168.1.27:9091/' in HTML
+    assert 'Coolify isolato' in HTML
+    assert 'Il token QSM resta sul server' in HTML

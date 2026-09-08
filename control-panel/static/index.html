@@ -11,7 +11,7 @@
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" href="/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="/icon.svg">
-  <link rel="stylesheet" href="/app.css?v=20.1-media-fill"><link rel="stylesheet" href="/shell.css?v=4.0-control"><link rel="stylesheet" href="/theme.css?v=5.0-feel"><link rel="stylesheet" href="/premium.css?v=10.0-product"><link rel="stylesheet" href="/magic.css?v=13.0-ops"><link rel="stylesheet" href="/media-upload.css?v=14.0-import">
+  <link rel="stylesheet" href="/app.css?v=20.1-media-fill"><link rel="stylesheet" href="/shell.css?v=4.0-control"><link rel="stylesheet" href="/theme.css?v=5.0-feel"><link rel="stylesheet" href="/premium.css?v=10.0-product"><link rel="stylesheet" href="/magic.css?v=13.1-nina"><link rel="stylesheet" href="/media-upload.css?v=14.0-import">
 </head>
 <body data-view="dashboard" class="is-loading">
   <div class="app-shell">
@@ -25,6 +25,8 @@
         <a href="#media" data-route="media"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v14H4V5Zm6 3v8l6-4-6-4Z"/></svg><span>Media</span></a>
         <a href="#storage" data-route="storage"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14l2 4v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8l2-4Zm1.2 2L5.5 8h13l-.7-2H6.2ZM6 12h12v5H6v-5Zm9 1.5h2v2h-2v-2Z"/></svg><span>Storage</span></a>
         <a href="#system" data-route="system"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a2 2 0 0 1 2 2v1.1a7 7 0 0 1 1.9.8l.8-.8a2 2 0 1 1 2.8 2.8l-.8.8c.4.6.6 1.2.8 1.9H21a2 2 0 1 1 0 4h-1.1a7 7 0 0 1-.8 1.9l.8.8a2 2 0 1 1-2.8 2.8l-.8-.8a7 7 0 0 1-1.9.8V21a2 2 0 1 1-4 0v-1.1a7 7 0 0 1-1.9-.8l-.8.8a2 2 0 1 1-2.8-2.8l.8-.8a7 7 0 0 1-.8-1.9H3a2 2 0 1 1 0-4h1.1a7 7 0 0 1 .8-1.9l-.8-.8a2 2 0 1 1 2.8-2.8l.8.8a7 7 0 0 1 1.9-.8V5a2 2 0 0 1 2-2Zm0 6a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z"/></svg><span>Sistema</span></a>
+        <a href="#nina" data-route="nina"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v12H4V5Zm2 2v8h12V7H6Zm3 12h6v2H9v-2Zm2-10h2v2h2v2h-2v2h-2v-2H9v-2h2V9Z"/></svg><span>NINA</span></a>
+        <a href="#pihole" data-route="pihole"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2 3 6v6c0 5 5 9 9 10 4-1 9-5 9-10V6l-9-4Zm0 3 6 3v4c0 3.5-3.5 6.5-6 7.7C9.5 18.5 6 15.5 6 12V8l6-3Zm-1 4v4H8l4 4 4-4h-3V9h-2Z"/></svg><span>Pi-hole</span></a>
         <a href="#advanced" data-route="advanced"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5h14v3H5V5Zm0 6h14v3H5v-3Zm0 6h14v3H5v-3Z"/></svg><span>Avanzate</span></a>
       </nav>
       <div class="sidebar-foot">
@@ -312,6 +314,95 @@
 </div>
       </section>
 
+      <section class="app-view" data-view-panel="nina" aria-labelledby="view-nina-title">
+        <div class="view-heading"><div><p class="eyebrow">ASTRO SESSION LIVE</p><h1 id="view-nina-title">NINA</h1><p>QualitySessionMeter in tempo reale, servito da un'app Coolify indipendente.</p></div></div>
+        <div class="nina-workspace">
+          <section class="panel nina-launch-panel">
+            <div class="nina-hero">
+              <div class="nina-hero-copy"><p class="eyebrow">OPENASTRO · NINA MONITOR</p><h2>La sessione astronomica, ovunque.</h2><p>Quality, Confidence, guida RA/DEC live, frame buoni e scartati, stelle, background e ultima LIGHT in un pannello separato dal lifecycle di LiveVault.</p></div>
+              <div class="nina-orbit" aria-hidden="true"><i></i><i></i><span></span></div>
+            </div>
+            <div class="nina-access-grid">
+              <article><span>LOCALE</span><strong>192.168.1.27:9091</strong><small>Accesso diretto dalla LAN di casa.</small></article>
+              <article><span>FUORI CASA</span><strong>HTTPS Funnel</strong><small>Nessun client Tailscale richiesto sul telefono.</small></article>
+              <article><span>RUNTIME</span><strong>Coolify isolato</strong><small>Container NINA indipendente da LiveVault.</small></article>
+            </div>
+            <div class="nina-actions">
+              <a class="button nina-primary" href="https://openastro.tailf2871c.ts.net:9091/" target="_blank" rel="noopener">Apri NINA Monitor <span>↗</span></a>
+              <a class="button secondary" href="http://192.168.1.27:9091/" target="_blank" rel="noopener">LAN diretto</a>
+            </div>
+          </section>
+          <section class="panel nina-info-panel">
+            <div class="panel-head"><div><p class="eyebrow">LIVE SESSION</p><h2>Cosa controlli</h2></div><span>READ-ONLY</span></div>
+            <div class="nina-capabilities">
+              <article><b>Q</b><div><strong>Quality + Confidence</strong><small>Valutazione corrente e trend della sessione.</small></div></article>
+              <article><b>G</b><div><strong>Guida live</strong><small>RA, DEC, RMS totale e massima escursione.</small></div></article>
+              <article><b>Δ</b><div><strong>Stelle + background</strong><small>Variazioni rispetto alla baseline robusta.</small></div></article>
+              <article><b>▣</b><div><strong>Preview LIGHT</strong><small>JPEG in RAM, nessun FITS trasferito al telefono.</small></div></article>
+            </div>
+            <p class="nina-note">Il token QSM resta sul server. Il browser parla solo con NINA Monitor e non espone direttamente il PC N.I.N.A. a Internet.</p>
+          </section>
+        </div>
+      </section>
+
+      <section class="app-view" data-view-panel="pihole" aria-labelledby="view-pihole-title">
+        <div class="view-heading pihole-view-heading"><div><p class="eyebrow">PROTEZIONE DNS</p><h1 id="view-pihole-title">Pi-hole</h1><p>Filtering di rete e DNS cifrato personale, dentro e fuori casa.</p></div><div class="pihole-head-state"><span id="piholeRemoteBadge" class="status-chip">Verifica…</span><button class="button secondary" id="piholeRefresh" type="button">Aggiorna</button></div></div>
+        <div class="pihole-page-grid">
+          <section class="panel pihole-panel" id="piholePanel" aria-labelledby="piholeTitle">
+            <div class="panel-head"><div><p class="eyebrow">RETE DI CASA</p><h2 id="piholeTitle">DNS LAN e filtering</h2></div><span class="status-chip" id="piholeInstallState">Verifica…</span></div>
+            <div class="pihole-primary">
+              <div><strong id="piholeBlockingTitle">Stato in verifica</strong><small id="piholeDnsDetail">Controllo DNS e FTL…</small></div>
+              <label class="pihole-switch" title="Disattiva solo il filtering: il DNS resta online"><input id="piholeToggle" type="checkbox" disabled aria-label="Attiva o disattiva il blocking Pi-hole"><span aria-hidden="true"></span><b id="piholeToggleLabel">—</b></label>
+            </div>
+            <div class="pihole-stats" aria-label="Statistiche Pi-hole">
+              <article><span>Query</span><strong id="piholeQueries">—</strong></article><article><span>Bloccate</span><strong id="piholeBlocked">—</strong></article><article><span>Filtro</span><strong id="piholePercent">—</strong></article><article><span>Client attivi</span><strong id="piholeClients">—</strong></article><article><span>Gravity</span><strong id="piholeGravity">—</strong></article>
+            </div>
+            <div class="pihole-facts">
+              <div><span>DNS service</span><strong id="piholeDnsState">—</strong></div><div><span>FTL</span><strong id="piholeFtlState">—</strong></div><div><span>Versione</span><strong id="piholeVersion">—</strong></div><div><span>DNS LAN</span><strong id="piholeLanDns">—</strong></div>
+            </div>
+            <div class="action-row pihole-actions"><a class="button secondary" id="piholeAdminLink" href="#" target="_blank" rel="noopener">Apri Pi-hole ↗</a><button class="button secondary" id="piholeRestart" type="button" data-pihole-endpoint="/api/pihole/restart">Riavvia servizio</button><button class="button secondary" id="piholeGravityAction" type="button" data-pihole-endpoint="/api/pihole/gravity">Aggiorna Gravity</button></div>
+          </section>
+
+          <section class="panel pihole-remote-panel" aria-labelledby="remoteDnsTitle">
+            <div class="panel-head"><div><p class="eyebrow">FUORI CASA</p><h2 id="remoteDnsTitle">DNS remoto</h2></div><span class="dns-live-dot" id="piholeRemoteDot" aria-hidden="true"></span></div>
+            <div class="remote-hero"><div><span>GATEWAY PUBBLICO</span><strong id="piholeRemoteHost">—</strong><small id="piholeRemoteNote">Endpoint infrastrutturale: non inserirlo nel campo DNS privato di Android.</small></div><span class="status-chip">Infrastruttura</span></div>
+            <div class="dot-network-banner" id="piholeNetworkBanner" hidden><div><span id="piholeNetworkKicker">RETE IPV6</span><strong id="piholeNetworkTitle">Configurazione richiesta</strong><small id="piholeNetworkReason">Verifica delegazione Iliadbox…</small></div><span class="status-chip" id="piholeNetworkState">—</span></div>
+            <div class="remote-protocols">
+              <article><div><span>DoT</span><strong id="piholeDotState">—</strong></div><small>Android Private DNS · TCP 853</small></article>
+              <article><div><span>DoH</span><strong id="piholeDohState">—</strong></div><small>Apple / browser · HTTPS</small></article>
+              <article><div><span>TLS</span><strong id="piholeTlsState">—</strong></div><small id="piholeTlsDetail">Certificato remoto</small></article>
+              <article><div><span>IPv6</span><strong id="piholeRemoteIpv6">—</strong></div><small>Endpoint pubblico dedicato</small></article>
+            </div>
+            <div class="pihole-facts dns-checks">
+              <div><span>Gateway</span><strong id="piholeGateway">—</strong></div><div><span>Query autorizzata</span><strong id="piholeAuthorized">—</strong></div><div><span>Accesso non valido</span><strong id="piholeUnauthorized">—</strong></div><div><span>Ultimo controllo</span><strong id="piholeChecked">—</strong></div>
+            </div>
+            <div class="action-row compact remote-actions"><button class="button secondary" type="button" data-pihole-endpoint="/api/pihole/remote/test">Testa gateway</button></div>
+          </section>
+
+          <section class="panel dns-devices-panel" aria-labelledby="dnsDevicesTitle">
+            <div class="panel-head devices-head"><div><p class="eyebrow">DISPOSITIVI REMOTI</p><h2 id="dnsDevicesTitle">Accessi personali</h2><small>Ogni dispositivo ha una credenziale separata. Puoi bloccarlo senza modificare gli altri.</small></div><button class="button" id="piholeAddDevice" type="button">Aggiungi dispositivo</button></div>
+            <div class="device-summary"><span><b id="piholeDeviceOnline">0</b> online</span><span><b id="piholeDeviceEnabled">0</b> abilitati</span><span><b id="piholeDeviceTotal">0</b> totali</span></div>
+            <div class="dns-device-list" id="piholeDeviceList"><div class="dns-device-empty"><strong>Nessun dispositivo remoto</strong><small>Aggiungi il Samsung, un iPhone, iPad o Mac e copia la configurazione una sola volta.</small></div></div>
+          </section>
+
+          <section class="panel dns-setup-panel" id="piholeDeviceSetup" hidden aria-labelledby="dnsSetupTitle">
+            <div class="panel-head"><div><p class="eyebrow">CONFIGURA</p><h2 id="dnsSetupTitle">Nuovo dispositivo</h2></div><button class="icon-button" id="piholeSetupClose" type="button" aria-label="Chiudi">×</button></div>
+            <form id="piholeDeviceForm" class="dns-device-form"><label><span>Nome</span><input id="piholeDeviceName" name="name" maxlength="48" required placeholder="es. Samsung S24 Ultra" autocomplete="off"></label><label><span>Tipo</span><select id="piholeDevicePlatform" name="platform"><option value="android">Android</option><option value="ios">iPhone</option><option value="ipad">iPad</option><option value="macos">Mac</option><option value="windows">Windows</option><option value="generic">Altro</option></select></label><button class="button" type="submit">Genera accesso</button></form>
+            <p class="dns-setup-note">Il nome serve solo nel tuo pannello. La credenziale reale viene generata casualmente e può essere revocata in qualsiasi momento.</p>
+          </section>
+
+          <section class="panel dns-detail-panel" id="piholeDeviceDetail" hidden aria-labelledby="dnsDeviceDetailTitle">
+            <div class="panel-head"><div><p class="eyebrow" id="dnsDeviceDetailPlatform">DISPOSITIVO</p><h2 id="dnsDeviceDetailTitle">Dettagli accesso</h2></div><button class="icon-button" id="piholeDetailClose" type="button" aria-label="Chiudi">×</button></div>
+            <div class="device-detail-status"><span id="dnsDeviceDetailState" class="status-chip">—</span><span id="dnsDeviceLastSeen">Mai connesso</span></div>
+            <div class="dns-connection-box" id="dnsDotConnection"><label for="dnsDeviceHostname">USA QUESTO SU ANDROID · Hostname DNS privato / DoT</label><div><input id="dnsDeviceHostname" readonly autocomplete="off" spellcheck="false" placeholder="DoT non ancora disponibile"><button class="button secondary" id="dnsCopyHostname" type="button">Copia</button></div><small id="dnsDotHint">Su Samsung: Impostazioni → Connessioni → Altre impostazioni → DNS privato → Nome host provider.</small></div>
+            <div class="dns-connection-box" id="dnsDohConnection"><label for="dnsDeviceDoh">URL DNS-over-HTTPS</label><div><input id="dnsDeviceDoh" readonly autocomplete="off" spellcheck="false"><button class="button secondary" id="dnsCopyDoh" type="button">Copia</button></div><small>Per Apple usa preferibilmente il profilo automatico qui sotto.</small></div>
+            <div class="device-live-facts"><div><span>Ultimo IP</span><strong id="dnsDeviceIp">—</strong></div><div><span>Sessioni TLS</span><strong id="dnsDeviceConnections">0</strong></div><div><span>Query</span><strong id="dnsDeviceQueries">0</strong></div><div><span>Bloccate</span><strong id="dnsDeviceBlocked">0</strong></div></div>
+            <div class="dns-install-guide" id="dnsInstallGuide"></div>
+            <div class="action-row device-actions"><a class="button secondary" id="dnsAppleProfile" href="#">Profilo Apple</a><button class="button secondary" id="dnsDeviceToggle" type="button">Blocca accesso</button><button class="button secondary" id="dnsDeviceRegenerate" type="button">Rigenera accesso</button><button class="button ghost-danger" id="dnsDeviceDelete" type="button">Elimina</button></div>
+          </section>
+        </div>
+      </section>
+
       <section class="app-view" data-view-panel="advanced" aria-labelledby="view-advanced-title">
         <div class="view-heading"><div><p class="eyebrow">AMMINISTRAZIONE</p><h1 id="view-advanced-title">Avanzate</h1><p>Solo ciò che serve per diagnosi e manutenzione.</p></div></div>
         <div class="advanced-grid">    <section class="panel" id="services">
@@ -320,47 +411,6 @@
       <div class="action-row compact">
         <button class="button secondary" data-action="restart_livevault" data-confirm="Tieni premuto per riavviare LiveVault">Riavvia LiveVault</button>
         <button class="button secondary" data-action="restart_docker" data-confirm="Tieni premuto per riavviare Docker e tutti i container">Riavvia Docker</button>
-      </div>
-    </section>
-
-    <section class="panel pihole-panel" id="piholePanel" aria-labelledby="piholeTitle">
-      <div class="panel-head">
-        <div><p class="eyebrow">DNS DI RETE</p><h2 id="piholeTitle">Pi-hole</h2></div>
-        <span class="status-chip" id="piholeInstallState">Verifica…</span>
-      </div>
-      <div class="pihole-primary">
-        <div>
-          <strong id="piholeBlockingTitle">Stato in verifica</strong>
-          <small id="piholeDnsDetail">Controllo DNS e FTL…</small>
-        </div>
-        <label class="pihole-switch" title="Disattiva solo il filtering: il DNS resta online">
-          <input id="piholeToggle" type="checkbox" disabled aria-label="Attiva o disattiva il blocking Pi-hole">
-          <span aria-hidden="true"></span>
-          <b id="piholeToggleLabel">—</b>
-        </label>
-      </div>
-      <div class="pihole-stats" aria-label="Statistiche Pi-hole">
-        <article><span>Query</span><strong id="piholeQueries">—</strong></article>
-        <article><span>Bloccate</span><strong id="piholeBlocked">—</strong></article>
-        <article><span>Filtro</span><strong id="piholePercent">—</strong></article>
-        <article><span>Client attivi</span><strong id="piholeClients">—</strong></article>
-        <article><span>Gravity</span><strong id="piholeGravity">—</strong></article>
-      </div>
-      <div class="pihole-facts">
-        <div><span>DNS service</span><strong id="piholeDnsState">—</strong></div>
-        <div><span>FTL</span><strong id="piholeFtlState">—</strong></div>
-        <div><span>Versione</span><strong id="piholeVersion">—</strong></div>
-        <div><span>DNS LAN</span><strong id="piholeLanDns">—</strong></div>
-        <div><span>Remote DNS</span><strong id="piholeRemoteState">—</strong></div>
-        <div><span>DoT · TCP 853</span><strong id="piholeDotState">—</strong></div>
-        <div><span>TLS</span><strong id="piholeTlsState">—</strong></div>
-        <div><span>Hostname remoto</span><strong id="piholeRemoteHost">—</strong></div>
-      </div>
-      <p class="pihole-remote-note" id="piholeRemoteNote">Verifica percorso remoto…</p>
-      <div class="action-row pihole-actions">
-        <a class="button secondary" id="piholeAdminLink" href="#" target="_blank" rel="noopener">Apri Pi-hole ↗</a>
-        <button class="button secondary" id="piholeRestart" type="button" data-pihole-endpoint="/api/pihole/restart">Riavvia servizio</button>
-        <button class="button secondary" id="piholeGravityAction" type="button" data-pihole-endpoint="/api/pihole/gravity">Aggiorna Gravity</button>
       </div>
     </section>
 
@@ -391,7 +441,9 @@
       <a href="#media" data-route="media"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v14H4V5Zm6 3v8l6-4-6-4Z"/></svg><span>Media</span></a>
       <a href="#storage" data-route="storage"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14l2 4v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8l2-4Zm1.2 2L5.5 8h13l-.7-2H6.2ZM6 12h12v5H6v-5Zm9 1.5h2v2h-2v-2Z"/></svg><span>Storage</span></a>
       <a href="#system" data-route="system"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a2 2 0 0 1 2 2v1.1a7 7 0 0 1 1.9.8l.8-.8a2 2 0 1 1 2.8 2.8l-.8.8c.4.6.6 1.2.8 1.9H21a2 2 0 1 1 0 4h-1.1a7 7 0 0 1-.8 1.9l.8.8a2 2 0 1 1-2.8 2.8l-.8-.8a7 7 0 0 1-1.9.8V21a2 2 0 1 1-4 0v-1.1a7 7 0 0 1-1.9-.8l-.8.8a2 2 0 1 1-2.8-2.8l.8-.8a7 7 0 0 1-.8-1.9H3a2 2 0 1 1 0-4h1.1a7 7 0 0 1 .8-1.9l-.8-.8a2 2 0 1 1 2.8-2.8l.8.8a7 7 0 0 1 1.9-.8V5a2 2 0 0 1 2-2Zm0 6a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z"/></svg><span>Sistema</span></a>
-      <a href="#advanced" data-route="advanced"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5h14v3H5V5Zm0 6h14v3H5v-3Zm0 6h14v3H5v-3Z"/></svg><span>Altro</span></a>
+      <a href="#nina" data-route="nina"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v12H4V5Zm2 2v8h12V7H6Zm3 12h6v2H9v-2Zm2-10h2v2h2v2h-2v2h-2v-2H9v-2h2V9Z"/></svg><span>NINA</span></a>
+      <a href="#pihole" data-route="pihole"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2 3 6v6c0 5 5 9 9 10 4-1 9-5 9-10V6l-9-4Zm0 3 6 3v4c0 3.5-3.5 6.5-6 7.7C9.5 18.5 6 15.5 6 12V8l6-3Zm-1 4v4H8l4 4 4-4h-3V9h-2Z"/></svg><span>Pi-hole</span></a>
+        <a href="#advanced" data-route="advanced"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5h14v3H5V5Zm0 6h14v3H5v-3Zm0 6h14v3H5v-3Z"/></svg><span>Altro</span></a>
     </nav>
   </div>
 
@@ -428,7 +480,7 @@
   </div>
 
   <script src="/hls.min.js?v=1.7.2" defer></script>
-  <script src="/app.js?v=20.0-media" defer></script>
+  <script src="/app.js?v=20.1-nina" defer></script>
   <script src="/media-upload.js?v=14.0-import" defer></script>
 </body>
 </html>

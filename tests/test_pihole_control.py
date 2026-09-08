@@ -64,7 +64,7 @@ def test_status_distinguishes_dns_blocking_and_remote_state(monkeypatch):
     assert result["stats"]["gravity_domains"] == 80000
     assert result["remote"]["configured"] is False
     assert result["remote"]["dot"] == "not_configured"
-    assert result["remote"]["port"] == 853
+    assert result["remote"]["port"] == pihole_status.remote_dns.DEFAULT_DOH_PORT
 
 
 @pytest.fixture
@@ -129,7 +129,8 @@ def test_pihole_ui_contract_and_firewall_are_explicit():
     firewall = (CONTROL / "openastro-pihole-firewall").read_text(encoding="utf-8")
     assert 'id="piholeToggle"' in html
     assert 'id="piholeAdminLink"' in html
-    assert 'id="piholeRemoteState"' in html
+    assert 'id="piholeRemoteDot"' in html
+    assert 'id="piholeDohState"' in html
     assert 'id="piholeDotState"' in html
     assert "setPiholeState" in js
     assert "/api/pihole/blocking/enable" in js

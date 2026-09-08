@@ -14,6 +14,8 @@ let historyBusy = false;
 let signedIn = true;
 let actionBusy = false;
 let piholeBusy = false;
+let selectedDnsDeviceId = '';
+let selectedDnsConnection = null;
 let latestState = null;
 let latestHistory = [];
 let mediaUuid = '';
@@ -24,7 +26,7 @@ let mediaHls = null;
 let mediaHlsToken = '';
 let mediaPlaybackBase = 0;
 let mediaPlaybackDuration = 0;
-const VALID_VIEWS = new Set(['dashboard','media','storage','system','advanced']);
+const VALID_VIEWS = new Set(['dashboard','media','storage','system','nina','pihole','advanced']);
 let currentView = VALID_VIEWS.has(location.hash.slice(1)) ? location.hash.slice(1) : 'dashboard';
 
 const powerProfiles = [
@@ -74,6 +76,54 @@ function serviceCard(name, state, detail, action = '') {
 function escapeHtml(value) {
   return String(value ?? '').replace(/[&<>'"]/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[char]));
 }
+function dnsPlatformLabel(platform) {
+  return ({android:'Android',ios:'iPhone',ipad:'iPad',macos:'Mac',windows:'Windows',generic:'Altro'})[platform] || 'Dispositivo';
+}
+function dnsDeviceIcon(platform) {
+  const paths = {
+    android:'M7 5h10l1 3v10a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V8l1-3Zm2-3 1 2h4l1-2 1 .5L15.2 4H8.8L8 2.5 9 2Zm0 6v8h6V8H9Z',
+    ios:'M8 2h8a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Zm0 3v14h8V5H8Zm3 14h2v1h-2v-1Z',
+    ipad:'M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Zm0 3v12h14V6H5Zm6 13h2v1h-2v-1Z',
+    macos:'M4 4h16v12H4V4Zm2 2v8h12V6H6Zm-4 12h20v2H2v-2Z',
+    windows:'M3 4l8-1v8H3V4Zm10-1 8-1v9h-8V3ZM3 13h8v8l-8-1v-7Zm10 0h8v9l-8-1v-8Z',
+    generic:'M4 5h16v12H4V5Zm2 2v8h12V7H6Zm3 12h6v2H9v-2Z'
+  };
+  return `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${paths[platform] || paths.generic}"/></svg>`;
+}
+function renderDnsDevices(devices = [], remote = {}) {
+  const list = $('#piholeDeviceList');
+  if (!list) return;
+  $('#piholeDeviceOnline').textContent = Number(remote.online_device_count || devices.filter(item => item.online).length || 0).toLocaleString('it-IT');
+  $('#piholeDeviceEnabled').textContent = Number(remote.enabled_device_count || devices.filter(item => item.enabled).length || 0).toLocaleString('it-IT');
+  $('#piholeDeviceTotal').textContent = Number(remote.device_count ?? devices.length).toLocaleString('it-IT');
+  if (!devices.length) {
+    list.innerHTML = '<div class="dns-device-empty"><strong>Nessun dispositivo remoto</strong><small>Aggiungi il Samsung, un iPhone, iPad o Mac e copia la configurazione una sola volta.</small></div>';
+    if (selectedDnsDeviceId) closeDnsDetail();
+    return;
+  }
+  list.innerHTML = devices.map(item => {
+    const stateClass = !item.enabled ? 'blocked' : item.online ? 'online' : '';
+    const stateText = !item.enabled ? 'Bloccato' : item.online ? 'Online' : 'Offline';
+    const last = item.last_seen ? `Ultima attività ${availabilityDate(item.last_seen)}` : 'Mai connesso';
+    const host = item.hostname || (remote.dot === 'active' ? 'Hostname in generazione' : 'DoT in configurazione');
+    return `<article class="dns-device-row" tabindex="0" role="button" data-dns-device-id="${escapeHtml(item.id)}" aria-label="Gestisci ${escapeHtml(item.name)}">
+      <div class="dns-device-id"><span class="dns-device-icon">${dnsDeviceIcon(item.platform)}</span><div><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(dnsPlatformLabel(item.platform))} · ${escapeHtml(host)}</small></div></div>
+      <div class="dns-device-meta"><strong>${escapeHtml(item.last_ip || 'Nessun IP')}</strong><small>${escapeHtml(last)}</small></div>
+      <div class="dns-device-state ${stateClass}"><i></i><span>${stateText}</span></div>
+      <div class="dns-device-queries"><strong>${Number(item.queries || 0).toLocaleString('it-IT')}</strong><small>query</small></div><span class="dns-device-chevron">›</span>
+    </article>`;
+  }).join('');
+  $$('[data-dns-device-id]').forEach(row => {
+    const open = () => openDnsDetail(row.dataset.dnsDeviceId);
+    row.addEventListener('click', open);
+    row.addEventListener('keydown', event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); open(); } });
+  });
+  if (selectedDnsDeviceId) {
+    const current = devices.find(item => item.id === selectedDnsDeviceId);
+    if (current) renderDnsDetail(current, selectedDnsConnection);
+    else closeDnsDetail();
+  }
+}
 function renderPihole(pihole = {}) {
   const installed = Boolean(pihole.installed);
   const dnsOnline = Boolean(pihole.dns_online);
@@ -85,84 +135,77 @@ function renderPihole(pihole = {}) {
   const lan = pihole.lan || {};
   const remote = pihole.remote || {};
   const installState = $('#piholeInstallState');
-  if (installState) {
-    installState.textContent = installed ? 'Installato' : 'Non installato';
-    installState.className = `status-chip ${installed ? 'good' : 'bad'}`;
+  if (installState) { installState.textContent = installed ? 'Installato' : 'Non installato'; installState.className = `status-chip ${installed ? 'good' : 'bad'}`; }
+  const title = $('#piholeBlockingTitle'), detail = $('#piholeDnsDetail');
+  if (!installed) { title.textContent='Pi-hole non installato'; detail.textContent='DNS e filtering non disponibili.'; }
+  else if (!ftlActive) { title.textContent='FTL fermo'; detail.textContent='Il servizio DNS Pi-hole non è attivo.'; }
+  else if (!dnsOnline) { title.textContent='DNS non raggiungibile'; detail.textContent='FTL è attivo ma la query locale non riceve risposta.'; }
+  else if (blockingOn) { title.textContent='DNS + blocking attivi'; detail.textContent='Il DNS resta online anche quando spegni il filtering.'; }
+  else if (blockingOff) { title.textContent='DNS attivo · blocking OFF'; detail.textContent='Risoluzione attiva senza filtraggio; Internet non viene interrotto.'; }
+  else { title.textContent='Configurazione incompleta'; detail.textContent='DNS attivo, stato blocking non determinato.'; }
+  const toggle=$('#piholeToggle'); if(toggle){toggle.checked=blockingOn;toggle.disabled=piholeBusy||!installed||!dnsOnline;}
+  $('#piholeToggleLabel').textContent=blockingOn?'ON':blockingOff?'OFF':'—';
+  const count=value=>Number(value||0).toLocaleString('it-IT');
+  $('#piholeQueries').textContent=installed?count(stats.queries):'—'; $('#piholeBlocked').textContent=installed?count(stats.blocked):'—';
+  $('#piholePercent').textContent=installed?`${Number(stats.percent_blocked||0).toFixed(1)}%`:'—'; $('#piholeClients').textContent=installed?count(stats.active_clients):'—'; $('#piholeGravity').textContent=installed?count(stats.gravity_domains):'—';
+  $('#piholeDnsState').textContent=dnsOnline?'Online':installed?'Offline':'Non installato'; $('#piholeFtlState').textContent=ftlActive?'Attivo':installed?(pihole.service||'Inattivo'):'Non installato';
+  $('#piholeVersion').textContent=installed?`Core ${versions.core||'—'} · Web ${versions.web||'—'} · FTL ${versions.ftl||'—'}`:'—'; $('#piholeLanDns').textContent=lan.dns||'—';
+  const dotText=remote.dot==='active'?'Online':remote.dot==='configured'?'Pronto al TLS':'Non configurato'; const dohText=remote.doh==='active'?'Online':remote.doh==='configured'?'Configurato':'Non configurato';
+  $('#piholeDotState').textContent=dotText; $('#piholeDohState').textContent=dohText;
+  const tlsText=remote.tls==='active'?'Valido':remote.tls==='expired'?'Scaduto':'Non verificato'; $('#piholeTlsState').textContent=tlsText;
+  $('#piholeTlsDetail').textContent=remote.certificate_expires?`Scadenza ${availabilityDate(remote.certificate_expires)}`:'Certificato remoto';
+  const remoteHost=remote.base_domain||remote.hostname||''; $('#piholeRemoteHost').textContent=remoteHost||'In configurazione'; $('#piholeRemoteNote').textContent=remoteHost?'Endpoint infrastrutturale. Su Android usa solo l’hostname personale del dispositivo nella sezione Accessi personali.':(remote.reason||'Remote DNS non configurato.');
+  const network=remote.network||{}; const networkBanner=$('#piholeNetworkBanner');
+  if(networkBanner){
+    const state=network.state||'unknown'; const show=state!=='ready'&&state!=='unknown'; networkBanner.hidden=!show;
+    if(show){
+      $('#piholeNetworkKicker').textContent=state==='permission_required'?'UNA SOLA AUTORIZZAZIONE':'RETE IPV6';
+      $('#piholeNetworkTitle').textContent=state==='permission_required'?'Abilita “Modifica impostazioni” sulla iliadbox':state==='routing_pending'?'Delegazione IPv6 in attesa':'Configurazione rete da completare';
+      $('#piholeNetworkReason').textContent=network.reason||'OpenAstro completa automaticamente la configurazione appena la rete è pronta.';
+      const ns=$('#piholeNetworkState'); ns.textContent=state==='permission_required'?'Una tantum':'In attesa'; ns.className='status-chip warn';
+    }
   }
-  const title = $('#piholeBlockingTitle');
-  const detail = $('#piholeDnsDetail');
-  if (!installed) {
-    title.textContent = 'Pi-hole non installato';
-    detail.textContent = 'DNS e filtering non disponibili.';
-  } else if (!ftlActive) {
-    title.textContent = 'FTL fermo';
-    detail.textContent = 'Il servizio DNS Pi-hole non è attivo.';
-  } else if (!dnsOnline) {
-    title.textContent = 'DNS non raggiungibile';
-    detail.textContent = 'FTL è attivo ma la query locale non riceve risposta.';
-  } else if (blockingOn) {
-    title.textContent = 'DNS + blocking attivi';
-    detail.textContent = 'Il DNS resta online anche quando spegni il filtering.';
-  } else if (blockingOff) {
-    title.textContent = 'DNS attivo · blocking OFF';
-    detail.textContent = 'Risoluzione attiva senza filtraggio; Internet non viene interrotto.';
-  } else {
-    title.textContent = 'Configurazione incompleta';
-    detail.textContent = 'DNS attivo, stato blocking non determinato.';
-  }
-  const toggle = $('#piholeToggle');
-  if (toggle) {
-    toggle.checked = blockingOn;
-    toggle.disabled = piholeBusy || !installed || !dnsOnline;
-  }
-  $('#piholeToggleLabel').textContent = blockingOn ? 'ON' : blockingOff ? 'OFF' : '—';
-  const count = value => Number(value || 0).toLocaleString('it-IT');
-  $('#piholeQueries').textContent = installed ? count(stats.queries) : '—';
-  $('#piholeBlocked').textContent = installed ? count(stats.blocked) : '—';
-  $('#piholePercent').textContent = installed ? `${Number(stats.percent_blocked || 0).toFixed(1)}%` : '—';
-  $('#piholeClients').textContent = installed ? count(stats.active_clients) : '—';
-  $('#piholeGravity').textContent = installed ? count(stats.gravity_domains) : '—';
-  $('#piholeDnsState').textContent = dnsOnline ? 'Online' : installed ? 'Offline' : 'Non installato';
-  $('#piholeFtlState').textContent = ftlActive ? 'Attivo' : installed ? (pihole.service || 'Inattivo') : 'Non installato';
-  $('#piholeVersion').textContent = installed ? `Core ${versions.core || '—'} · Web ${versions.web || '—'} · FTL ${versions.ftl || '—'}` : '—';
-  $('#piholeLanDns').textContent = lan.dns || '—';
-  $('#piholeRemoteState').textContent = remote.configured ? (remote.reachable ? 'Online' : 'Non raggiungibile') : 'Non configurato';
-  $('#piholeDotState').textContent = remote.dot === 'active' ? 'Attivo' : remote.dot === 'error' ? 'Errore' : 'Non configurato';
-  const tlsText = remote.tls === 'active' ? 'Valido' : remote.tls === 'expired' ? 'Scaduto' : 'Non configurato';
-  $('#piholeTlsState').textContent = remote.certificate_expires ? `${tlsText} · ${availabilityDate(remote.certificate_expires)}` : tlsText;
-  $('#piholeRemoteHost').textContent = remote.hostname || '—';
-  $('#piholeRemoteNote').textContent = remote.reason || 'Remote DNS non configurato.';
-  const admin = $('#piholeAdminLink');
-  if (admin) {
-    admin.href = installed && lan.admin_url ? lan.admin_url : '#';
-    admin.setAttribute('aria-disabled', installed && lan.admin_url ? 'false' : 'true');
-  }
-  ['#piholeRestart','#piholeGravityAction'].forEach(selector => { const button=$(selector); if(button) button.disabled=piholeBusy || !installed || !ftlActive; });
+  $('#piholeRemoteIpv6').textContent=remote.ipv6||'—';
+  const badge=$('#piholeRemoteBadge'); badge.textContent=remote.reachable?'DNS remoto online':remote.configured?'Configurazione in corso':'Solo LAN'; badge.className=`status-chip ${remote.reachable?'good':''}`;
+  const dot=$('#piholeRemoteDot'); dot.className=`dns-live-dot ${remote.reachable?'good':remote.configured?'warn':''}`;
+  $('#piholeGateway').textContent=remote.gateway==='active'?'Attivo':remote.gateway==='stale'?'Dati non aggiornati':'Non verificato'; $('#piholeAuthorized').textContent=remote.authorized_query?'OK':'Non verificata'; $('#piholeUnauthorized').textContent=remote.unauthorized_denied?'Negato':'Non verificato'; $('#piholeChecked').textContent=remote.checked_at?availabilityDate(remote.checked_at):'—';
+  renderDnsDevices(remote.devices||[],remote);
+  const admin=$('#piholeAdminLink'); if(admin){admin.href=installed&&lan.admin_url?lan.admin_url:'#';admin.setAttribute('aria-disabled',installed&&lan.admin_url?'false':'true');}
+  ['#piholeRestart','#piholeGravityAction'].forEach(selector=>{const button=$(selector);if(button)button.disabled=piholeBusy||!installed||!ftlActive;});
 }
-
-async function postPihole(endpoint) {
-  if (piholeBusy) return;
-  piholeBusy = true;
-  if ($('#piholeToggle')) $('#piholeToggle').disabled = true;
-  $('#piholeRestart').disabled = true;
-  $('#piholeGravityAction').disabled = true;
+async function postPihole(endpoint, payload = {}) {
+  if (piholeBusy) return null;
+  piholeBusy=true; if($('#piholeToggle'))$('#piholeToggle').disabled=true; if($('#piholeRestart'))$('#piholeRestart').disabled=true; if($('#piholeGravityAction'))$('#piholeGravityAction').disabled=true;
   try {
-    const response = await fetch(endpoint, {method:'POST', headers:{'Content-Type':'application/json','X-CSRF-Token':csrf}, body:'{}', signal:AbortSignal.timeout(300000)});
-    if (response.status === 401) return showLogin();
-    const result = await response.json();
-    if (!response.ok || !result.ok) throw new Error(result.error || result.message || `HTTP ${response.status}`);
-    toast(result.message || 'Pi-hole aggiornato.');
-  } catch (error) {
-    toast(error.message || 'Operazione Pi-hole non riuscita.', true);
-  } finally {
-    piholeBusy = false;
-    setTimeout(refresh, 500);
-  }
+    const response=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:JSON.stringify(payload),signal:AbortSignal.timeout(300000)});
+    if(response.status===401){showLogin();return null;}
+    const result=await response.json(); if(!response.ok||!result.ok)throw new Error(result.error||result.message||`HTTP ${response.status}`);
+    return result;
+  } catch(error){toast(error.message||'Operazione Pi-hole non riuscita.',true);return null;}
+  finally{piholeBusy=false;setTimeout(refresh,350);}
 }
-
 async function setPiholeState(enabled) {
-  return postPihole(enabled ? '/api/pihole/blocking/enable' : '/api/pihole/blocking/disable');
+  const result=await postPihole(enabled?'/api/pihole/blocking/enable':'/api/pihole/blocking/disable'); if(result)toast(enabled?'Filtering Pi-hole attivato.':'Filtering disattivato; DNS ancora attivo.'); return result;
 }
+function closeDnsDetail(){selectedDnsDeviceId='';selectedDnsConnection=null;const panel=$('#piholeDeviceDetail');if(panel)panel.hidden=true;}
+function renderDnsDetail(device, connection = null) {
+  const panel=$('#piholeDeviceDetail'); if(!panel)return; panel.hidden=false;
+  $('#dnsDeviceDetailPlatform').textContent=dnsPlatformLabel(device.platform).toUpperCase(); $('#dnsDeviceDetailTitle').textContent=device.name;
+  const state=$('#dnsDeviceDetailState'); state.textContent=!device.enabled?'Bloccato':device.online?'Online':'Abilitato'; state.className=`status-chip ${!device.enabled?'blocked':device.online?'online':''}`;
+  $('#dnsDeviceLastSeen').textContent=device.last_seen?`Ultima attività ${availabilityDate(device.last_seen)}`:'Mai connesso'; $('#dnsDeviceIp').textContent=device.last_ip||'—'; $('#dnsDeviceConnections').textContent=Number(device.active_connections||0).toLocaleString('it-IT'); $('#dnsDeviceQueries').textContent=Number(device.queries||0).toLocaleString('it-IT'); $('#dnsDeviceBlocked').textContent=Number(device.blocked||0).toLocaleString('it-IT');
+  $('#dnsDeviceHostname').value=connection?.hostname||device.hostname||''; $('#dnsDeviceDoh').value=connection?.doh_url||'';
+  const dotReady=Boolean(connection?.dot_ready); $('#dnsDotHint').textContent=dotReady?'Su Samsung: Impostazioni → Connessioni → Altre impostazioni → DNS privato → Nome host provider. Incolla questo hostname una sola volta.':'DoT è predisposto ma il dominio/TLS pubblico non è ancora verificato; non configurare Android finché questo campo resta vuoto.';
+  const apple=$('#dnsAppleProfile'); apple.href=`/api/pihole/apple.mobileconfig?id=${encodeURIComponent(device.id)}`; apple.hidden=!['ios','ipad','macos'].includes(device.platform);
+  $('#dnsDeviceToggle').textContent=device.enabled?'Blocca accesso':'Riattiva'; $('#dnsDeviceToggle').dataset.enabled=device.enabled?'1':'0';
+  const guides={android:'<strong>Samsung / Android</strong>Quando il campo DoT è disponibile: copia l’hostname, apri DNS privato, scegli “Nome host provider DNS privato” e incollalo. Nessuna app e nessuna autorizzazione ad ogni cambio rete.',ios:'<strong>iPhone</strong>Scarica “Profilo Apple”, aprilo e completa l’installazione in Impostazioni → Generali → VPN e gestione dispositivo. Il profilo usa il tuo accesso DoH personale.',ipad:'<strong>iPad</strong>Scarica “Profilo Apple” e installalo da Impostazioni → Generali → VPN e gestione dispositivo.',macos:'<strong>Mac</strong>Scarica “Profilo Apple” e aprilo dalle impostazioni Profili/Gestione dispositivo.',windows:'<strong>Windows</strong>Usa l’URL DoH personale nei client che accettano un template DoH personalizzato. Il dispositivo può essere revocato dal pannello.',generic:'<strong>Altro dispositivo</strong>Usa DoT se supporta un hostname Private DNS, oppure l’URL DoH personale nei client compatibili.'};
+  $('#dnsInstallGuide').innerHTML=guides[device.platform]||guides.generic;
+}
+async function openDnsDetail(deviceId) {
+  const devices=latestState?.pihole?.remote?.devices||[]; const device=devices.find(item=>item.id===deviceId); if(!device)return;
+  selectedDnsDeviceId=deviceId; selectedDnsConnection=null; renderDnsDetail(device,null);
+  try{const response=await fetch(`/api/pihole/connection?id=${encodeURIComponent(deviceId)}`,{cache:'no-store'});if(response.status===401)return showLogin();const data=await response.json();if(!response.ok||!data.ok)throw new Error(data.error||'Accesso non disponibile.');selectedDnsConnection=data;const current=(latestState?.pihole?.remote?.devices||[]).find(item=>item.id===deviceId)||device;renderDnsDetail(current,data);}catch(error){toast(error.message,true);}
+}
+async function copyField(selector, message) { const field=$(selector); if(!field?.value)return toast('Valore non ancora disponibile.',true); try{await navigator.clipboard.writeText(field.value);toast(message);}catch{field.select();toast('Seleziona e copia il valore.');} }
 
 function mean(points, key) {
   const values = points.filter(point => point[key] != null).map(point => Number(point[key])).filter(Number.isFinite);
@@ -616,7 +659,7 @@ function renderMedia(media = {}) {
 
 function selectView(view, updateHash = false) {
   view = VALID_VIEWS.has(view) ? view : 'dashboard';
-  const labels = {dashboard:'Dashboard',media:'Media',storage:'Storage',system:'Sistema',advanced:'Avanzate'};
+  const labels = {dashboard:'Dashboard',media:'Media',storage:'Storage',system:'Sistema',nina:'NINA',pihole:'Pi-hole',advanced:'Avanzate'};
   currentView = view;
   document.body.dataset.view = view;
   $$('[data-view-panel]').forEach(panel => panel.classList.toggle('active', panel.dataset.viewPanel === view));
@@ -889,8 +932,18 @@ $('#mediaCredentials').addEventListener('click', async () => {
 ${result.password}`).catch(() => {});
   } catch (_) { toast('Credenziali SMB non disponibili.', true); }
 });
+$('#piholeRefresh').addEventListener('click', refresh);
+$('#piholeAddDevice').addEventListener('click', () => { $('#piholeDeviceSetup').hidden=false; $('#piholeDeviceName').focus(); });
+$('#piholeSetupClose').addEventListener('click', () => { $('#piholeDeviceSetup').hidden=true; });
+$('#piholeDetailClose').addEventListener('click', closeDnsDetail);
+$('#piholeDeviceForm').addEventListener('submit', async event => { event.preventDefault(); const name=$('#piholeDeviceName').value.trim(); const platform=$('#piholeDevicePlatform').value; if(!name)return; const result=await postPihole('/api/pihole/devices/create',{name,platform}); if(!result)return; $('#piholeDeviceName').value=''; $('#piholeDeviceSetup').hidden=true; toast('Accesso dispositivo generato.'); await refresh(); if(result.device?.id)openDnsDetail(result.device.id); });
+$('#dnsCopyHostname').addEventListener('click', () => copyField('#dnsDeviceHostname','Hostname DNS privato copiato.'));
+$('#dnsCopyDoh').addEventListener('click', () => copyField('#dnsDeviceDoh','URL DoH copiato.'));
+$('#dnsDeviceToggle').addEventListener('click', async () => { if(!selectedDnsDeviceId)return; const enabled=$('#dnsDeviceToggle').dataset.enabled==='1'; const result=await postPihole(enabled?'/api/pihole/devices/disable':'/api/pihole/devices/enable',{id:selectedDnsDeviceId}); if(result)toast(enabled?'Dispositivo bloccato.':'Dispositivo riattivato.'); });
+$('#dnsDeviceRegenerate').addEventListener('click', async () => { if(!selectedDnsDeviceId||!window.confirm('Rigenerare l’accesso? La configurazione precedente smetterà subito di funzionare.'))return; const result=await postPihole('/api/pihole/devices/regenerate',{id:selectedDnsDeviceId}); if(result){selectedDnsConnection=result.connection||null;toast('Accesso rigenerato. Riconfigura solo questo dispositivo.');await refresh();openDnsDetail(selectedDnsDeviceId);} });
+$('#dnsDeviceDelete').addEventListener('click', async () => { if(!selectedDnsDeviceId||!window.confirm('Eliminare questo dispositivo e revocarne definitivamente l’accesso?'))return; const id=selectedDnsDeviceId; const result=await postPihole('/api/pihole/devices/delete',{id}); if(result){closeDnsDetail();toast('Dispositivo eliminato.');} });
 $('#piholeToggle').addEventListener('change', event => setPiholeState(Boolean(event.target.checked)));
-$$('[data-pihole-endpoint]').forEach(button => button.addEventListener('click', () => postPihole(button.dataset.piholeEndpoint)));
+$$('[data-pihole-endpoint]').forEach(button => button.addEventListener('click', async () => { const result=await postPihole(button.dataset.piholeEndpoint); if(result)toast(result.message||'Operazione completata.'); }));
 $('#cancelAction').addEventListener('click', () => $('#confirmDialog').close());
 $('#confirmDialog').addEventListener('close', () => { stopHold(); pendingAction = null; pendingPayload = {}; });
 $('#confirmDialog').addEventListener('cancel', stopHold);

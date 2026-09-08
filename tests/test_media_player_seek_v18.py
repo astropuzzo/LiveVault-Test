@@ -37,7 +37,7 @@ def test_custom_transport_is_mobile_compact_and_cache_bumped():
     assert '.media-video-controls{' in CSS
     assert '.media-player-clock{' in CSS
     assert '.media-transport-button{' in CSS
-    assert '/app.js?v=20.0-media' in INDEX
+    assert '/app.js?v=20.1-nina' in INDEX
     assert '/app.css?v=20.1-media-fill' in INDEX
     assert 'openastro-control-v20.1-media-fill' in SW
 

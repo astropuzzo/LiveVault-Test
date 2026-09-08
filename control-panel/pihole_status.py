@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import remote_dns
 import os
 import shutil
 import subprocess
@@ -89,6 +90,8 @@ def status() -> dict:
     client_stats = (summary or {}).get("clients") or {}
     gravity_stats = (summary or {}).get("gravity") or {}
 
+    remote = remote_dns.status()
+
     return {
         "installed": installed,
         "service": service,
@@ -103,19 +106,7 @@ def status() -> dict:
             "dns": lan_ip,
             "admin_url": f"http://{lan_ip}/admin/",
         },
-        "remote": {
-            "configured": False,
-            "reachable": False,
-            "hostname": "",
-            "port": 853,
-            "ipv4": "81.56.120.143",
-            "ipv6": "2a01:e11:2008:d4d0:f9fb:6d65:80bf:1cf9",
-            "dot": "not_configured",
-            "tls": "not_configured",
-            "certificate": "not_configured",
-            "certificate_expires": None,
-            "reason": REMOTE_REASON,
-        },
+        "remote": remote,
         "stats": {
             "queries": int(query_stats.get("total") or 0),
             "blocked": int(query_stats.get("blocked") or 0),
@@ -126,5 +117,5 @@ def status() -> dict:
             "gravity_last_update": int(gravity_stats.get("last_update") or 0),
         },
         "config_complete": bool(installed and dns_online and api_online),
-        "remote_config_complete": False,
+        "remote_config_complete": remote["reachable"],
     }

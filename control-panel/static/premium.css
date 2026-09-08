@@ -6,6 +6,7 @@ body[data-view="dashboard"]{--route-a:#98e349;--route-b:#1da7e6}
 body[data-view="media"]{--route-a:#ca6bd8;--route-b:#8d70f2}
 body[data-view="storage"]{--route-a:#33b9ef;--route-b:#6f8df1}
 body[data-view="system"]{--route-a:#ff7b33;--route-b:#d39b4d}
+body[data-view="nina"]{--route-a:#64d8ff;--route-b:#72f4b7}
 body[data-view="advanced"]{--route-a:#9c79eb;--route-b:#71809c}
 
 .app-main{position:relative}.app-main::before{content:"";position:fixed;right:-220px;top:-170px;width:650px;height:650px;border-radius:50%;background:radial-gradient(circle,color-mix(in srgb,var(--route-a) 10%,transparent),transparent 68%);filter:blur(8px);pointer-events:none;z-index:-1;transition:background .25s ease}

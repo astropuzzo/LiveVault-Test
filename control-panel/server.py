@@ -27,6 +27,7 @@ if _CONTROL_DIR not in sys.path:
     sys.path.insert(0, _CONTROL_DIR)
 import media_center
 import media_streaming
+import remote_dns
 import pihole_status as pihole_runtime
 
 
@@ -824,6 +825,37 @@ class Handler(BaseHTTPRequestHandler):
             payload["csrf"] = session["csrf"]
             self.send_json(payload)
             return
+        if path == "/api/pihole/apple.mobileconfig":
+            if not self.require_session():
+                return
+            query = parse_qs(parsed.query)
+            device_id = str(query.get("id", [""])[0] or "")
+            try:
+                body = remote_dns.apple_profile(device_id or None)
+            except (ValueError, KeyError) as exc:
+                self.send_json({"ok": False, "error": str(exc)}, 409)
+                return
+            self.send_response(200)
+            self.send_header("Content-Type", "application/x-apple-aspen-config")
+            self.send_header("Content-Disposition", 'attachment; filename="OpenAstro-Pi-hole.mobileconfig"')
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Referrer-Policy", "no-referrer")
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        if path == "/api/pihole/connection":
+            if not self.require_session():
+                return
+            query = parse_qs(parsed.query)
+            device_id = str(query.get("id", [""])[0] or "")
+            self.send_json(remote_dns.connection(device_id or None))
+            return
+        if path == "/api/pihole/devices":
+            if not self.require_session():
+                return
+            self.send_json(remote_dns.list_devices())
+            return
         if path == "/api/pihole/status":
             if not self.require_session():
                 return
@@ -1038,6 +1070,60 @@ class Handler(BaseHTTPRequestHandler):
                     _sessions.pop(cookie["openastro_session"].value, None)
             self.send_json({"ok": True}, headers={"Set-Cookie": "openastro_session=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Strict"})
             return
+        if self.path in {"/api/pihole/remote/test", "/api/pihole/remote/rotate"}:
+            session = self.require_session()
+            if not session:
+                return
+            if self.headers.get("X-CSRF-Token") != session["csrf"]:
+                self.send_json({"ok": False, "error": "Sessione scaduta: ricarica la pagina."}, 403)
+                return
+            if not _action_lock.acquire(blocking=False):
+                self.send_json({"ok": False, "error": "Operazione già in corso."}, 409)
+                return
+            try:
+                result = remote_dns.probe() if self.path.endswith('/test') else remote_dns.rotate()
+                self.send_json(result)
+            finally:
+                _action_lock.release()
+            return
+        if self.path in {
+            "/api/pihole/devices/create",
+            "/api/pihole/devices/enable",
+            "/api/pihole/devices/disable",
+            "/api/pihole/devices/regenerate",
+            "/api/pihole/devices/delete",
+        }:
+            session = self.require_session()
+            if not session:
+                return
+            if self.headers.get("X-CSRF-Token") != session["csrf"]:
+                self.send_json({"ok": False, "error": "Sessione scaduta: ricarica la pagina."}, 403)
+                return
+            try:
+                payload = self.read_payload()
+                if self.path.endswith("/create"):
+                    result = remote_dns.create_device(str(payload.get("name", "")), str(payload.get("platform", "generic")))
+                else:
+                    device_id = str(payload.get("id", ""))
+                    if not device_id:
+                        raise ValueError("Dispositivo non specificato.")
+                    if self.path.endswith("/enable"):
+                        result = remote_dns.set_device_enabled(device_id, True)
+                    elif self.path.endswith("/disable"):
+                        result = remote_dns.set_device_enabled(device_id, False)
+                    elif self.path.endswith("/regenerate"):
+                        result = remote_dns.regenerate_device(device_id)
+                    else:
+                        result = remote_dns.delete_device(device_id)
+            except (ValueError, KeyError, json.JSONDecodeError) as exc:
+                message = exc.args[0] if getattr(exc, "args", None) else "Richiesta non valida."
+                self.send_json({"ok": False, "error": str(message)}, 400)
+                return
+            with _state_lock:
+                _state_cache.clear()
+            self.send_json(result)
+            return
+
         pihole_actions = {
             "/api/pihole/blocking/enable": "pihole_enable",
             "/api/pihole/blocking/disable": "pihole_disable",

@@ -47,6 +47,7 @@ body::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:-1;ba
 body[data-view="media"]{--accent:var(--oa-magenta);--accent-soft:rgba(182,104,199,.14)}
 body[data-view="storage"]{--accent:var(--oa-blue);--accent-soft:rgba(29,167,230,.13)}
 body[data-view="system"]{--accent:var(--oa-orange);--accent-soft:rgba(255,116,41,.13)}
+body[data-view="nina"]{--accent:#64d8ff;--accent-soft:rgba(100,216,255,.13)}
 body[data-view="advanced"]{--accent:var(--oa-violet);--accent-soft:rgba(156,121,235,.13)}
 
 /* shell */
