@@ -85,3 +85,35 @@ img,video{max-width:100%}
   .rec-card{grid-template-columns:54px minmax(0,1fr)!important}
   .archive-thumb,.thumb{width:54px;height:58px}
 }
+
+/* Timeline media on touch devices is two-step: first tap opens this preview,
+ * only the explicit action opens Gofile/local playback. Keep the card above the
+ * bottom navigation and large enough to inspect the actual thumbnail. */
+@media(max-width:820px), (hover:none) and (pointer:coarse){
+  .cr-pulse-media-preview.tap-mode{
+    left:max(10px,env(safe-area-inset-left));
+    right:max(10px,env(safe-area-inset-right));
+    bottom:calc(70px + env(safe-area-inset-bottom));
+    width:auto;
+    max-width:none;
+    max-height:min(72vh,620px);
+    padding:8px;
+    display:grid;
+    gap:8px;
+    overflow:auto;
+  }
+  .cr-pulse-media-preview.tap-mode img,
+  .cr-pulse-media-preview.tap-mode .cr-pulse-media-preview-empty{
+    width:100%;
+    aspect-ratio:16/9;
+    border-radius:6px;
+  }
+  .cr-pulse-media-preview.tap-mode img{object-fit:cover;background:#090b0e}
+  .cr-pulse-media-preview-empty{display:grid;place-items:center;background:#090b0e;color:var(--muted);font-size:11px}
+  .cr-pulse-media-preview-copy{display:flex;align-items:center;justify-content:space-between;gap:10px;min-width:0}
+  .cr-pulse-media-preview-copy>div:first-child{min-width:0;display:grid;gap:2px}
+  .cr-pulse-media-preview-copy strong,.cr-pulse-media-preview-copy span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .cr-pulse-media-preview-copy span{font-size:10px;color:var(--muted)}
+  .cr-pulse-media-preview-actions{display:flex;align-items:center;gap:6px;flex:0 0 auto}
+  .cr-pulse-media-preview-actions .button{min-height:40px}
+}

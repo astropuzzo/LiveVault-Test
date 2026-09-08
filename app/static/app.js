@@ -2361,13 +2361,26 @@ function ensurePulseMediaPreview() {
   return node;
 }
 
+function pulsePreviewUsesTap() {
+  return window.matchMedia('(hover: none), (pointer: coarse)').matches || window.matchMedia('(max-width: 820px)').matches;
+}
+
 function showPulseMediaPreview(target) {
-  const previewUrl = safeUrl(target?.dataset?.previewUrl || '');
-  if (!previewUrl) return;
+  if (!target) return;
+  const previewUrl = safeUrl(target.dataset.previewUrl || '');
+  const openUrl = safeUrl(target.dataset.openUrl || target.getAttribute?.('href') || '');
   const node = ensurePulseMediaPreview();
   const title = target.dataset.previewTitle || 'REC';
   const meta = target.dataset.previewMeta || '';
-  node.innerHTML = `<img src="${esc(previewUrl)}" alt=""><div><strong>${esc(title)}</strong>${meta ? `<span>${esc(meta)}</span>` : ''}</div>`;
+  const tapMode = pulsePreviewUsesTap();
+  const media = previewUrl
+    ? `<img src="${esc(previewUrl)}" alt="Anteprima ${esc(title)}">`
+    : '<div class="cr-pulse-media-preview-empty">Anteprima non disponibile</div>';
+  const actions = tapMode
+    ? `<div class="cr-pulse-media-preview-actions">${openUrl ? `<a class="button primary compact" data-pulse-preview-open href="${esc(openUrl)}" target="_blank" rel="noopener noreferrer">Apri video</a>` : ''}<button class="button secondary compact" data-pulse-preview-close type="button">Chiudi</button></div>`
+    : '';
+  node.innerHTML = `${media}<div class="cr-pulse-media-preview-copy"><div><strong>${esc(title)}</strong>${meta ? `<span>${esc(meta)}</span>` : ''}</div>${actions}</div>`;
+  node.classList.toggle('tap-mode', tapMode);
   node.classList.add('visible');
   node.setAttribute('aria-hidden', 'false');
 }
@@ -2375,20 +2388,44 @@ function showPulseMediaPreview(target) {
 function hidePulseMediaPreview() {
   const node = $('#crPulseMediaPreview');
   if (!node) return;
-  node.classList.remove('visible');
+  node.classList.remove('visible', 'tap-mode');
   node.setAttribute('aria-hidden', 'true');
 }
 
 document.addEventListener('pointerover', event => {
+  if (event.pointerType === 'touch' || pulsePreviewUsesTap()) return;
   const target = event.target.closest?.('.cr-pulse-rec-media');
   if (target) showPulseMediaPreview(target);
 });
 
 document.addEventListener('pointerout', event => {
+  if (event.pointerType === 'touch' || pulsePreviewUsesTap()) return;
   const target = event.target.closest?.('.cr-pulse-rec-media');
   if (!target || target.contains(event.relatedTarget)) return;
   hidePulseMediaPreview();
 });
+
+// Touch/coarse-pointer UX: the first tap is reserved for the thumbnail card.
+// External/local playback requires the explicit button inside that card, so a
+// normal attempt to inspect a timeline segment can never throw the user out to Gofile.
+document.addEventListener('click', event => {
+  const close = event.target.closest?.('[data-pulse-preview-close]');
+  if (close) {
+    event.preventDefault();
+    hidePulseMediaPreview();
+    return;
+  }
+  if (!pulsePreviewUsesTap()) return;
+  if (event.target.closest?.('#crPulseMediaPreview')) return;
+  const target = event.target.closest?.('.cr-pulse-rec-media');
+  if (target) {
+    event.preventDefault();
+    event.stopPropagation();
+    showPulseMediaPreview(target);
+    return;
+  }
+  hidePulseMediaPreview();
+}, true);
 
 function pulseRangeLabel(start, end, open = false) {
   if (!timestamp(start)) return '—';
@@ -2496,7 +2533,7 @@ function controlRoomPulseMarkup() {
         const storage = provider || (rec.active ? 'REC LOCALE' : rec.processing ? 'PARTE LOCALE' : 'LOCALE');
         const meta = `${storage} · ${pulseRangeLabel(rec.started_at, rec.ended_at, !!rec.active)}`;
         const rect = `<rect class="cr-pulse-rec-span ${remoteUrl ? 'remote' : localUrl ? 'local' : ''} ${rec.processing ? 'processing' : ''}" x="${recX.toFixed(3)}" y="4" width="${recWidth.toFixed(3)}" height="8" rx="4" ry="4"></rect>`;
-        const attrs = `class="cr-pulse-rec-media" data-preview-url="${esc(previewUrl)}" data-preview-title="${esc(filename)}" data-preview-meta="${esc(meta)}"`;
+        const attrs = `class="cr-pulse-rec-media" data-preview-url="${esc(previewUrl)}" data-open-url="${esc(targetUrl)}" data-preview-title="${esc(filename)}" data-preview-meta="${esc(meta)}"`;
         if (targetUrl) return `<a ${attrs} href="${esc(targetUrl)}" target="_blank" rel="noopener noreferrer">${rect}<title>${esc(filename)} · ${esc(meta)}</title></a>`;
         return `<g ${attrs}>${rect}<title>${esc(filename)} · ${esc(meta)}</title></g>`;
       }).join('');

@@ -29,7 +29,7 @@
   if (!document.querySelector('link[data-mobile-fixes]')) {
     const mobileFixes = document.createElement('link');
     mobileFixes.rel = 'stylesheet';
-    mobileFixes.href = '/static/mobile-fixes.css?v=3.0.0-redesign8';
+    mobileFixes.href = '/static/mobile-fixes.css?v=3.0.0-redesign10';
     mobileFixes.dataset.mobileFixes = '1';
     document.head.appendChild(mobileFixes);
   }

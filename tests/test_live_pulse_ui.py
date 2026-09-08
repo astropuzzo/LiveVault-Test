@@ -48,3 +48,25 @@ def test_live_pulse_is_csp_safe_and_shows_live_and_recording_geometry():
 
     assert "style-src 'self'" in main
     assert "style-src 'self' 'unsafe-inline'" not in main
+
+
+def test_touch_timeline_preview_requires_explicit_open_action():
+    js = (ROOT / 'app/static/app.js').read_text(encoding='utf-8')
+    css = (ROOT / 'app/static/mobile-fixes.css').read_text(encoding='utf-8')
+
+    preview_start = js.index('function pulsePreviewUsesTap()')
+    preview_end = js.index('function pulseRangeLabel', preview_start)
+    preview = js[preview_start:preview_end]
+    pulse = pulse_function(js)
+
+    assert "(hover: none), (pointer: coarse)" in preview
+    assert "event.target.closest?.('.cr-pulse-rec-media')" in preview
+    assert 'event.preventDefault();' in preview
+    assert 'event.stopPropagation();' in preview
+    assert 'data-pulse-preview-open' in preview
+    assert 'data-pulse-preview-close' in preview
+    assert 'Apri video' in preview
+    assert 'data-open-url=' in pulse
+    assert '.cr-pulse-media-preview.tap-mode' in css
+    assert 'bottom:calc(70px + env(safe-area-inset-bottom))' in css
+    assert '.cr-pulse-media-preview-actions .button{min-height:40px}' in css
