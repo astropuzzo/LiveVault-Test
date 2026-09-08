@@ -111,21 +111,47 @@ def test_standalone_assets_and_docker_contract_exist():
     assert 'href="app.css"' in html and 'src="app.js"' in html
     assert '[hidden]{display:none!important}' in css
     assert 'guidingLive' in js
-    assert 'FRAME QSM' in js
-    assert 'Quality <b>0–100</b>' in js
-    assert 'Guide RMS <b>arcsec</b>' in js
+    assert 'MULTICHANNEL TIMELINE' in html
+    assert 'Quality' in js and '0–100' in js
+    assert 'Guide RMS' in js and 'rolling baseline' in html
     assert 'PHD2 live' in js
-    assert '.synthetic-mode .live-only{display:block}' in css
-    assert 'Preview ultimo LIGHT reale' in html
-    assert 'id="currentFileValue"' in html
+    assert 'GUIDA PHD2 LIVE' in html
+    assert 'PREVIEW ULTIMO LIGHT REALE' in html
+    assert 'id="pluginTimeline"' in html
+    assert 'id="sessionEventsBody"' in html
+    assert 'id="bestAcceptedBody"' in html and 'id="worstAcceptedBody"' in html
     assert 'id="rejectedTableBody"' in html
     assert 'id="frameHistoryBody"' in html
     assert 'id="frameInspector"' in html
     assert 'fileDisposition' in js and 'fileName' in js
-    assert 'synthetic-mode' in css and '.live-only' in css
+    assert 'tl-ref-zero' in css and 'tl-ref-guide' in css
     assert 'read_only: true' in compose
     assert 'cap_drop:' in compose and 'ALL' in compose
     assert '/var/run/docker.sock' not in compose
     assert '/mnt/livevault-nvme' not in compose
     assert '/srv/openastro-media' not in compose
     assert 'USER openastro' in dockerfile
+
+
+def test_web_monitor_mirrors_qsm_dockable_hierarchy_before_remote_extensions():
+    html = (ROOT / 'static' / 'index.html').read_text(encoding='utf-8')
+    order = [
+        'QUALITY</span>',
+        'GUIDE RMS</span>',
+        'CAPTURED</span>',
+        'MULTICHANNEL TIMELINE',
+        'SESSION EVENTS — latest 12',
+        'BEST ACCEPTED',
+        'REJECTED REVIEW',
+        'FRAME HISTORY',
+        'OPENASTRO REMOTE LIVE EXTENSIONS',
+        'GUIDA PHD2 LIVE',
+        'PREVIEW ULTIMO LIGHT REALE',
+    ]
+    positions = [html.index(marker) for marker in order]
+    assert positions == sorted(positions)
+    js = (ROOT / 'static' / 'app.js').read_text(encoding='utf-8')
+    assert "[top,rms,img].forEach" in js
+    assert "0% rolling baseline" in js
+    assert "RMS limit" in js
+    assert "causeCodes(frame)" in js
