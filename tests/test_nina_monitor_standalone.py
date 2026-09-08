@@ -111,6 +111,12 @@ def test_standalone_assets_and_docker_contract_exist():
     assert 'href="app.css"' in html and 'src="app.js"' in html
     assert '[hidden]{display:none!important}' in css
     assert 'guidingLive' in js
+    assert 'id="currentFileValue"' in html
+    assert 'id="rejectedTableBody"' in html
+    assert 'id="frameHistoryBody"' in html
+    assert 'id="frameInspector"' in html
+    assert 'fileDisposition' in js and 'fileName' in js
+    assert 'synthetic-mode' in css and '.live-only' in css
     assert 'read_only: true' in compose
     assert 'cap_drop:' in compose and 'ALL' in compose
     assert '/var/run/docker.sock' not in compose

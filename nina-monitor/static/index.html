@@ -16,10 +16,7 @@
       <p class="eyebrow">OPENASTRO · ISOLATED MODULE</p>
       <h1>NINA Monitor</h1>
       <p class="muted">Monitor remoto read-only separato dagli altri servizi ASIAIR.</p>
-      <label>
-        <span>Password</span>
-        <input id="loginPassword" type="password" autocomplete="current-password" required autofocus>
-      </label>
+      <label><span>Password</span><input id="loginPassword" type="password" autocomplete="current-password" required autofocus></label>
       <button type="submit">Accedi</button>
       <p id="loginError" class="error" hidden></p>
     </form>
@@ -27,33 +24,15 @@
 
   <main id="appView" class="app-shell" hidden>
     <header class="topbar">
-      <div class="brand-row">
-        <div class="brand-mark small">N</div>
-        <div>
-          <p class="eyebrow">OPENASTRO · STANDALONE</p>
-          <h1>NINA Monitor</h1>
-        </div>
-      </div>
-      <div class="top-actions">
-        <span id="linkState" class="link-state"><i></i><b>Verifica…</b></span>
-        <button id="logoutButton" class="ghost" type="button">Esci</button>
-      </div>
+      <div class="brand-row"><div class="brand-mark small">N</div><div><p class="eyebrow">OPENASTRO · STANDALONE</p><h1>NINA Monitor</h1></div></div>
+      <div class="top-actions"><span id="modeTag" class="mode-tag">LIVE</span><span id="linkState" class="link-state"><i></i><b>Verifica…</b></span><button id="logoutButton" class="ghost" type="button">Esci</button></div>
     </header>
 
     <section id="statusBanner" class="status-banner">
-      <div>
-        <strong id="bannerTitle">In attesa di NINA</strong>
-        <span id="bannerText">Il modulo continua a funzionare anche se il PC di acquisizione è offline.</span>
-      </div>
-      <i class="status-dot"></i>
+      <div><strong id="bannerTitle">In attesa di NINA</strong><span id="bannerText">Il modulo continua a funzionare anche se il PC di acquisizione è offline.</span></div><i class="status-dot"></i>
     </section>
 
-    <section id="emptyState" class="empty-state" hidden>
-      <div>
-        <strong id="emptyTitle">NINA non disponibile</strong>
-        <p id="emptyText">Verifica collegamento QSM e rete.</p>
-      </div>
-    </section>
+    <section id="emptyState" class="empty-state" hidden><div><strong id="emptyTitle">NINA non disponibile</strong><p id="emptyText">Verifica collegamento QSM e rete.</p></div></section>
 
     <section id="dashboard" class="dashboard" hidden>
       <div class="metric-grid">
@@ -63,75 +42,64 @@
         <article class="metric rejected"><span>Rejected</span><strong id="rejectedValue">—</strong><small id="acceptanceValue">—</small></article>
       </div>
 
+      <article class="panel full current-file-card">
+        <div class="current-file-head"><div><span class="section-kicker">FRAME CORRENTE</span><strong id="currentFileValue">—</strong><small id="currentFileMeta">Nessun file</small></div><div class="status-cluster"><span id="currentStatusPill" class="pill">—</span><span id="fileActionPill" class="pill subtle">—</span></div></div>
+      </article>
+
       <div class="two-col">
         <article class="panel">
           <div class="panel-title"><span>Sessione corrente</span></div>
           <div class="facts six">
-            <div><span>Target</span><strong id="targetValue">—</strong></div>
-            <div><span>Filtro</span><strong id="filterValue">—</strong></div>
-            <div><span>Esposizione</span><strong id="exposureValue">—</strong></div>
-            <div><span>Gain / Bin</span><strong id="gainBinValue">—</strong></div>
-            <div><span>Frame</span><strong id="capturedValue">—</strong></div>
-            <div><span>Usabili</span><strong id="usableValue">—</strong></div>
+            <div><span>Target</span><strong id="targetValue">—</strong></div><div><span>Filtro</span><strong id="filterValue">—</strong></div><div><span>Esposizione</span><strong id="exposureValue">—</strong></div>
+            <div><span>Gain / Bin</span><strong id="gainBinValue">—</strong></div><div><span>Frame</span><strong id="capturedValue">—</strong></div><div><span>Usabili</span><strong id="usableValue">—</strong></div>
           </div>
         </article>
-
         <article class="panel">
           <div class="panel-title"><span>Segnale immagine</span></div>
           <div class="facts six">
-            <div><span>Stelle Δ</span><strong id="starsDeltaValue">—</strong></div>
-            <div><span>Background Δ</span><strong id="backgroundDeltaValue">—</strong></div>
-            <div><span>Stato</span><strong id="frameStatusValue">—</strong></div>
-            <div><span>Camera</span><strong id="cameraValue">—</strong></div>
-            <div><span>Latenza</span><strong id="latencyValue">—</strong></div>
-            <div><span>Frame QSM</span><strong id="frameIndexValue">—</strong></div>
+            <div><span>Stelle Δ</span><strong id="starsDeltaValue">—</strong></div><div><span>Background Δ</span><strong id="backgroundDeltaValue">—</strong></div><div><span>Stato</span><strong id="frameStatusValue">—</strong></div>
+            <div><span>Camera</span><strong id="cameraValue">—</strong></div><div><span>Latenza</span><strong id="latencyValue">—</strong></div><div><span>Frame QSM</span><strong id="frameIndexValue">—</strong></div>
           </div>
         </article>
       </div>
 
-      <article class="panel full">
-        <div class="panel-title split">
-          <span>Guida live · ultimi 20 secondi</span>
-          <small><i class="legend ra"></i>RA <i class="legend dec"></i>DEC · arcsec</small>
-        </div>
-        <div class="guide-facts">
-          <span>Total RMS <b id="guideTotalValue">—</b></span>
-          <span>RA RMS <b id="guideRaValue">—</b></span>
-          <span>DEC RMS <b id="guideDecValue">—</b></span>
-          <span>Max <b id="guideMaxValue">—</b></span>
-          <span>Samples <b id="guideSamplesValue">—</b></span>
-        </div>
+      <div class="two-col analysis-row">
+        <article class="panel">
+          <div class="panel-title split"><span>Trend sessione</span><small>Quality · Confidence · RMS posa</small></div><div id="trendPlot" class="plot"></div>
+        </article>
+        <article class="panel inspector-panel">
+          <div class="panel-title split"><span>Frame inspector</span><small id="inspectorHint">clicca una riga sotto</small></div>
+          <div id="frameInspector" class="inspector-empty">Seleziona un frame dalla cronologia o dalla coda reject per vedere file, causa e metriche complete.</div>
+        </article>
+      </div>
+
+      <article id="guidePanel" class="panel full live-only">
+        <div class="panel-title split"><span>Guida live · ultimi 20 secondi</span><small><i class="legend ra"></i>RA <i class="legend dec"></i>DEC · arcsec</small></div>
+        <div class="guide-facts"><span>Total RMS <b id="guideTotalValue">—</b></span><span>RA RMS <b id="guideRaValue">—</b></span><span>DEC RMS <b id="guideDecValue">—</b></span><span>Max <b id="guideMaxValue">—</b></span><span>Samples <b id="guideSamplesValue">—</b></span></div>
         <div id="guidePlot" class="plot guide-plot"></div>
       </article>
 
-      <div class="two-col">
-        <article class="panel preview-panel">
-          <div class="panel-title split"><span>Ultima esposizione</span><small>JPEG 1280 px · RAM</small></div>
-          <div class="preview-wrap">
-            <div id="previewPlaceholder" class="preview-placeholder"><b>Preview in attesa</b><span>Comparirà al prossimo LIGHT.</span></div>
-            <img id="previewImage" alt="Preview ultima esposizione NINA" hidden>
-          </div>
-          <div class="preview-meta"><span id="previewState">Nessuna preview ricevuta</span><span>FITS non trasferiti</span></div>
-        </article>
+      <article id="previewPanel" class="panel full preview-panel live-only">
+        <div class="panel-title split"><span>Ultima esposizione</span><small>JPEG 1280 px · RAM · FITS non trasferiti</small></div>
+        <div class="preview-wrap"><div id="previewPlaceholder" class="preview-placeholder"><b>Preview in attesa</b><span>Comparirà al prossimo LIGHT.</span></div><img id="previewImage" alt="Preview ultima esposizione NINA" hidden></div>
+        <div class="preview-meta"><span id="previewState">Nessuna preview ricevuta</span><span>Read-only</span></div>
+      </article>
 
-        <article class="panel">
-          <div class="panel-title split"><span>Trend sessione</span><small>Quality · Confidence · RMS posa</small></div>
-          <div id="trendPlot" class="plot"></div>
-        </article>
-      </div>
+      <article class="panel full attention-panel">
+        <div class="panel-title split"><span>Reject / warning da controllare</span><small>ultimi 24 · clicca per ispezionare</small></div>
+        <div class="table-wrap"><table class="frame-table"><thead><tr><th>Ora</th><th>File</th><th>Stato</th><th>Q</th><th>Conf.</th><th>RMS</th><th>Stars Δ</th><th>BG Δ</th><th>Causa</th><th>File action</th></tr></thead><tbody id="rejectedTableBody"></tbody></table></div>
+      </article>
 
       <article class="panel full">
-        <div class="panel-title"><span>Ultimi eventi</span></div>
-        <div id="eventList" class="event-list"></div>
+        <div class="panel-title split"><span>Frame history</span><small>ultimi 80 · nome file e diagnostica</small></div>
+        <div class="table-wrap history-wrap"><table class="frame-table"><thead><tr><th>#</th><th>Ora</th><th>File</th><th>Target</th><th>Filtro</th><th>Stato</th><th>Q</th><th>Conf.</th><th>RMS</th><th>Pattern</th><th>Stars Δ</th><th>BG Δ</th><th>Causa</th></tr></thead><tbody id="frameHistoryBody"></tbody></table></div>
       </article>
+
+      <article class="panel full compact-events"><div class="panel-title"><span>Eventi recenti</span></div><div id="eventList" class="event-list"></div></article>
     </section>
 
-    <footer>
-      <span>Servizio isolato <b>openastro-nina-monitor.service</b> · porta <b>9091</b></span>
-      <span>Read-only · nessuna dipendenza da NVMe/Media USB/Docker</span>
-    </footer>
+    <footer><span>Servizio isolato <b>openastro-nina-monitor.service</b> · porta <b>9091</b></span><span>Read-only · nessuna dipendenza da NVMe/Media USB/Docker</span></footer>
   </main>
-
   <script src="app.js" defer></script>
 </body>
 </html>
