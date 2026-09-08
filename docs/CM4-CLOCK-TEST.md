@@ -48,6 +48,30 @@ overclock GPU/RAM o `force_turbo`.
 
 ## Risultati e ripresa
 
+**Recuperato, prove OC sospese.** Il nodo è tornato raggiungibile dopo che
+l'utente ha scollegato USB/NVMe. Verifica SSH 2026-09-08 circa 17:39 BST:
+config.txt identico al backup (SHA sotto), massimo ed effettivo 2000 MHz.
+Avvio kernel+userspace 32,728 s. Journal solo volatile: gli avvii falliti non
+sono disponibili, quindi causa del mancato boot e stabilità 2100 restano ignote.
+Nel boot riuscito: controller Renesas `xHCI HW not ready after 5 sec`, poi
+inizializzato; undervoltage rilevato e rientrato dopo 4 s, flag storici 0x50000,
+nessun flag attuale. Temperatura 51–57 C senza stress. Non attribuire questi
+indizi esclusivamente alla CPU né dichiarare risolta l'alimentazione.
+
+NVMe ricomparso fisicamente alle 17:36:37 BST prima dei controlli conclusivi;
+attach automatico concluso alle 17:37:14, UUID atteso, bind recordings su ext4
+NVMe rw, buffer interno 3,9 GiB liberi. Container LiveVault e NINA healthy.
+`cm4-clock-trial.py resume` eseguito: pause originali recordings/uploads false
+ripristinate; ricevuta privata `resumed.json` nel rollback clock. Questo non
+certifica integrità di tutti i video dopo gli spegnimenti.
+
+**Punto aperto storage:** SHARE exFAT segnala smontaggio non pulito; nessuna
+riparazione effettuata. Prima di fsck, fermare gli utilizzatori e smontare
+ordinatamente SHARE; identificare sempre UUID 7EBD-F531. Nessun errore I/O o
+EXT4 osservato nel campione di questo boot. smartmontools fallito perché al boot
+non trovava dischi SMART; non è prova di guasto NVMe. Non riavviare per provarlo.
+Prossimo passo: chiarire periferiche/alimentazione presenti, controllare SHARE
+fuori mount, poi eventuali prove di collegamento una periferica alla volta.
 - 2 GHz: 180 s CPU 4 + VM 128 MiB, **passato**; picco 76,445 C, mediana
   2000,478 MHz, flag iniziali/finali 0, nessun errore kernel o stress.
   Registrazioni attive in questa baseline; nelle prove superiori saranno in pausa.
