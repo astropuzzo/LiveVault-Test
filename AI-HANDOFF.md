@@ -4,6 +4,10 @@ Prova storage sulla release live ba26e23: eject 11,05 s, crescita capture su buf
 attach 11,82 s, due file verificati SHA-256, buffer vuoto, container invariato.
 Verbale privato: /var/backups/openastro/20260908-maintenance/live-cycle.json.
 Le vecchie indagini restano nella cronologia Git: non prevalgono sullo stato verificato.
+Una copia distribuita su eMMC è in /opt/openastro-ops; gli ingressi AGENTS.md dei
+workspace del nodo puntano lì. Aggiornare quella copia insieme ai documenti Git;
+SOURCE.txt identifica la revisione. Il vecchio handoff duplicato è stato sostituito
+da un rinvio, con originale conservato nella directory rollback.
 
 ## Accesso e repository
 - Nodo attivo: ASIAIR Plus / Raspberry Pi CM4, Debian, 4 core, 4 GiB RAM,

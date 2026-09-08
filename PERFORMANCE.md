@@ -1,5 +1,22 @@
 # Recording performance investigation — 2026-09-05
 
+## September 8 maintenance verification
+
+Fixed the Control Center service-worker precache: it requested a nonexistent
+pihole.css, causing installation failure and repeated full shell downloads.
+Archive scans/remux now yield safely to storage handoff and stop queued work
+between files; the acknowledgement no longer rewrites eMMC four times/second.
+APT download cache fell from 133 MB to 20 KB; 23 obsolete one-shot scripts were
+archived with SHA-256, and two empty storage-probe directories were removed.
+
+After the verified NVMe/buffer/NVMe cycle on the newer ba26e23 release, both apps
+were healthy, no systemd services had failed, RAM available was 2.6 GiB, and the
+internal filesystem was 55% used. Two one-second samples showed 38–59% CPU idle
+and zero I/O wait while capture/recovery were running. Earlier post-deploy samples
+had 21–28% I/O wait: these different workloads do not establish a speedup ratio.
+Historical undervoltage remains recorded (0x50000), without active throttling;
+software maintenance cannot certify the physical power supply or USB cable.
+
 Prepared against GitHub `origin/main` at `dfde126`, in branch
 `codex/recording-efficiency`. Initial release `ecbae19` deployed successfully after
 Linux CI passed. Authenticated active-capture playback returned an uncompressed
