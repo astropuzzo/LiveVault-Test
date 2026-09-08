@@ -41,7 +41,8 @@ def _b64d(value: str) -> bytes:
 
 def _verify_password(password: str) -> bool:
     try:
-        algorithm, iterations_raw, salt_raw, digest_raw = PASSWORD_HASH.split('$', 3)
+        # Colon separators avoid Docker Compose variable interpolation on '$'.
+        algorithm, iterations_raw, salt_raw, digest_raw = PASSWORD_HASH.split(':', 3)
         if algorithm != 'pbkdf2_sha256':
             return False
         iterations = int(iterations_raw)
