@@ -48,9 +48,25 @@ overclock GPU/RAM o `force_turbo`.
 
 ## Risultati e ripresa
 
-- 2 GHz: prova in preparazione.
+- 2 GHz: 180 s CPU 4 + VM 128 MiB, **passato**; picco 76,445 C, mediana
+  2000,478 MHz, flag iniziali/finali 0, nessun errore kernel o stress.
+  Registrazioni attive in questa baseline; nelle prove superiori saranno in pausa.
 - 2,1 GHz: non provati.
 - 2,2 GHz: non provati.
-- Backup e job: da registrare prima del reboot.
+- Backup normale `/var/backups/openastro/20260908-clock/config-2000.txt`, SHA-256
+  `0e26639d67471b5f39854f70e3bdf82d4e656e3959d7ccbfe7aa007b1aed2950`.
+  Runner e risultati nella stessa directory; primo output `baseline-2000/`.
+- Commit runner/documenti `7ae4e16`, CI GitHub `34249967432` verde.
+- Tabella frequenze del kernel: 600..2000 MHz a passi 100; minimo 600 MHz.
+  Mantenerlo con `schedutil`, senza introdurre un minimo 100 MHz non supportato.
+- Trasporto Harness MCP intermittente; SSH con chiave `astro@192.168.1.27`
+  funziona. Root bridge locale raggiungibile via un container client effimero,
+  senza rete/capabilities, UID 997:GID 984, con soli mount del client gpt-root e
+  del suo socket. Nessun nuovo accesso esterno o modifica a sudo.
+- Helper `cm4-clock-trial.py`: `prepare --mhz 2100` (poi 2200 solo se 2100 passa)
+  salva pause/DB, chiude capture e programma reboot tryboot. `normal-boot`
+  programma boot normale; **dopo la riconnessione eseguire `resume`** per
+  ripristinare le pause originali. Stato privato `pause-state.json` nella directory
+  backup. Non lasciare le registrazioni in pausa al termine.
 - Ottimizzazioni: riprendere poi `docs/OTTIMIZZAZIONE-STATO.md`, aggiornando lo
   stato dei deploy host con prove reali; non ripetere l'implementazione già a main.
