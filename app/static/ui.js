@@ -297,7 +297,11 @@
     const source=archiveSourceFor(recording), creator=source?.display_name||recording.source_name;
     const remote=safeUrl(recording.remote_url), collection=safeUrl(recording.collection_url), preview=safeUrl(recording.thumbnail_url);
     const reasons=attentionReasonsProduct(recording);
-    const primary = remote ? actionLink('external','Apri cloud',remote,'target="_blank" rel="noopener"') : recording.local_available ? actionButton('play','Riproduci',`data-rec-action="preview" data-id="${recording.id}"`) : '';
+    const recoverable = recording.local_available && reasons.length && !['uploading','deleting'].includes(recording.upload_status);
+    const primary = recoverable
+      ? actionButton('rotate-ccw','Recupera file',`data-rec-action="recover" data-id="${recording.id}"`,'recovery')
+      : remote ? actionLink('external','Apri cloud',remote,'target="_blank" rel="noopener"')
+      : recording.local_available ? actionButton('play','Riproduci',`data-rec-action="preview" data-id="${recording.id}"`) : '';
     return `<article class="rec-card ${reasons.length?'lv-attention':''}" data-recording-id="${recording.id}">
       <button class="archive-thumb ${preview?'':'empty'}" type="button" data-rec-action="preview" data-id="${recording.id}" aria-label="Anteprima ${esc(recording.filename)}" ${recording.local_available?'':'disabled'}>${preview?`<img src="${esc(preview)}" alt="" loading="lazy">`:icon('play')}</button>
       <div class="archive-identity"><strong>${creatorLinkMarkup(source?.id||0,creator)}</strong><span title="${esc(recording.filename)}">${esc(recording.filename)}</span><small>${esc(dateText(recording.started_at))}</small></div>

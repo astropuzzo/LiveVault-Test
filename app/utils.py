@@ -209,17 +209,34 @@ def probe_media(path: Path, *, require_audio: bool = True, quick: bool = False) 
         return IntegrityResult(False, None, str(exc)[-1200:])
 
 
+def _packet_scan_timeout_seconds(path: Path) -> int:
+    """Scale the full packet scan to the file size instead of failing large valid media at 300 s.
+
+    Final recordings can approach 2 GiB while the storage host is simultaneously
+    recording and finalizing other sessions. A fixed five-minute limit turned
+    ordinary I/O pressure into a false "integrity failed" state. Budget roughly
+    3 MiB/s plus startup headroom, with a hard cap so truly wedged scans still stop.
+    """
+    try:
+        size = max(0, int(path.stat().st_size))
+    except OSError:
+        size = 0
+    estimated = int(size / (3 * 1024**2)) + 120
+    return max(300, min(1800, estimated))
+
+
 def verify_media(path: Path, mode: str = "packet", *, require_audio: bool = True) -> IntegrityResult:
     storage_handoff.checkpoint()
     quick = probe_media(path, require_audio=require_audio, quick=(mode == "quick"))
     if not quick.ok or mode == "quick":
         return quick
+    timeout_seconds = _packet_scan_timeout_seconds(path)
     try:
         p = storage_handoff.run_probe(
             ["ffmpeg", "-hide_banner", "-v", "error", "-i", str(path), "-map", "0", "-c", "copy", "-f", "null", "-"],
             capture_output=True,
             text=True,
-            timeout=300,
+            timeout=timeout_seconds,
             check=False,
         )
         if p.returncode != 0:
@@ -228,6 +245,12 @@ def verify_media(path: Path, mode: str = "packet", *, require_audio: bool = True
         if gap_warning:
             quick.warning = gap_warning
         return quick
+    except subprocess.TimeoutExpired:
+        return IntegrityResult(
+            False, quick.duration,
+            f"Analisi completa ffmpeg scaduta dopo {timeout_seconds} secondi; riprova quando il carico disco è più basso",
+            quick.streams,
+        )
     except Exception as exc:
         return IntegrityResult(False, quick.duration, str(exc)[-1200:], quick.streams)
 

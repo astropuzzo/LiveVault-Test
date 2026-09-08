@@ -1864,6 +1864,13 @@ $('#recordings').addEventListener('click', async event => {
     if (action === 'upload-now') {
       await api(`/api/recordings/${id}/upload-now`, {method: 'POST'});
       toast('File messo in testa alla coda');
+    } else if (action === 'recover') {
+      const response = await api(`/api/recordings/${id}/recover`, {method: 'POST'});
+      if (response.ok) {
+        toast(response.repaired ? 'File recuperato e riparato · rimesso in coda' : 'File ricontrollato · rimesso in coda');
+      } else {
+        toast(`Recupero non riuscito: ${response.error || 'integrità ancora non valida'}`, 'bad');
+      }
     } else if (action === 'integrity') {
       const response = await api(`/api/recordings/${id}/integrity`, {method: 'POST'});
       toast(response.ok ? 'Integrità, audio e video confermati' : `Controllo fallito: ${response.error}`, response.ok ? 'good' : 'bad');

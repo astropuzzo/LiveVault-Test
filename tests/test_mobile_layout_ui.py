@@ -16,5 +16,5 @@ def test_phone_layout_has_explicit_overflow_containment_and_reflow():
     assert '.archive-identity>*' in css and 'text-overflow:ellipsis' in css
     assert ':has(> .cr-live-card:only-child)' in css
     assert '/static/mobile-fixes.css?v=3.0.0-redesign8' in workspace
-    assert "livevault-shell-v3.0.0-redesign8" in sw
+    assert "livevault-shell-v3.0.0-redesign9" in sw
     assert "'/static/mobile-fixes.css'" in sw

@@ -144,3 +144,53 @@ def test_hls_audio_rendition_without_codec_metadata_is_kept():
         format_id="audio_aac_128-Audio_200_1_5",
         format_label="audio only (high)",
     ) == "audio"
+
+
+def test_packet_scan_timeout_scales_for_large_recordings(tmp_path):
+    from app.utils import _packet_scan_timeout_seconds
+
+    small = tmp_path / "small.mp4"
+    small.write_bytes(b"x")
+    assert _packet_scan_timeout_seconds(small) == 300
+
+    large = tmp_path / "large.mp4"
+    with large.open("wb") as handle:
+        handle.truncate(2 * 1024**3 - 32 * 1024**2)
+    timeout = _packet_scan_timeout_seconds(large)
+    assert timeout > 300
+    assert timeout <= 1800
+
+
+def test_packet_scan_uses_scaled_timeout(monkeypatch, tmp_path):
+    import app.utils as utils
+
+    media = tmp_path / "large.mp4"
+    with media.open("wb") as handle:
+        handle.truncate(1024**3)
+
+    streams = [
+        {"codec_type": "video", "codec_name": "h264", "avg_frame_rate": "30/1"},
+        {"codec_type": "audio", "codec_name": "aac"},
+    ]
+    monkeypatch.setattr(
+        utils,
+        "probe_media",
+        lambda *_args, **_kwargs: utils.IntegrityResult(True, 1200.0, "", streams),
+    )
+    monkeypatch.setattr(utils, "_video_gap_error", lambda *_args, **_kwargs: "")
+    seen = {}
+
+    class Result:
+        returncode = 0
+        stderr = ""
+
+    def fake_run(*_args, **kwargs):
+        seen["timeout"] = kwargs["timeout"]
+        return Result()
+
+    monkeypatch.setattr(utils.storage_handoff, "run_probe", fake_run)
+    result = utils.verify_media(media, "packet")
+
+    assert result.ok is True
+    assert seen["timeout"] == utils._packet_scan_timeout_seconds(media)
+    assert seen["timeout"] > 300

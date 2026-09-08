@@ -155,3 +155,38 @@
     min-height: 78px;
   }
 }
+
+/* Archive action menus must be allowed to leave the row/panel box. The base
+ * Archive surface used overflow:hidden, which clipped the lower half of the
+ * ellipsis menu on the last visible recording. Keep the fix scoped to Archive
+ * so media/dashboard surfaces that intentionally crop content are unchanged.
+ */
+.archive-surface,
+.archive-surface .recording-grid,
+.archive-surface .archive-group,
+.archive-surface .archive-group-grid {
+  overflow: visible;
+}
+
+.archive-surface .row-more[open] {
+  z-index: 80;
+}
+
+.archive-surface .row-more[open] .row-menu {
+  z-index: 90;
+}
+
+/* Failed/attention recordings expose recovery as the primary action instead of
+ * hiding the only useful operation behind the overflow menu. */
+.archive-surface .icon-button.recovery {
+  color: var(--warning);
+  border-color: #66522d;
+  background: #211c12;
+}
+
+.archive-surface .icon-button.recovery:hover,
+.archive-surface .icon-button.recovery:focus-visible {
+  color: #ecd095;
+  border-color: #8a7040;
+  background: #2a2315;
+}

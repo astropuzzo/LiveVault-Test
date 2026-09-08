@@ -22,6 +22,9 @@ def test_product_ui_rendering_regressions_are_pinned():
 
     assert '.archive-table-head' in css
     assert 'grid-template-columns: minmax(260px,1.15fr) minmax(240px,.9fr) 120px 130px 96px' in css
+    assert '.archive-surface .row-more[open]' in css
+    assert '.archive-surface .row-more[open] .row-menu' in css
+    assert '.archive-surface .icon-button.recovery' in css
 
     assert ':has(> .cr-live-card:only-child)' in tuning
     assert 'grid-template-columns: minmax(0, 1200px)' in tuning
@@ -33,11 +36,11 @@ def test_product_ui_rendering_regressions_are_pinned():
     assert '.cr-pulse-rec-span' in tuning and '#ff4f62' in tuning
     assert '.cr-pulse-missed-span' in tuning and '#ff4fc8' in tuning
 
-    assert "/static/ui-fixes.css?v=3.0.0-redesign2" in workspace
+    assert "/static/ui-fixes.css?v=3.0.0-redesign9" in workspace
     assert "/static/dashboard-tuning.css?v=3.0.0-redesign3" in workspace
     assert "/static/pulse-axis.css?v=3.0.0-redesign6" in workspace
     assert "/static/pulse-tuning.js?v=3.0.0-redesign7" in workspace
-    assert "livevault-shell-v3.0.0-redesign8" in sw
+    assert "livevault-shell-v3.0.0-redesign9" in sw
     assert "'/static/ui-fixes.css'" in sw
     assert "'/static/dashboard-tuning.css'" in sw
     assert "'/static/pulse-axis.css'" in sw

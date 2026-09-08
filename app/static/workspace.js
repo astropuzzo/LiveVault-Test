@@ -5,7 +5,7 @@
   if (!document.querySelector('link[data-ui-fixes]')) {
     const fixes = document.createElement('link');
     fixes.rel = 'stylesheet';
-    fixes.href = '/static/ui-fixes.css?v=3.0.0-redesign2';
+    fixes.href = '/static/ui-fixes.css?v=3.0.0-redesign9';
     fixes.dataset.uiFixes = '1';
     document.head.appendChild(fixes);
   }

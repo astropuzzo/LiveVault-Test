@@ -2224,6 +2224,103 @@ async def recheck_integrity(recording_id: int, request: Request):
     return {"ok": result.ok, "status": "passed" if result.ok else "failed", "error": result.error}
 
 
+@app.post("/api/recordings/{recording_id}/recover")
+async def recover_recording(recording_id: int, request: Request):
+    """Re-run media recovery and integrity validation for one local archive item.
+
+    This is deliberately stronger than a plain retry: MP4 index/timeline repair is
+    attempted first, then the configured integrity scan is run again. A stale
+    ``converting`` state left by an interrupted worker is therefore recoverable from
+    the Archive without shell access or a container restart.
+    """
+    require_auth(request)
+    with db_session() as db:
+        rec = db.get(Recording, recording_id)
+        if not rec:
+            raise HTTPException(404, "Registrazione non trovata")
+        if rec.local_deleted:
+            raise HTTPException(400, "File locale non disponibile")
+        if rec.upload_status in {"uploading", "deleting"}:
+            raise HTTPException(409, "File occupato: attendi la fine dell'operazione in corso")
+        path = Path(rec.local_path)
+        previous_status = str(rec.upload_status or "integrity_failed")
+        was_uploaded = previous_status == "uploaded" and bool(rec.remote_url)
+        rec.upload_status = "converting"
+        rec.last_error = "Recupero manuale in corso"
+    if not path.is_file():
+        with db_session() as db:
+            rec = db.get(Recording, recording_id)
+            if rec and rec.upload_status == "converting":
+                rec.upload_status = "discarded"
+                rec.last_error = "File locale non disponibile"
+        raise HTTPException(404, "File locale non disponibile")
+
+    manager.clear_retry_backoff()
+    failures = getattr(manager, "_mp4_repair_failures", None)
+    if isinstance(failures, dict):
+        failures.pop(path, None)
+
+    repaired = False
+    try:
+        if path.suffix.lower() == ".mp4":
+            repaired = bool(await manager._prepare_mp4(path))
+        integrity = await asyncio.to_thread(verify_media, path, runtime().integrity_mode)
+        digest = await asyncio.to_thread(sha256_file, path) if integrity.ok else ""
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        detail = f"Recupero fallito: {exc}"[-1600:]
+        with db_session() as db:
+            rec = db.get(Recording, recording_id)
+            if rec:
+                rec.upload_status = "integrity_failed"
+                rec.integrity_status = "failed"
+                rec.integrity_error = detail
+                rec.integrity_checked_at = utcnow()
+                rec.last_error = detail
+        manager.wake()
+        return {"ok": False, "repaired": repaired, "status": "failed", "error": detail}
+
+    with db_session() as db:
+        rec = db.get(Recording, recording_id)
+        if rec:
+            rec.duration_seconds = integrity.duration
+            rec.size_bytes = path.stat().st_size
+            rec.has_video = integrity.has_video
+            rec.has_audio = integrity.has_audio
+            rec.video_codec = integrity.codec("video")
+            rec.audio_codec = integrity.codec("audio")
+            rec.integrity_status = "passed" if integrity.ok else "failed"
+            rec.integrity_error = integrity.error
+            rec.integrity_checked_at = utcnow()
+            if integrity.ok:
+                rec.sha256 = digest
+                rec.upload_attempts = 0
+                rec.upload_priority = max(int(rec.upload_priority or 0), 100)
+                if was_uploaded and not repaired:
+                    rec.upload_status = "uploaded"
+                else:
+                    rec.upload_status = "pending"
+                    if was_uploaded and repaired:
+                        rec.upload_provider = ""
+                        rec.remote_id = ""
+                        rec.remote_url = ""
+                        rec.uploaded_at = None
+                rec.last_error = ""
+            else:
+                rec.upload_status = "integrity_failed"
+                rec.last_error = f"Integrità fallita: {integrity.error}"[-1600:]
+    manager.clear_retry_backoff()
+    manager.wake()
+    return {
+        "ok": integrity.ok,
+        "repaired": repaired,
+        "status": "passed" if integrity.ok else "failed",
+        "queued": bool(integrity.ok and not (was_uploaded and not repaired)),
+        "error": integrity.error,
+    }
+
+
 @app.post("/api/recordings/{recording_id}/convert-mp4")
 async def convert_mp4(recording_id: int, request: Request):
     require_auth(request)
