@@ -1514,7 +1514,7 @@ def _pulse_aware(value: datetime | None) -> datetime | None:
 @app.get("/api/control-room/pulse")
 def control_room_pulse(request: Request, hours: int = 12):
     require_auth(request)
-    hours = max(1, min(int(hours), 48))
+    hours = max(1, min(int(hours), 168))
     now = utcnow()
     window_start = now - timedelta(hours=hours)
     active_started = {
@@ -1774,7 +1774,8 @@ def control_room_pulse(request: Request, hours: int = 12):
         "hours": hours,
         "window_start": _iso_utc(window_start),
         "generated_at": _iso_utc(now),
-        "sessions": sessions[:120],
+        "sessions": sessions[:1000],
+        "truncated": len(sessions) > 1000,
     }
 
 

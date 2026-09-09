@@ -2034,9 +2034,10 @@ function controlRoomPreviewMarkup(profile, wall = false) {
   const recordingLabel = profile.recording ? 'REC' : profile.live ? 'LIVE' : 'OFFLINE';
   const unavailableLabel = {private: 'PRIVATA', tipjar: 'TIP-JAR', restricted: 'LIMITATA'}[source?.pause_reason] || '';
   const alertLabel = unavailableLabel || (profile.blocked ? 'NON REGISTRATA' : '');
-  const freshness = updated ? ago(updated) : '';
+  const freshness = previewUrl ? (updated ? `Fotogramma · ${ago(updated)}` : 'Anteprima in caricamento') : cover ? 'Copertina archivio' : 'Anteprima non disponibile';
   return `<div class="cr-preview ${profile.blocked && !profile.unavailable ? 'attention' : ''} ${wall ? 'wall' : ''}">
-    ${previewUrl ? `<img data-live-preview src="${esc(previewUrl)}" alt="Preview live di ${esc(profile.display_name)}" loading="lazy" decoding="async" fetchpriority="low">` : cover ? `<img class="cr-preview-cover" src="${esc(cover)}" alt="Copertina di ${esc(profile.display_name)}" loading="lazy" decoding="async">` : `<div class="cr-preview-placeholder"><span>${esc(controlRoomInitials(profile.display_name))}</span></div>`}
+    <div class="cr-preview-placeholder"><span>${esc(controlRoomInitials(profile.display_name))}</span></div>
+    ${previewUrl ? `<img data-live-preview src="${esc(previewUrl)}" alt="Preview live di ${esc(profile.display_name)}" loading="lazy" decoding="async" fetchpriority="low">` : cover ? `<img class="cr-preview-cover" src="${esc(cover)}" alt="Copertina di ${esc(profile.display_name)}" loading="lazy" decoding="async">` : ''}
     <div class="cr-preview-shade"></div>
     <div class="cr-preview-badges"><span class="cr-live-badge">● ${esc(recordingLabel)}</span>${alertLabel ? `<span class="cr-alert-badge">${esc(alertLabel)}</span>` : ''}${profile.focus ? '<span class="cr-focus-badge">★ FOCUS</span>' : ''}</div>
     ${freshness ? `<span class="cr-preview-age">${esc(freshness)}</span>` : ''}
@@ -2244,9 +2245,25 @@ document.addEventListener('toggle', event => {
 
 document.addEventListener('error', event => {
   const image = event.target;
-  if (!(image instanceof HTMLImageElement) || !image.matches('[data-live-preview]')) return;
+  if (!(image instanceof HTMLImageElement)) return;
+  if (image.matches('[data-pulse-thumbnail]')) {
+    image.hidden = true;
+    image.nextElementSibling.hidden = false;
+    return;
+  }
+  if (!image.matches('[data-live-preview], .cr-preview-cover')) return;
   image.classList.add('hidden');
-  image.closest('.cr-preview')?.classList.add('preview-missing');
+  const preview = image.closest('.cr-preview');
+  preview?.classList.add('preview-missing');
+  const age = preview?.querySelector('.cr-preview-age');
+  if (age) age.textContent = 'Anteprima non disponibile';
+}, true);
+
+document.addEventListener('load', event => {
+  const image = event.target;
+  if (!(image instanceof HTMLImageElement) || !image.matches('[data-live-preview]')) return;
+  const age = image.closest('.cr-preview')?.querySelector('.cr-preview-age');
+  if (age?.textContent === 'Anteprima in caricamento') age.textContent = 'Fotogramma live';
 }, true);
 
 document.addEventListener('keydown', event => {
@@ -2261,6 +2278,9 @@ document.addEventListener('keydown', event => {
 /* LiveVault Live Intelligence v2.8.3 */
 let controlRoomPulseData = {hours: 12, window_start: null, generated_at: null, sessions: []};
 let lastControlRoomPulseLoad = 0;
+let controlRoomPulseError = '';
+let controlRoomPulseLoading = false;
+let controlRoomPulseExpanded = false;
 let archiveGroupLimit = 10;
 
 async function loadControlRoomPulse() {
@@ -2344,7 +2364,8 @@ function pulseRecordingIntervals(session) {
 
 function pulseRecordingFiles(session) {
   const files = Array.isArray(session?.recordings) ? session.recordings : [];
-  if (files.length) return files.filter(row => timestamp(row?.started_at) && timestamp(row?.ended_at));
+  if (files.length) return files.filter(row => timestamp(row?.started_at) && timestamp(row?.ended_at) > timestamp(row?.started_at))
+    .sort((a, b) => timestamp(a.started_at) - timestamp(b.started_at));
   return pulseRecordingIntervals(session);
 }
 
@@ -2380,9 +2401,7 @@ function showPulseMediaPreview(target) {
   const title = target.dataset.previewTitle || 'REC';
   const meta = target.dataset.previewMeta || '';
   const tapMode = pulsePreviewUsesTap();
-  const media = previewUrl
-    ? `<img src="${esc(previewUrl)}" alt="Anteprima ${esc(title)}">`
-    : '<div class="cr-pulse-media-preview-empty">Anteprima non disponibile</div>';
+  const media = `${previewUrl ? `<img data-pulse-thumbnail src="${esc(previewUrl)}" alt="Anteprima ${esc(title)}">` : ''}<div class="cr-pulse-media-preview-empty"${previewUrl ? ' hidden' : ''}>Anteprima non disponibile</div>`;
   const actions = tapMode
     ? `<div class="cr-pulse-media-preview-actions">${openUrl ? `<a class="button primary compact" data-pulse-preview-open href="${esc(openUrl)}" target="_blank" rel="noopener noreferrer">Apri video</a>` : ''}<button class="button secondary compact" data-pulse-preview-close type="button">Chiudi</button></div>`
     : '';
@@ -2434,9 +2453,32 @@ document.addEventListener('click', event => {
   hidePulseMediaPreview();
 }, true);
 
+document.addEventListener('keydown', event => {
+  if (event.key === 'Escape') hidePulseMediaPreview();
+  const target = event.target.closest?.('g.cr-pulse-rec-media');
+  if (target && ['Enter', ' '].includes(event.key)) {
+    event.preventDefault();
+    showPulseMediaPreview(target);
+  }
+});
+document.addEventListener('focusin', event => {
+  const target = event.target.closest?.('.cr-pulse-rec-media');
+  if (target) showPulseMediaPreview(target);
+});
+document.addEventListener('focusout', event => {
+  if (event.target.closest?.('.cr-pulse-rec-media')) hidePulseMediaPreview();
+});
+document.addEventListener('click', event => {
+  if (!event.target.closest?.('[data-pulse-expand]')) return;
+  controlRoomPulseExpanded = !controlRoomPulseExpanded;
+  renderSources();
+});
+
 function pulseRangeLabel(start, end, open = false) {
   if (!timestamp(start)) return '—';
-  return `${pulseTimeLabel(start)}–${open ? 'ora' : pulseTimeLabel(end)}`;
+  const day = value => new Intl.DateTimeFormat('en-CA', {timeZone: DISPLAY_TIME_ZONE, year:'numeric', month:'2-digit', day:'2-digit'}).format(new Date(value));
+  const crossesDay = timestamp(end) && day(start) !== day(end);
+  return `${crossesDay ? dateText(start) : pulseTimeLabel(start)}–${open ? 'ora' : crossesDay ? dateText(end) : pulseTimeLabel(end)}`;
 }
 
 function pulseSessionTimingMarkup(session) {
@@ -2489,14 +2531,18 @@ function controlRoomPulseMarkup() {
     byProfile.get(profileId).push(session);
   }
   const maxProfiles = compact ? 5 : 8;
-  const recentProfiles = profileOrder.slice(-maxProfiles).reverse();
+  profileOrder.sort((a, b) => {
+    const activity = id => Math.max(...byProfile.get(id).map(row => timestamp(row.ended_at) || generatedAt));
+    return activity(b) - activity(a);
+  });
+  const recentProfiles = controlRoomPulseExpanded ? profileOrder : profileOrder.slice(0, maxProfiles);
   const labelRatios = [0, .25, .5, .75, 1];
   const labels = labelRatios.map((ratio, index) => {
     const value = new Date(windowStart + span * ratio);
     return `<span class="cr-pulse-tick cr-pulse-tick-${index}">${esc(pulseTimeLabel(value))}</span>`;
   }).join('');
   const xFor = value => Math.max(0, Math.min(1000, (value - windowStart) / span * 1000));
-  const widthFor = (start, end, minWidth = 5) => Math.max(0, Math.min(1000 - xFor(start), Math.max(minWidth, (end - start) / span * 1000)));
+  const widthFor = (start, end) => Math.max(0, xFor(end) - xFor(start));
   const rows = recentProfiles.map(profileId => {
     const profileSessions = byProfile.get(profileId) || [];
     const representative = profileSessions[profileSessions.length - 1];
@@ -2510,11 +2556,11 @@ function controlRoomPulseMarkup() {
       const unavailableIntervals = pulseUnavailableIntervals(session);
       const hasRecording = recordingFiles.length > 0 || !!session.recording_started_at || !!session.recording_active;
       const unavailableCoverage = unavailableIntervals.map(row => ({started_at: row.started_at, ended_at: row.ended_at}));
-      const missed = hasRecording ? pulseMissingIntervals(start, end, [...pulseRecordingIntervals(session), ...unavailableCoverage]).map(gap => {
+      const missed = pulseMissingIntervals(start, end, [...pulseRecordingIntervals(session), ...unavailableCoverage]).map(gap => {
         const missedX = xFor(gap.start);
         const missedWidth = widthFor(gap.start, gap.end, compact ? 12 : 4);
         return `<rect class="cr-pulse-missed-span" x="${missedX.toFixed(3)}" y="4" width="${missedWidth.toFixed(3)}" height="8" rx="4" ry="4"><title>NON REC · ${esc(pulseRangeLabel(gap.start, gap.end))}</title></rect>`;
-      }).join('') : '';
+      }).join('');
       const unavailable = unavailableIntervals.map(access => {
         const accessStart = Math.max(start, timestamp(access.started_at));
         const accessEnd = Math.min(end, timestamp(access.ended_at));
@@ -2537,12 +2583,14 @@ function controlRoomPulseMarkup() {
         const previewUrl = safeUrl(rec.thumbnail_url || '');
         const provider = String(rec.upload_provider || '').toUpperCase();
         const filename = String(rec.filename || 'REC');
-        const storage = provider || (rec.active ? 'REC LOCALE' : rec.processing ? 'PARTE LOCALE' : 'LOCALE');
+        const storage = remoteUrl ? `CLOUD ${provider}`.trim() : rec.active ? 'REGISTRAZIONE IN CORSO' : rec.processing ? 'IN ELABORAZIONE' : localUrl ? 'FILE LOCALE' : 'FILE NON DISPONIBILE';
         const meta = `${storage} · ${pulseRangeLabel(rec.started_at, rec.ended_at, !!rec.active)}`;
-        const rect = `<rect class="cr-pulse-rec-span ${remoteUrl ? 'remote' : localUrl ? 'local' : ''} ${rec.processing ? 'processing' : ''}" x="${recX.toFixed(3)}" y="4" width="${recWidth.toFixed(3)}" height="8" rx="4" ry="4"></rect>`;
+        const hitWidth = Math.min(1000, Math.max(compact ? 24 : 8, recWidth));
+        const hitX = Math.max(0, Math.min(1000 - hitWidth, recX + recWidth / 2 - hitWidth / 2));
+        const rect = `<rect class="cr-pulse-rec-span ${remoteUrl ? 'remote' : localUrl ? 'local' : ''} ${rec.processing ? 'processing' : ''}" x="${recX.toFixed(3)}" y="4" width="${recWidth.toFixed(3)}" height="8" rx="4" ry="4"></rect><rect class="cr-pulse-hit" x="${hitX.toFixed(3)}" y="0" width="${hitWidth.toFixed(3)}" height="16"></rect>`;
         const attrs = `class="cr-pulse-rec-media" data-preview-url="${esc(previewUrl)}" data-open-url="${esc(targetUrl)}" data-preview-title="${esc(filename)}" data-preview-meta="${esc(meta)}"`;
         if (targetUrl) return `<a ${attrs} href="${esc(targetUrl)}" target="_blank" rel="noopener noreferrer">${rect}<title>${esc(filename)} · ${esc(meta)}</title></a>`;
-        return `<g ${attrs}>${rect}<title>${esc(filename)} · ${esc(meta)}</title></g>`;
+        return `<g ${attrs} tabindex="0" role="button" aria-label="${esc(filename)} · ${esc(meta)}">${rect}<title>${esc(filename)} · ${esc(meta)}</title></g>`;
       }).join('');
       const firstRec = recordingFiles[0];
       const recMarkerX = firstRec ? xFor(Math.max(start, timestamp(firstRec.started_at))) : null;
@@ -2551,7 +2599,9 @@ function controlRoomPulseMarkup() {
     return `<div class="cr-pulse-row"><div class="cr-pulse-who">${creatorLinkMarkup(representative.representative_source_id, representative.display_name, 'cr-pulse-name')}${pulseSessionTimingMarkup(representative)}</div><div class="cr-pulse-track"><svg class="cr-pulse-svg" viewBox="0 0 1000 16" preserveAspectRatio="none" role="img" aria-label="Timeline ${esc(representative.display_name)}">${graphics}</svg></div></div>`;
   }).join('');
   const hidden = Math.max(0, profileOrder.length - recentProfiles.length);
-  return `<section class="cr-pulse"><div class="cr-pulse-head"><div><strong>Cronologia</strong></div><div class="cr-pulse-head-right"><span class="cr-pulse-legend"><i class="live"></i>ONLINE <i class="private"></i>PRIVATA <i class="tipjar"></i>TIP-JAR <i class="rec"></i>REC <i class="processing"></i>IN ELABORAZIONE <i class="restricted"></i>LIMITATA <i class="missed"></i>NON REC</span><span>${controlRoomPulseData.hours || 12}h${hidden ? ` · +${hidden}` : ''}</span></div></div><div class="cr-pulse-scale"><span></span><div>${labels}</div></div>${rows || ''}</section>`;
+  const notice = controlRoomPulseLoading ? 'Caricamento cronologia…' : controlRoomPulseError ? (lastControlRoomPulseLoad ? `Cronologia non aggiornata · ultimo aggiornamento ${dateText(controlRoomPulseData.generated_at)}` : 'Cronologia non disponibile · nuovo tentativo automatico') : '';
+  const footer = `<div class="cr-pulse-summary" role="status">${notice ? `<span>${esc(notice)}</span>` : ''}<span>${esc(`${recentProfiles.length} di ${profileOrder.length} profili · ${hours}h visualizzate · ${DISPLAY_TIME_ZONE}`)}</span>${controlRoomPulseData.truncated ? ' · Limite sessioni raggiunto: riduci la finestra per vedere tutti i dati.' : ''}${hidden || controlRoomPulseExpanded ? `<button class="btn quiet" data-pulse-expand type="button">${hidden ? `Mostra altri ${hidden} profili` : 'Mostra meno'}</button>` : ''}</div>`;
+  return `<section class="cr-pulse"><div class="cr-pulse-head"><div><strong>Cronologia</strong></div><div class="cr-pulse-head-right"><span class="cr-pulse-legend"><i class="live"></i>ONLINE <i class="private"></i>PRIVATA <i class="tipjar"></i>TIP-JAR <i class="rec"></i>REC <i class="processing"></i>IN ELABORAZIONE <i class="restricted"></i>LIMITATA <i class="missed"></i>NON REC</span><span>${controlRoomPulseData.hours || 12}h${hidden ? ` · +${hidden}` : ''}</span></div></div><div class="cr-pulse-scale"><span></span><div>${labels}</div></div>${rows || '<div class="empty">Nessuna sessione nei filtri e nella finestra visualizzata.</div>'}${footer}</section>`;
 }
 
 function controlRoomRecentEnded(profiles) {

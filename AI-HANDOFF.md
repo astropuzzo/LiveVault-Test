@@ -1,6 +1,7 @@
 # OpenAstro — fonte di verità operativa
 Verifica host: **2026-09-09**. Leggere [AGENTS.md](AGENTS.md) prima di intervenire.
 Priorità corrente: [CPU 1,8 GHz, USB e buffer](docs/STABILITY-20260909.md).
+Verifica pannello e frammenti brevi: [LIVE-PANEL-20260909.md](docs/LIVE-PANEL-20260909.md).
 Prova storage sulla release live ba26e23: eject 11,05 s, crescita capture su buffer,
 attach 11,82 s, due file verificati SHA-256, buffer vuoto, container invariato.
 Verbale privato: /var/backups/openastro/20260908-maintenance/live-cycle.json.

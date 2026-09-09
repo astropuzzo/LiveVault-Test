@@ -14,6 +14,8 @@
   const ALLOWED_HOURS = RANGE_OPTIONS.map(option => option.hours);
   const storedHours = Number(localStorage.getItem('livevault-pulse-hours'));
   let selectedHours = ALLOWED_HOURS.includes(storedHours) ? storedHours : 6;
+  let pulseRequest = null;
+  let pulseRequestVersion = 0;
   const SVG_NS = 'http://www.w3.org/2000/svg';
 
   function svgNode(name, attrs = {}) {
@@ -199,6 +201,8 @@
     });
     const density = rangeDensity(hours);
     const ticks = wholeHourTicks(windowStart, generatedAt);
+    let lastLabelX = -Infinity;
+    const labelWidth = hours > 24 ? 100 : 42;
     ticks.forEach(time => {
       const x = (time - windowStart) / span * width;
       const hour = localHour(time);
@@ -208,7 +212,8 @@
         class: dayBoundary ? 'cr-pulse-hour-axis-tick day' : 'cr-pulse-hour-axis-tick',
         x1: x.toFixed(2), x2: x.toFixed(2), y1: 0, y2: dayBoundary ? 9 : 6,
       }));
-      if (!showLabel) return;
+      if (!showLabel || x < labelWidth / 2 || x > width - labelWidth / 2 || x - lastLabelX < labelWidth) return;
+      lastLabelX = x;
       const text = svgNode('text', {
         class: dayBoundary ? 'cr-pulse-hour-axis-label day' : 'cr-pulse-hour-axis-label',
         x: x.toFixed(2), y: 21, 'text-anchor': 'middle',
@@ -224,6 +229,7 @@
     ['private', 'PRIVATA', 'url(#lv-pulse-private)'],
     ['tipjar', 'TIP-JAR', 'url(#lv-pulse-tipjar)'],
     ['rec', 'REC', '#ff4f62'],
+    ['unrecorded', 'MAI REGISTRATA', 'url(#lv-pulse-unrecorded)'],
     ['remote', 'CLOUD', 'url(#lv-pulse-cloud)'],
     ['processing', 'IN ELABORAZIONE', 'url(#lv-pulse-processing)'],
     ['restricted', 'LIMITATA', 'url(#lv-pulse-restricted)'],
@@ -272,16 +278,33 @@
     });
   }
 
-  loadControlRoomPulse = async function loadControlRoomPulseTuned(force = false) {
+  loadControlRoomPulse = function loadControlRoomPulseTuned(force = false) {
+    const requestedHours = selectedHours;
+    if (pulseRequest?.hours === requestedHours) return pulseRequest.promise;
     const loadedHours = Number(controlRoomPulseData?.hours) || 0;
-    if (!force && loadedHours === selectedHours && Date.now() - lastControlRoomPulseLoad < 20000) return controlRoomPulseData;
-    try {
-      controlRoomPulseData = await api(`/api/control-room/pulse?hours=${selectedHours}`);
-      lastControlRoomPulseLoad = Date.now();
-    } catch (error) {
-      if (error.message !== 'auth') console.warn('Live Pulse:', error.message);
-    }
-    return controlRoomPulseData;
+    if (!force && loadedHours === requestedHours && Date.now() - lastControlRoomPulseLoad < 20000) return Promise.resolve(controlRoomPulseData);
+    const version = ++pulseRequestVersion;
+    controlRoomPulseLoading = true;
+    const promise = (async () => {
+      try {
+        const data = await api(`/api/control-room/pulse?hours=${selectedHours}`);
+        if (version !== pulseRequestVersion) return controlRoomPulseData;
+        if (!data || !Array.isArray(data.sessions) || Number(data.hours) !== requestedHours || !timestamp(data.generated_at)) throw new Error('Risposta cronologia non valida');
+        controlRoomPulseData = data;
+        controlRoomPulseError = '';
+        lastControlRoomPulseLoad = Date.now();
+      } catch (error) {
+        if (version === pulseRequestVersion) controlRoomPulseError = error.message;
+      } finally {
+        if (version === pulseRequestVersion) {
+          controlRoomPulseLoading = false;
+          pulseRequest = null;
+        }
+      }
+      return controlRoomPulseData;
+    })();
+    pulseRequest = {hours: requestedHours, promise};
+    return promise;
   };
 
   const renderSourcesBase = renderSources;
@@ -298,9 +321,11 @@
     if (!ALLOWED_HOURS.includes(next) || next === selectedHours) return;
     selectedHours = next;
     localStorage.setItem('livevault-pulse-hours', String(selectedHours));
-    lastControlRoomPulseLoad = 0;
-    select.disabled = true;
-    await loadControlRoomPulse(true);
+    controlRoomPulseExpanded = false;
+    hidePulseMediaPreview();
+    const pending = loadControlRoomPulse(true);
+    renderSources();
+    await pending;
     renderSources();
   });
 
@@ -311,5 +336,6 @@
   });
 
   lastControlRoomPulseLoad = 0;
-  loadControlRoomPulse(true).then(() => renderSources());
+  // This script is loaded dynamically: boot may have already completed.
+  if (!app.classList.contains('hidden')) loadControlRoomPulse().then(() => renderSources());
 })();

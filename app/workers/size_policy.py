@@ -51,6 +51,7 @@ def bounded_fragment_batch(
     *,
     target_bytes: int | None = None,
     maximum_bytes: int | None = None,
+    join_short_prefix: bool = True,
 ) -> list[Any]:
     """Return the oldest stitchable prefix that fits one physical recording.
 
@@ -79,12 +80,30 @@ def bounded_fragment_batch(
                 )
             break
         if selected and total + size > target:
-            break
+            # A reconnect stub followed by a nearly full capture used to become
+            # a separate tiny public file, even when both fit safely in one file.
+            # Use limited trailer headroom only for short prefixes; never reorder
+            # fragments or relax the actual maximum checked after remux.
+            short_seconds = sum(float(getattr(row, "duration_seconds", 0) or 0) for row in selected)
+            join_limit = maximum - max(1, int(maximum * 0.02))
+            if not (join_short_prefix and 0 < short_seconds < 120 and total < target * 0.1 and total + size <= join_limit):
+                break
         selected.append(item)
         total += size
         if total >= target:
             break
     return selected
+
+
+class StitchOutputTooLarge(RuntimeError):
+    pass
+
+
+def check_stitch_output_size(path: Path) -> None:
+    if path.stat().st_size > configured_max_bytes():
+        # Only remove the newly generated temporary output; originals stay intact.
+        path.unlink()
+        raise StitchOutputTooLarge("File unito oltre il limite: riprova con un blocco più piccolo")
 
 
 def _fragment_count(source_id: int | None = None) -> int:
@@ -424,7 +443,13 @@ def install_size_policy(manager: Any) -> None:
         clear_task = getattr(self, "_processing_clear_task", None)
         if clear_task is not None and not clear_task.done():
             clear_task.cancel()
-        return await original_stitch(batch, allow_transcode=allow_transcode)
+        try:
+            return await original_stitch(batch, allow_transcode=allow_transcode)
+        except StitchOutputTooLarge:
+            conservative = bounded_fragment_batch(list(fragments), join_short_prefix=False)
+            if len(conservative) >= len(batch):
+                raise
+            return await original_stitch(conservative, allow_transcode=allow_transcode)
 
     async def bounded_finalize(self, force_source_id: int | None = None):
         for _ in range(128):

@@ -76,6 +76,54 @@ def test_bounded_batch_rejects_single_oversized_fragment(tmp_path):
         )
 
 
+def test_reconnect_stub_joins_next_capture_with_safe_headroom(tmp_path):
+    # Proportions from live files 344/345: 38 MB stub + 2044 MB capture.
+    first = _fragment(tmp_path, 1, 38, 0)
+    first.duration_seconds = 72.35
+    second = _fragment(tmp_path, 2, 2044, 83)
+    second.duration_seconds = 3888.45
+    selected = policy.bounded_fragment_batch([first, second], target_bytes=2040, maximum_bytes=2147)
+    assert [row.id for row in selected] == [1, 2]
+    conservative = policy.bounded_fragment_batch([first, second], target_bytes=2040, maximum_bytes=2147, join_short_prefix=False)
+    assert [row.id for row in conservative] == [1]
+
+
+def test_short_prefix_never_exceeds_headroom_or_hard_limit(tmp_path):
+    first = _fragment(tmp_path, 1, 90, 0)
+    second = _fragment(tmp_path, 2, 2044, 60)
+    assert policy.bounded_fragment_batch([first, second], target_bytes=2040, maximum_bytes=2147) == [first]
+
+
+def test_oversized_remux_rejects_only_temporary_output(tmp_path, monkeypatch):
+    original = tmp_path / 'capture.mp4'
+    original.write_bytes(b'original')
+    output = tmp_path / '.finalizing.mp4'
+    output.write_bytes(b'x' * 101)
+    monkeypatch.setattr(policy, 'configured_max_bytes', lambda: 100)
+    with pytest.raises(policy.StitchOutputTooLarge):
+        policy.check_stitch_output_size(output)
+    assert original.read_bytes() == b'original'
+    assert not output.exists()
+
+
+def test_join_overflow_retries_with_conservative_prefix(tmp_path, monkeypatch):
+    import asyncio
+    first = _fragment(tmp_path, 1, 38, 0)
+    second = _fragment(tmp_path, 2, 2044, 60)
+    calls = []
+    async def stitch(batch, **kwargs):
+        calls.append([row.id for row in batch])
+        if len(batch) > 1:
+            raise policy.StitchOutputTooLarge('trailer overhead')
+    manager = SimpleNamespace(_stitch_fragment_group=stitch, _finalize_closed_stitch_sessions=None, _repair_local_mp4s=None)
+    monkeypatch.setattr(policy, 'configured_max_bytes', lambda: 2147)
+    monkeypatch.setattr(policy, 'configured_stitch_target_bytes', lambda: 2040)
+    policy.install_size_policy(manager)
+    asyncio.run(manager._stitch_fragment_group([first, second]))
+    assert calls == [[1, 2], [1]]
+    assert Path(first.local_path).is_file() and Path(second.local_path).is_file()
+
+
 def test_size_policy_is_installed_before_dashboard_error_guard():
     source = (ROOT / "app/main/__init__.py").read_text(encoding="utf-8")
     install = source.index("_install_size_policy(_processing_manager)")

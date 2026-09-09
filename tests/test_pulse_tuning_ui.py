@@ -17,8 +17,10 @@ def test_pulse_has_patterns_real_time_scale_and_selectable_window():
     assert "livevault-pulse-hours" in js
     assert 'data-pulse-hours' in js
 
-    assert 'replacements = {48: 168, 120: 1000}' in facade
-    assert 'endpoint.__code__ = endpoint.__code__.replace' in facade
+    main = (ROOT / 'app/main.py').read_text(encoding='utf-8')
+    assert 'hours = max(1, min(int(hours), 168))' in main
+    assert '"sessions": sessions[:1000]' in main
+    assert '__code__.replace' not in facade
 
     assert 'function nextWholeHour' in js
     assert 'function rangeDensity' in js

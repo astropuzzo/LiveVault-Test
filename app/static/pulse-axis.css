@@ -133,3 +133,17 @@
   .cr-pulse-range select{min-width:64px}
   .cr-pulse-hour-axis-label{font-size:8px}
 }
+
+.cr-preview > .cr-preview-placeholder{position:absolute;inset:0}
+.cr-preview > img{position:relative}
+.cr-pulse-summary{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:8px 12px;color:var(--muted);font-size:11px;overflow-wrap:anywhere}
+.cr-pulse-summary .btn{margin-left:auto;min-height:36px}
+.cr-pulse-media-preview [hidden]{display:none!important}
+.cr-pulse-media-preview-empty{display:grid;place-items:center;min-height:100px;background:#090b0e;color:var(--muted);font-size:11px}
+.cr-pulse-rec-media:focus{outline:2px solid var(--text)}
+.cr-pulse-hit{fill:transparent;pointer-events:all;stroke:none}
+.cr-preview > .cr-preview-age{max-width:calc(100% - 10px);white-space:normal;text-align:right}
+@media(max-width:620px){
+  .cr-pulse-media-preview-copy{flex-wrap:wrap}
+  .cr-pulse-media-preview-actions{width:100%;justify-content:flex-end}
+}

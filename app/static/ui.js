@@ -164,8 +164,9 @@
     const state = profile.recording ? 'REC' : profile.live ? 'LIVE' : 'OFFLINE';
     const visual = previewUrl ? `<img data-live-preview src="${esc(previewUrl)}" alt="Preview live di ${esc(profile.display_name)}" loading="lazy" decoding="async">`
       : cover ? `<img class="cr-preview-cover" src="${esc(cover)}" alt="Copertina di ${esc(profile.display_name)}" loading="lazy" decoding="async">`
-      : `<div class="cr-preview-placeholder"><span>${esc(controlRoomInitials(profile.display_name))}</span></div>`;
-    return `<div class="cr-preview ${profile.blocked && !profile.unavailable ? 'attention' : ''} ${wall ? 'wall' : ''}">${visual}<div class="cr-preview-state"><span class="state-dot ${profile.recording ? 'recording' : profile.live ? 'live' : ''}"></span><strong>${state}</strong>${unavailableLabel ? `<span>${esc(unavailableLabel)}</span>` : profile.blocked ? '<span>Non registrata</span>' : ''}</div>${updated ? `<time>${esc(ago(updated))}</time>` : ''}</div>`;
+      : '';
+    const freshness = previewUrl ? (updated ? `Fotogramma · ${ago(updated)}` : 'Anteprima in caricamento') : cover ? 'Copertina archivio' : 'Anteprima non disponibile';
+    return `<div class="cr-preview ${profile.blocked && !profile.unavailable ? 'attention' : ''} ${wall ? 'wall' : ''}"><div class="cr-preview-placeholder"><span>${esc(controlRoomInitials(profile.display_name))}</span></div>${visual}<div class="cr-preview-state"><span class="state-dot ${profile.recording ? 'recording' : profile.live ? 'live' : ''}"></span><strong>${state}</strong>${unavailableLabel ? `<span>${esc(unavailableLabel)}</span>` : profile.blocked ? '<span>Non registrata</span>' : ''}</div><time class="cr-preview-age">${esc(freshness)}</time></div>`;
   };
 
   function processButton(profile) {

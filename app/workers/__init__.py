@@ -364,6 +364,8 @@ class WorkerManager(_legacy.WorkerManager):
             temporary.unlink(missing_ok=True)
             raise RuntimeError(f"Sessione consolidata non valida: {integrity.error}")
 
+        from app.workers.size_policy import check_stitch_output_size
+        check_stitch_output_size(temporary)
         temporary.replace(output)
 
         self._set_processing(stage="Checksum", percent=91.0)
