@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import importlib.util
 import json
 import os
@@ -12,9 +13,51 @@ import pytest
 from app import storage_handoff as h
 
 
-def test_buffer_parts_leave_real_capture_capacity_after_trailer_reserve():
-    from app.recorder import safe_output_limit_bytes
-    assert safe_output_limit_bytes(h.BUFFER_SEGMENT_GB) == 64 * 1024**2
+def test_recovery_indexes_old_buffer_capture_during_continuation(tmp_path, monkeypatch):
+    from app import workers
+    from app.recorder import STITCH_MARKER_NAME
+    folder = tmp_path / 'source' / 'session'
+    folder.mkdir(parents=True)
+    old = folder / 'session_old_part000.mp4'
+    current = folder / 'session_current_part000.mp4'
+    old.write_bytes(b'closed buffer capture')
+    current.write_bytes(b'active capture')
+    (folder / STITCH_MARKER_NAME).write_text(json.dumps({'source_id': 1, 'session_id': 'session'}))
+    manager = object.__new__(workers.WorkerManager)
+    manager._stopping = False
+    manager.active = {1: SimpleNamespace(directory=folder, capture_prefix='session_current_')}
+    indexed = []
+    async def index(**kwargs): indexed.append(kwargs['path'])
+    manager._index_fragment = index
+    @contextlib.contextmanager
+    def db():
+        yield SimpleNamespace(scalar=lambda _: None, scalars=lambda _: SimpleNamespace(all=lambda: []))
+    monkeypatch.setattr(workers, 'db_session', db)
+    monkeypatch.setattr(workers, 'settings', SimpleNamespace(recordings_dir=tmp_path))
+    monkeypatch.setattr(h, 'checkpoint', lambda: None)
+    asyncio.run(manager._recover_orphans())
+    assert indexed == [old]
+
+
+def test_buffer_capture_keeps_configured_segments(control, tmp_path, monkeypatch):
+    from app import recorder
+    control('buffer')
+    cfg = SimpleNamespace(segment_minutes=60, segment_max_gb=2, container_format='mp4')
+    monkeypatch.setattr(recorder, 'runtime', lambda: cfg)
+    monkeypatch.setattr(recorder, 'settings', SimpleNamespace(
+        timezone='UTC', recordings_dir=tmp_path, data_dir=tmp_path))
+    monkeypatch.setattr(recorder, 'live_preview_path', lambda _: tmp_path/'preview.jpg')
+    commands = []
+    async def spawn(*args, **kwargs):
+        commands.append(args)
+        return SimpleNamespace(returncode=None)
+    monkeypatch.setattr(recorder.asyncio, 'create_subprocess_exec', spawn)
+    source = SimpleNamespace(id=1, name='test', platform='stripchat', slug='test')
+    session = asyncio.run(recorder.start_recorder(source))
+    cmd = commands[0]
+    assert cmd[cmd.index('--segment-seconds')+1] == '3600'
+    assert int(cmd[cmd.index('--max-bytes')+1]) == recorder.safe_output_limit_bytes(2)
+    assert session.max_file_bytes == 2 * 1024**3
 
 
 @pytest.fixture

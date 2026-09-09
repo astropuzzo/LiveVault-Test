@@ -396,10 +396,9 @@ def build_ffmpeg_command(
 
 async def start_recorder(source: Source, *, session_id: str | None = None) -> RecorderSession:
     cfg = runtime()
-    from .storage_handoff import state, BUFFER_SEGMENT_GB
-    from dataclasses import replace
-    if state()["mode"] == "buffer":
-        cfg = replace(cfg, segment_minutes=1, segment_max_gb=BUFFER_SEGMENT_GB)
+    # Buffer capacity is enforced by the free-space guard and reserved filesystem.
+    # Keep normal segmentation: minute/64 MiB cuts caused needless reconnects
+    # and hundreds of recovery/stitch jobs after a storage outage.
     inputs: list[ResolvedInput] = []
     split_llhls = False
     if source.platform != "stripchat":
@@ -511,6 +510,16 @@ async def stitch_recording_parts(parts: list[Path], output: Path, *, allow_trans
         raise RuntimeError("Nessun frammento valido da unire")
     output.parent.mkdir(parents=True, exist_ok=True)
     output.unlink(missing_ok=True)
+    if len(parts) == 1 and parts[0].suffix.lower() == output.suffix.lower():
+        storage_handoff.checkpoint()
+        try:
+            # Immutable closed input; normalization replaces its output atomically.
+            # Keep the source name until downstream validation and DB commit succeed.
+            os.link(parts[0], output)
+            return
+        except OSError:
+            # Cross-filesystem/unsupported hard links retain the regular copy path.
+            pass
     concat_file = output.with_name(f".{output.stem}.concat.txt")
 
     def quote(path: Path) -> str:

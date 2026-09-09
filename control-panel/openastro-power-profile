@@ -2,6 +2,8 @@
 set -Eeuo pipefail
 
 config=/etc/openastro-power-profile
+# CM4 stability ceiling, including the current boot before config.txt takes effect.
+safety_max=1800000
 
 if [[ "${1:-}" == "--restore" ]]; then
     if [[ -r "$config" ]]; then
@@ -33,6 +35,7 @@ for policy in /sys/devices/system/cpu/cpufreq/policy*; do
     hardware_min=$(<"$policy/cpuinfo_min_freq")
     hardware_max=$(<"$policy/cpuinfo_max_freq")
     target_max=$requested_max
+    (( target_max > safety_max )) && target_max=$safety_max
     (( target_max > hardware_max )) && target_max=$hardware_max
     (( target_max < hardware_min )) && target_max=$hardware_min
     target_min=$requested_min
@@ -54,4 +57,4 @@ fi
 
 printf '%s %s\n' "$profile" "$wifi" > "$config"
 chmod 0644 "$config"
-echo "Profilo $profile applicato · CPU max $((requested_max / 1000)) MHz · Wi-Fi $wifi"
+echo "Profilo $profile applicato · CPU max $((target_max / 1000)) MHz · Wi-Fi $wifi"

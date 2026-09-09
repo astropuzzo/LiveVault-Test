@@ -20,6 +20,21 @@ from app.workers import (
 from app.utils import probe_media
 
 
+def test_single_part_stitch_preserves_original_without_copy(tmp_path, monkeypatch):
+    import os
+    from app import recorder
+    original = tmp_path / 'part.mkv'
+    original.write_bytes(b'closed immutable capture')
+    output = tmp_path / 'complete.mkv'
+    async def forbidden(*args, **kwargs):
+        raise AssertionError('single part must not invoke ffmpeg')
+    monkeypatch.setattr(recorder.asyncio, 'create_subprocess_exec', forbidden)
+    asyncio.run(stitch_recording_parts([original], output))
+    assert os.path.samefile(original, output)
+    output.unlink()  # Failed downstream validation must preserve the original.
+    assert original.read_bytes() == b'closed immutable capture'
+
+
 def test_session_gap_is_exactly_twenty_minutes():
     now = datetime(2026, 9, 3, 10, 0, tzinfo=timezone.utc)
     assert SESSION_STITCH_GAP_SECONDS == 20 * 60

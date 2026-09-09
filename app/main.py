@@ -36,6 +36,7 @@ from .db import (
 from .file_cleanup import cleanup_empty_parents, cleanup_orphan_videos, safe_unlink
 from .media_validation import build_validation_receipt
 from .http_compression import TextCompressionMiddleware
+from .storage_response import StorageFileResponse
 from .recorder import (
     LIVE_PREVIEW_MAX_AGE_SECONDS,
     finalize_mp4_for_streaming,
@@ -2108,7 +2109,7 @@ def view_recording(recording_id: int, request: Request):
             raise HTTPException(404, "Registrazione non trovata")
         path = _local_media_path(rec.local_path)
     media_type = _video_media_type(path)
-    return FileResponse(path, media_type=media_type)
+    return StorageFileResponse(path, media_type=media_type)
 
 
 @app.get("/api/fragments/{fragment_id}/view")
@@ -2120,7 +2121,7 @@ def view_recording_fragment(fragment_id: int, request: Request):
             raise HTTPException(404, "Parte locale non trovata")
         path = _local_media_path(fragment.local_path)
     media_type = _video_media_type(path)
-    return FileResponse(path, media_type=media_type, headers={"Cache-Control": "private, no-store"})
+    return StorageFileResponse(path, media_type=media_type, headers={"Cache-Control": "private, no-store"})
 
 
 @app.get("/api/sources/{source_id}/capture")
@@ -2131,7 +2132,7 @@ def view_active_capture(source_id: int, request: Request):
         raise HTTPException(404, "Registrazione attiva non ancora disponibile")
     path = _local_media_path(path)
     media_type = _video_media_type(path)
-    return FileResponse(path, media_type=media_type, headers={"Cache-Control": "private, no-store"})
+    return StorageFileResponse(path, media_type=media_type, headers={"Cache-Control": "private, no-store"})
 
 
 @app.get("/api/recordings/{recording_id}/download")
@@ -2145,7 +2146,7 @@ def download_recording(recording_id: int, request: Request):
         filename = rec.filename
     if not path.exists():
         raise HTTPException(404, "La copia locale è già stata rimossa")
-    return FileResponse(path, filename=filename, media_type="application/octet-stream")
+    return StorageFileResponse(path, filename=filename, media_type="application/octet-stream")
 
 
 @app.post("/api/recordings/{recording_id}/upload-now")
