@@ -41,8 +41,12 @@ the host Control Center is unaffected.
 
 Targeted Python/Node regression tests cover request races, malformed/stale replies,
 timeline gaps, mobile expansion, missing media, date boundaries, short-prefix
-batching and maximum-size enforcement. Full Linux/Python 3.13 CI is required
-before promotion, as in HOSTING.md. Browser attachment was unavailable during
+batching and maximum-size enforcement. Linux/Python 3.13 CI passed on `b8f3033`
+(GitHub run `34335064487`), including the container build/smoke test. Final touch
+focus follow-up preserves the playback button while moving focus into its card
+and makes hidden preview controls inert; all 15 Node tests pass locally.
+Run CI on the final branch tip before promotion, as in HOSTING.md.
+Browser attachment was unavailable during
 initial inspection; a live preview cannot be sampled without an active capture.
 
 These changes are not a production deployment. Merge only after green CI and
