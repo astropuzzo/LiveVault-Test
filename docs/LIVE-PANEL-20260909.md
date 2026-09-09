@@ -22,6 +22,7 @@ the host Control Center is unaffected.
   Current/recent profiles sort first, and hidden rows can be expanded on phones.
   Colored bars use true elapsed width; separate invisible touch targets replace
   the minimum colored widths that exaggerated short intervals over long ranges.
+  An unrecorded interval is not described as a creator never having been recorded.
   Date boundaries, unavailable files, loading/empty states and truncated history
   are explicit. The API's existing seven-day/1000-session limits are now ordinary
   source constants instead of runtime bytecode replacement.

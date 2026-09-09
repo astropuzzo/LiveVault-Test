@@ -229,7 +229,7 @@
     ['private', 'PRIVATA', 'url(#lv-pulse-private)'],
     ['tipjar', 'TIP-JAR', 'url(#lv-pulse-tipjar)'],
     ['rec', 'REC', '#ff4f62'],
-    ['unrecorded', 'MAI REGISTRATA', 'url(#lv-pulse-unrecorded)'],
+    ['unrecorded', 'INTERVALLO SENZA REC', 'url(#lv-pulse-unrecorded)'],
     ['remote', 'CLOUD', 'url(#lv-pulse-cloud)'],
     ['processing', 'IN ELABORAZIONE', 'url(#lv-pulse-processing)'],
     ['restricted', 'LIMITATA', 'url(#lv-pulse-restricted)'],
