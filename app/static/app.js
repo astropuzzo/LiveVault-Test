@@ -2385,6 +2385,7 @@ function ensurePulseMediaPreview() {
   node.id = 'crPulseMediaPreview';
   node.className = 'cr-pulse-media-preview';
   node.setAttribute('aria-hidden', 'true');
+  node.inert = true;
   document.body.append(node);
   return node;
 }
@@ -2409,6 +2410,7 @@ function showPulseMediaPreview(target) {
   node.classList.toggle('tap-mode', tapMode);
   node.classList.add('visible');
   node.setAttribute('aria-hidden', 'false');
+  node.inert = false;
 }
 
 function hidePulseMediaPreview() {
@@ -2416,6 +2418,7 @@ function hidePulseMediaPreview() {
   if (!node) return;
   node.classList.remove('visible', 'tap-mode');
   node.setAttribute('aria-hidden', 'true');
+  node.inert = true;
 }
 
 document.addEventListener('pointerover', event => {
@@ -2466,7 +2469,8 @@ document.addEventListener('focusin', event => {
   if (target) showPulseMediaPreview(target);
 });
 document.addEventListener('focusout', event => {
-  if (event.target.closest?.('.cr-pulse-rec-media')) hidePulseMediaPreview();
+  if (event.relatedTarget?.closest?.('#crPulseMediaPreview')) return;
+  if (event.target.closest?.('.cr-pulse-rec-media, #crPulseMediaPreview')) hidePulseMediaPreview();
 });
 document.addEventListener('click', event => {
   if (!event.target.closest?.('[data-pulse-expand]')) return;

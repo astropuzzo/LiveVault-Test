@@ -335,7 +335,6 @@
     resizeTimer = setTimeout(() => requestAnimationFrame(decoratePulse), 120);
   });
 
-  lastControlRoomPulseLoad = 0;
   // This script is loaded dynamically: boot may have already completed.
   if (!app.classList.contains('hidden')) loadControlRoomPulse().then(() => renderSources());
 })();

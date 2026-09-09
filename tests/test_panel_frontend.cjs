@@ -139,6 +139,19 @@ test('active product preview labels archive covers and always retains fallback m
   assert.match(html, /data-live-preview/);
   assert.match(html, /cr-preview-placeholder/);
 });
+
+test('moving focus into the touch preview does not dismiss its playback action', () => {
+  let handler;
+  let hidden = 0;
+  const ctx = vm.createContext({document:{addEventListener: (_name, fn) => {handler=fn;}}, hidePulseMediaPreview:()=>{hidden++;}});
+  const start = liveSource.indexOf("document.addEventListener('focusout', event => {");
+  const end = liveSource.indexOf("document.addEventListener('click'", start);
+  vm.runInContext(liveSource.slice(start, end), ctx);
+  handler({target:{closest:()=>true}, relatedTarget:{closest:()=>true}});
+  assert.equal(hidden, 0);
+  handler({target:{closest:()=>true}, relatedTarget:null});
+  assert.equal(hidden, 1);
+});
 vm.runInContext(source.slice(source.indexOf('function mean('), source.indexOf('function chartMarkup(')), context);
 test('missing telemetry is excluded from averages', () => {
   assert.equal(context.mean([{temp: null}, {temp: 50}, {temp: 60}], 'temp'), 55);
