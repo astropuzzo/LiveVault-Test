@@ -2,8 +2,9 @@
 
 Aggiornato: 2026-09-08. **Codice applicativo a main e live `56ce014`; verifiche
 dei deploy host e confronto prestazioni restano da completare.**
-Nuova priorità richiesta dall'utente: prove OC sul CM4 già portato dall'utente
-a 2 GHz senza undervolt. Stato e recupero: [CM4-CLOCK-TEST.md](CM4-CLOCK-TEST.md).
+Priorità dal 2026-09-09: ritorno a 1,8 GHz, USB, frammentazione buffer e stitching.
+Stato corrente: [STABILITY-20260909.md](STABILITY-20260909.md). Le prove OC
+riportate sotto sono storiche e sospese.
 Richiesta utente: applicare il piano e documentare ogni passaggio riprendibile.
 Piano: [PIANO-OTTIMIZZAZIONE.md](PIANO-OTTIMIZZAZIONE.md).
 Accessi/vincoli: [AI-HANDOFF.md](../AI-HANDOFF.md).

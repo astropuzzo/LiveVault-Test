@@ -1,5 +1,6 @@
 # OpenAstro — fonte di verità operativa
-Verifica host: **2026-09-08**. Leggere [AGENTS.md](AGENTS.md) prima di intervenire.
+Verifica host: **2026-09-09**. Leggere [AGENTS.md](AGENTS.md) prima di intervenire.
+Priorità corrente: [CPU 1,8 GHz, USB e buffer](docs/STABILITY-20260909.md).
 Prova storage sulla release live ba26e23: eject 11,05 s, crescita capture su buffer,
 attach 11,82 s, due file verificati SHA-256, buffer vuoto, container invariato.
 Verbale privato: /var/backups/openastro/20260908-maintenance/live-cycle.json.
@@ -141,9 +142,10 @@ Kernel: undervoltage in questo avvio. vcgencmd: 0x50000, flag storici senza
 throttling attuale. Alimentatore/cavo non verificabili tramite pulizia software.
 Il profilo è stato successivamente portato dall'utente a 2000 MHz rimuovendo
 l'undervolt. Il nuovo boot riporta 0x0; non equivale a stabilità certificata.
-Prove superiori ora richieste dall'utente: leggere il checkpoint
-[CM4 clock](docs/CM4-CLOCK-TEST.md). Conservare il boot normale a 2 GHz,
-nessuna modifica a tensione/GPU/RAM; prove temporanee con recupero documentato.
+Dal 2026-09-09 l'utente ha sospeso l'OC: massimo 1,8 GHz già applicato senza
+reboot, minimo 600 MHz schedutil, nessun offset tensione configurato. Boot normale
+aggiornato e tryboot archiviato. Lo [storico CM4](docs/CM4-CLOCK-TEST.md) non è più
+il profilo da ripristinare; seguire [stabilità](docs/STABILITY-20260909.md).
 
 DNS cifrato attivo, contrariamente al vecchio handoff. Preservare nftables dedicato,
 autenticazione/rate limit DoH e openastro-dot-network.timer per IPv6 DoT.

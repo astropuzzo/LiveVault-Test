@@ -1,5 +1,9 @@
 # CM4 — prove di frequenza, checkpoint
 
+**Storico superato il 2026-09-09:** profilo corrente 1,8 GHz senza undervolt;
+prove superiori annullate, tryboot archiviato. Le procedure a 2 GHz sotto sono
+solo storiche. Vedere [stato corrente](STABILITY-20260909.md).
+
 2026-09-08. Richiesta: verificare 2 GHz e provare progressivamente 2,1/2,2 GHz.
 L'utente conferma accesso fisico per riaccendere il nodo in caso di blocco.
 PTM7950 applicato dall'utente; montaggio termico non ispezionato.

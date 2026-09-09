@@ -761,13 +761,19 @@ class WorkerManager:
         candidates = sorted(settings.recordings_dir.rglob("*.mkv")) + sorted(settings.recordings_dir.rglob("*.mp4"))
         for path in candidates:
             storage_handoff.checkpoint()
-            active_directories = {session.directory.resolve() for session in self.active.values()}
             if path.name.startswith(".") or path.name.endswith(".tmp.mp4") or "_complete" in path.stem:
                 continue
             if not path.is_file() or path.stat().st_size <= 0:
                 continue
             with contextlib.suppress(OSError):
-                if path.parent.resolve() in active_directories:
+                # A storage return/reconnect reuses the logical directory, but
+                # writes a new unique capture prefix. Recover the older buffer
+                # parts now instead of waiting for the whole live session to end.
+                if any(
+                    path.parent.resolve() == session.directory.resolve()
+                    and (not session.capture_prefix or path.name.startswith(session.capture_prefix))
+                    for session in self.active.values()
+                ):
                     continue
             with db_session() as db:
                 if db.scalar(select(Recording).where(Recording.local_path == str(path))):
@@ -1990,7 +1996,8 @@ class WorkerManager:
                     # publishing a session; wait for their per-source locks as well.
                     checking = any(lock.locked() for lock in self._source_check_locks.values())
                     if not (self.active or self.watch_tasks or self.finalizing_tasks or
-                            self._storage_jobs or self.upload_current or checking):
+                            self._storage_jobs or self.upload_current or checking or
+                            storage_handoff.active_media_responses):
                         storage_handoff.acknowledge(str(handoff.get("token", "")))
                     self._last_storage_mode = mode
                     await asyncio.sleep(0.25)

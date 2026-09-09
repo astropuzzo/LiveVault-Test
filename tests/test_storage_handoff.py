@@ -12,9 +12,25 @@ import pytest
 from app import storage_handoff as h
 
 
-def test_buffer_parts_leave_real_capture_capacity_after_trailer_reserve():
-    from app.recorder import safe_output_limit_bytes
-    assert safe_output_limit_bytes(h.BUFFER_SEGMENT_GB) == 64 * 1024**2
+def test_buffer_capture_keeps_configured_segments(control, tmp_path, monkeypatch):
+    from app import recorder
+    control('buffer')
+    cfg = SimpleNamespace(segment_minutes=60, segment_max_gb=2, container_format='mp4')
+    monkeypatch.setattr(recorder, 'runtime', lambda: cfg)
+    monkeypatch.setattr(recorder, 'settings', SimpleNamespace(
+        timezone='UTC', recordings_dir=tmp_path, data_dir=tmp_path))
+    monkeypatch.setattr(recorder, 'live_preview_path', lambda _: tmp_path/'preview.jpg')
+    commands = []
+    async def spawn(*args, **kwargs):
+        commands.append(args)
+        return SimpleNamespace(returncode=None)
+    monkeypatch.setattr(recorder.asyncio, 'create_subprocess_exec', spawn)
+    source = SimpleNamespace(id=1, name='test', platform='stripchat', slug='test')
+    session = asyncio.run(recorder.start_recorder(source))
+    cmd = commands[0]
+    assert cmd[cmd.index('--segment-seconds')+1] == '3600'
+    assert int(cmd[cmd.index('--max-bytes')+1]) == recorder.safe_output_limit_bytes(2)
+    assert session.max_file_bytes == 2 * 1024**3
 
 
 @pytest.fixture
