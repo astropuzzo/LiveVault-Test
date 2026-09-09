@@ -69,7 +69,11 @@ riabilitarlo contraddice la richiesta attuale. Non ripristinare tryboot normalme
 Rollback applicativo: immagine Coolify precedente 56ce014; nessuna migrazione DB.
 Checkout host sporco preservato; deploy solo da commit GitHub validato.
 
-Stato al commit: CPU applicata; fix applicativi in validazione CI, non ancora live.
-Prova CPU 180 s in corso. Fsck e verifica live dopo deploy ancora pendenti.
+Stato al commit: CPU applicata; prima CI Linux 34315849630 verde, 321 test.
+Fix applicativi non ancora live; test aggiuntivo recovery nella stessa directory
+e verifica reale della chiusura FileResponse in validazione sul commit finale.
+Prova CPU 180 s passata: picco 65,244 C, mediana 1800,457 MHz, nessun nuovo flag
+o errore kernel; limite minimo 600 MHz. Non è prova di stabilità prolungata.
+Fsck e verifica live dopo deploy ancora pendenti.
 Il test Windows ha 42 pass e 15 errori di piattaforma (O_CLOEXEC assente): non
 sostituisce la CI Linux/Python 3.13 obbligatoria.

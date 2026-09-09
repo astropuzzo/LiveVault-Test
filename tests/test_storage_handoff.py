@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import importlib.util
 import json
 import os
@@ -10,6 +11,32 @@ from types import SimpleNamespace
 import pytest
 
 from app import storage_handoff as h
+
+
+def test_recovery_indexes_old_buffer_capture_during_continuation(tmp_path, monkeypatch):
+    from app import workers
+    from app.recorder import STITCH_MARKER_NAME
+    folder = tmp_path / 'source' / 'session'
+    folder.mkdir(parents=True)
+    old = folder / 'session_old_part000.mp4'
+    current = folder / 'session_current_part000.mp4'
+    old.write_bytes(b'closed buffer capture')
+    current.write_bytes(b'active capture')
+    (folder / STITCH_MARKER_NAME).write_text(json.dumps({'source_id': 1, 'session_id': 'session'}))
+    manager = object.__new__(workers.WorkerManager)
+    manager._stopping = False
+    manager.active = {1: SimpleNamespace(directory=folder, capture_prefix='session_current_')}
+    indexed = []
+    async def index(**kwargs): indexed.append(kwargs['path'])
+    manager._index_fragment = index
+    @contextlib.contextmanager
+    def db():
+        yield SimpleNamespace(scalar=lambda _: None, scalars=lambda _: SimpleNamespace(all=lambda: []))
+    monkeypatch.setattr(workers, 'db_session', db)
+    monkeypatch.setattr(workers, 'settings', SimpleNamespace(recordings_dir=tmp_path))
+    monkeypatch.setattr(h, 'checkpoint', lambda: None)
+    asyncio.run(manager._recover_orphans())
+    assert indexed == [old]
 
 
 def test_buffer_capture_keeps_configured_segments(control, tmp_path, monkeypatch):

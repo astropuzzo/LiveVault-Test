@@ -1,7 +1,7 @@
 import asyncio
 
 import pytest
-from starlette.responses import FileResponse
+import anyio
 
 from app import storage_handoff as storage
 from app.storage_response import StorageFileResponse
@@ -13,17 +13,20 @@ def test_slow_playback_releases_handle_before_handoff_ack(tmp_path, monkeypatch)
     mode = {'value': 'nvme'}
     monkeypatch.setattr(storage, 'state', lambda: {'mode': mode['value']})
     opened = []
-    async def stalled(self, scope, receive, send):
-        with open(self.path, 'rb') as handle:
-            opened.append(handle)
-            await send({'type': 'http.response.body', 'body': handle.read(1)})
-    monkeypatch.setattr(FileResponse, '__call__', stalled)
+    real_open = anyio.open_file
+    async def tracked_open(*args, **kwargs):
+        handle = await real_open(*args, **kwargs)
+        opened.append(handle)
+        return handle
+    monkeypatch.setattr(anyio, 'open_file', tracked_open)
     async def run():
         blocked = asyncio.Event()
         async def send(message):
-            blocked.set()
-            await asyncio.Event().wait()
-        task = asyncio.create_task(StorageFileResponse(path)({}, None, send))
+            if message['type'] == 'http.response.body':
+                blocked.set()
+                await asyncio.Event().wait()
+        scope = {'type': 'http', 'method': 'GET', 'headers': []}
+        task = asyncio.create_task(StorageFileResponse(path)(scope, None, send))
         await blocked.wait()
         assert storage.active_media_responses == 1
         assert not opened[0].closed
