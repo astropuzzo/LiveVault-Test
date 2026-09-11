@@ -8,6 +8,7 @@ import signal
 import shutil
 import sys
 import time
+import uuid
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -15,6 +16,7 @@ from zoneinfo import ZoneInfo
 
 from .config import settings
 from . import storage_handoff
+from .mp4_fragments import repaired_copy
 from .db import Source
 from .settings_store import runtime
 from .source_providers import ResolvedInput, audit_inputs, resolve_inputs
@@ -744,9 +746,27 @@ async def finalize_mp4_for_streaming(path: Path, *, require_space: bool = True) 
     if require_space and free < original.st_size + 256 * 1024 * 1024:
         raise RuntimeError("Spazio insufficiente per finalizzare l'MP4")
     tmp = path.with_name(f".{path.stem}.finalizing.mp4")
+    repaired = path.with_name(f".{path.stem}.{uuid.uuid4().hex}.repair-input.tmp.mp4")
     tmp.unlink(missing_ok=True)
     try:
-        await _finalize_with_av_fallback(path, tmp, original.st_size)
+        try:
+            await _finalize_with_av_fallback(path, tmp, original.st_size)
+        except RuntimeError as exc:
+            if "error reading header" not in str(exc).lower():
+                raise
+            # Keep the original until the corrected copy passes normal A/V checks.
+            if require_space and shutil.disk_usage(path.parent).free < 2 * original.st_size + 256 * 1024 * 1024:
+                raise RuntimeError("Spazio insufficiente per riparare l'MP4") from exc
+            job = asyncio.create_task(asyncio.to_thread(repaired_copy, path, repaired, storage_handoff.checkpoint))
+            try:
+                corrected = await asyncio.shield(job)
+            except asyncio.CancelledError:
+                with contextlib.suppress(Exception):
+                    await job
+                raise
+            if not corrected:
+                raise
+            await _finalize_with_av_fallback(repaired, tmp, original.st_size)
         os.utime(tmp, ns=(original.st_atime_ns, original.st_mtime_ns))
         tmp.replace(path)
         return True
@@ -756,6 +776,8 @@ async def finalize_mp4_for_streaming(path: Path, *, require_space: bool = True) 
     except Exception:
         tmp.unlink(missing_ok=True)
         raise
+    finally:
+        repaired.unlink(missing_ok=True)
 
 
 async def remux_to_mp4(path: Path, *, require_space: bool = True) -> Path:
