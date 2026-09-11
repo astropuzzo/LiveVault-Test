@@ -19,6 +19,8 @@ from urllib.parse import parse_qsl, urlencode, urljoin, urlsplit, urlunsplit
 
 import requests
 
+from app.mp4_fragments import repair_fragment
+
 
 USER_AGENT = (
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
@@ -325,8 +327,13 @@ def select_master(
                 raise RuntimeError(f"Mouflon key unavailable (pkey={advertised})")
             psch, pkey, pdkey = selected
             variant = _select_variant(master_url, response.text, quality)
+            media_url = _append_mouflon_query(variant, psch, pkey)
+            media = session.get(media_url, headers=master_headers, timeout=12)
+            media.raise_for_status()
+            if "#EXTM3U" not in media.text:
+                raise RuntimeError("not an HLS media manifest")
             return MasterSelection(
-                _append_mouflon_query(variant, psch, pkey),
+                media_url,
                 psch,
                 pkey,
                 pdkey,
@@ -666,6 +673,7 @@ def capture(args: argparse.Namespace) -> None:
                             init = _download_bytes(session, playlist.init_url, headers)
                             init_cache[playlist.init_url] = init
                     fragment = _download_bytes(session, segment.url, headers)
+                    fragment = repair_fragment(fragment)
                 except ExpiredFragment:
                     expired_fragment = True
                     break
