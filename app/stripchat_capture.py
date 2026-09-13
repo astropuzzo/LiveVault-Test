@@ -76,8 +76,23 @@ def _headers(slug: str) -> dict[str, str]:
     }
 
 
+def make_session() -> Any:
+    """Create a browser-fingerprinted HTTP session for Stripchat.
+
+    Stripchat periodically rejects plain ``requests`` clients even when the
+    endpoint itself is public. ``curl_cffi`` is already installed through the
+    yt-dlp dependency; keep a requests fallback for minimal/test installs.
+    """
+    try:
+        from curl_cffi import requests as curl_requests
+
+        return curl_requests.Session(impersonate="chrome")
+    except Exception:
+        return requests.Session()
+
+
 def _json_get(
-    session: requests.Session,
+    session: Any,
     url: str,
     *,
     headers: dict[str, str] | None = None,
@@ -91,25 +106,38 @@ def _json_get(
     return payload
 
 
-def resolve_user_id(session: requests.Session, slug: str) -> int:
-    """Resolve Stripchat username through the post-418 id endpoint.
+def resolve_user_id(session: Any, slug: str) -> int:
+    """Resolve a Stripchat username to its numeric model id.
 
-    The legacy /models/username/.../cam endpoint is intentionally not used.
+    Stripchat retired ``/api/front/v2/users/username/{slug}`` in 2026. The
+    replacement is ``/api/front/users/user-ids/{slug}`` and returns ``id`` at
+    the top level. Accept the older nested shape too so a regional rollout does
+    not break capture again.
     """
+    username = slug.strip("/")
     payload = _json_get(
         session,
-        f"{STRIPCHAT_ROOT}/api/front/v2/users/username/{slug}",
-        headers={"User-Agent": USER_AGENT, "Referer": f"{STRIPCHAT_ROOT}/{slug}"},
+        f"{STRIPCHAT_ROOT}/api/front/users/user-ids/{username}",
+        headers={
+            "Accept": "application/json, text/plain, */*",
+            "User-Agent": USER_AGENT,
+            "Referer": f"{STRIPCHAT_ROOT}/{username}",
+            "Origin": STRIPCHAT_ROOT,
+        },
     )
-    item = payload.get("item")
+    value = payload.get("id")
+    if value is None:
+        item = payload.get("item")
+        if isinstance(item, dict):
+            value = item.get("id")
     try:
-        return int(item["id"])
-    except (KeyError, TypeError, ValueError) as exc:
+        return int(value)
+    except (TypeError, ValueError) as exc:
         raise RuntimeError("Stripchat user id is unavailable") from exc
 
 
 def get_cam_state(
-    session: requests.Session,
+    session: Any,
     slug: str,
     *,
     user_id: int | None = None,
@@ -589,7 +617,7 @@ def _open_raw(output_pattern: str, part: int, preview_base: str = "") -> tuple[P
 
 
 def capture(args: argparse.Namespace) -> None:
-    session = requests.Session()
+    session = make_session()
     headers = _headers(args.slug)
     user_id, state = get_cam_state(session, args.slug)
     stream_id = _public_stream_id(state, user_id)

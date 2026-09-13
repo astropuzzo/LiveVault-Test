@@ -222,8 +222,8 @@ def test_stripchat_status_uses_id_based_cam_endpoint():
     class Session:
         def get(self, url, **_kwargs):
             calls.append(url)
-            if "/users/username/" in url:
-                return Response({"item": {"id": 4242}})
+            if "/users/user-ids/" in url:
+                return Response({"id": 4242})
             if "/models/4242/cam" in url:
                 return Response({
                     "user": {"user": {"id": 4242, "status": "public"}},
@@ -237,9 +237,27 @@ def test_stripchat_status_uses_id_based_cam_endpoint():
 
     assert user_id == 4242
     assert stream_id == "4242"
-    assert any("/api/front/v2/users/username/example" in url for url in calls)
+    assert any("/api/front/users/user-ids/example" in url for url in calls)
     assert any("/api/front/v2/models/4242/cam" in url for url in calls)
     assert all("/models/username/" not in url for url in calls)
+
+
+def test_stripchat_user_id_parser_accepts_nested_rollout_shape():
+    class Response:
+        status_code = 200
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"item": {"id": "777"}}
+
+    class Session:
+        def get(self, url, **_kwargs):
+            assert url.endswith("/api/front/users/user-ids/example")
+            return Response()
+
+    assert stripchat_capture.resolve_user_id(Session(), "example") == 777
 
 
 def test_local_synchronized_hls_never_receives_http_avoptions():

@@ -8,8 +8,6 @@ import types
 from pathlib import Path
 from typing import Any
 
-import requests
-
 from app.stripchat_state import classify_stripchat_cam
 
 
@@ -77,7 +75,7 @@ def stripchat_cam_info(slug: str) -> tuple[int, dict[str, Any]]:
     """Fetch Stripchat's authoritative id-based cam descriptor."""
     from app import stripchat_capture
 
-    session = requests.Session()
+    session = stripchat_capture.make_session()
     return stripchat_capture.get_cam_state(session, slug.strip("/"))
 
 

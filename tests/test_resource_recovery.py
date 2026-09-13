@@ -60,7 +60,7 @@ def test_expired_stripchat_fragment_refreshes_without_init_only_file(tmp_path, m
     def resolve(*args, **kwargs):
         resolutions.append(1)
         return selection, {}
-    monkeypatch.setattr(legacy.requests, "Session", Session)
+    monkeypatch.setattr(legacy, "make_session", lambda: Session())
     monkeypatch.setattr(legacy, "get_cam_state", lambda *a, **kw: (1, {}))
     monkeypatch.setattr(legacy, "_public_stream_id", lambda *a: "1")
     monkeypatch.setattr(legacy, "_load_key_file", lambda: {})

@@ -9,8 +9,6 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
-import requests
-
 from app.stripchat_state import StripchatExpectedState, classify_stripchat_cam
 
 
@@ -36,6 +34,7 @@ decode_v2_url = _legacy.decode_v2_url
 parse_media_playlist = _legacy.parse_media_playlist
 get_cam_state = _legacy.get_cam_state
 resolve_user_id = _legacy.resolve_user_id
+make_session = _legacy.make_session
 
 USER_AGENT = _legacy.USER_AGENT
 STRIPCHAT_ROOT = _legacy.STRIPCHAT_ROOT
@@ -150,7 +149,7 @@ def flashphoner_candidates(state: dict[str, Any], stream_id: str) -> list[str]:
 
 
 def resolve_flashphoner_input(
-    session: requests.Session,
+    session: Any,
     state: dict[str, Any],
     stream_id: str,
     quality: str,
@@ -234,7 +233,7 @@ def build_flashphoner_ffmpeg_command(
 def _current_expected_state(slug: str) -> StripchatExpectedState | None:
     """Return a normal state transition if the cam is no longer public."""
     try:
-        session = requests.Session()
+        session = make_session()
         user_id, payload = get_cam_state(session, slug)
         state = classify_stripchat_cam(payload, user_id)
     except Exception:
@@ -289,7 +288,7 @@ def _run_flashphoner_ffmpeg(args: Any, media_url: str, headers: dict[str, str]) 
 
 
 def capture(args: Any) -> None:
-    session = requests.Session()
+    session = make_session()
     headers = _legacy._headers(args.slug)
     user_id, state = _legacy.get_cam_state(session, args.slug)
     stream_id = _public_stream_id(state, user_id)
@@ -394,6 +393,7 @@ __all__ = [
     "parse_media_playlist",
     "get_cam_state",
     "resolve_user_id",
+    "make_session",
     "_public_stream_id",
     "flashphoner_candidates",
     "resolve_flashphoner_input",

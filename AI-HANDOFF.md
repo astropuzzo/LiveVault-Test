@@ -154,6 +154,21 @@ autenticazione/rate limit DoH e openastro-dot-network.timer per IPv6 DoT.
 Non eseguire flush ruleset. Servizi locali attivi non provano accessibilità
 telefonica/IPv6 esterna; tale verifica resta distinta.
 
+## Provider Stripchat
+Verifica 2026-09-13: la risoluzione username → model ID usa
+`https://stripchat.com/api/front/users/user-ids/{username}`; il precedente
+`/api/front/v2/users/username/{username}` restituisce HTTP 418 e non va
+ripristinato. Il JSON corrente espone `id` al top level; il parser conserva
+compatibilità con la precedente forma annidata `item.id`. Sorgenti runtime:
+`app/stripchat_capture.py` e `app/source_providers/__init__.py`. Le sessioni
+Stripchat usano `curl_cffi` con impersonazione Chrome (dipendenza già portata da
+yt-dlp), con fallback a `requests` se non disponibile. Il successivo stato camera
+resta letto da `/api/front/v2/models/{modelId}/cam`. Il nodo Harness non può
+raggiungere direttamente Stripchat, quindi la verifica live dell'endpoint va
+fatta dal runtime OpenAstro; unit test e parser non sostituiscono tale prova.
+Rollback applicativo: revert del commit provider Stripchat e redeploy LiveVault;
+farlo solo se il provider torna esplicitamente al vecchio contratto API.
+
 ## Obbligo di aggiornamento
 Ogni modifica a runtime, servizi, storage, accessi, dipendenze o deploy deve
 aggiornare nello stesso commit questa guida o il documento operativo collegato.
