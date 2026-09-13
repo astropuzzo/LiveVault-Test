@@ -83,7 +83,7 @@ NINA Monitor    -> nina-monitor/**
 
 Therefore a commit that changes only `nina-monitor/**` updates only NINA Monitor. It must not restart LiveVault or any host service. Feature changes are validated by GitHub CI before merging to `main`; the merge then becomes the production deployment trigger.
 
-## Current UI (QSM 1.4, verified locally 2026-09-13)
+## Current UI (QSM 1.4, deployed 2026-09-13)
 
 Source: `nina-monitor/static/{index.html,app.js,app.css}`. The dedicated monitor
 application remains the deployment target; no other application requires a restart.
@@ -116,10 +116,23 @@ values, inactive checks, disabled checks and polling persistence. Private FITS,
 replay data and screenshots are not committed. Targeted proxy/auth/isolation tests
 and the exact-commit Linux CI remain the deployment gate.
 
+Production verification, 2026-09-13 19:19 UTC: application image
+`ctrzdfqqsdljdcb2sbdrc7ug:96dd1c7a8e2cf9b48640ddef290d289556324220`, container
+`ctrzdfqqsdljdcb2sbdrc7ug-191508215832`, healthy. PR #32 and merged commit CI passed.
+The deployed HTML/JS/CSS match the repository (line endings normalized). Authenticated
+Chromium loaded the real preview and QSM 1.4 session: 20 frames, no stellar checks
+yet; the empty analysis state was displayed correctly. Desktop/mobile had no script
+errors or page overflow. The prior 13-image replay validates the populated inspector;
+it is distinct from this live empty-state check.
+
+Runtime isolation: zero mounts, user `openastro`; `ReadonlyRootfs=false` in this
+existing Coolify runtime (the read-only compose smoke test is a separate configuration).
+LiveVault retained container `8142ca9f5818d31f4c0fc57bab4d02317ce991c472cf9f4281ef697a278b132b`
+with start time `2026-09-13T07:48:23.640955705Z`. No application secrets changed.
+
 Rollback: redeploy the previous NINA image `a74bd25c691045e2cb25cf433133c1e74077e7ed`
-through this application's Coolify history. Preserve its environment and mounts
-(none), and verify LiveVault container identity/uptime is unchanged. This paragraph
-records the pre-deployment runtime on 2026-09-13, not proof that a new deployment ran.
+through this application's Coolify history. Preserve its environment and zero mounts;
+verify LiveVault container identity/uptime remains unchanged.
 
 ## Preview policy
 
