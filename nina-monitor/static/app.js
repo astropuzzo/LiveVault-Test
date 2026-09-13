@@ -6,6 +6,11 @@
   let previewPending = null;
   let lastSnapshot = null;
   let selectedFrameIndex = null;
+  let selectedEvidenceKey = null;
+  let evidenceSignature = '';
+  let tableSignature = '';
+  let plotSignature = '';
+  let lastPreviewAttempt = 0;
 
   const COLORS = {
     quality: '#8AB4F8', confidence: '#C58AF9', guide: '#81C995', stars: '#FDD663', background: '#F28B82',
@@ -16,7 +21,7 @@
     return String(value ?? '').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#039;');
   }
   function text(value, fallback = '—') { const raw = String(value ?? '').trim(); return raw || fallback; }
-  function n(value) { const x = Number(value); return Number.isFinite(x) ? x : null; }
+  function n(value) { if(value===null||value===undefined||value==='')return null; const x = Number(value); return Number.isFinite(x) ? x : null; }
   function num(value, digits = 0, suffix = '') { const x = n(value); return x == null ? '—' : `${x.toFixed(digits)}${suffix}`; }
   function signed(value, digits = 1) { const x = n(value); return x == null ? 'N/A' : `${x > 0 ? '+' : ''}${x.toFixed(digits)}%`; }
   function arcsec(value) { const x = n(value); return x == null ? 'N/A' : `${x.toFixed(2)}"`; }
@@ -120,11 +125,11 @@
   }
   function timelineTooltip(frame, settings) {
     const rows = [`Frame #${num(frame.frameIndex,0)} · ${text(frame.status)} · ${fileName(frame)}`,
-      `Quality ${num(frame.quality,0)} / 100 · Confidence ${num(frame.confidence,0,'%')}`,
+      `Quality ${num(frame.quality,0)} / 100 · Evidence ${num(frame.confidence,0,' / 100')}`,
       `Guide RMS ${arcsec(frame.guideRmsArcsec)} · limit ${num(settings?.maxGuideRms,2,'"')}`];
     const stars = n(frame.stars), sb = n(frame.starBaseline); if (stars != null) rows.push(`Stars ${stars}${sb != null ? ` · baseline ${sb.toFixed(0)} · Δ ${signed(frame.starDeltaPercent)} · reject below -${num(settings?.maxStarLossPercent,1,'%')}` : ' · baseline learning/not ready'}`);
     const bg = n(frame.background), bb = n(frame.backgroundBaseline); if (bg != null) rows.push(`Background ${bg.toFixed(2)}${bb != null ? ` · baseline ${bb.toFixed(2)} · Δ ${signed(frame.backgroundDeltaPercent)} · limits -${num(settings?.maxBackgroundDecreasePercent,1)}/+${num(settings?.maxBackgroundIncreasePercent,1)}%` : ' · baseline learning/not ready'}`);
-    rows.push(`Cause: ${text(frame.probableCause)}${text(frame.reason,'—') !== '—' ? ` · ${frame.reason}` : ''}`); return rows.join('\n');
+    rows.push(`Cause: ${text(frame.probableCause)}${text(frame.reason,'—') !== '—' ? ` · ${frame.reason}` : ''}`); rows.push(frame.decisionSummary||'');return rows.join('\n');
   }
   function seriesSegments(frames,key,min,max,left,top,width,height,cls) {
     let seg = [], out = '';
@@ -146,7 +151,7 @@
       <text class="tl-events" x="3" y="11">EVENTS</text><text class="tl-events-help" x="3" y="25">G guide · S sky · B background · ! error</text>`;
     [top,rms,img].forEach(y=>{svg+=`<rect class="tl-band" x="${L}" y="${y.toFixed(1)}" width="${plotW}" height="${bandH.toFixed(1)}"/><line class="tl-grid" x1="${L}" y1="${(y+bandH/2).toFixed(1)}" x2="${L+plotW}" y2="${(y+bandH/2).toFixed(1)}"/>`;});
     svg+=`<circle cx="8" cy="${top+10}" r="3.3" fill="${COLORS.quality}"/><text class="tl-name q" x="17" y="${top+13}">Quality</text><text class="tl-detail" x="59" y="${top+13}">0–100</text>
-      <circle cx="8" cy="${top+28}" r="3.3" fill="${COLORS.confidence}"/><text class="tl-name c" x="17" y="${top+31}">Confidence</text><text class="tl-detail" x="76" y="${top+31}">0–100</text>
+      <circle cx="8" cy="${top+28}" r="3.3" fill="${COLORS.confidence}"/><text class="tl-name c" x="17" y="${top+31}">Evidence</text><text class="tl-detail" x="76" y="${top+31}">0–100</text>
       <circle cx="8" cy="${rms+12}" r="3.3" fill="${COLORS.guide}"/><text class="tl-name g" x="17" y="${rms+15}">Guide RMS</text><text class="tl-detail" x="76" y="${rms+15}">arcsec · lower is better</text>
       <circle cx="8" cy="${img+10}" r="3.3" fill="${COLORS.stars}"/><text class="tl-name s" x="17" y="${img+13}">Stars Δ</text><text class="tl-detail" x="58" y="${img+13}">% vs baseline · reject &lt; -${starLim.toFixed(1)}%</text>
       <circle cx="8" cy="${img+29}" r="3.3" fill="${COLORS.background}"/><text class="tl-name b" x="17" y="${img+32}">Background Δ</text><text class="tl-detail" x="91" y="${img+32}">% vs baseline · limits -${bgLo.toFixed(1)}/+${bgHi.toFixed(1)}%</text>
@@ -161,7 +166,7 @@
     list.forEach((f,i)=>{
       const x=list.length===1?L+plotW/2:L+i*plotW/(list.length-1); const s=String(f.status||'').toUpperCase();
       if (isAbnormal(f)) { const cls=s.includes('REJECT')?'reject':s==='WARNING'?'warning':'error'; svg+=`<line class="tl-status ${cls}" x1="${x.toFixed(1)}" y1="${marker}" x2="${x.toFixed(1)}" y2="${H-1}"/>`; const codes=causeCodes(f), bw=Math.max(20,codes.length*10+10),bx=x-bw/2; if(codes && bx>lastBadgeRight+3){svg+=`<rect class="tl-badge" x="${bx.toFixed(1)}" y="3" width="${bw}" height="16" rx="4"/><text class="tl-badge-text" x="${x.toFixed(1)}" y="14" text-anchor="middle">${esc(codes)}</text>`;lastBadgeRight=bx+bw;}}
-      const cell=plotW/list.length; const hitX=Math.max(L,x-cell/2); svg+=`<rect class="timeline-hit" data-frame-id="${esc(f.frameIndex)}" x="${hitX.toFixed(1)}" y="0" width="${Math.max(4,cell).toFixed(1)}" height="${H}" fill="transparent"><title>${esc(timelineTooltip(f,settings))}</title></rect>`;
+      const cell=plotW/list.length; const hitX=Math.max(L,x-cell/2); svg+=`<rect class="timeline-hit" tabindex="0" role="button" aria-label="Esamina frame ${esc(f.frameIndex)}" data-frame-id="${esc(f.frameIndex)}" x="${hitX.toFixed(1)}" y="0" width="${Math.max(4,cell).toFixed(1)}" height="${H}" fill="transparent"><title>${esc(timelineTooltip(f,settings))}</title></rect>`;
     });
     svg+='</svg>'; host.innerHTML=svg;
   }
@@ -170,34 +175,35 @@
     guide=guide||{}; const series=Array.isArray(guide.series)?guide.series:[];
     $('#guideTotalValue').textContent=arcsec(guide.rmsTotalArcsec); $('#guideRaValue').textContent=arcsec(guide.rmsRaArcsec); $('#guideDecValue').textContent=arcsec(guide.rmsDecArcsec); $('#guideMaxValue').textContent=arcsec(guide.maxExcursionArcsec); $('#guideSamplesValue').textContent=num(guide.samples,0);
     const plot=$('#guidePlot'); if(series.length<2){plot.innerHTML='<div class="plot-empty"><div><b>PHD2 live non sta inviando campioni</b><span>Il pannello resta attivo: comparirà appena N.I.N.A. riceve nuovi GuideEvent.</span></div></div>';return;}
-    const vals=series.flatMap(p=>[n(p.raArcsec),n(p.decArcsec)]).filter(v=>v!=null); const lim=n(settings?.excursionThreshold)??2; const maxAbs=Math.max(.5,...vals.map(Math.abs),lim*1.2); const W=1000,H=190;
+    const vals=series.flatMap(p=>[n(p.raArcsec),n(p.decArcsec)]).filter(v=>v!=null); const lim=n(settings?.excursionThreshold)??2; const maxAbs=Math.max(.5,...vals.map(Math.abs)); const W=1000,H=190;
     const pts=(key)=>series.map((p,i)=>{const v=n(p[key]);if(v==null)return null;const x=series.length===1?W:i/(series.length-1)*W,y=H-(v+maxAbs)/(2*maxAbs)*H;return `${x.toFixed(1)},${y.toFixed(1)}`}).filter(Boolean).join(' ');
     const ly=(v)=>H-(v+maxAbs)/(2*maxAbs)*H; const y0=ly(0),yp=ly(lim),ym=ly(-lim);
-    plot.innerHTML=`<div class="guide-legend"><span><i class="legend ra"></i>RA</span><span><i class="legend dec"></i>DEC</span><span>scala ±${maxAbs.toFixed(1)}"</span><span>soglia escursione ±${lim.toFixed(1)}"</span></div><div class="guide-svg-wrap"><div class="guide-y-axis"><span>+${maxAbs.toFixed(1)}"</span><span>0"</span><span>−${maxAbs.toFixed(1)}"</span></div><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none"><line class="zero-line" x1="0" y1="${y0}" x2="${W}" y2="${y0}"/><line class="guide-limit" x1="0" y1="${yp}" x2="${W}" y2="${yp}"/><line class="guide-limit" x1="0" y1="${ym}" x2="${W}" y2="${ym}"/><polyline class="line-ra" points="${pts('raArcsec')}"/><polyline class="line-dec" points="${pts('decArcsec')}"/></svg><div class="guide-x-axis"><span>−20 s</span><span>adesso</span></div></div>`;
+    plot.innerHTML=`<div class="guide-legend"><span><i class="legend ra"></i>RA</span><span><i class="legend dec"></i>DEC</span><span>scala ±${maxAbs.toFixed(1)}"</span><span>RA / DEC · errore per asse</span></div><div class="guide-svg-wrap"><div class="guide-y-axis"><span>+${maxAbs.toFixed(1)}"</span><span>0"</span><span>−${maxAbs.toFixed(1)}"</span></div><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none"><line class="zero-line" x1="0" y1="${y0}" x2="${W}" y2="${y0}"/><polyline class="line-ra" points="${pts('raArcsec')}"/><polyline class="line-dec" points="${pts('decArcsec')}"/></svg><div class="guide-x-axis"><span>−20 s</span><span>adesso</span></div></div>`;
   }
 
   function renderSessionEvents(events) {
     const host=$('#sessionEventsBody'), rows=(events||[]).slice(-12); if(!rows.length){host.innerHTML='<tr class="empty-row"><td colspan="7">No session events.</td></tr>';return;}
-    host.innerHTML=rows.map(e=>`<tr><td>${esc(e.id)}</td><td>${esc(when(e.start))}–${esc(when(e.end))}</td><td>${esc(eventTypeText(e.type))}</td><td>${esc(e.frameIndices.length)}</td><td>${esc(num(e.meanConfidence,0,'%'))}</td><td>${esc(e.severity)}</td><td class="cause">${esc(e.primaryCause)}</td></tr>`).join('');
+    host.innerHTML=rows.map(e=>`<tr><td>${esc(e.id)}</td><td>${esc(when(e.start))}–${esc(when(e.end))}</td><td>${esc(eventTypeText(e.type))}</td><td>${esc(e.frameIndices.length)}</td><td>${esc(num(e.meanConfidence,0))}</td><td>${esc(e.severity)}</td><td class="cause">${esc(e.primaryCause)}</td></tr>`).join('');
   }
   function renderRankings(frames) {
     const accepted=(frames||[]).filter(f=>String(f.status||'').toUpperCase()==='ACCEPTED'); const best=[...accepted].sort((a,b)=>(n(b.quality)??-1)-(n(a.quality)??-1)||(n(b.confidence)??-1)-(n(a.confidence)??-1)).slice(0,5); const worst=[...accepted].sort((a,b)=>(n(a.quality)??999)-(n(b.quality)??999)||(n(a.confidence)??999)-(n(b.confidence)??999)).slice(0,5);
-    const rows=list=>list.length?list.map(f=>`<tr data-frame-id="${esc(f.frameIndex)}"><td>${esc(num(f.frameIndex,0))}</td><td>${esc(num(f.quality,0))}</td><td>${esc(num(f.confidence,0,'%'))}</td><td class="filename">${esc(fileName(f))}</td></tr>`).join(''):'<tr class="empty-row"><td colspan="4">No accepted frames.</td></tr>';
+    const rows=list=>list.length?list.map(f=>`<tr tabindex="0" role="button" aria-label="Esamina frame ${esc(f.frameIndex)}" data-frame-id="${esc(f.frameIndex)}"><td>${esc(num(f.frameIndex,0))}</td><td>${esc(num(f.quality,0))}</td><td>${esc(num(f.confidence,0))}</td><td class="filename">${esc(fileName(f))}</td></tr>`).join(''):'<tr class="empty-row"><td colspan="4">No accepted frames.</td></tr>';
     $('#bestAcceptedBody').innerHTML=rows(best); $('#worstAcceptedBody').innerHTML=rows(worst);
   }
   function renderFrameInspector(frame) {
-    const host=$('#frameInspector'); if(!frame){host.className='inspector-empty';host.innerHTML='Seleziona un frame rejected per vedere file, causa e metriche complete.';return;}
-    host.className='inspector'; host.innerHTML=`<div class="inspector-file"><div><span>FILE</span><strong>${esc(fileName(frame))}</strong><small>${esc(text(frame.source))}${frame.sequenceTitle?` · ${esc(frame.sequenceTitle)}`:''}</small></div><span class="pill ${statusClass(frame.status)}">${esc(text(frame.status))}</span></div><div class="inspector-reason"><b>${esc(text(frame.probableCause,'Nessuna causa automatica'))}</b><span>${esc(text(frame.reason))}</span></div><div class="inspector-grid">${[['Quality',num(frame.quality,0)],['Confidence',num(frame.confidence,0,'%')],['Guide RMS',arcsec(frame.guideRmsArcsec)],['Max excursion',arcsec(frame.maxGuideExcursionArcsec)],['Guide pattern',text(frame.guidePattern)],['Stars',num(frame.stars,0)],['Stars baseline',num(frame.starBaseline,0)],['Stars Δ',signed(frame.starDeltaPercent)],['Background',num(frame.background,2)],['BG baseline',num(frame.backgroundBaseline,2)],['BG Δ',signed(frame.backgroundDeltaPercent)],['File action',text(frame.fileDisposition)],['Trend',trendText(frame)],['Target / filter',`${text(frame.target)} · ${text(frame.filter)}`],['Exposure',num(frame.exposureSeconds,1,' s')],['Gain / bin',`G${num(frame.gain,0)} · ${num(frame.binX,0)}×${num(frame.binY,0)}`]].map(([k,v])=>`<div class="inspector-metric"><span>${esc(k)}</span><b>${esc(v)}</b></div>`).join('')}</div>`;
+    const host=$('#frameInspector'); if(!frame){host.className='inspector-empty';host.innerHTML='Seleziona un frame.';return;}
+    host.className='inspector'; host.innerHTML=`<div class="inspector-file"><div><span>FILE</span><strong>${esc(fileName(frame))}</strong><small>${esc(text(frame.source))}${frame.sequenceTitle?` · ${esc(frame.sequenceTitle)}`:''}</small></div><span class="pill ${statusClass(frame.status)}">${esc(text(frame.status))}</span></div><div class="inspector-reason"><b>${esc(text(frame.probableCause,'Nessuna causa automatica'))}</b><span>${esc(text(frame.reason))}</span></div><div class="inspector-grid">${[['Quality',num(frame.quality,0)],['Evidence',num(frame.confidence,0,' / 100')],['Guide RMS',arcsec(frame.guideRmsArcsec)],['Max excursion',arcsec(frame.maxGuideExcursionArcsec)],['Guide pattern',text(frame.guidePattern)],['Stars',num(frame.stars,0)],['Stars baseline',num(frame.starBaseline,0)],['Stars Δ',signed(frame.starDeltaPercent)],['Background',num(frame.background,2)],['BG baseline',num(frame.backgroundBaseline,2)],['BG Δ',signed(frame.backgroundDeltaPercent)],['File action',text(frame.fileDisposition)],['Trend',trendText(frame)],['Target / filter',`${text(frame.target)} · ${text(frame.filter)}`],['Exposure',num(frame.exposureSeconds,1,' s')],['Gain / bin',`G${num(frame.gain,0)} · ${num(frame.binX,0)}×${num(frame.binY,0)}`]].map(([k,v])=>`<div class="inspector-metric"><span>${esc(k)}</span><b>${esc(v)}</b></div>`).join('')}</div>`;
+    if(frame.imageEvidenceAvailable || frame.imageEvidenceAttempted)host.insertAdjacentHTML('beforeend',evidenceMarkup(frame,'it'));
     $('#inspectorHint').textContent=`frame #${num(frame.frameIndex,0)} · ${when(frame.timestampUtc,true)}`;
   }
   function renderTables(frames) {
-    const list=Array.isArray(frames)?frames:[]; const rejected=list.filter(f=>String(f.status||'').toUpperCase().includes('REJECT')).slice(-80).reverse();
-    $('#rejectedTableBody').innerHTML=rejected.length?rejected.map(f=>`<tr class="${statusClass(f.status)}${Number(f.frameIndex)===selectedFrameIndex?' selected':''}" data-frame-id="${esc(f.frameIndex)}"><td>${esc(num(f.frameIndex,0))}</td><td class="filename">${esc(fileName(f))}</td><td>${esc(text(f.fileDisposition))}</td><td>${esc(num(f.quality,0))}</td><td>${esc(num(f.confidence,0,'%'))}</td><td>${esc(arcsec(f.guideRmsArcsec))}</td><td>${esc(signed(f.starDeltaPercent))}</td><td>${esc(signed(f.backgroundDeltaPercent))}</td><td class="cause">${esc(text(f.probableCause))}</td></tr>`).join(''):'<tr class="empty-row"><td colspan="9">No rejected frames.</td></tr>';
-    const history=list.slice(-80); $('#frameHistoryBody').innerHTML=history.length?history.map(f=>`<tr class="${statusClass(f.status)}${Number(f.frameIndex)===selectedFrameIndex?' selected':''}" data-frame-id="${esc(f.frameIndex)}"><td>${esc(num(f.frameIndex,0))}</td><td>${esc(num(f.quality,0))}</td><td>${esc(num(f.confidence,0,'%'))}</td><td>${esc(text(f.status))}</td><td class="filename">${esc(fileName(f))}</td><td>${esc(arcsec(f.guideRmsArcsec))}</td><td>${esc(text(f.guidePattern))}</td><td>${esc(trendText(f))}</td><td>${esc(signed(f.starDeltaPercent))}</td><td>${esc(signed(f.backgroundDeltaPercent))}</td><td class="cause">${esc(text(f.probableCause))}</td></tr>`).join(''):'<tr class="empty-row"><td colspan="11">No QSM frames.</td></tr>';
+    const list=Array.isArray(frames)?frames:[]; const rejected=list.filter(f=>String(f.status||'').toUpperCase().includes('REJECT')||f.guideFalsePositive).slice(-80).reverse();
+    $('#rejectedTableBody').innerHTML=rejected.length?rejected.map(f=>`<tr class="${statusClass(f.status)}${Number(f.frameIndex)===selectedFrameIndex?' selected':''}" tabindex="0" role="button" aria-label="Esamina frame ${esc(f.frameIndex)}" data-frame-id="${esc(f.frameIndex)}"><td>${esc(num(f.frameIndex,0))}</td><td class="filename">${esc(fileName(f))}</td><td>${esc(text(f.fileDisposition))}</td><td>${esc(num(f.quality,0))}</td><td>${esc(num(f.confidence,0))}</td><td>${esc(arcsec(f.guideRmsArcsec))}</td><td>${esc(signed(f.starDeltaPercent))}</td><td>${esc(signed(f.backgroundDeltaPercent))}</td><td class="cause">${esc(text(f.probableCause))}</td></tr>`).join(''):'<tr class="empty-row"><td colspan="9">Nessuno scarto o recupero nella cronologia ricevuta.</td></tr>';
+    const history=list.slice(-80); $('#frameHistoryBody').innerHTML=history.length?history.map(f=>`<tr class="${statusClass(f.status)}${Number(f.frameIndex)===selectedFrameIndex?' selected':''}" tabindex="0" role="button" aria-label="Esamina frame ${esc(f.frameIndex)}" data-frame-id="${esc(f.frameIndex)}"><td>${esc(num(f.frameIndex,0))}</td><td>${esc(num(f.quality,0))}</td><td>${esc(num(f.confidence,0))}</td><td>${esc(text(f.status))}</td><td class="filename">${esc(fileName(f))}</td><td>${esc(arcsec(f.guideRmsArcsec))}</td><td>${esc(text(f.guidePattern))}</td><td>${esc(trendText(f))}</td><td>${esc(signed(f.starDeltaPercent))}</td><td>${esc(signed(f.backgroundDeltaPercent))}</td><td class="cause">${esc(text(f.probableCause))}</td></tr>`).join(''):'<tr class="empty-row"><td colspan="11">No QSM frames.</td></tr>';
   }
 
   function requestPreview(frame, syntheticMode) {
-    const frameId=n(frame?.frameIndex); if(previewPending===frameId && frameId!=null)return; previewPending=frameId;
+    const frameId=frame?.timestampUtc || frame?.frameIndex; if(frameId==null || previewFrame===frameId || previewPending===frameId || Date.now()-lastPreviewAttempt<5000)return; previewPending=frameId;lastPreviewAttempt=Date.now();
     const image=$('#previewImage'),placeholder=$('#previewPlaceholder'),state=$('#previewState'); state.textContent=syntheticMode?'Cerco l’ultimo LIGHT reale ricevuto da N.I.N.A.…':`Carico preview ${fileName(frame)}…`;
     image.onload=()=>{previewFrame=frameId;previewPending=null;image.hidden=false;placeholder.hidden=true;state.textContent=syntheticMode?'Ultimo LIGHT reale ricevuto da N.I.N.A.':`${fileName(frame)} · ${text(frame.filter,'senza filtro')} · ${num(frame.exposureSeconds,1,' s')}`;};
     image.onerror=()=>{previewPending=null;if(previewFrame==null){image.hidden=true;placeholder.hidden=false;}state.textContent=syntheticMode?'Nessun LIGHT reale disponibile da questa istanza N.I.N.A.':'Preview non ancora pronta · nuovo tentativo automatico';};
@@ -213,21 +219,76 @@
     link.className=`link-state ${payload.reachable?'online':payload.configured?'warn':''}`; link.querySelector('b').textContent=payload.reachable?`QSM online · ${num(payload.latencyMs,0,' ms')}`:payload.configured?'QSM non raggiungibile':'Da configurare';
     if(!payload.reachable||!payload.snapshot){banner.classList.remove('live');$('#bannerTitle').textContent=payload.reachable?'QSM collegato · nessuna sessione attiva':'N.I.N.A. non disponibile';$('#bannerText').textContent=payload.message||'—';empty.hidden=false;dashboard.hidden=true;$('#emptyTitle').textContent=payload.configured?'PC N.I.N.A. non raggiungibile':'Collegamento N.I.N.A. da configurare';$('#emptyText').textContent=payload.message||'Configura QSM sul PC N.I.N.A. e riavvia il container.';return;}
     empty.hidden=true;dashboard.hidden=false;
-    const snapshot=payload.snapshot||{},summary=snapshot.summary||{},frame=snapshot.currentFrame||{},guide=snapshot.guidingLive||{},mode=snapshot.mode||{},settings=snapshot.settings||{},frames=Array.isArray(snapshot.frames)?snapshot.frames:[]; lastSnapshot=snapshot;
+    const snapshot=payload.snapshot||{},summary=snapshot.summary||{},frame=snapshot.currentFrame||{},guide=snapshot.guidingLive||{},mode=snapshot.mode||{},settings=snapshot.settings||{},frames=Array.isArray(snapshot.frames)?snapshot.frames:[]; frames.forEach(f=>{if(['LEARNING','ERROR'].includes(String(f.status).toUpperCase()))f.quality=null;});if(['LEARNING','ERROR'].includes(String(frame.status).toUpperCase()))frame.quality=null;lastSnapshot=snapshot;
     const synthetic=Boolean(mode.syntheticMode),scope=text(mode.monitoringScope,'AdvancedSequencerLights'); $('#modeTag').textContent=synthetic?'SYNTHETIC LAB':'LIVE';$('#modeTag').classList.toggle('synthetic',synthetic);
     banner.classList.toggle('live',Boolean(payload.sessionActive));$('#bannerTitle').textContent=synthetic?`Synthetic Lab${mode.syntheticSessionName?` · ${mode.syntheticSessionName}`:''}`:payload.sessionActive?'Sessione N.I.N.A. attiva':'QSM collegato · nessuna sessione attiva';$('#bannerText').textContent=synthetic?`${text(mode.syntheticStatus,'LAB')} · QSM sintetico + PHD2/preview reali separati`:(payload.message||'—');
 
-    $('#qualityValue').textContent=n(frame.quality)==null?'—':num(frame.quality,0);$('#qualityLabel').textContent=qualityLabel(frame);$('#confidenceValue').textContent=n(frame.confidence)==null?'—':num(frame.confidence,0,'%');$('#confidenceLabel').textContent=confidenceLabel(frame.confidence);
-    $('#modeText').textContent=synthetic?'SYNTHETIC LAB':mode.monitorOnly?`MONITOR ONLY · ${scope}`:`ACTIVE REJECT HANDLING · ${scope}`;$('#frameStatusMain').textContent=text(frame.status,'IDLE');$('#probableCauseMain').textContent=text(frame.probableCause,'Waiting for first LIGHT frame');$('#reasonMain').textContent=text(frame.reason);$('#currentFileMain').textContent=fileName(frame);
+    $('#qualityValue').textContent=n(frame.quality)==null?'—':num(frame.quality,0);$('#qualityLabel').textContent=qualityLabel(frame);$('#confidenceValue').textContent=n(frame.confidence)==null?'—':num(frame.confidence,0,' / 100');$('#confidenceLabel').textContent=confidenceLabel(frame.confidence);
+    $('#modeText').textContent=synthetic?'SYNTHETIC LAB':mode.monitorOnly?`MONITOR ONLY · ${scope}`:`ACTIVE REJECT HANDLING · ${scope}`;$('#frameStatusMain').textContent=text(frame.status,'IDLE');$('#probableCauseMain').textContent=text(frame.probableCause,'Waiting for first LIGHT frame');$('#reasonMain').textContent=text(frame.decisionSummary||frame.reason);$('#currentFileMain').textContent=fileName(frame);
     $('#guideRmsFrame').textContent=arcsec(frame.guideRmsArcsec);$('#guideExcursionFrame').textContent=arcsec(frame.maxGuideExcursionArcsec);$('#guidePatternFrame').textContent=text(frame.guidePattern,'N/A');$('#guidePatternConfidence').textContent=n(frame.guidePatternConfidence)==null?'N/A':num(frame.guidePatternConfidence,0,'%');$('#starsFrame').textContent=n(frame.stars)==null?'N/A':num(frame.stars,0);$('#starsDeltaValue').textContent=signed(frame.starDeltaPercent);$('#starTrendFrame').textContent=text(frame.starTrend,'N/A');$('#backgroundFrame').textContent=n(frame.background)==null?'N/A':num(frame.background,2);$('#backgroundDeltaValue').textContent=signed(frame.backgroundDeltaPercent);$('#backgroundTrendFrame').textContent=text(frame.backgroundTrend,'N/A');$('#temporalFrame').textContent=trendText(frame);
     const events=groupEvents(frames);$('#eventCountValue').textContent=`${events.length} session events`;
-    $('#capturedValue').textContent=num(summary.captured,0);$('#usableValue').textContent=num(summary.usable,0);$('#rejectedValue').textContent=num(summary.rejected,0);$('#acceptanceValue').textContent=num(summary.acceptanceRate,1,'%');$('#sessionQualityValue').textContent=num(summary.sessionQuality,0);$('#sessionConfidenceValue').textContent=num(summary.sessionConfidence,0,'%');
-    renderPluginTimeline(frames,settings);renderSessionEvents(events);renderRankings(frames);renderTables(frames);renderGuide(guide,settings);
-    if(selectedFrameIndex!=null){renderFrameInspector(frames.find(f=>Number(f.frameIndex)===selectedFrameIndex)||null);} else renderFrameInspector(null);
+    $('#capturedValue').textContent=num(summary.captured,0);$('#usableValue').textContent=num(summary.usable,0);$('#rejectedValue').textContent=num(summary.rejected,0);$('#acceptanceValue').textContent=num(summary.acceptanceRate,1,'%');$('#sessionQualityValue').textContent=summary.usable>0?num(summary.sessionQuality,0):'—';$('#sessionConfidenceValue').textContent=summary.usable>0?num(summary.sessionConfidence,0):'—';
+    const sig=JSON.stringify(frames), ps=JSON.stringify(settings);if(sig!==tableSignature||ps!==plotSignature){renderPluginTimeline(frames,settings);renderSessionEvents(events);renderRankings(frames);renderTables(frames);tableSignature=sig;plotSignature=ps;}renderGuide(guide,settings);renderStellar(snapshot);$('#sessionNote').textContent=`${num(summary.learning||0)} in apprendimento · ${num(summary.errors||0)} errori`;
+    if(selectedFrameIndex!=null&&!frames.some(f=>Number(f.frameIndex)===selectedFrameIndex)){selectedFrameIndex=null;renderFrameInspector(null);}
     requestPreview(frame,synthetic);
   }
 
   async function refresh(force=false){if(busy||document.hidden)return;busy=true;try{render(await jsonFetch(`api/state${force?'?force=1':''}`));}catch(error){if(error.status===401){showLogin('Sessione scaduta. Accedi di nuovo.');return;}render({configured:true,reachable:false,sessionActive:false,message:`Monitor non disponibile: ${error.message}`,snapshot:null});}finally{busy=false;}}
+function evidenceMarkup(f, lang = 'en') {
+  const it = lang === 'it', t = (a,b) => it ? a : b;
+  const escape = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const number = (v,d=2) => v === null || v === undefined || v === '' || !Number.isFinite(Number(v)) ? '—' : Number(v).toFixed(d);
+  const percent = v => v === null || v === undefined ? null : Number(v)*100;
+  const checked = f.imageEvidenceAvailable === true;
+  const attempted = f.imageEvidenceAttempted === true || checked;
+  const rejected = String(f.status).toUpperCase().includes('REJECT');
+  const rescued = f.guideFalsePositive === true && !rejected;
+  const compromised = f.imageEvidenceCompromised === true || /SHAPE LIMIT EXCEEDED|STAR_SHAPE_CONFIRMED/.test(`${f.secondPassText} ${f.reason}`);
+  const title = rescued ? t('Recuperato','Recovered') : checked && rejected ? t('Scartato','Rejected') : checked ? t('Stelle verificate','Stars verified') : attempted ? t('Prova insufficiente','Insufficient evidence') : t('Controllo non eseguito','Check not run');
+  const note = rescued ? t('Forma stellare entro i limiti di recupero.','Star shapes within rescue limits.') + (String(f.status).toUpperCase()==='LEARNING' ? t(' Baseline in apprendimento.',' Baseline learning.') : t(' Frame utilizzabile.',' Usable frame.')) : checked && rejected ? (compromised ? t('Limite di forma stellare superato.','Star-shape limit exceeded.') : f.imageEvidenceHasRescueMargin === false || /BORDERLINE/i.test(f.secondPassText||'') ? t('Eccentricità troppo vicina al limite: margine di recupero insufficiente.','Eccentricity too close to the limit: insufficient rescue margin.') : t('Limite di guida o segnale ancora superato. Vedi esito registrato.','Guiding or signal limit still exceeded. See recorded result.')) : attempted && !checked ? t('Stelle affidabili insufficienti.','Insufficient reliable stars.') : checked ? t('Misure disponibili.','Measurements available.') : t('Nessuna analisi stellare per questo frame.','No stellar analysis for this frame.');
+  const png = String(f.starProofPng || '');
+  const image = checked && png.length > 0 && png.length < 50000 && /^[A-Za-z0-9+/=]+$/.test(png) ? `<figure class="stellar-proof"><img width="405" height="162" src="data:image/png;base64,${png}" alt="${t('Profilo mediano e sei stelle misurate','Median profile and six measured stars')}"><figcaption>${t('Profilo mediano · 6 stelle campione · contrasto aumentato','Median profile · 6 sample stars · enhanced contrast')}</figcaption></figure>` : '';
+  const limitsNote=checked && f.starRescueEccentricityLimit == null ? `<p class="evidence-note">${t('Limiti applicati non disponibili. Richiedono QSM 1.4.0.2.','Applied limits unavailable. Requires QSM 1.4.0.2.')}</p>` : '';
+  const metrics = checked ? `<div class="stellar-metrics">${[
+    [t('Eccentricità','Eccentricity'),number(f.starEccentricity),t('limite forma','shape limit')+' '+number(f.starEccentricityLimit)],
+    [t('Recupero sotto','Rescue below'),number(f.starRescueEccentricityLimit),t('margine di sicurezza','safety margin')],
+    [t('Coda','Tail'),number(percent(f.starTailStrength))+'%',t('limite','limit')+' '+number(f.starTailLimitPercent)+'%'],
+    [t('Doppio picco','Double peak'),number(percent(f.starDoublePeak))+'%',t('limite','limit')+' '+number(f.starDoublePeakLimitPercent)+'%'],
+    [t('Stelle affidabili','Reliable stars'),number(f.imageStarsMeasured,0),t('campione centrale','central sample')],
+    [t('Massa mediana','Median flux'),number(f.starMedianFlux,0),t('unità relative','relative units')]
+  ].map(([label,value,caption])=>`<div><span>${label}</span><strong>${escape(value)}</strong><small>${escape(caption)}</small></div>`).join('')}</div>` : '';
+  return `<div class="stellar-result ${rescued?'rescued':rejected?'retained':'neutral'}"><div class="stellar-heading"><span class="stellar-verdict">${title}</span><span>${t('Frame','Frame')} #${escape(f.frameIndex??'—')}</span></div><p>${note}</p>${image}${metrics}${limitsNote}<details class="stellar-record"><summary>${t('Esito registrato','Recorded result')}</summary><p>${escape(f.decisionSummary||'')}</p><p>${escape(f.imageEvidenceDetail||t('Nessuna misura registrata.','No measurement recorded.'))}</p><p>${t('Guida RMS / picco','Guide RMS / peak')}: ${number(f.guideRmsArcsec)}″ / ${number(f.maxGuideExcursionArcsec)}″</p><p>${escape(f.finalFileName||f.fileName||'')}</p></details></div>`;
+}
+
+
+  function renderStellar(snapshot) {
+    const list=(snapshot.frames||[]).filter(f=>f.imageEvidenceAvailable||f.imageEvidenceAttempted).slice().reverse();
+    const key=f=>`${f.timestampUtc||''}|${f.frameIndex}`;
+    const selector=$('#stellarSelect');
+    if(!list.some(f=>key(f)===selectedEvidenceKey))selectedEvidenceKey=list.length?key(list[0]):null;
+    const options=list.map(f=>`<option value="${esc(key(f))}">#${esc(f.frameIndex)} · ${f.guideFalsePositive&&!String(f.status).toUpperCase().includes('REJECT')?'Recuperato':text(f.status)} · ${esc(fileName(f))}</option>`).join('');
+    if(selector.innerHTML!==options)selector.innerHTML=options;
+    selector.hidden=!list.length;selector.value=selectedEvidenceKey||'';
+    $('#stellarCount').textContent=`${list.length} verificati · ${list.filter(f=>f.guideFalsePositive&&!String(f.status).toUpperCase().includes('REJECT')).length} recuperati`;
+    const f=list.find(f=>key(f)===selectedEvidenceKey);
+    const modern=snapshot.assessmentVersion||snapshot.currentFrame?.assessmentVersion;
+    const title=!modern?'Aggiorna il plugin QSM a 1.4':snapshot.settings?.imageEvidenceEnabled===false?'Verifica stellare disattivata':'Nessun frame verificato';
+    const note=!modern?'Analisi stellare disponibile da QSM 1.4.':snapshot.settings?.imageEvidenceEnabled===false?'Attiva la seconda verifica nelle opzioni del plugin in N.I.N.A.':'Analisi eseguita sui candidati allo scarto per guida.';
+    const html=f?evidenceMarkup(f,'it'):`<div class="evidence-empty"><strong>${title}</strong>${note}</div>`;
+    if(html!==evidenceSignature){$('#stellarEvidence').innerHTML=html;evidenceSignature=html;}
+  }
+  $('#stellarSelect').addEventListener('change',e=>{selectedEvidenceKey=e.target.value;renderStellar(lastSnapshot||{});});
+  document.addEventListener('keydown',e=>{const row=e.target.closest('[data-frame-id]');if(row&&(e.key==='Enter'||e.key===' ')){e.preventDefault();selectFrame(row.dataset.frameId);}});
+  $('#pluginTimeline').addEventListener('pointermove',e=>{
+    const hit=e.target.closest('[data-frame-id]'),tip=$('#stellarTooltip');
+    if(!hit){tip.hidden=true;return;}
+    const f=(lastSnapshot?.frames||[]).find(f=>String(f.frameIndex)===hit.dataset.frameId);if(!f)return;
+    tip.innerHTML=`<b>Frame #${esc(f.frameIndex)} · ${esc(f.status)}</b><p>${esc(f.decisionSummary||f.reason||'')}</p>`;
+    if(f.imageEvidenceAvailable){const tmp=document.createElement('div');tmp.innerHTML=evidenceMarkup(f,'it');const proof=tmp.querySelector('.stellar-proof');if(proof)tip.append(proof);}
+    tip.hidden=false;const r=tip.getBoundingClientRect();tip.style.left=Math.max(8,Math.min(innerWidth-r.width-8,e.clientX+14))+'px';tip.style.top=Math.max(8,Math.min(innerHeight-r.height-8,e.clientY+14))+'px';
+  });
+  $('#pluginTimeline').addEventListener('pointerleave',()=>{$('#stellarTooltip').hidden=true;});
+
   document.addEventListener('click',event=>{const row=event.target.closest('[data-frame-id]');if(row?.dataset.frameId)selectFrame(row.dataset.frameId);});
   $('#loginForm').addEventListener('submit',async event=>{event.preventDefault();const password=$('#loginPassword').value,button=event.submitter||event.currentTarget.querySelector('button');button.disabled=true;try{await jsonFetch('api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password})});$('#loginPassword').value='';$('#loginError').hidden=true;showApp();}catch(error){const retry=Number(error.payload?.retryAfter);showLogin(Number.isFinite(retry)?`Troppi tentativi. Riprova tra ${retry} s.`:error.message);}finally{button.disabled=false;}});
   $('#logoutButton').addEventListener('click',async()=>{try{await jsonFetch('api/logout',{method:'POST'});}catch(_){}showLogin();});

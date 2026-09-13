@@ -34,6 +34,7 @@ jobs:
         run: |
           for file in app/static/*.js control-panel/static/*.js nina-monitor/static/*.js; do node --check "$file"; done
           node --test tests/test_panel_frontend.cjs
+          node --test tests/test_nina_stellar_ui.cjs
       - name: Check shell scripts
         run: |
           for file in scripts/*.sh control-panel/openastro-action control-panel/openastro-power-profile; do bash -n "$file"; done

@@ -83,28 +83,43 @@ NINA Monitor    -> nina-monitor/**
 
 Therefore a commit that changes only `nina-monitor/**` updates only NINA Monitor. It must not restart LiveVault or any host service. Feature changes are validated by GitHub CI before merging to `main`; the merge then becomes the production deployment trigger.
 
-## Current UI
+## Current UI (QSM 1.4, verified locally 2026-09-13)
 
-The NINA Monitor currently shows:
+Source: `nina-monitor/static/{index.html,app.js,app.css}`. The dedicated monitor
+application remains the deployment target; no other application requires a restart.
 
-- QSM connectivity and ASIAIR-to-PC latency;
-- session active/idle state;
-- current Quality and Confidence;
-- full-session captured / usable / rejected counters and acceptance rate;
-- target, filter, exposure, gain/binning and camera;
-- star/background deltas and current QSM status/cause;
-- **real live guiding** from N.I.N.A. `GuideEvent`, not reconstructed from the last exposure:
-  - last 20 seconds;
-  - RA RMS;
-  - DEC RMS;
-  - total RMS;
-  - max excursion;
-  - timestamped RA/DEC trace;
-- recent Quality/Confidence/exposure-RMS session trend;
-- recent warning/reject/error list;
-- latest LIGHT preview through an authenticated same-origin image route.
+Image preview and stellar evidence now lead the dashboard. The inspector shows
+the actual median profile and six stars measured by QSM, eccentricity, rescue margin,
+tail, secondary peak, reliable sample size, median flux and the recorded decision.
+Recovered frames remain inspectable alongside retained rejections. Borderline
+shapes do not become confirmed damage: their insufficient rescue margin is explicit.
+Independent signal/safety rejection rules always take precedence over a cleared guide flag.
 
-The browser polls the monitor once per second while visible.
+The second pass runs in N.I.N.A. only for guiding-rejection candidates, not in this
+container. Older QSM builds may supply measurements without typed limits: missing
+limits are shown as unavailable; the monitor never invents defaults. Disablement,
+missing checks and legacy-plugin states have distinct visible explanations.
+Counts in this inspector concern only the recent history sent by QSM (up to 160
+frames), not all checks from the whole night. Whole-session totals remain supplied
+by the plugin. Quality belongs to an exposure; session quality averages usable frames;
+evidence strength is a 0–100 diagnostic index, not a calibrated probability.
+Learning/error quality and missing measurements are unavailable, not zero.
+
+Polling keeps the selected check and expanded details stable. The latest JPEG is
+requested only when frame identity changes; failed attempts are throttled to five
+seconds. Diagnostics, history and expandable rankings follow the evidence view.
+The live signed RA/DEC chart does not plot total-vector rejection limits on its axes.
+
+Validation: local Chromium at 1440, 900 and 430 px, using the existing 13-image
+private replay (0565 retained, 0663 recovered), independent-rule rejection, missing
+values, inactive checks, disabled checks and polling persistence. Private FITS,
+replay data and screenshots are not committed. Targeted proxy/auth/isolation tests
+and the exact-commit Linux CI remain the deployment gate.
+
+Rollback: redeploy the previous NINA image `a74bd25c691045e2cb25cf433133c1e74077e7ed`
+through this application's Coolify history. Preserve its environment and mounts
+(none), and verify LiveVault container identity/uptime is unchanged. This paragraph
+records the pre-deployment runtime on 2026-09-13, not proof that a new deployment ran.
 
 ## Preview policy
 
@@ -115,7 +130,7 @@ The browser never receives a FITS/XISF path or QSM secret. QSM generates a displ
 - encoded in RAM;
 - FITS/XISF is not re-read;
 - no preview file is persisted on ASIAIR/eMMC/NVMe;
-- the browser requests the preview only when the QSM frame index advances.
+- the browser requests the preview only when the QSM frame timestamp/index identity changes.
 
 This keeps remote traffic small and makes the feature independent from LiveVault storage.
 
