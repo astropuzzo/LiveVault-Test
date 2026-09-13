@@ -13,9 +13,9 @@
   <section id="loginView" class="login-shell" hidden>
     <form id="loginForm" class="login-card" autocomplete="on">
       <div class="brand-mark">N</div>
-      <p class="eyebrow">OPENASTRO · ISOLATED MODULE</p>
+      <p class="eyebrow">OPENASTRO</p>
       <h1>NINA Monitor</h1>
-      <p class="muted">Monitor remoto read-only separato dagli altri servizi ASIAIR.</p>
+      <p class="muted">Accesso al monitor N.I.N.A.</p>
       <label><span>Password</span><input id="loginPassword" type="password" autocomplete="current-password" required autofocus></label>
       <button type="submit">Accedi</button>
       <p id="loginError" class="error" hidden></p>
@@ -37,80 +37,79 @@
     <section id="dashboard" class="dashboard" hidden>
       <article class="qsm-card qsm-primary-card">
         <div class="qsm-primary-grid">
-          <section><span class="qsm-label">QUALITY</span><strong id="qualityValue" class="qsm-quality-value">—</strong><b id="qualityLabel" class="qsm-accent-line">Waiting for frame</b></section>
-          <section><span class="qsm-label">CONFIDENCE</span><strong id="confidenceValue" class="qsm-confidence-value">—</strong><b id="confidenceLabel" class="qsm-accent-line">Waiting</b></section>
+          <section><span class="qsm-label">QUALITÀ ULTIMO FRAME</span><strong id="qualityValue" class="qsm-quality-value">—</strong><b id="qualityLabel" class="qsm-accent-line">Waiting for frame</b></section>
+          <section><span class="qsm-label">FORZA DELLE EVIDENZE</span><strong id="confidenceValue" class="qsm-confidence-value">—</strong><b id="confidenceLabel" class="qsm-accent-line">Waiting</b></section>
           <section class="qsm-status-block"><span id="modeText" class="qsm-label">MONITOR ONLY</span><strong id="frameStatusMain">IDLE</strong><span id="probableCauseMain">Waiting for first LIGHT frame</span><span id="reasonMain">—</span><em id="currentFileMain">—</em></section>
         </div>
       </article>
+      <article class="qsm-card session-card">
+        <div class="qsm-session-grid">
+          <section><span class="qsm-label">SCATTATI</span><strong id="capturedValue">0</strong></section>
+          <section><span class="qsm-label">UTILIZZABILI</span><strong id="usableValue">0</strong></section>
+          <section><span class="qsm-label">SCARTATI</span><strong id="rejectedValue">0</strong></section>
+          <section><span class="qsm-label">ACCETTAZIONE</span><strong id="acceptanceValue">0.0%</strong></section>
+          <section><span class="qsm-label">QUALITÀ UTILIZZABILI</span><strong id="sessionQualityValue">0</strong></section>
+          <section><span class="qsm-label">EVIDENZE MEDIE</span><strong id="sessionConfidenceValue">0%</strong></section>
+        </div>
+      <p id="sessionNote" class="qsm-help"></p></article>
+<div class="hero-grid">
+      <article id="previewPanel" class="qsm-card remote-card preview-panel">
+        <div class="qsm-title split-title"><span>ULTIMO LIGHT</span><small>Anteprima reale</small></div>
+        <div class="preview-wrap"><div id="previewPlaceholder" class="preview-placeholder"><b>Preview in attesa</b><span>Comparirà al prossimo LIGHT reale salvato da N.I.N.A.</span></div><img id="previewImage" alt="Preview ultima esposizione NINA" hidden></div>
+        <div class="preview-meta"><span id="previewState">Nessuna preview ricevuta</span><span>Il file originale resta su N.I.N.A.</span></div>
+      </article>
+      <article id="stellarPanel" class="qsm-card stellar-panel">
+        <div class="evidence-head"><div><span class="eyebrow">QSM 1.4</span><h2>Analisi stellare</h2></div><span id="stellarCount" class="review-count">In attesa</span></div>
 
+        <label class="qsm-label" for="stellarSelect">FRAME</label><select id="stellarSelect" class="evidence-select" aria-label="Frame verificato"></select>
+        <div id="stellarEvidence"></div>
+      </article>
+</div>
       <article class="qsm-card">
         <div class="qsm-signal-grid">
           <section><span class="qsm-label">GUIDE RMS</span><strong id="guideRmsFrame">N/A</strong><small id="guideExcursionFrame">N/A</small></section>
-          <section><span class="qsm-label">GUIDE PATTERN</span><strong id="guidePatternFrame">N/A</strong><small id="guidePatternConfidence">N/A</small></section>
-          <section><span class="qsm-label">STARS</span><div class="inline-value"><strong id="starsFrame">N/A</strong><span id="starsDeltaValue">N/A</span></div><small id="starTrendFrame">N/A</small></section>
-          <section><span class="qsm-label">BACKGROUND</span><div class="inline-value"><strong id="backgroundFrame">N/A</strong><span id="backgroundDeltaValue">N/A</span></div><small id="backgroundTrendFrame">N/A</small></section>
-          <section><span class="qsm-label">TEMPORAL</span><strong id="temporalFrame">N/A</strong><small id="eventCountValue">0 session events</small></section>
+          <section><span class="qsm-label">TIPO DI GUIDA</span><strong id="guidePatternFrame">N/A</strong><small id="guidePatternConfidence">N/A</small></section>
+          <section><span class="qsm-label">STELLE</span><div class="inline-value"><strong id="starsFrame">N/A</strong><span id="starsDeltaValue">N/A</span></div><small id="starTrendFrame">N/A</small></section>
+          <section><span class="qsm-label">FONDO CIELO</span><div class="inline-value"><strong id="backgroundFrame">N/A</strong><span id="backgroundDeltaValue">N/A</span></div><small id="backgroundTrendFrame">N/A</small></section>
+          <section><span class="qsm-label">ANDAMENTO</span><strong id="temporalFrame">N/A</strong><small id="eventCountValue">0 session events</small></section>
         </div>
       </article>
-
-      <article class="qsm-card">
-        <div class="qsm-session-grid">
-          <section><span class="qsm-label">CAPTURED</span><strong id="capturedValue">0</strong></section>
-          <section><span class="qsm-label">USABLE</span><strong id="usableValue">0</strong></section>
-          <section><span class="qsm-label">REJECTED</span><strong id="rejectedValue">0</strong></section>
-          <section><span class="qsm-label">ACCEPTANCE</span><strong id="acceptanceValue">0.0%</strong></section>
-          <section><span class="qsm-label">SESSION QUALITY</span><strong id="sessionQualityValue">0</strong></section>
-          <section><span class="qsm-label">SESSION CONF.</span><strong id="sessionConfidenceValue">0%</strong></section>
-        </div>
-      </article>
-
       <article class="qsm-card timeline-card">
-        <div class="qsm-title">MULTICHANNEL TIMELINE — live values, rolling baseline and active reject limits</div>
-        <div class="qsm-help">Dashed 0% = rolling clean-frame baseline · dashed colored lines = current limits · hover anywhere in the plot for exact frame/baseline values.</div>
+        <div class="qsm-title">ANDAMENTO DELLA SESSIONE</div>
+        <div class="qsm-help">Linee tratteggiate: baseline e limiti attivi. Seleziona un frame per i dettagli.</div>
         <div id="pluginTimeline" class="plugin-timeline"></div>
       </article>
-
+      <article id="guidePanel" class="qsm-card remote-card">
+        <div class="qsm-title split-title"><span>GUIDA LIVE · ultimi 20 secondi</span><small>Diagnostica in tempo reale</small></div>
+        <div class="guide-facts"><span>Total RMS <b id="guideTotalValue">—</b></span><span>RA RMS <b id="guideRaValue">—</b></span><span>DEC RMS <b id="guideDecValue">—</b></span><span>Max <b id="guideMaxValue">—</b></span><span>Samples <b id="guideSamplesValue">—</b></span></div>
+        <div id="guidePlot" class="plot guide-plot"></div>
+      </article>
+      <article class="qsm-card rejected-review-card">
+        <div class="qsm-title split-title"><span>SCARTI E RECUPERI</span><small>Decisioni registrate dal plugin</small></div>
+        <div id="reviewMessage" class="qsm-help">Seleziona un frame per i dettagli. Gestione file disponibile in N.I.N.A.</div>
+        <div class="table-wrap plugin-table-wrap rejected-wrap"><table class="frame-table plugin-table"><thead><tr><th>#</th><th>File</th><th>File action</th><th>Q</th><th>Conf.</th><th>RMS</th><th>Stars Δ</th><th>BG Δ</th><th>Cause</th></tr></thead><tbody id="rejectedTableBody"></tbody></table></div>
+        <div class="review-inspector-head"><span>DETTAGLIO DEL FRAME</span><small id="inspectorHint">clicca una riga</small></div>
+        <div id="frameInspector" class="inspector-empty">Seleziona un frame.</div>
+      </article>
       <article class="qsm-card">
-        <div class="qsm-title">SESSION EVENTS — latest 12</div>
+        <div class="qsm-title">CRONOLOGIA</div>
+        <div class="table-wrap plugin-table-wrap history-wrap"><table class="frame-table plugin-table"><thead><tr><th>#</th><th>Q</th><th>Evidenze</th><th>Stato</th><th>File</th><th>RMS</th><th>Pattern</th><th>Trend</th><th>Stars Δ</th><th>BG Δ</th><th>Causa</th></tr></thead><tbody id="frameHistoryBody"></tbody></table></div>
+      </article>
+<details class="secondary-details"><summary>Eventi e confronto dei frame utilizzabili</summary>
+      <article class="qsm-card">
+        <div class="qsm-title">EVENTI RECENTI</div>
         <div class="table-wrap plugin-table-wrap events-table-wrap"><table class="frame-table plugin-table"><thead><tr><th>Event</th><th>Time</th><th>Type</th><th>Frames</th><th>Conf.</th><th>Severity</th><th>Primary cause</th></tr></thead><tbody id="sessionEventsBody"></tbody></table></div>
       </article>
-
       <article class="qsm-card">
         <div class="best-worst-grid">
           <section><div class="qsm-title">BEST ACCEPTED</div><div class="table-wrap plugin-table-wrap rank-wrap"><table class="frame-table plugin-table"><thead><tr><th>#</th><th>Quality</th><th>Conf.</th><th>File</th></tr></thead><tbody id="bestAcceptedBody"></tbody></table></div></section>
           <section><div class="qsm-title">WORST ACCEPTED</div><div class="table-wrap plugin-table-wrap rank-wrap"><table class="frame-table plugin-table"><thead><tr><th>#</th><th>Quality</th><th>Conf.</th><th>File</th></tr></thead><tbody id="worstAcceptedBody"></tbody></table></div></section>
         </div>
       </article>
-
-      <article class="qsm-card rejected-review-card">
-        <div class="qsm-title split-title"><span>REJECTED REVIEW — select a row for complete remote inspection</span><small>Automatic verdict preserved for audit · file actions remain local to N.I.N.A.</small></div>
-        <div id="reviewMessage" class="qsm-help">Remote monitor is read-only. Use the plugin in N.I.N.A. to open the real FITS/XISF or Undo BAD.</div>
-        <div class="table-wrap plugin-table-wrap rejected-wrap"><table class="frame-table plugin-table"><thead><tr><th>#</th><th>File</th><th>File action</th><th>Q</th><th>Conf.</th><th>RMS</th><th>Stars Δ</th><th>BG Δ</th><th>Cause</th></tr></thead><tbody id="rejectedTableBody"></tbody></table></div>
-        <div class="review-inspector-head"><span>REMOTE FRAME INSPECTOR</span><small id="inspectorHint">clicca una riga</small></div>
-        <div id="frameInspector" class="inspector-empty">Seleziona un frame rejected per vedere file, causa e metriche complete.</div>
-      </article>
-
-      <article class="qsm-card">
-        <div class="qsm-title">FRAME HISTORY</div>
-        <div class="table-wrap plugin-table-wrap history-wrap"><table class="frame-table plugin-table"><thead><tr><th>#</th><th>Q</th><th>Conf.</th><th>Status</th><th>File</th><th>RMS</th><th>Pattern</th><th>Trend</th><th>Stars Δ</th><th>BG Δ</th><th>Cause</th></tr></thead><tbody id="frameHistoryBody"></tbody></table></div>
-      </article>
-
-      <div class="remote-divider"><span>TELEMETRIA REMOTA</span></div>
-
-      <article id="guidePanel" class="qsm-card remote-card">
-        <div class="qsm-title split-title"><span>GUIDA PHD2 LIVE · ultimi 20 secondi</span><small>GuideEvent reali di N.I.N.A.</small></div>
-        <div class="guide-facts"><span>Total RMS <b id="guideTotalValue">—</b></span><span>RA RMS <b id="guideRaValue">—</b></span><span>DEC RMS <b id="guideDecValue">—</b></span><span>Max <b id="guideMaxValue">—</b></span><span>Samples <b id="guideSamplesValue">—</b></span></div>
-        <div id="guidePlot" class="plot guide-plot"></div>
-      </article>
-
-      <article id="previewPanel" class="qsm-card remote-card preview-panel">
-        <div class="qsm-title split-title"><span>PREVIEW ULTIMO LIGHT REALE</span><small>JPEG 1280 px · RAM</small></div>
-        <div class="preview-wrap"><div id="previewPlaceholder" class="preview-placeholder"><b>Preview in attesa</b><span>Comparirà al prossimo LIGHT reale salvato da N.I.N.A.</span></div><img id="previewImage" alt="Preview ultima esposizione NINA" hidden></div>
-        <div class="preview-meta"><span id="previewState">Nessuna preview ricevuta</span><span>Read-only · FITS/XISF non trasferiti</span></div>
-      </article>
+</details>
     </section>
 
-    <footer><span>Servizio isolato <b>openastro-nina-monitor.service</b> · porta <b>9091</b></span><span>Read-only</span></footer>
+    <footer><span>OpenAstro · QualitySessionMeter</span><span>Monitoraggio remoto · sola lettura</span></footer><div id="stellarTooltip" class="stellar-tooltip" hidden></div>
   </main>
   <script src="app.js" defer></script>
 </body>

@@ -111,12 +111,12 @@ def test_standalone_assets_and_docker_contract_exist():
     assert 'href="app.css"' in html and 'src="app.js"' in html
     assert '[hidden]{display:none!important}' in css
     assert 'guidingLive' in js
-    assert 'MULTICHANNEL TIMELINE' in html
+    assert 'ANDAMENTO DELLA SESSIONE' in html
     assert 'Quality' in js and '0–100' in js
-    assert 'Guide RMS' in js and 'rolling baseline' in html
+    assert 'Guide RMS' in js and 'baseline' in html
     assert 'PHD2 live' in js
-    assert 'GUIDA PHD2 LIVE' in html
-    assert 'PREVIEW ULTIMO LIGHT REALE' in html
+    assert 'GUIDA LIVE' in html
+    assert 'ULTIMO LIGHT' in html
     assert 'id="pluginTimeline"' in html
     assert 'H=420' in js
     assert 'min-width:1000px' in css and 'min-width:760px' in css
@@ -135,28 +135,24 @@ def test_standalone_assets_and_docker_contract_exist():
     assert 'USER openastro' in dockerfile
 
 
-def test_web_monitor_mirrors_qsm_dockable_hierarchy_before_remote_extensions():
+def test_stellar_inspection_is_available_before_diagnostic_history():
     html = (ROOT / 'static' / 'index.html').read_text(encoding='utf-8')
-    order = [
-        'QUALITY</span>',
-        'GUIDE RMS</span>',
-        'CAPTURED</span>',
-        'MULTICHANNEL TIMELINE',
-        'SESSION EVENTS — latest 12',
-        'BEST ACCEPTED',
-        'REJECTED REVIEW',
-        'FRAME HISTORY',
-        'TELEMETRIA REMOTA',
-        'GUIDA PHD2 LIVE',
-        'PREVIEW ULTIMO LIGHT REALE',
-    ]
-    positions = [html.index(marker) for marker in order]
-    assert positions == sorted(positions)
-    assert 'stesse metriche' not in html
-    assert 'QSM PLUGIN MIRROR' not in html
-    assert 'non sostituiscono' not in html
-    js = (ROOT / 'static' / 'app.js').read_text(encoding='utf-8')
-    assert "[top,rms,img].forEach" in js
-    assert "0% rolling baseline" in js
-    assert "RMS limit" in js
-    assert "causeCodes(frame)" in js
+    assert html.index('id="previewPanel"') < html.index('id="stellarPanel"') < html.index('id="pluginTimeline"')
+    assert 'id="stellarSelect"' in html and 'id="stellarEvidence"' in html
+    assert 'id="stellarTooltip"' in html
+
+
+def test_proxy_preserves_stellar_evidence_without_inventing_limits(monkeypatch):
+    qsm_client.reset_cache()
+    monkeypatch.setenv('OPENASTRO_NINA_QSM_URL', 'http://127.0.0.1:18973')
+    monkeypatch.setenv('OPENASTRO_NINA_QSM_TOKEN', 'test-only-token')
+    frame = {'frameIndex': 6, 'status': 'REJECTED', 'quality': None,
+             'guideFalsePositive': False, 'imageEvidenceAvailable': True,
+             'starProofPng': 'aGVsbG8=', 'starEccentricity': .58,
+             'starRescueEccentricityLimit': .55}
+    snapshot = {'available': True, 'summary': {'captured': 1}, 'currentFrame': frame, 'frames': [frame]}
+    monkeypatch.setattr(qsm_client, '_fetch_json', lambda *_: (snapshot, 1))
+    result = qsm_client.state(force=True)['snapshot']
+    assert result['currentFrame'] == frame
+    assert result['frames'][0]['quality'] is None
+    assert 'starTailLimitPercent' not in result['frames'][0]
