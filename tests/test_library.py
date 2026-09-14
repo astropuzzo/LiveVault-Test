@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import pytest
@@ -336,3 +336,47 @@ def test_library_validation_and_thumbnail_containment(tmp_path, monkeypatch):
 
     assert main._safe_thumbnail_url(7, str(inside)) == "/api/recordings/7/thumbnail"
     assert main._safe_thumbnail_url(8, str(outside)) == ""
+
+
+def test_creator_hover_preview_returns_three_latest_recordings_across_linked_accounts(library_db, monkeypatch):
+    profile_id, first_id, second_id = _seed_shared_profile(library_db)
+    base = datetime(2026, 9, 14, 18, 0, tzinfo=timezone.utc)
+    with library_db.begin() as session:
+        first = session.get(Source, first_id)
+        second = session.get(Source, second_id)
+        first.last_status = "recording"
+        first.last_seen_live_at = base + timedelta(minutes=8)
+        second.last_status = "offline"
+        for index in range(5):
+            source = first if index % 2 == 0 else second
+            session.add(Recording(
+                source_id=source.id,
+                source_name=source.name,
+                session_id=f"hover-{index}",
+                local_path=f"/missing/hover-{index}.mp4",
+                filename=f"hover-{index}.mp4",
+                started_at=base + timedelta(minutes=index),
+                finalized_at=base + timedelta(minutes=index + 1),
+                duration_seconds=60 + index,
+                size_bytes=1000 + index,
+                thumbnail_path=f"/missing/thumb-{index}.jpg",
+            ))
+
+    monkeypatch.setattr(
+        main,
+        "_safe_thumbnail_url",
+        lambda recording_id, thumbnail_path: f"/api/recordings/{recording_id}/thumbnail" if thumbnail_path else "",
+    )
+    payload = main.source_hover_preview(first_id, SimpleNamespace())
+
+    assert payload["profile_id"] == profile_id
+    assert payload["display_name"] == "Performer"
+    assert payload["status"] == "recording"
+    assert len(payload["accounts"]) == 2
+    assert len(payload["recent_recordings"]) == 3
+    assert [row["filename"] for row in payload["recent_recordings"]] == [
+        "hover-4.mp4", "hover-3.mp4", "hover-2.mp4"
+    ]
+    assert payload["recent_recordings"][0]["thumbnail_available"] is True
+    assert payload["cover_thumbnail_url"].endswith("/thumbnail")
+    assert payload["last_seen_live_at"] is not None

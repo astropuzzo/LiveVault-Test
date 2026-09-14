@@ -74,6 +74,15 @@ e helper host distribuiti separatamente. NINA resta isolato anche se la sua UI �
 incorporata nel Control Center.
 Deploy: [HOSTING.md](HOSTING.md), [nina-monitor/COOLIFY.md](nina-monitor/COOLIFY.md).
 
+LiveVault creator hover preview: i nomi prodotti da `creatorLinkMarkup()` espongono su
+puntatore fine una card lazy con massimo tre registrazioni recenti del profilo. Il
+frontend attende 250 ms prima della richiesta e mantiene una cache di 90 s; touch non
+attiva l'hover, mentre il focus da tastiera resta supportato sui client desktop. Il payload dedicato è
+`GET /api/sources/{source_id}/hover-preview` e non deve essere sostituito dal profilo
+completo, che è molto più costoso. Asset: `app/static/creator-hover.js` e `.css`.
+Rollback: revert della relativa modifica UI/API e redeploy LiveVault; nessun dato o
+schema persistente viene modificato.
+
 ## Storage: contratto da mantenere
 | Livello | Origine/mount | Contenuto |
 | --- | --- | --- |
