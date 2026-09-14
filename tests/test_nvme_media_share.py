@@ -52,8 +52,10 @@ def test_install_contract_exposes_only_dedicated_share_media_directory():
 
 def test_ui_never_offers_independent_eject_for_fixed_nvme_media():
     ui = (ROOT / 'control-panel' / 'static' / 'app.js').read_text(encoding='utf-8')
+    upload_ui = (ROOT / 'control-panel' / 'static' / 'media-upload.js').read_text(encoding='utf-8')
     assert 'device.ejectable === false' in ui
     assert 'selected.smb_path || media.smb_path' in ui
+    assert "selectedDevice()?.smb_path || SMB_PATH" in upload_ui
 
 
 def test_nvme_handoff_quiesces_share_media_access_before_unmount():
