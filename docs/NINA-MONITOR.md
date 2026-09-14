@@ -182,3 +182,7 @@ Python tests, and browser renders at 1440 and 430 pixels using the candidate
 replay payload. Both proof images decode; no page errors or horizontal
 overflow. The 160-frame snapshot is below the existing 2 MiB proxy limit.
 Deployment requires CI on the final commit.
+
+### QSM 1.4.1.1 signal-loss candidate — 2026-09-14
+
+The same candidate UI now shows explicit stellar-signal and combined sky-loss reasons after a guide flag is cleared. A usable sky-change warning remains distinct from rejection. Sources: `nina-monitor/static/app.js`; six inspector JavaScript tests. No deployment or endpoint change; rollback and live runtime remain as documented above.

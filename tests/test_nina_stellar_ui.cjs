@@ -31,3 +31,9 @@ test('photometric rescue respects the final verdict and extended proof is constr
  const rejected=render({...frame,starCountFalsePositive:true,extendedStarProofPng:'\" onerror=\"attack()'});
  assert.doesNotMatch(rejected,/class="stellar-result rescued"/);assert.doesNotMatch(rejected,/<img/);
 });
+
+test('stellar signal rejection remains visible after a guide flag is cleared',()=>{
+ const html=render({...frame,guideFalsePositive:true,reason:'SKY_SIGNAL_LOSS',imageEvidenceHasRescueMargin:true});
+ assert.match(html,/Brighter sky with fewer and fainter stars/);assert.doesNotMatch(html,/class="stellar-result rescued"/);
+ assert.match(render({...frame,reason:'STELLAR_FLUX_LOSS'}),/Measured stellar signal loss exceeds the limit/);
+});
