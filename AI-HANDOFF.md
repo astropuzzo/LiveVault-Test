@@ -81,7 +81,9 @@ attiva l'hover, mentre il focus da tastiera resta supportato sui client desktop.
 `GET /api/sources/{source_id}/hover-preview` e non deve essere sostituito dal profilo
 completo, che è molto più costoso. Asset: `app/static/creator-hover.js` e `.css`.
 Rollback: revert della relativa modifica UI/API e redeploy LiveVault; nessun dato o
-schema persistente viene modificato.
+schema persistente viene modificato. Il contratto UI resta globale perché tutti i
+nomi creator interattivi condividono `data-profile-link`; non duplicare richieste o
+implementazioni hover nelle singole viste.
 
 ## Storage: contratto da mantenere
 | Livello | Origine/mount | Contenuto |
