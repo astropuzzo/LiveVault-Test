@@ -66,3 +66,13 @@ def test_nvme_handoff_quiesces_share_media_access_before_unmount():
     assert close < unmount
     assert stop_dlna < unmount
     assert "Path('/share/Media').mkdir(parents=True, exist_ok=True)" in handoff
+
+
+def test_media_selection_discards_stale_async_responses():
+    ui = (ROOT / 'control-panel' / 'static' / 'app.js').read_text(encoding='utf-8')
+    assert 'let mediaDirectoryRequest = 0;' in ui
+    assert 'let mediaLibraryRequest = 0;' in ui
+    assert 'uuid !== mediaUuid || request !== mediaLibraryRequest' in ui
+    assert 'uuid !== mediaUuid || request !== mediaDirectoryRequest' in ui
+    assert 'mediaThumbUrl(item.path, libraryUuid)' in ui
+    assert 'openMediaPlayer(button.dataset.mediaRecent, button.dataset.mediaName, button.dataset.mediaCategory, libraryUuid)' in ui

@@ -22,6 +22,8 @@ let mediaUuid = '';
 let mediaPath = '';
 let mediaSignature = '';
 let mediaBusy = false;
+let mediaDirectoryRequest = 0;
+let mediaLibraryRequest = 0;
 let mediaHls = null;
 let mediaHlsToken = '';
 let mediaPlaybackBase = 0;
@@ -559,6 +561,7 @@ function renderMediaFiles() {
 }
 function renderMediaLibrary(library) {
   mediaLibrary = library;
+  const libraryUuid = library?.uuid || mediaUuid;
   const counts = library?.counts || {}, sizes = library?.bytes || {};
   $('#mediaStatVideo').textContent = counts.video || 0; $('#mediaStatVideoSize').textContent = bytes(sizes.video || 0);
   $('#mediaStatAudio').textContent = counts.audio || 0; $('#mediaStatAudioSize').textContent = bytes(sizes.audio || 0);
@@ -567,35 +570,43 @@ function renderMediaLibrary(library) {
   const recent = library?.recent || [];
   $('#mediaRecentWrap').hidden = !recent.length;
   $('#mediaRecentCount').textContent = recent.length ? `${recent.length} elementi` : '';
-  $('#mediaRecent').innerHTML = recent.slice(0,12).map(item => `<button class="media-recent-card" data-media-recent="${escapeHtml(item.path)}" data-media-name="${escapeHtml(item.name)}" data-media-category="${escapeHtml(item.category)}">${item.thumbnail ? `<img loading="lazy" src="${escapeHtml(mediaThumbUrl(item.path))}" alt="">` : `<span>${mediaCategoryLabel(item.category)}</span>`}<strong>${escapeHtml(item.name)}</strong><small>${mediaDate(item.modified)}</small></button>`).join('');
-  $$('.media-recent-card').forEach(button => button.addEventListener('click', () => openMediaPlayer(button.dataset.mediaRecent, button.dataset.mediaName, button.dataset.mediaCategory)));
+  $('#mediaRecent').innerHTML = recent.slice(0,12).map(item => `<button class="media-recent-card" data-media-recent="${escapeHtml(item.path)}" data-media-name="${escapeHtml(item.name)}" data-media-category="${escapeHtml(item.category)}">${item.thumbnail ? `<img loading="lazy" src="${escapeHtml(mediaThumbUrl(item.path, libraryUuid))}" alt="">` : `<span>${mediaCategoryLabel(item.category)}</span>`}<strong>${escapeHtml(item.name)}</strong><small>${mediaDate(item.modified)}</small></button>`).join('');
+  $$('.media-recent-card').forEach(button => button.addEventListener('click', () => openMediaPlayer(button.dataset.mediaRecent, button.dataset.mediaName, button.dataset.mediaCategory, libraryUuid)));
 }
 async function loadMediaLibrary(force = false) {
-  if (!mediaUuid) return;
+  const uuid = mediaUuid;
+  if (!uuid) return;
+  const request = ++mediaLibraryRequest;
   try {
-    const query = new URLSearchParams({uuid:mediaUuid}); if (force) query.set('force','1');
+    const query = new URLSearchParams({uuid}); if (force) query.set('force','1');
     const response = await fetch(`/api/media/library?${query}`, {cache:'no-store', signal:AbortSignal.timeout(30000)});
     if (response.status === 401) return showLogin();
     const result = await response.json();
+    if (uuid !== mediaUuid || request !== mediaLibraryRequest) return;
     if (response.ok && result.ok) renderMediaLibrary(result);
   } catch (_) {}
 }
 async function loadMediaDirectory(path = mediaPath) {
-  if (!mediaUuid || mediaBusy) return;
+  const uuid = mediaUuid;
+  if (!uuid) return;
+  const request = ++mediaDirectoryRequest;
   mediaBusy = true;
-  $('#mediaFiles').innerHTML = '<div class="media-empty"><strong>Caricamento…</strong><small>Lettura del supporto USB.</small></div>';
+  $('#mediaFiles').innerHTML = '<div class="media-empty"><strong>Caricamento…</strong><small>Lettura del supporto.</small></div>';
   try {
-    const query = new URLSearchParams({uuid:mediaUuid, path:path || ''});
+    const query = new URLSearchParams({uuid, path:path || ''});
     const response = await fetch(`/api/media/list?${query}`, {cache:'no-store', signal:AbortSignal.timeout(15000)});
     if (response.status === 401) return showLogin();
     const result = await response.json();
+    if (uuid !== mediaUuid || request !== mediaDirectoryRequest) return;
     if (!response.ok || !result.ok) throw new Error(result.error || `HTTP ${response.status}`);
     mediaPath = result.path || ''; mediaItems = result.items || [];
     $('#mediaDriveLabel').textContent = result.label || 'USB'; $('#mediaPath').textContent = `/${mediaPath}`;
     $('#mediaBack').disabled = !mediaPath; $('#mediaBack').dataset.parent = result.parent || '';
     renderMediaFiles();
-  } catch (error) { $('#mediaFiles').innerHTML = `<div class="media-empty"><strong>Supporto non leggibile</strong><small>${escapeHtml(error.message || '')}</small></div>`; }
-  finally { mediaBusy = false; }
+  } catch (error) {
+    if (uuid === mediaUuid && request === mediaDirectoryRequest) $('#mediaFiles').innerHTML = `<div class="media-empty"><strong>Supporto non leggibile</strong><small>${escapeHtml(error.message || '')}</small></div>`;
+  }
+  finally { if (request === mediaDirectoryRequest) mediaBusy = false; }
 }
 function closeMediaPlayer() {
   const stage=$('#mediaPlayerStage'), media=stage.querySelector('video,audio'); if(media) saveMediaProgress(media,true);
