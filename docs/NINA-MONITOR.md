@@ -163,3 +163,22 @@ The container runs as an unprivileged user, with a read-only filesystem in the t
 ## Safety boundary
 
 The first release remains read-only. Remote sequence control, threshold changes, file mutation and other write actions are intentionally outside this release until monitoring has been field-tested on real sessions.
+
+## QSM 1.4.1 candidate support — 2026-09-14
+
+Candidate source: `nina-monitor/static/app.js` on `codex/qsm141-stellar-analysis`.
+The stellar inspector accepts the extended profile, verified region count,
+matched-star flux, FWHM and distant-image measurements from QSM 1.4.1.
+A cleared star-count flag is displayed as recovered only when the final frame
+status is usable. Older QSM snapshots remain supported; missing fields display
+as unavailable. No tokens, server endpoints or file actions change.
+
+Not deployed as part of this candidate preparation. The live monitor health
+endpoint at `192.168.1.27:9091` reported read-only and isolated on 2026-09-14.
+Runtime deployment remains the previously documented 1.4 dashboard. Rollback
+for the candidate UI is the preceding `app.js`; production rollback remains
+the existing Coolify image history. Validation: five stellar-inspector JavaScript tests, nine standalone-monitor
+Python tests, and browser renders at 1440 and 430 pixels using the candidate
+replay payload. Both proof images decode; no page errors or horizontal
+overflow. The 160-frame snapshot is below the existing 2 MiB proxy limit.
+Deployment requires CI on the final commit.

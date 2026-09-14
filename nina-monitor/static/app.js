@@ -242,12 +242,14 @@ function evidenceMarkup(f, lang = 'en') {
   const checked = f.imageEvidenceAvailable === true;
   const attempted = f.imageEvidenceAttempted === true || checked;
   const rejected = String(f.status).toUpperCase().includes('REJECT');
-  const rescued = f.guideFalsePositive === true && !rejected;
+  const rescued = (f.guideFalsePositive === true || f.starCountFalsePositive === true) && !rejected;
   const compromised = f.imageEvidenceCompromised === true || /SHAPE LIMIT EXCEEDED|STAR_SHAPE_CONFIRMED/.test(`${f.secondPassText} ${f.reason}`);
   const title = rescued ? t('Recuperato','Recovered') : checked && rejected ? t('Scartato','Rejected') : checked ? t('Stelle verificate','Stars verified') : attempted ? t('Prova insufficiente','Insufficient evidence') : t('Controllo non eseguito','Check not run');
-  const note = rescued ? t('Forma stellare entro i limiti di recupero.','Star shapes within rescue limits.') + (String(f.status).toUpperCase()==='LEARNING' ? t(' Baseline in apprendimento.',' Baseline learning.') : t(' Frame utilizzabile.',' Usable frame.')) : checked && rejected ? (compromised ? t('Limite di forma stellare superato.','Star-shape limit exceeded.') : f.imageEvidenceHasRescueMargin === false || /BORDERLINE/i.test(f.secondPassText||'') ? t('Eccentricità troppo vicina al limite: margine di recupero insufficiente.','Eccentricity too close to the limit: insufficient rescue margin.') : t('Limite di guida o segnale ancora superato. Vedi esito registrato.','Guiding or signal limit still exceeded. See recorded result.')) : attempted && !checked ? t('Stelle affidabili insufficienti.','Insufficient reliable stars.') : checked ? t('Misure disponibili.','Measurements available.') : t('Nessuna analisi stellare per questo frame.','No stellar analysis for this frame.');
+  const note = rescued ? (f.starCountFalsePositive ? t('Segnale delle stelle abbinate entro i limiti di recupero.','Matched stellar signal within recovery limits.') : t('Forma stellare entro i limiti di recupero.','Star shapes within rescue limits.')) + (String(f.status).toUpperCase()==='LEARNING' ? t(' Baseline in apprendimento.',' Baseline learning.') : t(' Frame utilizzabile.',' Usable frame.')) : checked && rejected ? (compromised ? t('Limite di forma stellare superato.','Star-shape limit exceeded.') : f.imageEvidenceHasRescueMargin === false || /BORDERLINE/i.test(f.secondPassText||'') ? t('Eccentricità troppo vicina al limite: margine di recupero insufficiente.','Eccentricity too close to the limit: insufficient rescue margin.') : t('Limite di guida o segnale ancora superato. Vedi esito registrato.','Guiding or signal limit still exceeded. See recorded result.')) : attempted && !checked ? t('Analisi stellare non conclusiva.','Stellar check inconclusive.') : checked ? t('Misure disponibili.','Measurements available.') : t('Nessuna analisi stellare per questo frame.','No stellar analysis for this frame.');
   const png = String(f.starProofPng || '');
   const image = checked && png.length > 0 && png.length < 50000 && /^[A-Za-z0-9+/=]+$/.test(png) ? `<figure class="stellar-proof"><img width="405" height="162" src="data:image/png;base64,${png}" alt="${t('Profilo mediano e sei stelle misurate','Median profile and six measured stars')}"><figcaption>${t('Profilo mediano · 6 stelle campione · contrasto aumentato','Median profile · 6 sample stars · enhanced contrast')}</figcaption></figure>` : '';
+  const widePng=String(f.extendedStarProofPng||'');
+  const wide=checked && widePng.length>0 && widePng.length<100000 && /^[A-Za-z0-9+/=]+$/.test(widePng) ? `<figure class="stellar-proof"><img style="width:290px;height:auto" src="data:image/png;base64,${widePng}" alt="${t('Profilo stellare esteso','Extended stellar profile')}"><figcaption>${t('Profilo esteso · contrasto aumentato','Extended profile · enhanced contrast')}</figcaption></figure>` : '';
   const limitsNote=checked && f.starRescueEccentricityLimit == null ? `<p class="evidence-note">${t('Limiti applicati non disponibili. Richiedono QSM 1.4.0.2.','Applied limits unavailable. Requires QSM 1.4.0.2.')}</p>` : '';
   const metrics = checked ? `<div class="stellar-metrics">${[
     [t('Eccentricità','Eccentricity'),number(f.starEccentricity),t('limite forma','shape limit')+' '+number(f.starEccentricityLimit)],
@@ -255,25 +257,27 @@ function evidenceMarkup(f, lang = 'en') {
     [t('Coda','Tail'),number(percent(f.starTailStrength))+'%',t('limite','limit')+' '+number(f.starTailLimitPercent)+'%'],
     [t('Doppio picco','Double peak'),number(percent(f.starDoublePeak))+'%',t('limite','limit')+' '+number(f.starDoublePeakLimitPercent)+'%'],
     [t('Stelle affidabili','Reliable stars'),number(f.imageStarsMeasured,0),t('campione centrale','central sample')],
-    [t('Massa mediana','Median flux'),number(f.starMedianFlux,0),t('unità relative','relative units')]
+    [t('Segnale relativo','Relative signal'),number(percent(f.relativeStellarFlux),0)+'%',number(f.matchedStars,0)+' '+t('stelle abbinate','matched stars')],
+    [t('FWHM','FWHM'),number(f.starFwhmPixels)+' px',t('pixel originali','original pixels')],
+    [t('Zone verificate','Verified regions'),number(f.verifiedStarRegions,0)+'/5',t('campo centrale ed esterno','central and outer field')],
+    [t('Impronta distante','Distant image'),number(percent(f.starRemotePeak))+'%',t('limite','limit')+' '+number(f.starRemotePeakLimitPercent)+'%']
   ].map(([label,value,caption])=>`<div><span>${label}</span><strong>${escape(value)}</strong><small>${escape(caption)}</small></div>`).join('')}</div>` : '';
-  return `<div class="stellar-result ${rescued?'rescued':rejected?'retained':'neutral'}"><div class="stellar-heading"><span class="stellar-verdict">${title}</span><span>${t('Frame','Frame')} #${escape(f.frameIndex??'—')}</span></div><p>${note}</p>${image}${metrics}${limitsNote}<details class="stellar-record"><summary>${t('Esito registrato','Recorded result')}</summary><p>${escape(f.decisionSummary||'')}</p><p>${escape(f.imageEvidenceDetail||t('Nessuna misura registrata.','No measurement recorded.'))}</p><p>${t('Guida RMS / picco','Guide RMS / peak')}: ${number(f.guideRmsArcsec)}″ / ${number(f.maxGuideExcursionArcsec)}″</p><p>${escape(f.finalFileName||f.fileName||'')}</p></details></div>`;
+  return `<div class="stellar-result ${rescued?'rescued':rejected?'retained':'neutral'}"><div class="stellar-heading"><span class="stellar-verdict">${title}</span><span>${t('Frame','Frame')} #${escape(f.frameIndex??'—')}</span></div><p>${note}</p>${image}${wide}${metrics}${limitsNote}<details class="stellar-record"><summary>${t('Esito registrato','Recorded result')}</summary><p>${escape(f.decisionSummary||'')}</p><p>${escape(f.imageEvidenceDetail||t('Nessuna misura registrata.','No measurement recorded.'))}</p><p>${t('Guida RMS / picco','Guide RMS / peak')}: ${number(f.guideRmsArcsec)}″ / ${number(f.maxGuideExcursionArcsec)}″</p><p>${escape(f.finalFileName||f.fileName||'')}</p></details></div>`;
 }
-
 
   function renderStellar(snapshot) {
     const list=(snapshot.frames||[]).filter(f=>f.imageEvidenceAvailable||f.imageEvidenceAttempted).slice().reverse();
     const key=f=>`${f.timestampUtc||''}|${f.frameIndex}`;
     const selector=$('#stellarSelect');
     if(!list.some(f=>key(f)===selectedEvidenceKey))selectedEvidenceKey=list.length?key(list[0]):null;
-    const options=list.map(f=>`<option value="${esc(key(f))}">#${esc(f.frameIndex)} · ${f.guideFalsePositive&&!String(f.status).toUpperCase().includes('REJECT')?'Recuperato':text(f.status)} · ${esc(fileName(f))}</option>`).join('');
+    const options=list.map(f=>`<option value="${esc(key(f))}">#${esc(f.frameIndex)} · ${(f.guideFalsePositive||f.starCountFalsePositive)&&!String(f.status).toUpperCase().includes('REJECT')?'Recuperato':text(f.status)} · ${esc(fileName(f))}</option>`).join('');
     if(selector.innerHTML!==options)selector.innerHTML=options;
     selector.hidden=!list.length;selector.value=selectedEvidenceKey||'';
-    $('#stellarCount').textContent=`${list.length} verificati · ${list.filter(f=>f.guideFalsePositive&&!String(f.status).toUpperCase().includes('REJECT')).length} recuperati`;
+    $('#stellarCount').textContent=`${list.length} verificati · ${list.filter(f=>(f.guideFalsePositive||f.starCountFalsePositive)&&!String(f.status).toUpperCase().includes('REJECT')).length} recuperati`;
     const f=list.find(f=>key(f)===selectedEvidenceKey);
     const modern=snapshot.assessmentVersion||snapshot.currentFrame?.assessmentVersion;
     const title=!modern?'Aggiorna il plugin QSM a 1.4':snapshot.settings?.imageEvidenceEnabled===false?'Verifica stellare disattivata':'Nessun frame verificato';
-    const note=!modern?'Analisi stellare disponibile da QSM 1.4.':snapshot.settings?.imageEvidenceEnabled===false?'Attiva la seconda verifica nelle opzioni del plugin in N.I.N.A.':'Analisi eseguita sui candidati allo scarto per guida.';
+    const note=!modern?'Analisi stellare disponibile da QSM 1.4.':snapshot.settings?.imageEvidenceEnabled===false?'Attiva l’analisi stellare nelle opzioni di QSM.':'Analisi disponibile per ogni LIGHT monitorato con QSM 1.4.1.';
     const html=f?evidenceMarkup(f,'it'):`<div class="evidence-empty"><strong>${title}</strong>${note}</div>`;
     if(html!==evidenceSignature){$('#stellarEvidence').innerHTML=html;evidenceSignature=html;}
   }
