@@ -131,9 +131,13 @@ The storage tiers are a hard architectural contract:
 - internal eMMC: OS, `/data`, Docker `/data/docker`, dependencies, databases,
   configuration, Control Center state/cache and the bounded 4 GiB failover buffer;
 - SERVER NVMe: heavy LiveVault recording payloads;
-- removable USB media: films and other Media Hub payloads only.
+- SHARE exFAT: backups and shared data, plus the dedicated `/share/Media` directory for persistent Media Hub payloads;
+- removable USB media: additional hot-plug Media Hub payloads under `/srv/openastro-media`.
 
 Removing a media USB does not migrate the film contents into the emergency
 buffer; the Media Hub catalog/runtime stays on eMMC and the library becomes
-offline cleanly. Removing/failing the SERVER NVMe redirects new LiveVault capture
-to the bounded eMMC buffer until automatic UUID reattach succeeds.
+offline cleanly. `/share/Media` is a fixed Media Hub root but is not independently
+ejectable: before `/share` is unmounted the handoff closes the NVMe SMB share and
+restarts MiniDLNA around the detach, then restores indexing after SHARE returns.
+Removing/failing the SERVER NVMe redirects new LiveVault capture to the bounded
+eMMC buffer until automatic UUID reattach succeeds.

@@ -15,6 +15,12 @@ import time
 import uuid as uuidlib
 
 MEDIA_ROOT = Path('/srv/openastro-media')
+SHARE_ROOT = Path('/share')
+SHARE_MEDIA_ROOT = SHARE_ROOT / 'Media'
+SHARE_MEDIA_UUID = '7EBD-F531'
+SHARE_MEDIA_LABEL = 'NVMe Media'
+SHARE_MEDIA_MODEL = 'OpenAstro NVMe SHARE'
+SHARE_MEDIA_SMB_PATH = r'\\OPENASTRO\NVMeMedia'
 MANAGER = Path('/usr/local/sbin/openastro-media-manager')
 CREDENTIALS = Path('/etc/openastro-media-credentials.json')
 STATE_ROOT = Path('/var/lib/openastro-control')
@@ -125,6 +131,36 @@ def _db() -> sqlite3.Connection:
     return conn
 
 
+def _share_media_device() -> dict:
+    size = 0
+    try:
+        if os.path.ismount(SHARE_ROOT):
+            size = int(shutil.disk_usage(SHARE_ROOT).total)
+    except OSError:
+        pass
+    return {
+        'uuid': SHARE_MEDIA_UUID,
+        'label': SHARE_MEDIA_LABEL,
+        'fstype': 'exfat',
+        'model': SHARE_MEDIA_MODEL,
+        'size': size,
+        'mountpoint': str(SHARE_MEDIA_ROOT),
+        'parent_mount': str(SHARE_ROOT),
+        'media_role': 'nvme-share',
+        'persistent': True,
+        'managed': False,
+        'ejectable': False,
+        'smb_path': SHARE_MEDIA_SMB_PATH,
+    }
+
+
+def _item_mounted(item: dict) -> bool:
+    target = Path(str(item.get('mountpoint') or ''))
+    if item.get('media_role') == 'nvme-share':
+        return os.path.ismount(Path(str(item.get('parent_mount') or SHARE_ROOT))) and target.is_dir()
+    return bool(target) and os.path.ismount(target)
+
+
 def _discover(*, force: bool = False) -> list[dict]:
     """Share one short-lived block-device snapshot across a UI refresh burst."""
     global _DISCOVERY_CACHE
@@ -134,13 +170,16 @@ def _discover(*, force: bool = False) -> list[dict]:
         if not force and cached and now - cached_at < DISCOVERY_TTL:
             return cached
     result = _run([str(MANAGER), 'list'])
-    if result.returncode != 0:
-        return []
-    try:
-        payload = json.loads(result.stdout or '[]')
-    except json.JSONDecodeError:
-        return []
-    value = payload if isinstance(payload, list) else []
+    value: list[dict] = []
+    if result.returncode == 0:
+        try:
+            payload = json.loads(result.stdout or '[]')
+            if isinstance(payload, list):
+                value = payload
+        except json.JSONDecodeError:
+            pass
+    if not any(str(item.get('uuid') or '') == SHARE_MEDIA_UUID for item in value):
+        value.append(_share_media_device())
     with _DISCOVERY_LOCK:
         _DISCOVERY_CACHE = (now, value)
     return value
@@ -184,7 +223,7 @@ def _mounted_uuids() -> set[str]:
     result = set()
     for item in _discover():
         try:
-            if os.path.ismount(Path(item['mountpoint'])):
+            if _item_mounted(item):
                 result.add(str(item['uuid']))
         except (KeyError, OSError):
             pass
@@ -199,7 +238,7 @@ def status() -> dict:
         present_ids.add(item['uuid'])
         _remember_device(item)
         target = Path(item['mountpoint'])
-        mounted = os.path.ismount(target)
+        mounted = _item_mounted(item)
         usage = None
         if mounted:
             try:
@@ -211,6 +250,9 @@ def status() -> dict:
             'uuid': item['uuid'], 'label': item['label'], 'fstype': item['fstype'],
             'model': item['model'], 'size': item['size'], 'mountpoint': item['mountpoint'],
             'mounted': mounted, 'read_only': mounted, 'usage': usage, 'remembered': True,
+            'persistent': bool(item.get('persistent', False)), 'managed': bool(item.get('managed', True)),
+            'ejectable': bool(item.get('ejectable', True)), 'media_role': item.get('media_role', 'usb'),
+            'smb_path': item.get('smb_path', r'\\OPENASTRO\Media'),
         })
     with _db() as conn:
         for row in conn.execute('SELECT * FROM media_devices ORDER BY last_seen DESC'):
@@ -252,7 +294,7 @@ def _device(uuid: str, *, require_mounted: bool = True) -> dict:
     for item in _discover(force=require_mounted):
         if item.get('uuid') == uuid:
             target = Path(item['mountpoint'])
-            if require_mounted and not os.path.ismount(target):
+            if require_mounted and not _item_mounted(item):
                 raise FileNotFoundError('Supporto non montato')
             _remember_device(item)
             return item

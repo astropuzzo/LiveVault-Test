@@ -640,7 +640,7 @@ function renderMedia(media = {}) {
   $('#mediaDlnaState').textContent = media.dlna === 'active' ? 'ON' : 'OFF'; $('#mediaDlnaState').className = media.dlna === 'active' ? 'good' : 'bad';
   $('#mediaDeviceList').innerHTML = devices.length ? devices.map(device => {
     const usage = device.usage, usedPct = usage?.total ? usage.used/usage.total*100 : 0;
-    return `<div class="media-device ${device.uuid === mediaUuid ? 'selected' : ''} ${device.mounted?'':'offline'}"><button class="media-select" data-media-uuid="${escapeHtml(device.uuid)}" ${device.mounted?'':'disabled'}><strong>${escapeHtml(device.label || 'USB')}</strong><small>${escapeHtml(device.model || '')}</small><span>${usage ? `${bytes(usage.free)} liberi · ${escapeHtml(device.fstype.toUpperCase())}` : `${escapeHtml(device.fstype.toUpperCase())} · ricordato / offline`}</span><div class="mini-capacity"><i style="width:${usedPct.toFixed(1)}%"></i></div></button>${device.mounted ? `<button class="media-eject" data-media-eject="${escapeHtml(device.uuid)}" title="Espelli in sicurezza">EJECT</button>` : '<span class="media-offline-chip">OFFLINE</span>'}</div>`;
+    return `<div class="media-device ${device.uuid === mediaUuid ? 'selected' : ''} ${device.mounted?'':'offline'}"><button class="media-select" data-media-uuid="${escapeHtml(device.uuid)}" ${device.mounted?'':'disabled'}><strong>${escapeHtml(device.label || 'USB')}</strong><small>${escapeHtml(device.model || '')}</small><span>${usage ? `${bytes(usage.free)} liberi · ${escapeHtml(device.fstype.toUpperCase())}` : `${escapeHtml(device.fstype.toUpperCase())} · ricordato / offline`}</span><div class="mini-capacity"><i style="width:${usedPct.toFixed(1)}%"></i></div></button>${device.mounted ? (device.ejectable === false ? '<span class="media-offline-chip">NVME</span>' : `<button class="media-eject" data-media-eject="${escapeHtml(device.uuid)}" title="Espelli in sicurezza">EJECT</button>`) : '<span class="media-offline-chip">OFFLINE</span>'}</div>`;
   }).join('') : '<div class="media-empty side"><strong>Nessuna USB</strong><small>Collega un supporto rimovibile.</small></div>';
   $$('.media-select').forEach(button => button.addEventListener('click', () => { mediaUuid = button.dataset.mediaUuid; mediaPath=''; mediaSignature=''; mediaLibrary=null; renderMedia(media); loadMediaDirectory(''); loadMediaLibrary(); }));
   $$('.media-eject').forEach(button => button.addEventListener('click', event => { event.stopPropagation(); openConfirm('media_eject',{uuid:button.dataset.mediaEject}); }));
@@ -648,6 +648,7 @@ function renderMedia(media = {}) {
   if (!mediaUuid && mounted.length) { mediaUuid=mounted[0].uuid; mediaPath=''; }
   const selected = mounted.find(device => device.uuid === mediaUuid);
   if (selected) {
+    $('#mediaSmbPath').textContent = selected.smb_path || media.smb_path || '\\OPENASTRO\Media';
     $('#mediaDriveModel').textContent = `${selected.model || 'USB STORAGE'} · ${String(selected.fstype||'').toUpperCase()} · READ-ONLY`;
     $('#mediaDriveName').textContent = selected.label || 'Media USB'; const usage=selected.usage;
     $('#mediaDriveMeta').textContent = `${bytes(usage?.used||0)} usati su ${bytes(usage?.total||selected.size||0)}`; $('#mediaDriveFree').textContent = bytes(usage?.free||0); $('#mediaDriveBar').style.width = `${usage?.total ? usage.used/usage.total*100 : 0}%`;

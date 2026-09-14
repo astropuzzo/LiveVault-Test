@@ -75,7 +75,14 @@ def recover_interrupted():
     if mode == 'nvme':
         if not os.path.ismount('/share'):
             run('mount', '/share')
+        if os.path.ismount('/share'):
+            Path('/share/Media').mkdir(parents=True, exist_ok=True)
+            try:
+                shutil.chown('/share/Media', user='astro', group='astro')
+            except (LookupError, OSError):
+                pass
         run('systemctl', 'start', 'livevault-backup.timer')
+        subprocess.run(['systemctl', 'try-restart', 'minidlna.service'], capture_output=True)
     return mode
 
 
@@ -558,6 +565,7 @@ def main(action):
             return
         backup_timer_was_active = service_active('livevault-backup.timer')
         share_was_mounted = os.path.ismount('/share')
+        media_indexer_was_active = service_active('minidlna.service')
         if action == 'eject' and previous == 'buffer' and not os.path.ismount(NVME):
             print('NVMe già espulso; buffer interno attivo.')
             return
@@ -586,8 +594,13 @@ def main(action):
                 verify_container_view()
                 verify_containers_detached_from_device(NVME.stat().st_dev)
                 os.sync()
+                subprocess.run(['smbcontrol', 'smbd', 'close-share', 'NVMeMedia'], capture_output=True)
+                if media_indexer_was_active:
+                    subprocess.run(['systemctl', 'stop', 'minidlna.service'], capture_output=True)
                 if os.path.ismount('/share'):
                     run('umount', '/share')
+                if media_indexer_was_active:
+                    subprocess.run(['systemctl', 'start', 'minidlna.service'], capture_output=True)
                 # GPT Harness has an optional writable view of its NVMe workspace.
                 # Stop it before detaching the filesystem so its private mount
                 # namespace cannot retain the removable device; start it again
@@ -614,7 +627,15 @@ def main(action):
                 verify_container_view()
                 publish('nvme')
                 subprocess.run(['mount', '/share'], capture_output=True)
+                if os.path.ismount('/share'):
+                    Path('/share/Media').mkdir(parents=True, exist_ok=True)
+                    try:
+                        shutil.chown('/share/Media', user='astro', group='astro')
+                    except (LookupError, OSError):
+                        pass
                 subprocess.run(['systemctl', 'start', 'livevault-backup.timer'], capture_output=True)
+                if media_indexer_was_active:
+                    subprocess.run(['systemctl', 'try-restart', 'minidlna.service'], capture_output=True)
                 # If Harness stayed online while the NVMe was absent, restart it
                 # so systemd recreates its sandbox with the optional NVMe RW path.
                 if service_active(GPT_HARNESS_SERVICE):
@@ -653,6 +674,8 @@ def main(action):
                         subprocess.run(['mount', '/share'], capture_output=True)
                     if backup_timer_was_active:
                         subprocess.run(['systemctl', 'start', 'livevault-backup.timer'], capture_output=True)
+                    if media_indexer_was_active:
+                        subprocess.run(['systemctl', 'start', 'minidlna.service'], capture_output=True)
             raise
 
 

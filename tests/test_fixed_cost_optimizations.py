@@ -58,11 +58,14 @@ def test_media_center_shares_discovery_snapshot(monkeypatch):
         return SimpleNamespace(returncode=0, stdout=json.dumps(payload), stderr='')
 
     monkeypatch.setattr(media, '_run', fake_run)
-    assert media._discover() == payload
-    assert media._discover() == payload
+    first = media._discover()
+    assert [row for row in first if row.get('uuid') != media.SHARE_MEDIA_UUID] == payload
+    assert any(row.get('uuid') == media.SHARE_MEDIA_UUID for row in first)
+    assert media._discover() == first
     assert len(calls) == 1
     media.invalidate_device_cache()
-    assert media._discover() == payload
+    refreshed = media._discover()
+    assert [row for row in refreshed if row.get('uuid') != media.SHARE_MEDIA_UUID] == payload
     assert len(calls) == 2
 
 

@@ -79,7 +79,7 @@ Deploy: [HOSTING.md](HOSTING.md), [nina-monitor/COOLIFY.md](nina-monitor/COOLIFY
 | --- | --- | --- |
 | eMMC | /srv/openastro-internal bind su /data | Docker /data/docker, DB, segreti, preview, servizi |
 | SERVER NVMe ext4 | UUID 5fe2d0f6-b485-44e9-8e26-31fb0d217db2; /mnt/livevault-nvme | registrazioni pesanti; workspace IA esistente |
-| SHARE exFAT | UUID 7EBD-F531; /share | backup DB e condivisione |
+| SHARE exFAT | UUID 7EBD-F531; /share | backup DB, dati condivisi e libreria permanente Media Hub in `/share/Media` |
 | Buffer emergenza | /var/lib/livevault-buffer.img su /var/lib/livevault-buffer | ext4 riservato 4 GiB; mai scratch |
 | USB media | /srv/openastro-media/* | contenuti Media Hub, import autenticati |
 
@@ -101,8 +101,12 @@ Attach verifica UUID, copia con SHA-256/fsync/rename atomico, poi cambia mount.
 Collisioni diverse preservano entrambe le copie e bloccano il trasferimento.
 Dettagli e recupero: [docs/NVME-HANDOFF.md](docs/NVME-HANDOFF.md).
 
-DB, cronologia e cache Media Hub restano interni. Media USB scrivibili tramite
-SMB autenticato o import con sessione/CSRF. SMB/DLNA restano LAN-only.
+DB, cronologia e cache Media Hub restano interni. I supporti USB rimovibili restano
+gestiti sotto `/srv/openastro-media`; la partizione SHARE dell'NVMe non entra nel
+gestore hot-plug ma pubblica soltanto `/share/Media` come libreria permanente
+`NVMe Media`. Backup (`/share/livevault-backups`) e dati astronomici nella radice
+di `/share` restano fuori dal catalogo. Import web/SMB è autenticato; SMB/DLNA
+restano LAN-only. `NVMe Media` si espelle esclusivamente con l'intero NVMe.
 Non ripristinare le vecchie istruzioni read-only o guest.
 
 ## Controlli, backup e pulizia
