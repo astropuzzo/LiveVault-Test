@@ -83,7 +83,7 @@ porta LiveVault sul buffer interno da 4 GiB anziché lasciare i worker sul mount
 
 OpenAstro Control includes a removable-media hub plus a persistent NVMe library. Eligible USB filesystems are mounted for authenticated read/write import under `/srv/openastro-media`. The SHARE partition remains excluded from the removable-media manager, but `/share/Media` is exposed as the non-ejectable `NVMe Media` library; `/share/livevault-backups` and the rest of SHARE are never indexed by Media Hub.
 
-The Media Hub provides an authenticated remote browser, direct HTTP Range streaming/downloads, an integrated browser player with resume position, local favorites, search/sort/category filters, recent-media indexing, lazy video/image thumbnails, and ffprobe metadata. LAN clients can also use `\\OPENASTRO\\Media` for removable USB media, `\\OPENASTRO\\NVMeMedia` for the persistent SHARE library, and `OpenAstro Media` over DLNA. SMB/DLNA are restricted to the LAN; remote access uses the existing HTTPS control-panel authentication.
+The Media Hub provides an authenticated remote browser, direct HTTP Range streaming/downloads, an integrated browser player with resume position, local favorites, search/sort/category filters, recent-media indexing, lazy video/image thumbnails, and ffprobe metadata. LAN clients can also use `\\OPENASTRO\\Media` for removable USB media, `\\OPENASTRO\\NVMeMedia` for the persistent SHARE library, and `OpenAstro Media` over DLNA. The Media upload panel displays and copies the SMB path of the currently selected library. SMB/DLNA are restricted to the LAN; remote access uses the existing HTTPS control-panel authentication.
 
 ### Media Hub Level 3
 
