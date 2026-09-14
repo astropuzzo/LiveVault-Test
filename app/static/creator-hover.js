@@ -83,12 +83,50 @@
     hover.style.top = `${Math.round(top)}px`;
   }
 
+  function previewFromProfile(payload) {
+    const source = payload?.source || {};
+    const linked = source.linked_sources || [];
+    const recent = (payload?.recent_recordings || []).slice(0, 3);
+    const cover = safeUrl(source.cover_thumbnail_url || recent.find(item => item.thumbnail_url)?.thumbnail_url || '');
+    const statuses = linked.map(item => String(item.last_status || '').toLowerCase());
+    const status = ['recording', 'private', 'tipjar', 'restricted', 'live', 'error'].find(item => statuses.includes(item))
+      || String(source.last_status || 'offline').toLowerCase();
+    const lastSeen = linked.map(item => item.last_seen_live_at).filter(Boolean).sort((a, b) => timestamp(b) - timestamp(a))[0]
+      || source.last_seen_live_at || source.last_live_at || null;
+    return {
+      profile_id: Number(source.profile_id || 0),
+      source_id: Number(source.id || 0),
+      display_name: source.display_name || source.name || 'Creator',
+      favorite: !!source.favorite,
+      status,
+      last_seen_live_at: lastSeen,
+      last_recording_at: recent[0]?.finalized_at || recent[0]?.started_at || source.statistics?.last_recording_at || null,
+      cover_thumbnail_url: cover,
+      accounts: linked.map(item => ({
+        source_id: Number(item.id || 0), name: item.name || '', platform: item.platform || '',
+        provider_label: item.provider_label || item.platform || '', slug: item.slug || ''
+      })),
+      recent_recordings: recent.map(item => ({...item, provider_label: sources.find(row => Number(row.id) === Number(item.source_id))?.provider_label || ''}))
+    };
+  }
+
+  async function requestPreview(sourceId) {
+    try {
+      return await api(`/api/sources/${sourceId}/hover-preview`);
+    } catch (error) {
+      // Compatibility path for a running pre-hover LiveVault container. This lets
+      // static assets be hot-deployed without restarting active recordings.
+      if (!/404|not found|non trovata/i.test(String(error?.message || ''))) throw error;
+      return previewFromProfile(await api(`/api/sources/${sourceId}/profile`));
+    }
+  }
+
   async function loadPreview(sourceId) {
     const now = Date.now();
     const cached = cache.get(sourceId);
     if (cached && now - cached.at < CACHE_TTL_MS) return cached.data;
     if (pending.has(sourceId)) return pending.get(sourceId);
-    const promise = api(`/api/sources/${sourceId}/hover-preview`)
+    const promise = requestPreview(sourceId)
       .then(data => {
         cache.set(sourceId, {at: Date.now(), data});
         return data;

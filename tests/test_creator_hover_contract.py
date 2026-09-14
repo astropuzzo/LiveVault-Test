@@ -14,6 +14,8 @@ def test_creator_hover_is_lazy_cached_and_desktop_safe():
     assert "(hover: hover) and (pointer: fine)" in JS
     assert "event.pointerType === 'touch'" in JS
     assert '/api/sources/${sourceId}/hover-preview' in JS
+    assert '/api/sources/${sourceId}/profile' in JS
+    assert 'previewFromProfile' in JS
     assert "pending.has(sourceId)" in JS
     assert "recent_recordings" in JS
     assert "slice(0, 3)" in JS

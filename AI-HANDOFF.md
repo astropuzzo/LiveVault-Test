@@ -79,7 +79,10 @@ puntatore fine una card lazy con massimo tre registrazioni recenti del profilo. 
 frontend attende 250 ms prima della richiesta e mantiene una cache di 90 s; touch non
 attiva l'hover, mentre il focus da tastiera resta supportato sui client desktop. Il payload dedicato è
 `GET /api/sources/{source_id}/hover-preview` e non deve essere sostituito dal profilo
-completo, che è molto più costoso. Asset: `app/static/creator-hover.js` e `.css`.
+completo, che è molto più costoso. Per rollout senza interrompere registrazioni
+attive, il frontend mantiene un fallback temporaneo al profilo completo quando il nuovo
+endpoint risponde 404; dopo il redeploy applicativo usa automaticamente il payload
+leggero. Asset: `app/static/creator-hover.js` e `.css`.
 Rollback: revert della relativa modifica UI/API e redeploy LiveVault; nessun dato o
 schema persistente viene modificato. Il contratto UI resta globale perché tutti i
 nomi creator interattivi condividono `data-profile-link`; non duplicare richieste o
