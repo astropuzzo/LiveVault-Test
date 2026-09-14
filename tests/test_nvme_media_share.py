@@ -76,3 +76,11 @@ def test_media_selection_discards_stale_async_responses():
     assert 'uuid !== mediaUuid || request !== mediaDirectoryRequest' in ui
     assert 'mediaThumbUrl(item.path, libraryUuid)' in ui
     assert 'openMediaPlayer(button.dataset.mediaRecent, button.dataset.mediaName, button.dataset.mediaCategory, libraryUuid)' in ui
+
+
+def test_media_file_cards_are_owned_by_selected_device():
+    ui = (ROOT / 'control-panel' / 'static' / 'app.js').read_text(encoding='utf-8')
+    assert "let mediaItemsUuid = '';" in ui
+    assert 'mediaItemsUuid === mediaUuid ? mediaFilteredItems() : []' in ui
+    assert 'mediaItemsUuid = uuid;' in ui
+    assert "mediaItems=[]; mediaItemsUuid=mediaUuid; renderMediaLibrary(null);" in ui

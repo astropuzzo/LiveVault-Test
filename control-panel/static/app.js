@@ -521,6 +521,7 @@ function mediaDuration(value) {
   return h ? `${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}` : `${m}:${String(s).padStart(2,'0')}`;
 }
 let mediaItems = [];
+let mediaItemsUuid = '';
 let mediaLibrary = null;
 let mediaFilter = 'all';
 let mediaView = 'grid';
@@ -552,7 +553,7 @@ function mediaCard(item) {
 function renderMediaFiles() {
   const host = $('#mediaFiles');
   if (!mediaUuid) { host.className = `media-files-v2 ${mediaView}`; host.innerHTML = '<div class="media-empty"><strong>Nessun supporto</strong><small>Collega un’unità USB per iniziare.</small></div>'; return; }
-  const items = mediaFilteredItems();
+  const items = mediaItemsUuid === mediaUuid ? mediaFilteredItems() : [];
   host.className = `media-files-v2 ${mediaView}`;
   host.innerHTML = items.length ? items.map(mediaCard).join('') : '<div class="media-empty"><strong>Nessun risultato</strong><small>Prova a cambiare ricerca o filtro.</small></div>';
   $$('.media-dir').forEach(button => button.addEventListener('click', () => loadMediaDirectory(button.dataset.mediaPath)));
@@ -599,7 +600,7 @@ async function loadMediaDirectory(path = mediaPath) {
     const result = await response.json();
     if (uuid !== mediaUuid || request !== mediaDirectoryRequest) return;
     if (!response.ok || !result.ok) throw new Error(result.error || `HTTP ${response.status}`);
-    mediaPath = result.path || ''; mediaItems = result.items || [];
+    mediaPath = result.path || ''; mediaItems = result.items || []; mediaItemsUuid = uuid;
     $('#mediaDriveLabel').textContent = result.label || 'USB'; $('#mediaPath').textContent = `/${mediaPath}`;
     $('#mediaBack').disabled = !mediaPath; $('#mediaBack').dataset.parent = result.parent || '';
     renderMediaFiles();
@@ -653,9 +654,9 @@ function renderMedia(media = {}) {
     const usage = device.usage, usedPct = usage?.total ? usage.used/usage.total*100 : 0;
     return `<div class="media-device ${device.uuid === mediaUuid ? 'selected' : ''} ${device.mounted?'':'offline'}"><button class="media-select" data-media-uuid="${escapeHtml(device.uuid)}" ${device.mounted?'':'disabled'}><strong>${escapeHtml(device.label || 'USB')}</strong><small>${escapeHtml(device.model || '')}</small><span>${usage ? `${bytes(usage.free)} liberi · ${escapeHtml(device.fstype.toUpperCase())}` : `${escapeHtml(device.fstype.toUpperCase())} · ricordato / offline`}</span><div class="mini-capacity"><i style="width:${usedPct.toFixed(1)}%"></i></div></button>${device.mounted ? (device.ejectable === false ? '<span class="media-offline-chip">NVME</span>' : `<button class="media-eject" data-media-eject="${escapeHtml(device.uuid)}" title="Espelli in sicurezza">EJECT</button>`) : '<span class="media-offline-chip">OFFLINE</span>'}</div>`;
   }).join('') : '<div class="media-empty side"><strong>Nessuna USB</strong><small>Collega un supporto rimovibile.</small></div>';
-  $$('.media-select').forEach(button => button.addEventListener('click', () => { mediaUuid = button.dataset.mediaUuid; mediaPath=''; mediaSignature=''; mediaLibrary=null; renderMedia(media); loadMediaDirectory(''); loadMediaLibrary(); }));
+  $$('.media-select').forEach(button => button.addEventListener('click', () => { mediaUuid = button.dataset.mediaUuid; mediaPath=''; mediaSignature=''; mediaItems=[]; mediaItemsUuid=mediaUuid; renderMediaLibrary(null); renderMedia(media); loadMediaDirectory(''); loadMediaLibrary(); }));
   $$('.media-eject').forEach(button => button.addEventListener('click', event => { event.stopPropagation(); openConfirm('media_eject',{uuid:button.dataset.mediaEject}); }));
-  if (mediaUuid && !mounted.some(device => device.uuid === mediaUuid)) { mediaUuid=''; mediaPath=''; mediaItems=[]; mediaLibrary=null; }
+  if (mediaUuid && !mounted.some(device => device.uuid === mediaUuid)) { mediaUuid=''; mediaPath=''; mediaItems=[]; mediaItemsUuid=''; mediaLibrary=null; }
   if (!mediaUuid && mounted.length) { mediaUuid=mounted[0].uuid; mediaPath=''; }
   const selected = mounted.find(device => device.uuid === mediaUuid);
   if (selected) {
@@ -666,7 +667,7 @@ function renderMedia(media = {}) {
   } else { $('#mediaDriveModel').textContent='NESSUN SUPPORTO'; $('#mediaDriveName').textContent='Media USB'; $('#mediaDriveMeta').textContent='Inserisci un dispositivo USB rimovibile.'; $('#mediaDriveFree').textContent='—'; $('#mediaDriveBar').style.width='0%'; }
   const signature = mounted.map(device => `${device.uuid}:${device.usage?.used||0}`).join('|');
   if (currentView === 'media' && mediaUuid && signature !== mediaSignature) { mediaSignature=signature; loadMediaDirectory(mediaPath); loadMediaLibrary(); }
-  if (!mounted.length) { mediaItems=[]; renderMediaFiles(); renderMediaLibrary(null); $('#mediaRecentWrap').hidden=true; }
+  if (!mounted.length) { mediaItems=[]; mediaItemsUuid=''; renderMediaFiles(); renderMediaLibrary(null); $('#mediaRecentWrap').hidden=true; }
 }
 
 function selectView(view, updateHash = false) {
