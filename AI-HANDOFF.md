@@ -76,8 +76,10 @@ Deploy: [HOSTING.md](HOSTING.md), [nina-monitor/COOLIFY.md](nina-monitor/COOLIFY
 
 LiveVault creator hover preview: i nomi prodotti da `creatorLinkMarkup()` espongono su
 puntatore fine una card lazy con massimo tre registrazioni recenti del profilo. Il
-frontend attende 250 ms prima della richiesta e mantiene una cache di 90 s; touch non
-attiva l'hover, mentre il focus da tastiera resta supportato sui client desktop. Il payload dedicato è
+frontend attende 250 ms prima della richiesta e mantiene una cache di 90 s. Su touch,
+il primo tap sul nome apre la stessa preview senza navigare e il secondo tap sullo stesso
+nome apre il profilo; un tap esterno la chiude. Il focus da tastiera resta supportato sui
+client desktop. Il payload dedicato è
 `GET /api/sources/{source_id}/hover-preview` e non deve essere sostituito dal profilo
 completo, che è molto più costoso. Per rollout senza interrompere registrazioni
 attive, il frontend mantiene un fallback temporaneo al profilo completo quando il nuovo
@@ -112,7 +114,10 @@ Eject chiude capture e rinvia lavoro archivio; verifica mount host/container,
 smonta SERVER/SHARE e riprende su buffer. Docker resta online.
 Buffer pieno: conservare file e fermare capture fino al rientro NVMe.
 Attach verifica UUID, copia con SHA-256/fsync/rename atomico, poi cambia mount.
-Collisioni diverse preservano entrambe le copie e bloccano il trasferimento.
+I soli symlink transienti `.active-preview.mp4/.webm` sono scartati durante il merge
+quando puntano a un file `.capture` fratello valido: il media viene copiato e verificato
+e LiveVault ricrea il puntatore dopo il cambio storage. Qualunque altro symlink resta
+un errore di sicurezza. Collisioni diverse preservano entrambe le copie e bloccano il trasferimento.
 Dettagli e recupero: [docs/NVME-HANDOFF.md](docs/NVME-HANDOFF.md).
 
 DB, cronologia e cache Media Hub restano interni. I supporti USB rimovibili restano

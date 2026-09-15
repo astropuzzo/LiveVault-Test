@@ -191,7 +191,21 @@
   });
 
   document.addEventListener('click', event => {
-    if (event.target.closest?.('[data-profile-link]')) hideCreatorHover();
+    const link = event.target.closest?.('[data-profile-link]');
+    if (!fineHover) {
+      if (!link) {
+        if (!event.target.closest?.('.creator-hover-card')) hideCreatorHover();
+        return;
+      }
+      const previewAlreadyOpen = activeLink === link && card?.classList.contains('visible');
+      if (!previewAlreadyOpen) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        openCreatorHover(link);
+        return;
+      }
+    }
+    if (link) hideCreatorHover();
   }, true);
 
   document.addEventListener('keydown', event => {

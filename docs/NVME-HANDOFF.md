@@ -97,9 +97,22 @@ NVMe cannot be played locally until reattachment.
 Attach verifies the expected disk UUID, closes buffer writers, copies each file
 to a temporary NVMe destination, verifies SHA-256, fsyncs and renames it, then
 removes the internal copy. Identical already-copied files make retries safe;
-different collisions preserve both copies and abort. Original session markers
-and stable paths allow the normal recovery, A/V validation, day/gap boundaries,
-stitching and verified-upload rules to run after returning to NVMe.
+different collisions preserve both copies and abort. Stripchat's
+`.active-preview.mp4`/`.active-preview.webm` symlink is transient metadata, not media:
+after quiesce the helper may discard it only when it is a single-component relative
+link to an existing sibling `*.capture.mp4`/`*.capture.webm`. The referenced capture
+file still follows the normal verified-copy path and LiveVault recreates the preview
+pointer after recording resumes. Absolute/nested preview links and every other symlink
+remain fail-closed. Original session markers and stable paths allow the normal recovery,
+A/V validation, day/gap boundaries, stitching and verified-upload rules to run after
+returning to NVMe.
+
+On 2026-09-15 a real physical reconnect mounted SERVER successfully but attach aborted
+with `Unexpected symlink in buffer: .../.active-preview.mp4`, leaving state safely in
+`buffer` with about 1.1 GiB preserved. Source and runtime helper are respectively
+`scripts/nvme-handoff.py` and `/usr/local/libexec/nvme-handoff.py`. The regression fix
+adds the narrow validation above; rollback is to restore the previous helper and leave
+storage in buffer mode rather than deleting preview links or footage by hand.
 
 The handoff takes time to close streams and drain work; it is not a zero-frame
 gap guarantee. A restart chooses a nonempty internal buffer before NVMe, so

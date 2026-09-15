@@ -167,6 +167,35 @@ def test_transfer_is_restartable_and_preserves_original_marker(tmp_path, transfe
     transfer.merge_buffer(source, dest)
 
 
+@pytest.mark.skipif(os.name != 'posix', reason='symlink handoff semantics require POSIX')
+def test_transfer_discards_valid_active_preview_symlink(tmp_path, transfer):
+    source, dest = tmp_path / 'buffer', tmp_path / 'nvme'
+    session = source / 'creator' / 'session'
+    session.mkdir(parents=True); dest.mkdir()
+    capture = session / 'creator_part001.capture.mp4'
+    capture.write_bytes(b'footage')
+    (session / '.active-preview.mp4').symlink_to(capture.name)
+
+    transfer.merge_buffer(source, dest)
+
+    copied = dest / 'creator' / 'session' / capture.name
+    assert copied.read_bytes() == b'footage'
+    assert not (dest / 'creator' / 'session' / '.active-preview.mp4').exists()
+    assert not list(source.iterdir())
+
+
+@pytest.mark.skipif(os.name != 'posix', reason='symlink handoff semantics require POSIX')
+def test_transfer_still_refuses_unexpected_symlink(tmp_path, transfer):
+    source, dest = tmp_path / 'buffer', tmp_path / 'nvme'
+    source.mkdir(); dest.mkdir()
+    payload = source / 'payload.mp4'
+    payload.write_bytes(b'footage')
+    (source / 'unexpected.mp4').symlink_to(payload.name)
+
+    with pytest.raises(RuntimeError, match='Unexpected symlink'):
+        transfer.merge_buffer(source, dest)
+
+
 def test_transfer_refuses_conflicting_media(tmp_path, transfer):
     source, dest = tmp_path / 'buffer', tmp_path / 'nvme'
     source.mkdir(); dest.mkdir()

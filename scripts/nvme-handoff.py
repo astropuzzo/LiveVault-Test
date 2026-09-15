@@ -124,6 +124,23 @@ def merge_buffer(source, destination):
         if relative.parts[0] == 'lost+found':
             continue
         if path.is_symlink():
+            if path.name in {'.active-preview.mp4', '.active-preview.webm'}:
+                link_value = os.readlink(path)
+                link_target = Path(link_value)
+                expected_suffix = f'.capture{path.suffix}'
+                if (
+                    link_target.is_absolute()
+                    or len(link_target.parts) != 1
+                    or not link_target.name.endswith(expected_suffix)
+                    or (path.parent / link_target).is_symlink()
+                    or not (path.parent / link_target).is_file()
+                ):
+                    raise RuntimeError(f'Unsafe active preview symlink in buffer: {relative}')
+                # Live preview pointers are ephemeral. The capture file itself is
+                # copied and verified below; LiveVault recreates this pointer after
+                # the storage switch when recording resumes.
+                path.unlink()
+                continue
             raise RuntimeError(f'Unexpected symlink in buffer: {relative}')
         target = destination / relative
         if target.is_symlink() or any(p.is_symlink() for p in target.parents if p != destination.parent):

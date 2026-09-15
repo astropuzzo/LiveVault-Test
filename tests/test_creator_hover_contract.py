@@ -19,6 +19,11 @@ def test_creator_hover_is_lazy_cached_and_desktop_safe():
     assert "pending.has(sourceId)" in JS
     assert "recent_recordings" in JS
     assert "slice(0, 3)" in JS
+    assert "event.stopImmediatePropagation()" in JS
+    assert "previewAlreadyOpen" in JS
+    assert "@media(hover:none) and (pointer:coarse){.creator-hover-card{display:block" in CSS
+    assert "pointer-events:auto" in CSS
+    assert "display:none!important" not in CSS
 
 
 def test_creator_hover_assets_and_endpoint_are_wired():
