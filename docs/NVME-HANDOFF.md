@@ -115,7 +115,9 @@ adds the narrow validation above; rollback is to restore the previous helper and
 storage in buffer mode rather than deleting preview links or footage by hand.
 
 The handoff takes time to close streams and drain work; it is not a zero-frame
-gap guarantee. A restart chooses a nonempty internal buffer before NVMe, so
+gap guarantee. The attach unit allows up to 900 seconds because verified transfer
+reads the source, writes the destination and hashes both copies; after a USB fault
+the bridge may temporarily run far below normal throughput. A restart chooses a nonempty internal buffer before NVMe, so
 interrupted transfers cannot silently strand footage. The existing UUID udev
 attach service invokes the new helper on physical reconnection.
 

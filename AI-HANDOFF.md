@@ -113,7 +113,7 @@ Watchdog indipendente: openastro-storage-watchdog.service.
 Eject chiude capture e rinvia lavoro archivio; verifica mount host/container,
 smonta SERVER/SHARE e riprende su buffer. Docker resta online.
 Buffer pieno: conservare file e fermare capture fino al rientro NVMe.
-Attach verifica UUID, copia con SHA-256/fsync/rename atomico, poi cambia mount.
+Attach verifica UUID, copia con SHA-256/fsync/rename atomico, poi cambia mount; l’unità ha `TimeoutStartSec=900` per non troncare trasferimenti verificati lenti dopo fault USB.
 I soli symlink transienti `.active-preview.mp4/.webm` sono scartati durante il merge
 quando puntano a un file `.capture` fratello valido: il media viene copiato e verificato
 e LiveVault ricrea il puntatore dopo il cambio storage. Qualunque altro symlink resta

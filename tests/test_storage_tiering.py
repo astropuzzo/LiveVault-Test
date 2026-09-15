@@ -109,5 +109,6 @@ def test_boot_defers_removable_server_mount_until_usb_settles():
     assert "fields[0] in {'UUID=7EBD-F531', 'UUID=5fe2d0f6-b485-44e9-8e26-31fb0d217db2'}" in source
     assert "opts.append('noauto')" in source
     assert "ExecStartPre=/usr/bin/sleep 30" in source
+    assert "TimeoutStartSec=900" in source
     assert "Before=docker.service" in source
 
