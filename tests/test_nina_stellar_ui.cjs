@@ -17,10 +17,23 @@ test('a cleared guide flag cannot override an independent final rejection',()=>{
 });
 test('usable recovered frame and unavailable measurements are distinct',()=>{
  assert.match(render({...frame,status:'WARNING',guideFalsePositive:true}),/Usable frame/);
- assert.match(render({status:'REJECTED',imageEvidenceAttempted:true}),/Insufficient reliable stars/);
+ assert.match(render({status:'REJECTED',imageEvidenceAttempted:true}),/Stellar check inconclusive/);
  const html=render({...frame,starRescueEccentricityLimit:undefined});assert.match(html,/Applied limits unavailable/);
 });
 test('file and decision text are escaped and proof URLs are constrained',()=>{
  const html=render({...frame,decisionSummary:'<script>attack()</script>',fileName:'<img src=x>',starProofPng:'" onerror="attack()'});
  assert.doesNotMatch(html,/<script>|<img/);assert.match(html,/&lt;script&gt;/);
+});
+
+test('photometric rescue respects the final verdict and extended proof is constrained',()=>{
+ const recovered=render({...frame,status:'WARNING',starCountFalsePositive:true,extendedStarProofPng:'YWJj',relativeStellarFlux:.91,matchedStars:40,verifiedStarRegions:5});
+ assert.match(recovered,/class="stellar-result rescued"/);assert.match(recovered,/Extended profile/);assert.match(recovered,/91%/);assert.match(recovered,/Matched stellar signal within recovery limits/);
+ const rejected=render({...frame,starCountFalsePositive:true,extendedStarProofPng:'\" onerror=\"attack()'});
+ assert.doesNotMatch(rejected,/class="stellar-result rescued"/);assert.doesNotMatch(rejected,/<img/);
+});
+
+test('stellar signal rejection remains visible after a guide flag is cleared',()=>{
+ const html=render({...frame,guideFalsePositive:true,reason:'SKY_SIGNAL_LOSS',imageEvidenceHasRescueMargin:true});
+ assert.match(html,/Brighter sky with fewer and fainter stars/);assert.doesNotMatch(html,/class="stellar-result rescued"/);
+ assert.match(render({...frame,reason:'STELLAR_FLUX_LOSS'}),/Measured stellar signal loss exceeds the limit/);
 });
