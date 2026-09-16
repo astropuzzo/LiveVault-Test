@@ -127,6 +127,18 @@ attach service invokes the new helper on physical reconnection.
 mount table, `/dev/disk/by-uuid` and block-device state while storage mode is
 `nvme`. It intentionally does not issue filesystem data reads/probes against a
 suspect NVMe because a failed USB bridge can leave such calls blocked in D-state.
+On 2026-09-16 a real RTL9210 USB reset storm aborted the SERVER ext4 journal. The
+watchdog moved `/data/livevault/recordings` to the eMMC buffer, but the last-resort
+container stop was followed by a timed-out `/share` unmount; the exception path left
+LiveVault stopped until it was started later. Emergency failover now treats recording
+continuity as primary: after binding the eMMC buffer it publishes buffer mode and
+restarts any stopped LiveVault container before detaching ancillary SHARE/SERVER mounts.
+A timed-out normal unmount now falls through to the existing lazy-detach path reserved
+for already-failed removable media. Ancillary detach failures may leave state marked
+`degraded`, but must not strand LiveVault offline. Rollback: restore the previous helper
+and keep recording on the eMMC buffer; never force the damaged SERVER filesystem back to
+rw without an offline filesystem check.
+
 When the expected recording device disappears, becomes read-only/shutdown, or is
 no longer a running kernel block device, the watchdog calls
 `nvme-handoff.py failover` under the same storage lock used by manual handoff.

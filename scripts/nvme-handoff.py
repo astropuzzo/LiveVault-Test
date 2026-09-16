@@ -451,14 +451,22 @@ def emergency_detach(path):
     """Detach an already-failed removable filesystem without waiting forever on dead I/O."""
     if not os.path.ismount(path):
         return
-    result = subprocess.run(['umount', str(path)], text=True, capture_output=True, timeout=8)
-    if result.returncode == 0:
+    try:
+        result = subprocess.run(['umount', str(path)], text=True, capture_output=True, timeout=8)
+    except subprocess.TimeoutExpired:
+        result = None
+    if result is not None and result.returncode == 0:
         return
     # Lazy detach is forbidden for normal/manual eject, but is appropriate after
-    # the kernel has already lost or shut down the removable medium.
-    result = subprocess.run(['umount', '-l', str(path)], text=True, capture_output=True, timeout=5)
-    if result.returncode != 0:
-        raise RuntimeError(f'Impossibile sganciare filesystem guasto {path}: {(result.stderr or result.stdout).strip()}')
+    # the kernel has already lost or shut down the removable medium. A timed-out
+    # normal umount is exactly the dead-I/O case this fallback exists for.
+    try:
+        lazy = subprocess.run(['umount', '-l', str(path)], text=True, capture_output=True, timeout=5)
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(f'Timeout sganciando filesystem guasto {path}') from exc
+    if lazy.returncode != 0:
+        detail = lazy.stderr or lazy.stdout or (result.stderr if result is not None else '')
+        raise RuntimeError(f'Impossibile sganciare filesystem guasto {path}: {detail.strip()}')
 
 
 def emergency_failover(reason='NVMe fault'):
@@ -502,6 +510,17 @@ def emergency_failover(reason='NVMe fault'):
         if containers and not stopped:
             verify_container_view()
 
+        # Recording continuity is the primary recovery goal. Publish the buffer
+        # and restart any container stopped as a last resort *before* ancillary
+        # cleanup of SHARE/NVMe. A dead /share must never leave LiveVault offline.
+        publish('buffer', limit_bytes=BUFFER_LIMIT_BYTES, reason=str(reason)[:1200], degraded=True)
+        for container in stopped:
+            result = subprocess.run(['docker', 'start', container], text=True, capture_output=True)
+            if result.returncode != 0:
+                raise RuntimeError(f'Buffer attivo ma LiveVault non ripartito: {(result.stderr or result.stdout).strip()}')
+        if stopped:
+            verify_container_view()
+
         # SHARE is on the same physical server disk. GPT Harness has an optional
         # NVMe workspace view, so restart it from eMMC after detaching the disk.
         harness_was_active = service_active(GPT_HARNESS_SERVICE)
@@ -515,12 +534,6 @@ def emergency_failover(reason='NVMe fault'):
                 set_service(GPT_HARNESS_SERVICE, 'start')
 
         publish('buffer', limit_bytes=BUFFER_LIMIT_BYTES, reason=str(reason)[:1200])
-        for container in stopped:
-            result = subprocess.run(['docker', 'start', container], text=True, capture_output=True)
-            if result.returncode != 0:
-                raise RuntimeError(f'Buffer attivo ma LiveVault non ripartito: {(result.stderr or result.stdout).strip()}')
-        if stopped:
-            verify_container_view()
         print('Failover automatico completato: registrazioni sul buffer interno eMMC da 4 GiB; Docker resta online.')
     except Exception:
         # Never claim NVMe mode after a physical fault. If the eMMC bind exists,
@@ -528,7 +541,11 @@ def emergency_failover(reason='NVMe fault'):
         try:
             if RECORDINGS.stat().st_dev == BUFFER.stat().st_dev:
                 publish('buffer', limit_bytes=BUFFER_LIMIT_BYTES, reason=str(reason)[:1200], degraded=True)
-        except OSError:
+                # If the namespace move failed and we had to stop LiveVault, an
+                # ancillary cleanup failure must not strand that container offline.
+                for container in stopped:
+                    subprocess.run(['docker', 'start', container], text=True, capture_output=True, timeout=30)
+        except (OSError, subprocess.TimeoutExpired):
             pass
         raise
 
