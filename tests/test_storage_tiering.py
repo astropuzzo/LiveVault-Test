@@ -55,6 +55,31 @@ def test_watchdog_mount_table_decodes_bind_mount_metadata(monkeypatch, tmp_path)
     assert '/some target' in rows
 
 
+def test_watchdog_retries_attach_when_device_returns_without_udev(monkeypatch):
+    watchdog = _load_watchdog()
+    monkeypatch.setattr(watchdog, 'expected_device', lambda: '/dev/sdz2')
+    monkeypatch.setattr(watchdog, 'device_major_minor', lambda _device: '65:2')
+    monkeypatch.setattr(watchdog, 'mount_table', lambda: {})
+    monkeypatch.setattr(watchdog, 'kernel_device_running', lambda _mm: True)
+    assert watchdog.buffer_device_ready_for_attach() is True
+
+    seen = []
+    monkeypatch.setattr(watchdog, 'run', lambda args, timeout=5: seen.append((list(args), timeout)) or SimpleNamespace(returncode=0, stdout='', stderr=''))
+    ok, detail = watchdog.request_attach()
+    assert ok is True
+    assert detail == ''
+    assert seen == [(['systemctl', 'start', '--no-block', 'livevault-storage-attach.service'], 5)]
+
+
+def test_watchdog_does_not_retry_attach_while_server_is_mounted(monkeypatch):
+    watchdog = _load_watchdog()
+    monkeypatch.setattr(watchdog, 'expected_device', lambda: '/dev/sdz2')
+    monkeypatch.setattr(watchdog, 'device_major_minor', lambda _device: '65:2')
+    monkeypatch.setattr(watchdog, 'mount_table', lambda: {str(watchdog.NVME): {'major_minor': '65:2'}})
+    monkeypatch.setattr(watchdog, 'kernel_device_running', lambda _mm: True)
+    assert watchdog.buffer_device_ready_for_attach() is False
+
+
 def test_watchdog_delegates_fault_to_serialized_handoff(monkeypatch):
     watchdog = _load_watchdog()
     watchdog.HANDOFF = Path("/tmp/nvme-handoff.py")

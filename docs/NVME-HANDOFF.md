@@ -139,6 +139,16 @@ for already-failed removable media. Ancillary detach failures may leave state ma
 and keep recording on the eMMC buffer; never force the damaged SERVER filesystem back to
 rw without an offline filesystem check.
 
+Buffer mode also has a bounded self-heal path. Udev remains the primary trigger for
+physical reattachment, but some RTL9210 recoveries restore the block device without a
+new add event. While recordings are safely on eMMC, the watchdog therefore checks only
+devfs/procfs/sysfs metadata; if the expected UUID block device is running and SERVER is
+not mounted, it requests the existing serialized `livevault-storage-attach.service` at
+most once every 300 seconds. The attach service retains its 30-second USB debounce and
+15-minute hard timeout. The watchdog never probes filesystem data and never performs a
+PCI/USB-controller reset automatically; a bridge that cannot enumerate its disk stays
+on the eMMC buffer for supervised hardware recovery.
+
 When the expected recording device disappears, becomes read-only/shutdown, or is
 no longer a running kernel block device, the watchdog calls
 `nvme-handoff.py failover` under the same storage lock used by manual handoff.

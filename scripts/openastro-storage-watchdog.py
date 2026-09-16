@@ -25,6 +25,8 @@ REC = Path('/data/livevault/recordings')
 NVME = Path('/mnt/livevault-nvme')
 BUFFER = Path('/var/lib/livevault-buffer')
 HANDOFF = Path('/usr/local/libexec/nvme-handoff.py')
+ATTACH_SERVICE = 'livevault-storage-attach.service'
+BUFFER_ATTACH_RETRY_SECONDS = 300
 LOG = Path('/var/log/openastro-storage-watchdog.log')
 MOUNTINFO = Path('/proc/1/mountinfo')
 SYS_DEV_BLOCK = Path('/sys/dev/block')
@@ -184,8 +186,27 @@ def request_failover(reason: str) -> tuple[bool, str]:
     return result.returncode == 0, detail
 
 
+def buffer_device_ready_for_attach() -> bool:
+    """True when the expected block device is back but SERVER is not mounted yet."""
+    expected = expected_device()
+    expected_mm = device_major_minor(expected)
+    if not expected or not expected_mm:
+        return False
+    if str(NVME) in mount_table():
+        return False
+    return kernel_device_running(expected_mm)
+
+
+def request_attach() -> tuple[bool, str]:
+    """Ask systemd to run the serialized/debounced attach path without blocking."""
+    result = run(['systemctl', 'start', '--no-block', ATTACH_SERVICE], 5)
+    detail = (result.stdout or result.stderr or '').strip()
+    return result.returncode == 0, detail
+
+
 def main() -> None:
     last_report = ''
+    next_buffer_attach_retry = 0.0
     while True:
         try:
             current_mode = mode()
@@ -202,9 +223,20 @@ def main() -> None:
                 elif last_report != 'ok':
                     log('NVMe watchdog healthy')
                     last_report = 'ok'
+                next_buffer_attach_retry = 0.0
             elif current_mode == 'buffer':
-                # Buffer mode is healthy degraded operation. Reattachment is driven
-                # by the UUID-specific udev/systemd attach service when NVMe returns.
+                # Udev normally starts the UUID-specific attach service. A bridge can
+                # recover without a fresh udev add event, though, so retry the same
+                # serialized/debounced service on a bounded cadence when the expected
+                # block device is present and SERVER is currently detached.
+                now = time.monotonic()
+                if now >= next_buffer_attach_retry and buffer_device_ready_for_attach():
+                    succeeded, detail = request_attach()
+                    if succeeded:
+                        log('NVMe returned while buffering: attach recovery requested')
+                    else:
+                        log(f'NVMe attach recovery request failed: {detail or "systemd start failed"}')
+                    next_buffer_attach_retry = now + BUFFER_ATTACH_RETRY_SECONDS
                 last_report = 'buffer'
             else:
                 last_report = ''
