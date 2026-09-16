@@ -205,3 +205,6 @@ restano interrompibili dal cambio storage. Non ripristinare il timeout fisso di 
 Verificare su Linux/Python 3.13; Windows Python 3.14 non equivale alla produzione.
 Separare test unitari, CI, deploy e prove fisiche. Non dichiarare assenza di perdita
 dati dal solo healthcheck: controllare capture e trasferimento del buffer.
+
+### 2026-09-16 — processing backfill must survive per-pass failures
+A production incident left validated `recording_fragments` accumulating while no new consolidated `recordings` were created. The recorder, uploader, thumbnail worker, and storage guard stayed healthy, but the separate `maintenance-backfill` task was not included in worker health and its loop terminated permanently on any uncaught exception from one maintenance pass. Keep the periodic processor resilient: storage handoff/cancellation remains retryable, ordinary per-pass exceptions are recorded under `last_errors["maintenance"]` and the loop continues, and health must expose `maintenance-backfill`. A single damaged/temporarily unreadable archive file must never stop stitching/finalization for later captures.

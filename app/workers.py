@@ -276,6 +276,8 @@ class WorkerManager:
 
     def health(self) -> dict:
         live_tasks = ([self._leader_task] if self._leader_task else []) + self.tasks
+        if self.backfill_task is not None:
+            live_tasks.append(self.backfill_task)
         return {
             "started": self.started_at is not None,
             "tasks": {task.get_name(): not task.done() for task in live_tasks},
@@ -284,6 +286,7 @@ class WorkerManager:
             "active_recorders": len(self.active),
             "thumbnail_queue": "running" if any(task.get_name() == "thumbnail-worker" and not task.done() for task in self.tasks) else "idle",
             "recovery": "running" if self.recovery_task and not self.recovery_task.done() else "idle",
+            "maintenance": "running" if self.backfill_task and not self.backfill_task.done() else "idle",
         }
 
     def _recover_interrupted_uploads(self) -> None:
@@ -495,10 +498,28 @@ class WorkerManager:
     async def _maintenance_backfill(self) -> None:
         recovery = self.recovery_task
         if recovery and recovery is not asyncio.current_task():
-            with contextlib.suppress(Exception):
+            try:
                 await asyncio.shield(recovery)
+            except storage_handoff.StorageQuiesced:
+                pass
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                self.last_errors["maintenance"] = f"Recovery iniziale maintenance fallita: {exc}"[-1400:]
         while not self._stopping:
-            await self._maintenance_pass()
+            try:
+                await self._maintenance_pass()
+                self.last_errors.pop("maintenance", None)
+            except storage_handoff.StorageQuiesced:
+                # A storage handoff is expected and retryable; keep the periodic
+                # processor alive so it resumes automatically after reconnect.
+                pass
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                # One damaged file or transient I/O failure must never kill the
+                # only periodic stitch/finalization loop for all later captures.
+                self.last_errors["maintenance"] = f"Maintenance pass fallita: {exc}"[-1400:]
             await asyncio.sleep(60)
 
     @storage_handoff.media_job
