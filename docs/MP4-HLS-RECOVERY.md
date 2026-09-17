@@ -1,7 +1,7 @@
 # MP4 e HLS — verifica 2026-09-11
 
 Sorgenti: app/mp4_fragments.py, app/recorder.py, app/stripchat_capture.py.
-Runtime iniziale verificato: LiveVault Coolify 607a151, storage nvme.
+Runtime verificato dopo deploy: LiveVault Coolify 606e9c3, storage nvme.
 Checkout host non modificato.
 
 ## Diagnosi e correzione
@@ -31,7 +31,16 @@ Test locali mirati Windows e prove su copie dei due file nel runtime Linux.
 Entrambe le copie superano ffprobe dopo correzione dell'indice.
 Entrambe superano la verifica integrità completa sul runtime Linux: 403 dura
 9,619 s, 404 dura 770,017 s. Test mirati Windows: 12 pass, 1 skip Linux affinity.
-CI Linux/Python 3.13 in corso; deploy non ancora eseguito.
+CI Linux/Python 3.13 34572489572 verde: 331 test, verifiche JS/shell e container.
+PR #30 integrata; deploy Coolify japbbzdmxreilexbk9sny3mp finished, container
+ahul2vdjkyvjiwgzpcrmxzfe-070310327598 healthy sulla release 606e9c3.
+Le righe 403/404 sono entrambe integrity_status=passed e upload_status=uploaded:
+recuperate automaticamente dal nuovo worker, senza modifica manuale del DB.
+Health: recovery idle, due recorder attivi, storage nvme, spazio libero 159,81 GiB.
+Capture Stripchat AliciaBrooks cresciuta da 72.215.825 a 75.248.798 byte in 5 s.
+AngelLeeen era live durante la prova resolver: Flashphoner indisponibile,
+Mouflon con variante verificata disponibile. Dopo deploy è private, confermato
+sia dal provider sia dal DB: nessuna capture pubblica attesa in tale stato.
 Il file 403 segnala un gap video di 0,97 s:
 la correzione non ricrea fotogrammi mai ricevuti.
 
@@ -39,11 +48,12 @@ la correzione non ricrea fotogrammi mai ricevuti.
 
 Directory privata persistente nel container: /data/mp4-recovery-20260911
 (host /data/livevault/mp4-recovery-20260911). Copie corrette 403.corrected.mp4
-e 404.corrected.mp4. Originali ancora nei percorsi DB finché il recupero
-non viene applicato; prima della sostituzione conservarli nella directory
-privata insieme a manifest SHA-256 e backup DB tramite procedura HOSTING.md.
+e 404.corrected.mp4. Originali conservati prima del deploy come 403.original.mp4
+e 404.original.mp4, verificati SHA-256 contro le sorgenti in manifest.json.
+Backup DB completato tramite openastro-action backup_now prima del deploy.
+I percorsi DB ora contengono i file recuperati. Conservare la directory privata.
 Non cancellare registrazioni per eliminare gli allarmi.
 
-Rollback codice: immagine Coolify 607a151. Nessuna migrazione DB.
+Rollback codice: immagine Coolify 607a151, preservata. Nessuna migrazione DB.
 Rollback media: ripristinare la copia originale corrispondente dal backup
 privato, poi rivalidare i metadati; gli originali riproducono l'errore noto.
