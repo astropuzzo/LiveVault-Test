@@ -97,12 +97,27 @@ NVMe cannot be played locally until reattachment.
 Attach verifies the expected disk UUID, closes buffer writers, copies each file
 to a temporary NVMe destination, verifies SHA-256, fsyncs and renames it, then
 removes the internal copy. Identical already-copied files make retries safe;
-different collisions preserve both copies and abort. Original session markers
-and stable paths allow the normal recovery, A/V validation, day/gap boundaries,
-stitching and verified-upload rules to run after returning to NVMe.
+different collisions preserve both copies and abort. Stripchat's
+`.active-preview.mp4`/`.active-preview.webm` symlink is transient metadata, not media:
+after quiesce the helper may discard it only when it is a single-component relative
+link to an existing sibling `*.capture.mp4`/`*.capture.webm`. The referenced capture
+file still follows the normal verified-copy path and LiveVault recreates the preview
+pointer after recording resumes. Absolute/nested preview links and every other symlink
+remain fail-closed. Original session markers and stable paths allow the normal recovery,
+A/V validation, day/gap boundaries, stitching and verified-upload rules to run after
+returning to NVMe.
+
+On 2026-09-15 a real physical reconnect mounted SERVER successfully but attach aborted
+with `Unexpected symlink in buffer: .../.active-preview.mp4`, leaving state safely in
+`buffer` with about 1.1 GiB preserved. Source and runtime helper are respectively
+`scripts/nvme-handoff.py` and `/usr/local/libexec/nvme-handoff.py`. The regression fix
+adds the narrow validation above; rollback is to restore the previous helper and leave
+storage in buffer mode rather than deleting preview links or footage by hand.
 
 The handoff takes time to close streams and drain work; it is not a zero-frame
-gap guarantee. A restart chooses a nonempty internal buffer before NVMe, so
+gap guarantee. The attach unit allows up to 900 seconds because verified transfer
+reads the source, writes the destination and hashes both copies; after a USB fault
+the bridge may temporarily run far below normal throughput. A restart chooses a nonempty internal buffer before NVMe, so
 interrupted transfers cannot silently strand footage. The existing UUID udev
 attach service invokes the new helper on physical reconnection.
 
@@ -112,6 +127,28 @@ attach service invokes the new helper on physical reconnection.
 mount table, `/dev/disk/by-uuid` and block-device state while storage mode is
 `nvme`. It intentionally does not issue filesystem data reads/probes against a
 suspect NVMe because a failed USB bridge can leave such calls blocked in D-state.
+On 2026-09-16 a real RTL9210 USB reset storm aborted the SERVER ext4 journal. The
+watchdog moved `/data/livevault/recordings` to the eMMC buffer, but the last-resort
+container stop was followed by a timed-out `/share` unmount; the exception path left
+LiveVault stopped until it was started later. Emergency failover now treats recording
+continuity as primary: after binding the eMMC buffer it publishes buffer mode and
+restarts any stopped LiveVault container before detaching ancillary SHARE/SERVER mounts.
+A timed-out normal unmount now falls through to the existing lazy-detach path reserved
+for already-failed removable media. Ancillary detach failures may leave state marked
+`degraded`, but must not strand LiveVault offline. Rollback: restore the previous helper
+and keep recording on the eMMC buffer; never force the damaged SERVER filesystem back to
+rw without an offline filesystem check.
+
+Buffer mode also has a bounded self-heal path. Udev remains the primary trigger for
+physical reattachment, but some RTL9210 recoveries restore the block device without a
+new add event. While recordings are safely on eMMC, the watchdog therefore checks only
+devfs/procfs/sysfs metadata; if the expected UUID block device is running and SERVER is
+not mounted, it requests the existing serialized `livevault-storage-attach.service` at
+most once every 300 seconds. The attach service retains its 30-second USB debounce and
+15-minute hard timeout. The watchdog never probes filesystem data and never performs a
+PCI/USB-controller reset automatically; a bridge that cannot enumerate its disk stays
+on the eMMC buffer for supervised hardware recovery.
+
 When the expected recording device disappears, becomes read-only/shutdown, or is
 no longer a running kernel block device, the watchdog calls
 `nvme-handoff.py failover` under the same storage lock used by manual handoff.
@@ -131,9 +168,13 @@ The storage tiers are a hard architectural contract:
 - internal eMMC: OS, `/data`, Docker `/data/docker`, dependencies, databases,
   configuration, Control Center state/cache and the bounded 4 GiB failover buffer;
 - SERVER NVMe: heavy LiveVault recording payloads;
-- removable USB media: films and other Media Hub payloads only.
+- SHARE exFAT: backups and shared data, plus the dedicated `/share/Media` directory for persistent Media Hub payloads;
+- removable USB media: additional hot-plug Media Hub payloads under `/srv/openastro-media`.
 
 Removing a media USB does not migrate the film contents into the emergency
 buffer; the Media Hub catalog/runtime stays on eMMC and the library becomes
-offline cleanly. Removing/failing the SERVER NVMe redirects new LiveVault capture
-to the bounded eMMC buffer until automatic UUID reattach succeeds.
+offline cleanly. `/share/Media` is a fixed Media Hub root but is not independently
+ejectable: before `/share` is unmounted the handoff closes the NVMe SMB share and
+restarts MiniDLNA around the detach, then restores indexing after SHARE returns.
+Removing/failing the SERVER NVMe redirects new LiveVault capture to the bounded
+eMMC buffer until automatic UUID reattach succeeds.

@@ -22,6 +22,8 @@ let mediaUuid = '';
 let mediaPath = '';
 let mediaSignature = '';
 let mediaBusy = false;
+let mediaDirectoryRequest = 0;
+let mediaLibraryRequest = 0;
 let mediaHls = null;
 let mediaHlsToken = '';
 let mediaPlaybackBase = 0;
@@ -559,6 +561,7 @@ function renderMediaFiles() {
 }
 function renderMediaLibrary(library) {
   mediaLibrary = library;
+  const libraryUuid = library?.uuid || mediaUuid;
   const counts = library?.counts || {}, sizes = library?.bytes || {};
   $('#mediaStatVideo').textContent = counts.video || 0; $('#mediaStatVideoSize').textContent = bytes(sizes.video || 0);
   $('#mediaStatAudio').textContent = counts.audio || 0; $('#mediaStatAudioSize').textContent = bytes(sizes.audio || 0);
@@ -567,35 +570,43 @@ function renderMediaLibrary(library) {
   const recent = library?.recent || [];
   $('#mediaRecentWrap').hidden = !recent.length;
   $('#mediaRecentCount').textContent = recent.length ? `${recent.length} elementi` : '';
-  $('#mediaRecent').innerHTML = recent.slice(0,12).map(item => `<button class="media-recent-card" data-media-recent="${escapeHtml(item.path)}" data-media-name="${escapeHtml(item.name)}" data-media-category="${escapeHtml(item.category)}">${item.thumbnail ? `<img loading="lazy" src="${escapeHtml(mediaThumbUrl(item.path))}" alt="">` : `<span>${mediaCategoryLabel(item.category)}</span>`}<strong>${escapeHtml(item.name)}</strong><small>${mediaDate(item.modified)}</small></button>`).join('');
-  $$('.media-recent-card').forEach(button => button.addEventListener('click', () => openMediaPlayer(button.dataset.mediaRecent, button.dataset.mediaName, button.dataset.mediaCategory)));
+  $('#mediaRecent').innerHTML = recent.slice(0,12).map(item => `<button class="media-recent-card" data-media-recent="${escapeHtml(item.path)}" data-media-name="${escapeHtml(item.name)}" data-media-category="${escapeHtml(item.category)}">${item.thumbnail ? `<img loading="lazy" src="${escapeHtml(mediaThumbUrl(item.path, libraryUuid))}" alt="">` : `<span>${mediaCategoryLabel(item.category)}</span>`}<strong>${escapeHtml(item.name)}</strong><small>${mediaDate(item.modified)}</small></button>`).join('');
+  $$('.media-recent-card').forEach(button => button.addEventListener('click', () => openMediaPlayer(button.dataset.mediaRecent, button.dataset.mediaName, button.dataset.mediaCategory, libraryUuid)));
 }
 async function loadMediaLibrary(force = false) {
-  if (!mediaUuid) return;
+  const uuid = mediaUuid;
+  if (!uuid) return;
+  const request = ++mediaLibraryRequest;
   try {
-    const query = new URLSearchParams({uuid:mediaUuid}); if (force) query.set('force','1');
+    const query = new URLSearchParams({uuid}); if (force) query.set('force','1');
     const response = await fetch(`/api/media/library?${query}`, {cache:'no-store', signal:AbortSignal.timeout(30000)});
     if (response.status === 401) return showLogin();
     const result = await response.json();
+    if (uuid !== mediaUuid || request !== mediaLibraryRequest) return;
     if (response.ok && result.ok) renderMediaLibrary(result);
   } catch (_) {}
 }
 async function loadMediaDirectory(path = mediaPath) {
-  if (!mediaUuid || mediaBusy) return;
+  const uuid = mediaUuid;
+  if (!uuid) return;
+  const request = ++mediaDirectoryRequest;
   mediaBusy = true;
-  $('#mediaFiles').innerHTML = '<div class="media-empty"><strong>Caricamento…</strong><small>Lettura del supporto USB.</small></div>';
+  $('#mediaFiles').innerHTML = '<div class="media-empty"><strong>Caricamento…</strong><small>Lettura del supporto.</small></div>';
   try {
-    const query = new URLSearchParams({uuid:mediaUuid, path:path || ''});
+    const query = new URLSearchParams({uuid, path:path || ''});
     const response = await fetch(`/api/media/list?${query}`, {cache:'no-store', signal:AbortSignal.timeout(15000)});
     if (response.status === 401) return showLogin();
     const result = await response.json();
+    if (uuid !== mediaUuid || request !== mediaDirectoryRequest) return;
     if (!response.ok || !result.ok) throw new Error(result.error || `HTTP ${response.status}`);
     mediaPath = result.path || ''; mediaItems = result.items || [];
     $('#mediaDriveLabel').textContent = result.label || 'USB'; $('#mediaPath').textContent = `/${mediaPath}`;
     $('#mediaBack').disabled = !mediaPath; $('#mediaBack').dataset.parent = result.parent || '';
     renderMediaFiles();
-  } catch (error) { $('#mediaFiles').innerHTML = `<div class="media-empty"><strong>Supporto non leggibile</strong><small>${escapeHtml(error.message || '')}</small></div>`; }
-  finally { mediaBusy = false; }
+  } catch (error) {
+    if (uuid === mediaUuid && request === mediaDirectoryRequest) $('#mediaFiles').innerHTML = `<div class="media-empty"><strong>Supporto non leggibile</strong><small>${escapeHtml(error.message || '')}</small></div>`;
+  }
+  finally { if (request === mediaDirectoryRequest) mediaBusy = false; }
 }
 function closeMediaPlayer() {
   const stage=$('#mediaPlayerStage'), media=stage.querySelector('video,audio'); if(media) saveMediaProgress(media,true);
@@ -640,7 +651,7 @@ function renderMedia(media = {}) {
   $('#mediaDlnaState').textContent = media.dlna === 'active' ? 'ON' : 'OFF'; $('#mediaDlnaState').className = media.dlna === 'active' ? 'good' : 'bad';
   $('#mediaDeviceList').innerHTML = devices.length ? devices.map(device => {
     const usage = device.usage, usedPct = usage?.total ? usage.used/usage.total*100 : 0;
-    return `<div class="media-device ${device.uuid === mediaUuid ? 'selected' : ''} ${device.mounted?'':'offline'}"><button class="media-select" data-media-uuid="${escapeHtml(device.uuid)}" ${device.mounted?'':'disabled'}><strong>${escapeHtml(device.label || 'USB')}</strong><small>${escapeHtml(device.model || '')}</small><span>${usage ? `${bytes(usage.free)} liberi · ${escapeHtml(device.fstype.toUpperCase())}` : `${escapeHtml(device.fstype.toUpperCase())} · ricordato / offline`}</span><div class="mini-capacity"><i style="width:${usedPct.toFixed(1)}%"></i></div></button>${device.mounted ? `<button class="media-eject" data-media-eject="${escapeHtml(device.uuid)}" title="Espelli in sicurezza">EJECT</button>` : '<span class="media-offline-chip">OFFLINE</span>'}</div>`;
+    return `<div class="media-device ${device.uuid === mediaUuid ? 'selected' : ''} ${device.mounted?'':'offline'}"><button class="media-select" data-media-uuid="${escapeHtml(device.uuid)}" ${device.mounted?'':'disabled'}><strong>${escapeHtml(device.label || 'USB')}</strong><small>${escapeHtml(device.model || '')}</small><span>${usage ? `${bytes(usage.free)} liberi · ${escapeHtml(device.fstype.toUpperCase())}` : `${escapeHtml(device.fstype.toUpperCase())} · ricordato / offline`}</span><div class="mini-capacity"><i style="width:${usedPct.toFixed(1)}%"></i></div></button>${device.mounted ? (device.ejectable === false ? '<span class="media-offline-chip">NVME</span>' : `<button class="media-eject" data-media-eject="${escapeHtml(device.uuid)}" title="Espelli in sicurezza">EJECT</button>`) : '<span class="media-offline-chip">OFFLINE</span>'}</div>`;
   }).join('') : '<div class="media-empty side"><strong>Nessuna USB</strong><small>Collega un supporto rimovibile.</small></div>';
   $$('.media-select').forEach(button => button.addEventListener('click', () => { mediaUuid = button.dataset.mediaUuid; mediaPath=''; mediaSignature=''; mediaLibrary=null; renderMedia(media); loadMediaDirectory(''); loadMediaLibrary(); }));
   $$('.media-eject').forEach(button => button.addEventListener('click', event => { event.stopPropagation(); openConfirm('media_eject',{uuid:button.dataset.mediaEject}); }));
@@ -648,6 +659,7 @@ function renderMedia(media = {}) {
   if (!mediaUuid && mounted.length) { mediaUuid=mounted[0].uuid; mediaPath=''; }
   const selected = mounted.find(device => device.uuid === mediaUuid);
   if (selected) {
+    $('#mediaSmbPath').textContent = selected.smb_path || media.smb_path || '\\OPENASTRO\Media';
     $('#mediaDriveModel').textContent = `${selected.model || 'USB STORAGE'} · ${String(selected.fstype||'').toUpperCase()} · READ-ONLY`;
     $('#mediaDriveName').textContent = selected.label || 'Media USB'; const usage=selected.usage;
     $('#mediaDriveMeta').textContent = `${bytes(usage?.used||0)} usati su ${bytes(usage?.total||selected.size||0)}`; $('#mediaDriveFree').textContent = bytes(usage?.free||0); $('#mediaDriveBar').style.width = `${usage?.total ? usage.used/usage.total*100 : 0}%`;

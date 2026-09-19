@@ -24,6 +24,9 @@ for path in /etc/samba/smb.conf /etc/minidlna.conf /etc/udev/rules.d/99-openastr
 done
 
 install -d -o root -g root -m 0755 /srv/openastro-media
+if mountpoint -q /share; then
+  install -d -o astro -g astro -m 0755 /share/Media
+fi
 install -o root -g root -m 0755 "$ROOT/scripts/openastro-media-manager.py" /usr/local/sbin/openastro-media-manager
 
 cat >/etc/samba/smb.conf <<SMB
@@ -62,6 +65,21 @@ cat >/etc/samba/smb.conf <<SMB
    force directory mode = 0700
    follow symlinks = no
    wide links = no
+
+[NVMeMedia]
+   comment = OpenAstro NVMe Media
+   path = /share/Media
+   browseable = yes
+   read only = no
+   guest ok = no
+   valid users = astro
+   force user = astro
+   create mask = 0644
+   force create mode = 0600
+   directory mask = 0755
+   force directory mode = 0700
+   follow symlinks = no
+   wide links = no
 SMB
 
 testparm -s /etc/samba/smb.conf >/dev/null
@@ -84,6 +102,7 @@ cat >/etc/minidlna.conf <<'DLNA'
 port=8200
 network_interface=eth0
 media_dir=/srv/openastro-media
+media_dir=/share/Media
 friendly_name=OpenAstro Media
 inotify=yes
 notify_interval=30

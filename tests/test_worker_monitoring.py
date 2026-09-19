@@ -161,3 +161,40 @@ def test_recorder_slot_is_released_before_large_fragment_validation():
     assert release < finalization
     assert "session.safe_stop_bytes * 0.98" in watcher
     assert "replacement is not None and replacement is not session" in watcher
+
+
+def test_maintenance_backfill_survives_one_pass_failure(monkeypatch):
+    manager = WorkerManager()
+    calls = []
+
+    async def flaky_pass():
+        calls.append(len(calls) + 1)
+        if len(calls) == 1:
+            raise RuntimeError("simulated damaged media")
+        manager._stopping = True
+
+    async def no_wait(_seconds):
+        return None
+
+    monkeypatch.setattr(manager, "_maintenance_pass", flaky_pass)
+    monkeypatch.setattr(workers.asyncio, "sleep", no_wait)
+    asyncio.run(manager._maintenance_backfill())
+
+    assert calls == [1, 2]
+    assert "maintenance" not in manager.last_errors
+
+
+def test_worker_health_exposes_maintenance_task():
+    async def exercise():
+        manager = WorkerManager()
+        gate = asyncio.Event()
+        manager.backfill_task = asyncio.create_task(gate.wait(), name="maintenance-backfill")
+        try:
+            health = manager.health()
+            assert health["maintenance"] == "running"
+            assert health["tasks"]["maintenance-backfill"] is True
+        finally:
+            manager.backfill_task.cancel()
+            await asyncio.gather(manager.backfill_task, return_exceptions=True)
+
+    asyncio.run(exercise())

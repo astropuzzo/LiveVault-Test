@@ -160,8 +160,9 @@
   }));
   drop.addEventListener('drop', event => { if (!input.disabled) addFiles(event.dataTransfer?.files || []); });
   copySmb.addEventListener('click', async () => {
-    try { await navigator.clipboard.writeText(SMB_PATH); toast('Percorso SMB copiato: ' + SMB_PATH); }
-    catch (_) { toast(SMB_PATH); }
+    const smbPath = selectedDevice()?.smb_path || SMB_PATH;
+    try { await navigator.clipboard.writeText(smbPath); toast('Percorso SMB copiato: ' + smbPath); }
+    catch (_) { toast(smbPath); }
   });
 
   routeState(); syncTarget(); renderQueue();

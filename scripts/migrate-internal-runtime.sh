@@ -110,7 +110,7 @@ Type=oneshot
 # Debounce boot/hotplug churn on the shared USB3 controller before mounting SERVER/SHARE.
 ExecStartPre=/usr/bin/sleep 30
 ExecStart=/usr/local/sbin/livevault-storage-attach
-TimeoutStartSec=300
+TimeoutStartSec=900
 EOF
 systemctl daemon-reload
 systemctl enable openastro-storage-boot.service

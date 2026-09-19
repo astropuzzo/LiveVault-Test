@@ -150,6 +150,61 @@ def test_host_buffer_limit_is_four_gib(transfer):
     assert transfer.BUFFER_LIMIT_BYTES == 4 * 1024**3
 
 
+def test_emergency_detach_uses_lazy_fallback_after_timeout(monkeypatch, transfer, tmp_path):
+    target = tmp_path / 'dead-nvme'
+    target.mkdir()
+    calls = []
+
+    monkeypatch.setattr(transfer.os.path, 'ismount', lambda value: Path(value) == target)
+
+    def fake_run(args, **kwargs):
+        calls.append(list(args))
+        if args == ['umount', str(target)]:
+            raise subprocess.TimeoutExpired(args, kwargs.get('timeout', 0))
+        return SimpleNamespace(returncode=0, stdout='', stderr='')
+
+    monkeypatch.setattr(transfer.subprocess, 'run', fake_run)
+    transfer.emergency_detach(target)
+    assert calls == [['umount', str(target)], ['umount', '-l', str(target)]]
+
+
+def test_emergency_failover_restarts_livevault_before_ancillary_detach(monkeypatch, transfer, tmp_path):
+    root = tmp_path / 'livevault'
+    buffer = tmp_path / 'buffer'
+    recordings = root / 'recordings'
+    root.mkdir(); buffer.mkdir(); recordings.mkdir()
+    (root / 'storage-state.json').write_text(json.dumps({'mode': 'nvme'}))
+    monkeypatch.setattr(transfer, 'ROOT', root)
+    monkeypatch.setattr(transfer, 'BUFFER', buffer)
+    monkeypatch.setattr(transfer, 'RECORDINGS', recordings)
+    monkeypatch.setattr(transfer, 'NVME', tmp_path / 'nvme')
+    monkeypatch.setattr(transfer.os.path, 'ismount', lambda value: True)
+    monkeypatch.setattr(transfer, 'wait_storage_ready', lambda *args, **kwargs: True)
+    monkeypatch.setattr(transfer, 'livevault_containers', lambda: ['livevault'])
+    monkeypatch.setattr(transfer, 'preposition_container_views', lambda *args: (_ for _ in ()).throw(RuntimeError('stale mount')))
+    monkeypatch.setattr(transfer, 'verify_container_view', lambda: None)
+    monkeypatch.setattr(transfer, 'service_active', lambda name: False)
+    monkeypatch.setattr(transfer, 'emergency_detach', lambda path: (_ for _ in ()).throw(RuntimeError('dead share')) if str(path) == '/share' else None)
+    published = []
+    monkeypatch.setattr(transfer, 'publish', lambda mode, **fields: published.append((mode, fields)))
+    monkeypatch.setattr(transfer, 'run', lambda *args: '')
+    starts = []
+
+    def fake_subprocess(args, **kwargs):
+        if args[:2] == ['docker', 'stop']:
+            return SimpleNamespace(returncode=0, stdout='livevault', stderr='')
+        if args[:2] == ['docker', 'start']:
+            starts.append(args[-1])
+            return SimpleNamespace(returncode=0, stdout='livevault', stderr='')
+        return SimpleNamespace(returncode=0, stdout='', stderr='')
+
+    monkeypatch.setattr(transfer.subprocess, 'run', fake_subprocess)
+    with pytest.raises(RuntimeError, match='dead share'):
+        transfer.emergency_failover('fault')
+    assert starts
+    assert published and published[-1][0] == 'buffer'
+
+
 @pytest.mark.skipif(os.name != 'posix', reason='host transfer uses Linux directory fsync')
 def test_transfer_is_restartable_and_preserves_original_marker(tmp_path, transfer):
     source, dest = tmp_path / 'buffer', tmp_path / 'nvme'
@@ -165,6 +220,35 @@ def test_transfer_is_restartable_and_preserves_original_marker(tmp_path, transfe
     assert json.loads((dest / marker).read_text())['started_at'] == 'earlier'
     assert not list(source.iterdir())
     transfer.merge_buffer(source, dest)
+
+
+@pytest.mark.skipif(os.name != 'posix', reason='symlink handoff semantics require POSIX')
+def test_transfer_discards_valid_active_preview_symlink(tmp_path, transfer):
+    source, dest = tmp_path / 'buffer', tmp_path / 'nvme'
+    session = source / 'creator' / 'session'
+    session.mkdir(parents=True); dest.mkdir()
+    capture = session / 'creator_part001.capture.mp4'
+    capture.write_bytes(b'footage')
+    (session / '.active-preview.mp4').symlink_to(capture.name)
+
+    transfer.merge_buffer(source, dest)
+
+    copied = dest / 'creator' / 'session' / capture.name
+    assert copied.read_bytes() == b'footage'
+    assert not (dest / 'creator' / 'session' / '.active-preview.mp4').exists()
+    assert not list(source.iterdir())
+
+
+@pytest.mark.skipif(os.name != 'posix', reason='symlink handoff semantics require POSIX')
+def test_transfer_still_refuses_unexpected_symlink(tmp_path, transfer):
+    source, dest = tmp_path / 'buffer', tmp_path / 'nvme'
+    source.mkdir(); dest.mkdir()
+    payload = source / 'payload.mp4'
+    payload.write_bytes(b'footage')
+    (source / 'unexpected.mp4').symlink_to(payload.name)
+
+    with pytest.raises(RuntimeError, match='Unexpected symlink'):
+        transfer.merge_buffer(source, dest)
 
 
 def test_transfer_refuses_conflicting_media(tmp_path, transfer):

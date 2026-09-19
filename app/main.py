@@ -1230,6 +1230,87 @@ def _profile_recording_days(recordings: list[Recording], cloud_days: list[CloudD
     return payload, len(day_keys)
 
 
+def _hover_status(rows: list[Source]) -> str:
+    statuses = [
+        "archived" if row.archived else ("paused" if not row.enabled else str(row.last_status or "offline"))
+        for row in rows
+    ]
+    for preferred in ("recording", "private", "tipjar", "restricted", "live", "error"):
+        if preferred in statuses:
+            return preferred
+    if rows and all(row.archived for row in rows):
+        return "archived"
+    if rows and not any(row.enabled and not row.archived for row in rows):
+        return "paused"
+    return "offline"
+
+
+def _hover_recording_json(recording: Recording, source: Source | None = None) -> dict:
+    thumbnail_url = _safe_thumbnail_url(recording.id, recording.thumbnail_path)
+    return {
+        "id": int(recording.id),
+        "source_id": int(recording.source_id),
+        "source_name": recording.source_name,
+        "filename": recording.filename,
+        "started_at": _iso_utc(recording.started_at),
+        "finalized_at": _iso_utc(recording.finalized_at),
+        "duration_seconds": float(recording.duration_seconds or 0),
+        "thumbnail_url": thumbnail_url,
+        "thumbnail_available": bool(thumbnail_url),
+        "provider_label": provider_label(source.platform) if source else "",
+    }
+
+
+@app.get("/api/sources/{source_id}/hover-preview")
+def source_hover_preview(source_id: int, request: Request):
+    """Small, lazy payload for creator-name hover cards.
+
+    This intentionally avoids the full profile/statistics payload. The browser only
+    asks for it after a short hover and caches it briefly.
+    """
+    require_auth(request)
+    with db_session() as db:
+        _source, profile = _profile_for_source(db, source_id)
+        linked_rows = list(db.scalars(
+            select(Source).where(Source.profile_id == profile.id).order_by(Source.name, Source.id)
+        ).all())
+        linked_ids = [int(row.id) for row in linked_rows]
+        recent = list(db.scalars(
+            select(Recording)
+            .where(Recording.source_id.in_(linked_ids))
+            .order_by(Recording.finalized_at.desc(), Recording.id.desc())
+            .limit(3)
+        ).all()) if linked_ids else []
+        source_map = {int(row.id): row for row in linked_rows}
+        recent_payload = [
+            _hover_recording_json(recording, source_map.get(int(recording.source_id)))
+            for recording in recent
+        ]
+        cover_url = next((row["thumbnail_url"] for row in recent_payload if row["thumbnail_url"]), "")
+        if not cover_url:
+            cover_url = _profile_cover_map(db, {profile.id}).get(profile.id, "")
+        seen_values = [row.last_seen_live_at or row.last_live_at for row in linked_rows if row.last_seen_live_at or row.last_live_at]
+        last_seen = max(seen_values, key=lambda value: _pulse_aware(value)) if seen_values else None
+        return {
+            "profile_id": int(profile.id),
+            "source_id": int(source_id),
+            "display_name": profile.display_name,
+            "favorite": bool(profile.favorite),
+            "status": _hover_status(linked_rows),
+            "last_seen_live_at": _iso_utc(last_seen),
+            "last_recording_at": _iso_utc(recent[0].finalized_at) if recent else None,
+            "cover_thumbnail_url": cover_url,
+            "accounts": [{
+                "source_id": int(row.id),
+                "name": row.name,
+                "platform": row.platform,
+                "provider_label": provider_label(row.platform),
+                "slug": row.slug,
+            } for row in linked_rows],
+            "recent_recordings": recent_payload,
+        }
+
+
 @app.get("/api/sources/{source_id}/profile")
 def source_profile(source_id: int, request: Request):
     require_auth(request)

@@ -74,12 +74,28 @@ e helper host distribuiti separatamente. NINA resta isolato anche se la sua UI �
 incorporata nel Control Center.
 Deploy: [HOSTING.md](HOSTING.md), [nina-monitor/COOLIFY.md](nina-monitor/COOLIFY.md).
 
+LiveVault creator hover preview: i nomi prodotti da `creatorLinkMarkup()` espongono su
+puntatore fine una card lazy con massimo tre registrazioni recenti del profilo. Il
+frontend attende 250 ms prima della richiesta e mantiene una cache di 90 s. Su touch,
+il primo tap sul nome apre la stessa preview senza navigare e il secondo tap sullo stesso
+nome apre il profilo; un tap esterno la chiude. Il focus da tastiera resta supportato sui
+client desktop. Il payload dedicato è
+`GET /api/sources/{source_id}/hover-preview` e non deve essere sostituito dal profilo
+completo, che è molto più costoso. Per rollout senza interrompere registrazioni
+attive, il frontend mantiene un fallback temporaneo al profilo completo quando il nuovo
+endpoint risponde 404; dopo il redeploy applicativo usa automaticamente il payload
+leggero. Asset: `app/static/creator-hover.js` e `.css`. La card touch usa `box-sizing:border-box` per restare entro il viewport anche con padding e bordo.
+Rollback: revert della relativa modifica UI/API e redeploy LiveVault; nessun dato o
+schema persistente viene modificato. Il contratto UI resta globale perché tutti i
+nomi creator interattivi condividono `data-profile-link`; non duplicare richieste o
+implementazioni hover nelle singole viste.
+
 ## Storage: contratto da mantenere
 | Livello | Origine/mount | Contenuto |
 | --- | --- | --- |
 | eMMC | /srv/openastro-internal bind su /data | Docker /data/docker, DB, segreti, preview, servizi |
 | SERVER NVMe ext4 | UUID 5fe2d0f6-b485-44e9-8e26-31fb0d217db2; /mnt/livevault-nvme | registrazioni pesanti; workspace IA esistente |
-| SHARE exFAT | UUID 7EBD-F531; /share | backup DB e condivisione |
+| SHARE exFAT | UUID 7EBD-F531; /share | backup DB, dati condivisi e libreria permanente Media Hub in `/share/Media` |
 | Buffer emergenza | /var/lib/livevault-buffer.img su /var/lib/livevault-buffer | ext4 riservato 4 GiB; mai scratch |
 | USB media | /srv/openastro-media/* | contenuti Media Hub, import autenticati |
 
@@ -97,12 +113,19 @@ Watchdog indipendente: openastro-storage-watchdog.service.
 Eject chiude capture e rinvia lavoro archivio; verifica mount host/container,
 smonta SERVER/SHARE e riprende su buffer. Docker resta online.
 Buffer pieno: conservare file e fermare capture fino al rientro NVMe.
-Attach verifica UUID, copia con SHA-256/fsync/rename atomico, poi cambia mount.
-Collisioni diverse preservano entrambe le copie e bloccano il trasferimento.
+Attach verifica UUID, copia con SHA-256/fsync/rename atomico, poi cambia mount; l’unità ha `TimeoutStartSec=900` per non troncare trasferimenti verificati lenti dopo fault USB.
+I soli symlink transienti `.active-preview.mp4/.webm` sono scartati durante il merge
+quando puntano a un file `.capture` fratello valido: il media viene copiato e verificato
+e LiveVault ricrea il puntatore dopo il cambio storage. Qualunque altro symlink resta
+un errore di sicurezza. Collisioni diverse preservano entrambe le copie e bloccano il trasferimento.
 Dettagli e recupero: [docs/NVME-HANDOFF.md](docs/NVME-HANDOFF.md).
 
-DB, cronologia e cache Media Hub restano interni. Media USB scrivibili tramite
-SMB autenticato o import con sessione/CSRF. SMB/DLNA restano LAN-only.
+DB, cronologia e cache Media Hub restano interni. I supporti USB rimovibili restano
+gestiti sotto `/srv/openastro-media`; la partizione SHARE dell'NVMe non entra nel
+gestore hot-plug ma pubblica soltanto `/share/Media` come libreria permanente
+`NVMe Media`. Backup (`/share/livevault-backups`) e dati astronomici nella radice
+di `/share` restano fuori dal catalogo. Import web/SMB è autenticato; SMB/DLNA
+restano LAN-only. `NVMe Media` si espelle esclusivamente con l'intero NVMe.
 Non ripristinare le vecchie istruzioni read-only o guest.
 
 ## Controlli, backup e pulizia
@@ -182,3 +205,6 @@ restano interrompibili dal cambio storage. Non ripristinare il timeout fisso di 
 Verificare su Linux/Python 3.13; Windows Python 3.14 non equivale alla produzione.
 Separare test unitari, CI, deploy e prove fisiche. Non dichiarare assenza di perdita
 dati dal solo healthcheck: controllare capture e trasferimento del buffer.
+
+### 2026-09-16 — processing backfill must survive per-pass failures
+A production incident left validated `recording_fragments` accumulating while no new consolidated `recordings` were created. The recorder, uploader, thumbnail worker, and storage guard stayed healthy, but the separate `maintenance-backfill` task was not included in worker health and its loop terminated permanently on any uncaught exception from one maintenance pass. Keep the periodic processor resilient: storage handoff/cancellation remains retryable, ordinary per-pass exceptions are recorded under `last_errors["maintenance"]` and the loop continues, and health must expose `maintenance-backfill`. A single damaged/temporarily unreadable archive file must never stop stitching/finalization for later captures.

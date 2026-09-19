@@ -75,7 +75,14 @@ def recover_interrupted():
     if mode == 'nvme':
         if not os.path.ismount('/share'):
             run('mount', '/share')
+        if os.path.ismount('/share'):
+            Path('/share/Media').mkdir(parents=True, exist_ok=True)
+            try:
+                shutil.chown('/share/Media', user='astro', group='astro')
+            except (LookupError, OSError):
+                pass
         run('systemctl', 'start', 'livevault-backup.timer')
+        subprocess.run(['systemctl', 'try-restart', 'minidlna.service'], capture_output=True)
     return mode
 
 
@@ -117,6 +124,23 @@ def merge_buffer(source, destination):
         if relative.parts[0] == 'lost+found':
             continue
         if path.is_symlink():
+            if path.name in {'.active-preview.mp4', '.active-preview.webm'}:
+                link_value = os.readlink(path)
+                link_target = Path(link_value)
+                expected_suffix = f'.capture{path.suffix}'
+                if (
+                    link_target.is_absolute()
+                    or len(link_target.parts) != 1
+                    or not link_target.name.endswith(expected_suffix)
+                    or (path.parent / link_target).is_symlink()
+                    or not (path.parent / link_target).is_file()
+                ):
+                    raise RuntimeError(f'Unsafe active preview symlink in buffer: {relative}')
+                # Live preview pointers are ephemeral. The capture file itself is
+                # copied and verified below; LiveVault recreates this pointer after
+                # the storage switch when recording resumes.
+                path.unlink()
+                continue
             raise RuntimeError(f'Unexpected symlink in buffer: {relative}')
         target = destination / relative
         if target.is_symlink() or any(p.is_symlink() for p in target.parents if p != destination.parent):
@@ -427,14 +451,22 @@ def emergency_detach(path):
     """Detach an already-failed removable filesystem without waiting forever on dead I/O."""
     if not os.path.ismount(path):
         return
-    result = subprocess.run(['umount', str(path)], text=True, capture_output=True, timeout=8)
-    if result.returncode == 0:
+    try:
+        result = subprocess.run(['umount', str(path)], text=True, capture_output=True, timeout=8)
+    except subprocess.TimeoutExpired:
+        result = None
+    if result is not None and result.returncode == 0:
         return
     # Lazy detach is forbidden for normal/manual eject, but is appropriate after
-    # the kernel has already lost or shut down the removable medium.
-    result = subprocess.run(['umount', '-l', str(path)], text=True, capture_output=True, timeout=5)
-    if result.returncode != 0:
-        raise RuntimeError(f'Impossibile sganciare filesystem guasto {path}: {(result.stderr or result.stdout).strip()}')
+    # the kernel has already lost or shut down the removable medium. A timed-out
+    # normal umount is exactly the dead-I/O case this fallback exists for.
+    try:
+        lazy = subprocess.run(['umount', '-l', str(path)], text=True, capture_output=True, timeout=5)
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(f'Timeout sganciando filesystem guasto {path}') from exc
+    if lazy.returncode != 0:
+        detail = lazy.stderr or lazy.stdout or (result.stderr if result is not None else '')
+        raise RuntimeError(f'Impossibile sganciare filesystem guasto {path}: {detail.strip()}')
 
 
 def emergency_failover(reason='NVMe fault'):
@@ -478,6 +510,17 @@ def emergency_failover(reason='NVMe fault'):
         if containers and not stopped:
             verify_container_view()
 
+        # Recording continuity is the primary recovery goal. Publish the buffer
+        # and restart any container stopped as a last resort *before* ancillary
+        # cleanup of SHARE/NVMe. A dead /share must never leave LiveVault offline.
+        publish('buffer', limit_bytes=BUFFER_LIMIT_BYTES, reason=str(reason)[:1200], degraded=True)
+        for container in stopped:
+            result = subprocess.run(['docker', 'start', container], text=True, capture_output=True)
+            if result.returncode != 0:
+                raise RuntimeError(f'Buffer attivo ma LiveVault non ripartito: {(result.stderr or result.stdout).strip()}')
+        if stopped:
+            verify_container_view()
+
         # SHARE is on the same physical server disk. GPT Harness has an optional
         # NVMe workspace view, so restart it from eMMC after detaching the disk.
         harness_was_active = service_active(GPT_HARNESS_SERVICE)
@@ -491,12 +534,6 @@ def emergency_failover(reason='NVMe fault'):
                 set_service(GPT_HARNESS_SERVICE, 'start')
 
         publish('buffer', limit_bytes=BUFFER_LIMIT_BYTES, reason=str(reason)[:1200])
-        for container in stopped:
-            result = subprocess.run(['docker', 'start', container], text=True, capture_output=True)
-            if result.returncode != 0:
-                raise RuntimeError(f'Buffer attivo ma LiveVault non ripartito: {(result.stderr or result.stdout).strip()}')
-        if stopped:
-            verify_container_view()
         print('Failover automatico completato: registrazioni sul buffer interno eMMC da 4 GiB; Docker resta online.')
     except Exception:
         # Never claim NVMe mode after a physical fault. If the eMMC bind exists,
@@ -504,7 +541,11 @@ def emergency_failover(reason='NVMe fault'):
         try:
             if RECORDINGS.stat().st_dev == BUFFER.stat().st_dev:
                 publish('buffer', limit_bytes=BUFFER_LIMIT_BYTES, reason=str(reason)[:1200], degraded=True)
-        except OSError:
+                # If the namespace move failed and we had to stop LiveVault, an
+                # ancillary cleanup failure must not strand that container offline.
+                for container in stopped:
+                    subprocess.run(['docker', 'start', container], text=True, capture_output=True, timeout=30)
+        except (OSError, subprocess.TimeoutExpired):
             pass
         raise
 
@@ -558,6 +599,7 @@ def main(action):
             return
         backup_timer_was_active = service_active('livevault-backup.timer')
         share_was_mounted = os.path.ismount('/share')
+        media_indexer_was_active = service_active('minidlna.service')
         if action == 'eject' and previous == 'buffer' and not os.path.ismount(NVME):
             print('NVMe già espulso; buffer interno attivo.')
             return
@@ -586,8 +628,13 @@ def main(action):
                 verify_container_view()
                 verify_containers_detached_from_device(NVME.stat().st_dev)
                 os.sync()
+                subprocess.run(['smbcontrol', 'smbd', 'close-share', 'NVMeMedia'], capture_output=True)
+                if media_indexer_was_active:
+                    subprocess.run(['systemctl', 'stop', 'minidlna.service'], capture_output=True)
                 if os.path.ismount('/share'):
                     run('umount', '/share')
+                if media_indexer_was_active:
+                    subprocess.run(['systemctl', 'start', 'minidlna.service'], capture_output=True)
                 # GPT Harness has an optional writable view of its NVMe workspace.
                 # Stop it before detaching the filesystem so its private mount
                 # namespace cannot retain the removable device; start it again
@@ -614,7 +661,15 @@ def main(action):
                 verify_container_view()
                 publish('nvme')
                 subprocess.run(['mount', '/share'], capture_output=True)
+                if os.path.ismount('/share'):
+                    Path('/share/Media').mkdir(parents=True, exist_ok=True)
+                    try:
+                        shutil.chown('/share/Media', user='astro', group='astro')
+                    except (LookupError, OSError):
+                        pass
                 subprocess.run(['systemctl', 'start', 'livevault-backup.timer'], capture_output=True)
+                if media_indexer_was_active:
+                    subprocess.run(['systemctl', 'try-restart', 'minidlna.service'], capture_output=True)
                 # If Harness stayed online while the NVMe was absent, restart it
                 # so systemd recreates its sandbox with the optional NVMe RW path.
                 if service_active(GPT_HARNESS_SERVICE):
@@ -653,6 +708,8 @@ def main(action):
                         subprocess.run(['mount', '/share'], capture_output=True)
                     if backup_timer_was_active:
                         subprocess.run(['systemctl', 'start', 'livevault-backup.timer'], capture_output=True)
+                    if media_indexer_was_active:
+                        subprocess.run(['systemctl', 'start', 'minidlna.service'], capture_output=True)
             raise
 
 
