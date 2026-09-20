@@ -3,7 +3,9 @@
 Sorgenti: `app/mp4_fragments.py`, `app/recorder.py`, `app/stripchat_capture.py`.
 Runtime iniziale verificato: LiveVault Coolify `9fae149`, Python 3.13.15,
 FFmpeg 7.1.5, storage `nvme`. Checkout host sporco preservato.
-La correzione descritta sotto è in validazione: CI e deploy ancora da completare.
+Runtime finale verificato: release `6a41125474fb550c76ddd4b40d121ed387ca46a1`,
+container `ahul2vdjkyvjiwgzpcrmxzfe-200629962506` healthy; deploy Coolify
+`c2aajyqvdur3dd7fgz83j5yr` finished. PR #35 integrata.
 
 ## Diagnosi e correzione
 
@@ -41,6 +43,8 @@ e difetti non riconosciuti restano distinti da questa correzione.
 40 test mirati Windows passati (normalizzazione, capture e recorder). I test
 coprono tempi dei campioni, durata totale, offset, payload, flag, idempotenza,
 overflow, tabelle ausiliarie, copia separata e normalizzazione prima di scrivere.
+CI Linux/Python 3.13 verde: 363 test, verifiche JS/shell/container e documentali.
+Run PR `35534383687`, run main `35534467269` entrambi conclusi con successo.
 Sul runtime Linux, tutte e cinque le copie superano sia il remux della capture
 sia `finalize_mp4_for_streaming`, seguiti da `verify_media(..., 'packet')`.
 
@@ -52,8 +56,14 @@ sia `finalize_mp4_for_streaming`, seguiti da `verify_media(..., 'packet')`.
 | 864 | 8,016 s | gap video 0,83 s |
 | 913 | 420,020 s | gap video 1,62 s |
 
-Non si ricreano frame mai ricevuti. Il recupero dei file nel DB e gli upload
-saranno verificati dopo il deploy, tramite il worker normale senza editing SQL.
+Non si ricreano frame mai ricevuti. Dopo il deploy, il worker normale ha
+recuperato tutti e cinque i file: `integrity_status=passed`, `upload_status=uploaded`,
+`integrity_error` e `last_error` vuoti. Nessun editing SQL. La normale policy
+post-upload ha rimosso le copie locali operative; gli originali e le copie di
+prova restano nella directory privata di recupero.
+Health finale: storage nvme, recovery idle, un recorder attivo, 150,72 GiB liberi.
+Capture sunshine_bliss cresciuta da 21.495.836 a 25.427.996 byte in 5 secondi.
+Questa è prova di scrittura corrente; non una prova di stabilità USB prolungata.
 
 Separatamente, il journal host del 20 settembre alle 20:51 BST mostra errori
 I/O USB, journal ext4 abortito e successiva riconnessione del bridge RTL9210;
@@ -76,7 +86,7 @@ Le prove sono state eseguite con un modulo candidato in `/tmp` e copie separate,
 senza sostituire il codice del processo applicativo in esecuzione.
 
 Rollback applicativo: immagine Coolify `9fae149b5daba71c9b6a8b5c80e6b94a3bd08060`.
-Nessuna migrazione DB. Per rollback media, coordinare la pausa dei worker e
+Immagine precedente verificata ancora presente sul nodo. Nessuna migrazione DB. Per rollback media, coordinare la pausa dei worker e
 ripristinare il corrispondente originale verificato, quindi rivalidare i metadati;
 gli originali riproducono l'errore noto. Conservare anche l'archivio precedente
 `/data/livevault/mp4-recovery-20260911` per 403/404: il loro recupero della
