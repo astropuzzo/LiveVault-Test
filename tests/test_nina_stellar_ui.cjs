@@ -34,6 +34,16 @@ test('photometric rescue respects the final verdict and extended proof is constr
 
 test('stellar signal rejection remains visible after a guide flag is cleared',()=>{
  const html=render({...frame,guideFalsePositive:true,reason:'SKY_SIGNAL_LOSS',imageEvidenceHasRescueMargin:true});
- assert.match(html,/Brighter sky with fewer and fainter stars/);assert.doesNotMatch(html,/class="stellar-result rescued"/);
+ assert.match(html,/Sudden loss of stellar signal and star detections/);assert.doesNotMatch(html,/class="stellar-result rescued"/);
  assert.match(render({...frame,reason:'STELLAR_FLUX_LOSS'}),/Measured stellar signal loss exceeds the limit/);
+});
+
+
+test('photometry remains visible without claiming verified stellar shapes',()=>{
+ const html=render({status:'WARNING',imageEvidenceAttempted:true,imageEvidenceAvailable:false,stellarPhotometryAvailable:true,relativeStellarFlux:.91,matchedStars:58,stellarReferenceFrames:8,stellarReferenceAgeMinutes:180});
+ assert.match(html,/91%/);assert.match(html,/180 min/);assert.match(html,/Shape not verified/);
+});
+test('signal rejection does not require verified stellar shape in the inspector',()=>{
+ const html=render({status:'REJECTED',imageEvidenceAttempted:true,imageEvidenceAvailable:false,stellarPhotometryAvailable:true,relativeStellarFlux:.5,reason:'STELLAR_FLUX_LOSS'});
+ assert.match(html,/Measured stellar signal loss exceeds the limit/);assert.match(html,/50%/);assert.doesNotMatch(html,/class="stellar-result rescued"/);
 });

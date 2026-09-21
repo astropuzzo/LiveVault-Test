@@ -183,6 +183,8 @@ replay payload. Both proof images decode; no page errors or horizontal
 overflow. The 160-frame snapshot is below the existing 2 MiB proxy limit.
 Deployment requires CI on the final commit.
 
-### QSM 1.4.1.1 signal-loss candidate — 2026-09-14
+### QSM 1.4.2 signal-trend candidate — 2026-09-21
 
-The same candidate UI now shows explicit stellar-signal and combined sky-loss reasons after a guide flag is cleared. A usable sky-change warning remains distinct from rejection. Sources: `nina-monitor/static/app.js`; six inspector JavaScript tests. No deployment or endpoint change; rollback and live runtime remain as documented above.
+Candidate source remains `nina-monitor/static/app.js` on `codex/qsm141-stellar-analysis`. The inspector displays matched photometry even when shape classification is unavailable, the oldest reference age, signal versus recent expected level, signal versus the initial session reference, the applied minimum session signal, and fitted trend rate. Sudden signal/count loss no longer implies that the sky must brighten. A cleared guide flag cannot override a final signal rejection. Missing fields in older snapshots display as unavailable.
+
+Validation: eight inspector JavaScript checks, nine standalone-monitor tests and replay-payload browser renders at 1440/430 pixels, including unavailable shape evidence, measured rejection and retained frames. Images decode and no horizontal overflow occurs. Release preparation for QSM 1.4.2.0; rollout status is recorded below after verification. The live LAN health endpoint on 2026-09-21 reports read-only and isolated. Authentication, endpoints and isolation are unchanged. Deploy still requires green CI on the final commit and the gates in `nina-monitor/COOLIFY.md`. Candidate rollback is the previous `app.js`; production rollback uses the existing Coolify image history.
