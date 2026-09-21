@@ -27,6 +27,8 @@ da un rinvio, con originale conservato nella directory rollback.
   **Contiene modifiche non committate**: non resettarlo, pulirlo o sovrascriverlo.
 - Il connettore GPT Harness gira come `gpt-harness`, servizio `gpt-harness.service`,
   app `/opt/gpt-harness`, lavoro interno `/data/gpt-harness/work`.
+  OAuth Auth0 e rinnovo ChatGPT: [configurazione e diagnosi](docs/GPT-HARNESS-OAUTH.md),
+  verifica 2026-09-21. `Allow Offline Access` abilitato; prova di riconnessione ancora richiesta.
 - Root tramite il connettore: `gpt-root -- COMMAND ARGS`; verificare con
   `gpt-root -- id`. Socket locale `/run/gpt-harness-root.sock`,
   servizio `gpt-harness-root.service`. L'utente SSH astro non accede direttamente
