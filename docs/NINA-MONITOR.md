@@ -164,27 +164,14 @@ The container runs as an unprivileged user, with a read-only filesystem in the t
 
 The first release remains read-only. Remote sequence control, threshold changes, file mutation and other write actions are intentionally outside this release until monitoring has been field-tested on real sessions.
 
-## QSM 1.4.1 candidate support — 2026-09-14
+## QSM 1.4.2 stellar inspector — deployed 2026-09-21
 
-Candidate source: `nina-monitor/static/app.js` on `codex/qsm141-stellar-analysis`.
-The stellar inspector accepts the extended profile, verified region count,
-matched-star flux, FWHM and distant-image measurements from QSM 1.4.1.
-A cleared star-count flag is displayed as recovered only when the final frame
-status is usable. Older QSM snapshots remain supported; missing fields display
-as unavailable. No tokens, server endpoints or file actions change.
+Source: `nina-monitor/static/app.js`, merged PR #34, commit `900ccd44f86e003877ab08b1893de565748fdfe5`. The inspector displays central/extended stellar profiles, verified regions, matched photometry even when shape classification is unavailable, oldest reference age, signal versus recent expected level, signal versus initial session reference, applied session floor and fitted trend rate. Sudden signal/count loss does not require a brighter sky. A cleared guide flag cannot override a final signal rejection. Missing fields from older QSM versions remain unavailable until new exposures are assessed by 1.4.2.0.
 
-Not deployed as part of this candidate preparation. The live monitor health
-endpoint at `192.168.1.27:9091` reported read-only and isolated on 2026-09-14.
-Runtime deployment remains the previously documented 1.4 dashboard. Rollback
-for the candidate UI is the preceding `app.js`; production rollback remains
-the existing Coolify image history. Validation: five stellar-inspector JavaScript tests, nine standalone-monitor
-Python tests, and browser renders at 1440 and 430 pixels using the candidate
-replay payload. Both proof images decode; no page errors or horizontal
-overflow. The 160-frame snapshot is below the existing 2 MiB proxy limit.
-Deployment requires CI on the final commit.
+Validation: eight inspector JavaScript checks, nine standalone-monitor tests and replay browser renders at 1440/430 pixels. The exact feature commit passed both GitHub CI runs before merge. Images decode with no script errors or horizontal overflow.
 
-### QSM 1.4.2 signal-trend candidate — 2026-09-21
+Coolify deployment `vzsbvyorzsesj3wg7dm4r5zl` finished. Runtime image is `ctrzdfqqsdljdcb2sbdrc7ug:900ccd44f86e003877ab08b1893de565748fdfe5`, container `59e346505f92`, healthy since startup at `2026-09-21T13:07:42Z`. User remains `openastro`, mounts remain empty, and health reports read-only and isolated. Deployed `/app/static/app.js` SHA-256 is `06b0938abe936d09c6521f8232a408c87ec2382b3c0602a872d7d64741dd647f`, identical to normalized repository source. Public HTTPS reaches the login page; authentication is preserved. Authenticated live stellar data was not available in this verification, so visual evidence uses the replay payload.
 
-Candidate source remains `nina-monitor/static/app.js` on `codex/qsm141-stellar-analysis`. The inspector displays matched photometry even when shape classification is unavailable, the oldest reference age, signal versus recent expected level, signal versus the initial session reference, the applied minimum session signal, and fitted trend rate. Sudden signal/count loss no longer implies that the sky must brighten. A cleared guide flag cannot override a final signal rejection. Missing fields in older snapshots display as unavailable.
+LiveVault container `3810db46b484` and its startup `2026-09-20T20:09:59Z` are unchanged across deployment. Its image remains `ahul2vdjkyvjiwgzpcrmxzfe:6a41125474fb550c76ddd4b40d121ed387ca46a1`. Watch paths remain `nina-monitor/**` for this module and `app/**`, `requirements.txt`, `Dockerfile`, `.dockerignore` for LiveVault. No host checkout, recording data, tokens, endpoints or services were changed.
 
-Validation: eight inspector JavaScript checks, nine standalone-monitor tests and replay-payload browser renders at 1440/430 pixels, including unavailable shape evidence, measured rejection and retained frames. Images decode and no horizontal overflow occurs. Release preparation for QSM 1.4.2.0; rollout status is recorded below after verification. The live LAN health endpoint on 2026-09-21 reports read-only and isolated. Authentication, endpoints and isolation are unchanged. Deploy still requires green CI on the final commit and the gates in `nina-monitor/COOLIFY.md`. Candidate rollback is the previous `app.js`; production rollback uses the existing Coolify image history.
+Rollback: redeploy the previous NINA image `ctrzdfqqsdljdcb2sbdrc7ug:96dd1c7a8e2cf9b48640ddef290d289556324220` through this application's Coolify history only. Keep existing environment and routing. Do not restart LiveVault or Control Center.
