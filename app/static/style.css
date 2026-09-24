@@ -5776,12 +5776,14 @@ textarea:focus,
   z-index: 5;
   align-self: stretch;
   padding: 6px 8px 6px 0;
-  background: rgba(14, 13, 26, 0.78);
-  -webkit-backdrop-filter: blur(10px);
-  backdrop-filter: blur(10px);
+  background: #100f1d; /* opaque: pins scroll underneath the names */
+  box-shadow: 12px 0 14px -10px rgba(0, 0, 0, 0.9);
 }
-.cr-pulse.scrollable.scrolled .cr-pulse-who {
-  box-shadow: 10px 0 14px -10px rgba(0, 0, 0, 0.8);
+.cr-pulse.scrollable .cr-pulse-row {
+  padding-right: 18px;
+}
+.cr-pulse.scrollable .cr-pulse-scale {
+  padding-right: 18px;
 }
 .cr-pulse-now {
   display: block;
@@ -5807,9 +5809,20 @@ textarea:focus,
   .cr-pulse-legend::-webkit-scrollbar {
     display: none;
   }
+  .nsfw-pulse-band {
+    display: none;
+  }
   .nsfw-pulse-mark {
     width: 24px;
     height: 24px;
+  }
+  .nsfw-pin-count {
+    top: -6px;
+    right: -7px;
+  }
+  /* Small live thumbnails: keep only the state chip, drop the text over the picture. */
+  .cr-preview > .cr-preview-age {
+    display: none;
   }
   .nsfw-pulse-mark .mini-icon {
     width: 15px;

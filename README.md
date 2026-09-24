@@ -1,4 +1,4 @@
-# LiveVault v3.4.2
+# LiveVault v3.4.3
 
 Manutenzione e istruzioni IA: [AGENTS.md](AGENTS.md),
 [guida operativa centrale](AI-HANDOFF.md).

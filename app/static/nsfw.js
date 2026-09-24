@@ -211,7 +211,7 @@
     const hours = Math.max(1, Number(controlRoomPulseData?.hours) || 6);
     const perHour = typeof window.pulsePixelsPerHour === 'function' ? window.pulsePixelsPerHour() : 0;
     const trackPx = perHour ? hours * perHour : Math.max(500, window.innerWidth - 420);
-    const minGap = 26 / trackPx * 100;
+    const minGap = (perHour ? 46 : 32) / trackPx * 100;  // pin + count badge never touch the next one
     const bands = [];
     const groups = [];
     for (const m of moments) {

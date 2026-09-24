@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.4.3 — Cronologia da telefono senza sovrapposizioni
+
+- Colonna dei nomi opaca: le icone scorrono sotto i nomi invece di mischiarsi al testo.
+- Icone raggruppate con più spazio (numero sempre leggibile), fasce sotto le barre nascoste su telefono, ultima icona non più tagliata sul bordo.
+- Anteprime delle live piccole: resta solo l'etichetta di stato, niente testo sopra l'immagine.
+
 ## 3.4.2 — Cronologia leggibile da telefono
 
 - Su telefono la Cronologia si scorre col dito: ogni ora è larga (circa un'ora e mezza visibile), i nomi restano fissi a sinistra, all'apertura si vede il presente e il pulsante "Ora" ci riporta; la posizione resta ferma durante gli aggiornamenti.
