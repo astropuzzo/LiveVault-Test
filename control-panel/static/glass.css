@@ -59,3 +59,49 @@ body::before{
   .media-drive-hero,.resource-details>.metrics-grid,.system-tabs,.login-card,dialog{background:#14141f!important;-webkit-backdrop-filter:none;backdrop-filter:none}
 }
 @media (prefers-reduced-motion:reduce){body::before{animation:none}}
+
+/* Bolder pass: brighter canvas, clearer glass, luminous accents. */
+body::before{
+  background:
+    radial-gradient(60vw 65vh at 12% 0%,rgba(138,92,255,.75),transparent 70%),
+    radial-gradient(50vw 55vh at 96% 8%,rgba(0,212,255,.55),transparent 68%),
+    radial-gradient(60vw 60vh at 85% 100%,rgba(255,96,64,.45),transparent 70%),
+    radial-gradient(45vw 50vh at 0% 95%,rgba(124,255,35,.30),transparent 68%),
+    radial-gradient(35vw 35vh at 55% 45%,rgba(255,64,200,.22),transparent 72%),
+    #05060b!important;
+}
+:root{--gl-surface:rgba(18,16,34,.30)}
+.app-tile,.panel,.metric-card,.chart-card,.command-deck,.resource-toggle{
+  border-radius:30px!important;position:relative;
+  border:1px solid rgba(255,255,255,.14)!important;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.22),inset 0 -1px 0 rgba(255,255,255,.04),0 24px 60px rgba(0,0,0,.45)!important;
+}
+.app-tile::before,.panel::before{
+  content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;
+  background:linear-gradient(160deg,rgba(255,255,255,.14),rgba(255,255,255,0) 38%);
+}
+.sidebar{background:rgba(14,12,30,.32)!important;border:1px solid rgba(255,255,255,.12)!important;box-shadow:inset 0 1px 0 rgba(255,255,255,.18),0 24px 60px rgba(0,0,0,.45)!important}
+.app-tile .tile-heading,.panel-head h2,.panel-head h3{letter-spacing:-.01em}
+.app-tile strong,.hero-state,.app-tile .tile-value{
+  background:linear-gradient(135deg,#fff 0%,#d9d0ff 45%,#8fe9ff 100%);-webkit-background-clip:text;background-clip:text;color:transparent!important;
+}
+.media-feature-card{
+  background:linear-gradient(125deg,rgba(210,80,255,.50),rgba(110,80,255,.30) 50%,rgba(0,212,255,.22))!important;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.3),0 0 60px rgba(190,80,255,.30),0 24px 60px rgba(0,0,0,.45)!important;
+}
+.action-bubbles button{border-radius:24px!important}
+.action-bubbles button svg{filter:drop-shadow(0 0 10px currentColor)}
+.side-nav a.active{box-shadow:inset 0 1px 0 rgba(255,255,255,.2),0 0 0 1px rgba(157,140,255,.45),0 0 28px rgba(140,110,255,.35)!important}
+.live-card{box-shadow:inset 0 1px 0 rgba(255,255,255,.22),0 0 44px rgba(124,255,35,.12),0 24px 60px rgba(0,0,0,.45)!important}
+.power-card{box-shadow:inset 0 1px 0 rgba(255,255,255,.22),0 0 44px rgba(255,112,64,.14),0 24px 60px rgba(0,0,0,.45)!important}
+.storage-card{box-shadow:inset 0 1px 0 rgba(255,255,255,.22),0 0 44px rgba(0,180,255,.14),0 24px 60px rgba(0,0,0,.45)!important}
+@media (prefers-reduced-transparency:reduce){.app-tile,.panel,.sidebar{background:#14141f!important}}
+/* Frosted = lighter than the canvas, not darker. */
+.app-tile,.panel,.metric-card,.chart-card,.command-deck,.resource-toggle{
+  background:linear-gradient(160deg,rgba(255,255,255,.10),rgba(255,255,255,.035) 55%,rgba(255,255,255,.06))!important;
+}
+.app-tile .tile-art,.app-tile::after{opacity:.55}
+html::before{
+  content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;
+  background:radial-gradient(45vw 45vh at 58% 42%,rgba(90,110,255,.35),transparent 70%),radial-gradient(30vw 30vh at 40% 70%,rgba(0,220,200,.22),transparent 70%);
+}
