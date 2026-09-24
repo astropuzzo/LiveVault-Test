@@ -32,8 +32,13 @@ URL previsto: `https://openastro.tailf2871c.ts.net:8443/`
 
 La porta 8443 è pubblicata in HTTPS tramite Tailscale Funnel, ma non richiede
 Tailscale sul telefono. Stato e comandi sono protetti da login, cookie sicuro,
-CSRF e limitazione dei tentativi. Le credenziali sono nel file locale
-del precedente workspace di installazione (`outputs/OpenAstro-Control-access.txt`)
+CSRF e limitazione dei tentativi. Il limite login usa l'IP del client solo come
+ultimo valore `X-Forwarded-For` aggiunto dal proxy locale (connessioni da
+loopback); valori precedenti o arrivati da altri peer vengono ignorati
+(`control-panel/server.py`, `Handler.client_key`, 2026-09-24). Attivo solo dopo
+il deploy host in `/opt/openastro-control`; rollback: ripristinare la copia
+precedente di `server.py` e riavviare solo `openastro-control.service`.
+Le credenziali sono nel file locale del precedente workspace di installazione (`outputs/OpenAstro-Control-access.txt`)
 e non vengono conservate in chiaro sul server o nel repository.
 
 ## Percorsi sul server

@@ -944,8 +944,13 @@ class Handler(BaseHTTPRequestHandler):
         return payload
 
     def client_key(self) -> str:
-        forwarded = self.headers.get("X-Forwarded-For", "").split(",", 1)[0].strip()
-        return forwarded or self.client_address[0]
+        # Only the local reverse proxy (Tailscale Serve/Funnel) may name the client,
+        # and only its own rightmost entry: leftmost values are client-controlled.
+        peer = self.client_address[0] if self.client_address else "unknown"
+        if peer not in {"127.0.0.1", "::1"}:
+            return peer
+        forwarded = self.headers.get("X-Forwarded-For", "").rsplit(",", 1)[-1].strip()
+        return forwarded or peer
 
     def authenticated_session(self) -> dict | None:
         cookie = SimpleCookie()

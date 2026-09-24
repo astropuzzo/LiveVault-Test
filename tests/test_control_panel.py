@@ -32,6 +32,20 @@ def test_state_cache_shares_probes_but_isolates_session_fields(monkeypatch):
     assert len(calls) == 2
 
 
+@pytest.mark.parametrize(
+    ("peer", "forwarded", "expected"),
+    [
+        ("127.0.0.1", "203.0.113.9", "203.0.113.9"),
+        ("127.0.0.1", "198.51.100.1, 203.0.113.9", "203.0.113.9"),
+        ("::1", "", "::1"),
+        ("192.168.1.50", "198.51.100.1", "192.168.1.50"),
+    ],
+)
+def test_client_key_ignores_spoofable_forwarded_entries(peer, forwarded, expected):
+    request = SimpleNamespace(client_address=(peer, 1234), headers={"X-Forwarded-For": forwarded})
+    assert panel.Handler.client_key(request) == expected
+
+
 @pytest.mark.parametrize("body", [b"[]", b"null", b'"text"', b"{" , b"x" * 4097])
 def test_payload_rejects_non_objects_and_oversized_requests(body):
     request = SimpleNamespace(headers={"Content-Length": str(len(body))}, rfile=io.BytesIO(body))
