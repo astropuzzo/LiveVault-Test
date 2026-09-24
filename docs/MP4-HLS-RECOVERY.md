@@ -82,6 +82,11 @@ Directory privata host `/data/livevault/mp4-recovery-20260920`, nel container
 `/data/mp4-recovery-20260920`: cinque `ID.original.mp4`, `manifest.json` con
 SHA-256 verificati contro i sorgenti, copie `ID.verified.mp4` e
 `ID.capture-remux.mp4`, risultati `validation.json`. Non eliminare gli originali.
+Pulizia 2026-09-24: rimosse le copie `ID.verified.mp4`, `ID.capture-remux.mp4`
+e `403/404.corrected.mp4` (circa 495 MB) dopo aver verificato nel DB che le
+registrazioni 403, 404, 861–864 e 913 sono `uploaded` su Gofile con integrità
+`passed`; restano originali, manifest, log e `validation.json` (339 MB).
+Una nuova copia corretta si rigenera dall'originale con la procedura sopra.
 Le prove sono state eseguite con un modulo candidato in `/tmp` e copie separate,
 senza sostituire il codice del processo applicativo in esecuzione.
 
