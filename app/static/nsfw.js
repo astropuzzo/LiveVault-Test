@@ -8,7 +8,7 @@
     pending: 'Da analizzare', error: 'Errore analisi', skipped: 'Non analizzato', verifying: 'In verifica',
   };
   const CLASS_ICON = {
-    FEMALE_BREAST_EXPOSED: 'nsfw-breast', BUTTOCKS_EXPOSED: 'nsfw-butt', ANUS_EXPOSED: 'nsfw-butt',
+    FEMALE_BREAST_EXPOSED: 'nsfw-breast', BUTTOCKS_EXPOSED: 'nsfw-butt', ANUS_EXPOSED: 'nsfw-anus',
     FEMALE_GENITALIA_EXPOSED: 'nsfw-vulva', MALE_GENITALIA_EXPOSED: 'nsfw-phallus',
   };
   const MARK_TEXT = {nsfw: 'NSFW confermato', review: 'Da controllare', pending: 'In verifica'};
@@ -32,8 +32,8 @@
   };
   const wallClock = time => new Intl.DateTimeFormat('it-IT', {timeZone: DISPLAY_TIME_ZONE, hour: '2-digit', minute: '2-digit', second: '2-digit'}).format(new Date(time));
   const CLASS_TEXT = {
-    FEMALE_BREAST_EXPOSED: 'Seno scoperto', FEMALE_GENITALIA_EXPOSED: 'Genitali femminili',
-    MALE_GENITALIA_EXPOSED: 'Genitali maschili', ANUS_EXPOSED: 'Ano', BUTTOCKS_EXPOSED: 'Glutei scoperti',
+    FEMALE_BREAST_EXPOSED: 'Tette', FEMALE_GENITALIA_EXPOSED: 'Figa',
+    MALE_GENITALIA_EXPOSED: 'Cazzo', ANUS_EXPOSED: 'Buco del culo', BUTTOCKS_EXPOSED: 'Culo',
   };
   const STATE_TEXT = {
     running: 'Analisi in corso', idle: 'Coda vuota', disabled: 'Disattivata', models_missing: 'Modelli mancanti',

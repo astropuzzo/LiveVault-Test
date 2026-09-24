@@ -1,5 +1,10 @@
 # Changelog
 
+## 3.4.7 — Nomi diretti e icone dettagliate
+
+- Categorie chiamate come si chiamano: Figa, Cazzo, Buco del culo, Tette, Culo (Cronologia, schede, impostazioni).
+- Icone ridisegnate con anatomia e ombreggiature: labbra e clitoride, glande e vene, areole e capezzoli, solco e pieghe; l'ano ha ora un'icona propria.
+
 ## 3.4.6 — Categorie NSFW leggibili in Cronologia
 
 - Ogni pin ha il colore della parte più esplicita: genitali femminili magenta, maschili blu, ano viola, seno rosa, glutei arancio; icone più grandi (17 px) e legenda per categoria al posto della voce unica «NSFW».
