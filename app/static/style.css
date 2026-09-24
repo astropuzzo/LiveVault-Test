@@ -5434,6 +5434,104 @@ textarea:focus,
   align-items: center;
   gap: 6px;
 }
+.nsfw-timeline {
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px 4px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface-2);
+}
+.nsfw-timeline-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 6px 12px;
+  font-size: 13px;
+}
+.nsfw-timeline-head span {
+  color: var(--text-3);
+}
+.nsfw-timeline svg {
+  width: 100%;
+  height: 56px;
+  overflow: visible;
+}
+.nsfw-timeline text {
+  fill: var(--text-3);
+  font-size: 11px;
+}
+.nsfw-tl-track {
+  fill: var(--inset);
+  stroke: var(--line);
+}
+.nsfw-tl-bar {
+  cursor: pointer;
+  fill: var(--warning);
+  opacity: 0.9;
+}
+.nsfw-tl-bar.nsfw {
+  fill: var(--recording);
+}
+.nsfw-tl-bar:hover,
+.nsfw-tl-bar:focus-visible {
+  opacity: 1;
+  stroke: #fff;
+  stroke-width: 1.5;
+  outline: none;
+}
+.nsfw-lightbox {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+  align-items: center;
+  gap: 14px;
+  padding: 12px;
+  border: 1px solid var(--line-2);
+  border-radius: 16px;
+  background: var(--surface-2);
+}
+.nsfw-lightbox[hidden] {
+  display: none;
+}
+.nsfw-lightbox img {
+  width: 100%;
+  border-radius: 10px;
+}
+.nsfw-lightbox > div:not(.nsfw-lightbox-actions) {
+  display: grid;
+  gap: 6px;
+}
+.nsfw-lightbox strong {
+  font-size: 20px;
+}
+.nsfw-lightbox span {
+  color: var(--text-2);
+  font-size: 13px;
+}
+.nsfw-lightbox-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  grid-column: 1 / -1;
+}
+.nsfw-lightbox-actions .button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.nsfw-moment.flash {
+  box-shadow:
+    0 0 0 2px var(--accent),
+    0 0 24px color-mix(in srgb, var(--accent) 50%, transparent);
+}
+@media (max-width: 640px) {
+  .nsfw-lightbox {
+    grid-template-columns: 1fr;
+  }
+}
+.nsfw-lightbox .button.primary {
+  color: #fff;
+}
 
 /* =====================================================================
  * Responsive

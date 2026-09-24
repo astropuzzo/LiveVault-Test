@@ -44,7 +44,7 @@ class RuntimeSettings:
     gofile_region: str = "auto"
     # One public subfolder per video inside the day folder, so the recording
     # link opens that single file (Gofile has no per-file share page).
-    gofile_folder_per_file: bool = True
+    gofile_subfolder_per_video: bool = False
     pixeldrain_api_key: str = ""
     recording_paused: bool = False
     upload_paused: bool = False
@@ -196,7 +196,7 @@ def public_settings() -> dict:
         "fallback_uploader": s.fallback_uploader,
         "gofile_folder_id": s.gofile_folder_id,
         "gofile_region": s.gofile_region,
-        "gofile_folder_per_file": s.gofile_folder_per_file,
+        "gofile_subfolder_per_video": s.gofile_subfolder_per_video,
         "gofile_configured": bool(s.gofile_token),
         "gofile_token_hint": ("••••" + s.gofile_token[-4:]) if s.gofile_token else "",
         "pixeldrain_configured": bool(s.pixeldrain_api_key),

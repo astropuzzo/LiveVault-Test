@@ -1661,19 +1661,20 @@ class WorkerManager(NsfwWorkerMixin):
             display_name = profile.display_name if profile else source.name
             return source.profile_id, day_key, f"{display_name} - {day_key}"[:255], bool(source.organize_cloud)
 
-    async def _gofile_file_folder(self, rec: Recording, day_folder_id: str) -> tuple[str, str]:
+    async def _gofile_file_folder(self, rec: Recording, day_folder_id: str, name: str = "") -> tuple[str, str]:
         """Per-video subfolder of the day folder: its page shows only this file.
 
         Reused across retries of the same recording; on any Gofile error the
         upload falls back to the day folder (previous behaviour).
         """
-        if not runtime().gofile_folder_per_file or not day_folder_id:
+        if not runtime().gofile_subfolder_per_video or not day_folder_id:
             return "", ""
         cached = self._gofile_file_folders.get(rec.id)
         if cached and cached[0] == day_folder_id:
             return cached[1], cached[2]
         try:
-            folder_id, folder_url = await asyncio.to_thread(create_gofile_folder, Path(rec.filename).stem, day_folder_id)
+            # Same name as the uploaded file, not the internal capture name.
+            folder_id, folder_url = await asyncio.to_thread(create_gofile_folder, name or Path(rec.filename).stem, day_folder_id)
         except Exception as exc:
             self.last_errors[f"gofile-file-folder:{rec.id}"] = f"Sottocartella non creata, uso la cartella del giorno: {exc}"[-600:]
             return "", ""
@@ -1957,7 +1958,7 @@ class WorkerManager(NsfwWorkerMixin):
                         target_folder_id = ""
                         if provider == "gofile":
                             gofile_folder_id, gofile_folder_url, recording_day_key = await self._gofile_folder_for(rec)
-                            target_folder_id, file_folder_url = await self._gofile_file_folder(rec, gofile_folder_id)
+                            target_folder_id, file_folder_url = await self._gofile_file_folder(rec, gofile_folder_id, path.stem)
                         result = await asyncio.to_thread(
                             upload,
                             path,

@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.3.1 — Correzioni analisi NSFW e Gofile
+
+- Anteprime dei momenti salvate durante l'analisi (prima mancavano oltre i primi minuti: estrarle dal file richiedeva più di 60 s sul nodo) e disponibili anche dopo la cancellazione del file locale.
+- Miniature sempre cliccabili: con il file locale apre il video in quel punto, senza file locale ingrandisce il fotogramma e copia il tempo da usare nel player del cloud.
+- Timeline dei momenti sulla durata del video.
+- Gofile: sottocartella per video disattivata di default (creava cartelle col nome interno `…capture`); quando attiva usa il nome del file caricato.
+
 ## 3.3.0 — Analisi NSFW
 
 - Nuova analisi opzionale dei video: segna i momenti con nudità con il tempo esatto del file caricato su Gofile/Pixeldrain, con anteprima, "Guarda da qui", "Copia elenco" e link al cloud.

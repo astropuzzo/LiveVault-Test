@@ -131,7 +131,7 @@
       lastRunningId = runningId;
       renderPanel();
       updateBadgesInPlace();
-      if (dialogRecordingId) renderDialog();
+      if (dialogRecordingId && liveFor(dialogRecordingId)) renderDialog();
     } catch (_error) { /* optional feature */ }
     const watching = activeView === 'archive' || dialogRecordingId;
     timer = setTimeout(poll, info?.current && watching ? 2000 : watching ? 5000 : 30000);
@@ -141,11 +141,40 @@
   function momentCard(recording, moment) {
     const image = safeUrl(moment.image_url || '');
     const long = Number(recording.duration_seconds || 0) >= 3600;
-    return `<article class="nsfw-moment ${esc(moment.label)}">
-      <button type="button" class="nsfw-shot" data-nsfw-play="${recording.id}" data-at="${Number(moment.start)}" ${recording.local_available ? '' : 'disabled'} aria-label="Guarda da ${clock(moment.start, long)}">${image ? `<img src="${esc(image)}" alt="" loading="lazy">` : icon('play')}</button>
+    const action = recording.local_available ? `Guarda da ${clock(moment.start, long)}` : `Ingrandisci ${clock(moment.start, long)}`;
+    return `<article class="nsfw-moment ${esc(moment.label)}" data-moment-at="${Number(moment.start)}">
+      <button type="button" class="nsfw-shot" data-nsfw-play="${recording.id}" data-at="${Number(moment.start)}" aria-label="${action}" title="${action}">${image ? `<img src="${esc(image)}" alt="" loading="lazy">` : icon('play')}</button>
       <div><strong class="nsfw-time">${clock(moment.start, long)} – ${clock(moment.end, long)}</strong><span class="nsfw-label ${esc(moment.label)}">${esc(STATUS_TEXT[moment.label] || moment.label)}</span></div>
       <small>${esc(CLASS_TEXT[moment.class] || moment.class || '')} · ${Math.round(Number(moment.score) * 100)}%</small>
     </article>`;
+  }
+
+  // Moments laid out on the whole duration; works without the local file.
+  function timelineMarkup(recording, moments) {
+    const total = Math.max(Number(recording.duration_seconds) || 0, ...moments.map(m => Number(m.end) || 0), 1);
+    const long = total >= 3600;
+    const ticks = [0, .25, .5, .75, 1].map(r => `<text x="${(r * 1000).toFixed(1)}" y="46" text-anchor="${r === 0 ? 'start' : r === 1 ? 'end' : 'middle'}">${clock(total * r, long)}</text>`).join('');
+    const bars = moments.map(m => {
+      const x = Math.max(0, Number(m.start) / total * 1000);
+      const w = Math.max(4, (Number(m.end) - Number(m.start)) / total * 1000);
+      return `<rect class="nsfw-tl-bar ${esc(m.label)}" x="${x.toFixed(1)}" y="6" width="${Math.min(w, 1000 - x).toFixed(1)}" height="22" rx="4" data-nsfw-seek="${recording.id}" data-at="${Number(m.start)}" tabindex="0" role="button"><title>${clock(m.start, long)} – ${clock(m.end, long)} · ${esc(STATUS_TEXT[m.label] || m.label)}</title></rect>`;
+    }).join('');
+    const covered = moments.reduce((sum, m) => sum + Math.max(0, Number(m.end) - Number(m.start)), 0);
+    return `<div class="nsfw-timeline"><div class="nsfw-timeline-head"><strong>Timeline</strong><span>${moments.length} momenti · ${clock(covered, long)} su ${clock(total, long)} (${Math.round(covered / total * 100)}%)</span></div>
+      <svg viewBox="0 0 1000 52" preserveAspectRatio="none" role="img" aria-label="Momenti sulla durata del video"><rect class="nsfw-tl-track" x="0" y="6" width="1000" height="22" rx="6"></rect>${bars}${ticks}</svg></div>`;
+  }
+
+  function openShot(recording, seconds) {
+    const moment = (recording.nsfw_moments || []).find(m => Number(m.start) === Number(seconds));
+    const long = Number(recording.duration_seconds || 0) >= 3600;
+    const time = clock(seconds, long);
+    navigator.clipboard?.writeText(time).catch(() => {});
+    const remote = safeUrl(recording.remote_url);
+    const image = safeUrl(moment?.image_url || '');
+    const box = $('#nsfwDialog .nsfw-lightbox');
+    if (!box) return;
+    setMarkup(box, `${image ? `<img src="${esc(image)}" alt="">` : ''}<div><strong>${time}${moment ? ` – ${clock(moment.end, long)}` : ''}</strong><span>Tempo copiato: nel player del cloud vai a ${time}.</span></div><div class="nsfw-lightbox-actions">${remote ? `<a class="button primary compact" href="${esc(remote)}" target="_blank" rel="noopener">${icon('external', 'button-icon')}<span>Apri nel cloud</span></a>` : ''}<button type="button" class="button secondary compact" data-nsfw-lightbox-close>${icon('x', 'button-icon')}<span>Chiudi</span></button></div>`);
+    box.hidden = false;
   }
 
   function renderDialog() {
@@ -171,6 +200,8 @@
     const copy = moments.length ? `<button type="button" class="button secondary compact" data-nsfw-copy="${recording.id}">${icon('copy', 'button-icon')}<span>Copia elenco</span></button>` : '';
     setMarkup(dialog, `<div class="nsfw-dialog-head"><div><h2 id="nsfwDialogTitle">${esc(recording.source_name)}</h2><small>${esc(recording.filename)} · ${esc(dateText(recording.started_at))}</small></div><span class="nsfw-badge ${esc(status)}">${esc(text)}</span><button type="button" class="icon-button" data-nsfw-close aria-label="Chiudi">${icon('x')}</button></div>
       ${progress}
+      ${moments.length ? timelineMarkup(recording, moments) : ''}
+      <div class="nsfw-lightbox" hidden></div>
       ${moments.length ? `<div class="nsfw-moments">${moments.map(moment => momentCard(recording, moment)).join('')}</div>` : `<p class="nsfw-empty">${esc(empty)}</p>`}
       ${recording.nsfw_error && status !== 'error' ? `<p class="nsfw-note">${esc(recording.nsfw_error)}</p>` : ''}
       ${cloud}
@@ -189,7 +220,9 @@
 
   async function playAt(id, seconds) {
     const recording = findRecording(id);
-    if (!recording?.view_url) return toast('Copia locale non disponibile', 'bad');
+    if (!recording) return;
+    // Local copy already deleted after upload: show the frame and hand over the time for the cloud player.
+    if (!recording.view_url) return openShot(recording, seconds);
     $('#nsfwDialog')?.close();
     await playVideo(recording.view_url, `${recording.source_name} · ${clock(seconds)}`);
     const player = $('#videoPlayer');
@@ -241,6 +274,16 @@
     if (open && !action) { event.preventDefault(); openDialog(open.dataset.nsfwOpen); return; }
     if (action) { event.preventDefault(); runAction(action.dataset.nsfwAction, action.dataset.id, action); return; }
     if (play) { event.preventDefault(); playAt(play.dataset.nsfwPlay, play.dataset.at); return; }
+    const seekBar = event.target.closest('[data-nsfw-seek]');
+    if (seekBar) {
+      const card = document.querySelector(`#nsfwDialog [data-moment-at="${CSS.escape(seekBar.dataset.at)}"]`);
+      card?.scrollIntoView({behavior: 'smooth', block: 'center'});
+      card?.classList.add('flash');
+      setTimeout(() => card?.classList.remove('flash'), 1200);
+      playAt(seekBar.dataset.nsfwSeek, seekBar.dataset.at);
+      return;
+    }
+    if (event.target.closest('[data-nsfw-lightbox-close]')) { const box = $('#nsfwDialog .nsfw-lightbox'); if (box) box.hidden = true; return; }
     if (filter) {
       const search = $('#recordingSearch');
       search.value = search.value.trim() === filter.dataset.nsfwFilter ? '' : filter.dataset.nsfwFilter;

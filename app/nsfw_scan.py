@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import queue
 import re
 import subprocess
@@ -130,16 +131,46 @@ def _emit(payload: dict) -> None:
 
 
 def _probe(path: str) -> tuple[float, float]:
-    """(start_time, duration) from ffmpeg's input banner; no ffprobe needed."""
+    return _probe_full(path)[:2]
+
+
+def _probe_full(path: str) -> tuple[float, float, int, int]:
+    """(start_time, duration, width, height) from ffmpeg's input banner; no ffprobe needed."""
     err = subprocess.run(["ffmpeg", "-hide_banner", "-i", path], capture_output=True, text=True, timeout=60).stderr
     duration = start = 0.0
+    width = height = 0
+    match = re.search(r"Video:.*?(\d{2,5})x(\d{2,5})", err)
+    if match:
+        width, height = int(match.group(1)), int(match.group(2))
     match = re.search(r"Duration:\s*(\d+):(\d+):([\d.]+)", err)
     if match:
         duration = int(match.group(1)) * 3600 + int(match.group(2)) * 60 + float(match.group(3))
     match = re.search(r"start:\s*(-?[\d.]+)", err)
     if match:
         start = float(match.group(1))
-    return start, duration
+    return start, duration, width, height
+
+
+def content_box(width: int, height: int) -> tuple[int, int, int, int]:
+    """Where the picture sits inside the 640x640 letterboxed frame (w, h, x, y)."""
+    if width <= 0 or height <= 0:
+        return FRAME, FRAME, 0, 0
+    factor = FRAME / max(width, height)
+    w = min(FRAME, max(2, int(width * factor)))
+    h = min(FRAME, max(2, int(height * factor)))
+    return w, h, (FRAME - w) // 2, (FRAME - h) // 2
+
+
+def save_preview(frame, target: str, box: tuple[int, int, int, int]) -> bool:
+    """JPEG of the analysed frame (letterbox removed) via ffmpeg, no extra decode."""
+    w, h, x, y = box
+    try:
+        subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{FRAME}x{FRAME}",
+                        "-i", "pipe:0", "-vf", f"crop={w}:{h}:{x}:{y},scale=480:-2", "-frames:v", "1", "-q:v", "5", target],
+                       input=frame.tobytes(), timeout=30, check=True, capture_output=True)
+        return True
+    except Exception:
+        return False
 
 
 def _session(model: str, threads: int):
@@ -164,6 +195,8 @@ class Scanner:
     classes: tuple[str, ...] = DEFAULT_CLASSES
     reverify_seconds: float = 60.0
     max_verify: int = 400
+    images_dir: str = ""
+    image_prefix: str = "moment"
     verdicts: list[Verdict] = field(default_factory=list)
 
     def run(self, path: str, start_at: float = 0.0) -> dict:
@@ -171,7 +204,9 @@ class Scanner:
         hot = [LABELS.index(c) for c in self.classes if c in LABELS]
         fast, fast_input, fast_size = _session(self.fast_model, self.threads)
         big = _session(self.verify_model, self.threads) if self.verify_model else None
-        start, duration = _probe(path)
+        start, duration, width, height = _probe_full(path)
+        box = content_box(width, height)
+        last_labelled = -1e9
         seek = ["-ss", f"{start_at:.3f}"] if start_at > 0 else []
         select = (f"select='isnan(prev_selected_t)+gte(t-prev_selected_t\\,{self.step})',"
                   f"scale={FRAME}:{FRAME}:force_original_aspect_ratio=decrease,"
@@ -201,11 +236,21 @@ class Scanner:
         last_confirmed = -1.0  # time of the last large-model NSFW confirmation
         last_emit = 0.0
 
-        def record(verdict: Verdict) -> None:
+        def record(verdict: Verdict, frame=None) -> None:
+            nonlocal last_labelled
             by_time[verdict.t] = verdict
             if verdict.label:
-                _emit({"type": "moment", "t": round(verdict.t, 1), "label": verdict.label,
-                       "score": round(verdict.score, 3), "class": verdict.cls})
+                event = {"type": "moment", "t": round(verdict.t, 1), "label": verdict.label,
+                         "score": round(verdict.score, 3), "class": verdict.cls}
+                # One preview per moment, taken from the frame already in memory:
+                # works after the local file is deleted and costs no extra seek.
+                new_moment = verdict.t - last_labelled > self.step * 2.5
+                last_labelled = max(last_labelled, verdict.t)
+                if new_moment and frame is not None and self.images_dir:
+                    name = f"{self.image_prefix}-{int(verdict.t)}.jpg"
+                    if save_preview(frame, os.path.join(self.images_dir, name), box):
+                        event["image"] = name
+                _emit(event)
 
         def verify(t: float, frame, fast_result) -> None:
             nonlocal verified, last_confirmed
@@ -220,7 +265,7 @@ class Scanner:
             verdict = judge(t, fast_result, result, self.threshold)
             if result is not None:
                 last_confirmed = t if verdict.label == "nsfw" else -1.0
-            record(verdict)
+            record(verdict, frame)
 
         while True:
             raw = proc.stdout.read(frame_bytes)  # type: ignore[union-attr]
@@ -239,7 +284,7 @@ class Scanner:
                 # Long NSFW stretches: trust the small model inside a confirmed
                 # streak and re-check with the large one only every
                 # reverify_seconds, so a fully explicit video costs minutes, not hours.
-                record(Verdict(t, "nsfw", fast_result[0], fast_result[1], fast_result[0], None))
+                record(Verdict(t, "nsfw", fast_result[0], fast_result[1], fast_result[0], None), frame)
                 flagged, verify_next = True, False
                 history.append((t, frame, fast_result))
                 continue
@@ -286,11 +331,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--start", type=float, default=0.0)
     parser.add_argument("--reverify", type=float, default=60.0)
     parser.add_argument("--max-verify", type=int, default=400)
+    parser.add_argument("--images-dir", default="")
+    parser.add_argument("--image-prefix", default="moment")
     args = parser.parse_args(argv)
     classes = tuple(c.strip().upper() for c in args.classes.split(",") if c.strip().upper() in LABELS) or DEFAULT_CLASSES
     try:
         Scanner(args.fast_model, args.verify_model, args.step, args.candidate, args.threshold, args.threads,
-                classes, args.reverify, args.max_verify).run(args.path, args.start)
+                classes, args.reverify, args.max_verify, args.images_dir, args.image_prefix).run(args.path, args.start)
     except Exception as exc:  # reported to the worker as a JSON line
         _emit({"type": "error", "error": str(exc)[-600:]})
         return 1

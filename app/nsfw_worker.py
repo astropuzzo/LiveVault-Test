@@ -29,7 +29,6 @@ from .settings_store import runtime
 from .utils import utcnow
 
 OPEN_STATES = ("pending", "scanning", "paused")
-MAX_HIT_IMAGES = 12
 
 
 def file_signature(path: Path) -> str:
@@ -147,7 +146,8 @@ class NsfwWorkerMixin:
                    "--fast-model", cfg.nsfw_fast_model, "--verify-model", cfg.nsfw_verify_model,
                    "--step", str(cfg.nsfw_step_seconds), "--candidate", str(cfg.nsfw_candidate),
                    "--threshold", str(cfg.nsfw_threshold), "--threads", str(cfg.nsfw_threads),
-                   "--classes", cfg.nsfw_classes, "--start", f"{float(rec.nsfw_resume_at or 0):.1f}"]
+                   "--classes", cfg.nsfw_classes, "--start", f"{float(rec.nsfw_resume_at or 0):.1f}",
+                   "--images-dir", str(nsfw_dir()), "--image-prefix", str(rec.id)]
         prefix = ["nice", "-n", "19"] if shutil.which("nice") else []
         if shutil.which("ionice"):
             prefix += ["ionice", "-c3"]
@@ -179,6 +179,10 @@ class NsfwWorkerMixin:
             return
         hits = _load(rec.nsfw_hits)
         resume_at = float(rec.nsfw_resume_at or 0)
+        nsfw_dir().mkdir(parents=True, exist_ok=True)
+        if resume_at <= 0 and not hits:
+            for old in nsfw_dir().glob(f"{rec.id}-*.jpg"):
+                old.unlink(missing_ok=True)
         signature = file_signature(path)
         with db_session() as db:
             current = db.get(Recording, rec.id)
@@ -217,7 +221,7 @@ class NsfwWorkerMixin:
                             last_saved = time.monotonic()
                             self._nsfw_checkpoint(rec.id, hits)
                     elif kind == "moment":
-                        hits.append({k: event[k] for k in ("t", "label", "score", "class")})
+                        hits.append({k: event[k] for k in ("t", "label", "score", "class", "image") if k in event})
                         if self.nsfw_current:
                             self.nsfw_current["found"] = len(hits)
                     elif kind in ("done", "error"):
@@ -249,8 +253,8 @@ class NsfwWorkerMixin:
         cfg = runtime()
         verdicts = [Verdict(float(h["t"]), h["label"], float(h["score"]), h.get("class", "")) for h in hits]
         moments = merge_moments(verdicts, float(cfg.nsfw_step_seconds))
-        images = await asyncio.to_thread(_extract_hit_images, rec.id, path, [m.start for m in moments[:MAX_HIT_IMAGES]])
-        payload = [dict(m.as_dict(), image=images.get(i, "")) for i, m in enumerate(moments)]
+        images = moment_images(moments, hits)
+        payload = [dict(m.as_dict(), image=images[i]) for i, m in enumerate(moments)]
         with db_session() as db:
             current = db.get(Recording, rec.id)
             if current:
@@ -327,20 +331,11 @@ def _load(raw: str) -> list[dict]:
     return []
 
 
-def _extract_hit_images(recording_id: int, path: Path, times: list[float]) -> dict[int, str]:
-    """Small preview per moment so the UI can show what was flagged."""
-    import subprocess
-    folder = nsfw_dir()
-    folder.mkdir(parents=True, exist_ok=True)
-    for old in folder.glob(f"{recording_id}-*.jpg"):
-        old.unlink(missing_ok=True)
-    images: dict[int, str] = {}
-    for index, moment in enumerate(times):
-        target = folder / f"{recording_id}-{int(moment)}.jpg"
-        command = ["ffmpeg", "-v", "error", "-y", "-ss", f"{moment:.2f}", "-i", str(path),
-                   "-frames:v", "1", "-vf", "scale=360:-2", "-q:v", "5", str(target)]
-        with contextlib.suppress(Exception):
-            subprocess.run(command, timeout=60, check=True, env={**os.environ, "LC_ALL": "C"})
-            if target.is_file() and target.stat().st_size:
-                images[index] = target.name
+def moment_images(moments, hits: list[dict]) -> list[str]:
+    """Preview per merged moment: the first hit inside it that saved a frame."""
+    images = []
+    for moment in moments:
+        inside = sorted((h for h in hits if h.get("image") and moment.start - 0.01 <= float(h["t"]) <= moment.end),
+                        key=lambda h: float(h["t"]))
+        images.append(inside[0]["image"] if inside else "")
     return images

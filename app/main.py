@@ -61,7 +61,7 @@ BASE = Path(__file__).parent
 LOGIN_FAILURES: dict[str, deque[float]] = defaultdict(deque)
 LOGIN_WINDOW = 10 * 60
 LOGIN_MAX_FAILURES = 6
-VERSION = "3.3.0"
+VERSION = "3.3.1"
 
 
 class LoginBody(BaseModel):
@@ -183,7 +183,7 @@ class SettingsPatch(BaseModel):
     clear_gofile_token: bool = False
     gofile_folder_id: str | None = Field(default=None, max_length=200)
     gofile_region: str | None = None
-    gofile_folder_per_file: bool | None = None
+    gofile_subfolder_per_video: bool | None = None
     pixeldrain_api_key: str | None = Field(default=None, max_length=500)
     clear_pixeldrain_api_key: bool = False
     nsfw_enabled: bool | None = None

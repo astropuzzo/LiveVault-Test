@@ -1226,7 +1226,7 @@ async function loadSettings() {
   $('#setAttempts').value = settings.max_upload_attempts;
   $('#setGofileFolder').value = settings.gofile_folder_id || '';
   $('#setGofileRegion').value = settings.gofile_region || 'auto';
-  $('#setGofilePerFile').checked = settings.gofile_folder_per_file !== false;
+  $('#setGofilePerFile').checked = !!settings.gofile_subfolder_per_video;
   $('#setGofileToken').value = '';
   $('#setPixeldrainKey').value = '';
   $('#clearGofile').checked = false;
@@ -2152,7 +2152,7 @@ $('#settingsForm').addEventListener('submit', async event => {
     delete_after_upload: $('#setDeleteAfter').checked, primary_uploader: $('#setPrimary').value,
     fallback_uploader: $('#setFallback').value, upload_retry_seconds: Number($('#setRetry').value),
     max_upload_attempts: Number($('#setAttempts').value), gofile_folder_id: $('#setGofileFolder').value.trim(),
-    gofile_region: $('#setGofileRegion').value, gofile_folder_per_file: $('#setGofilePerFile').checked, clear_gofile_token: $('#clearGofile').checked,
+    gofile_region: $('#setGofileRegion').value, gofile_subfolder_per_video: $('#setGofilePerFile').checked, clear_gofile_token: $('#clearGofile').checked,
     clear_pixeldrain_api_key: $('#clearPixeldrain').checked,
     nsfw_enabled: $('#setNsfwEnabled').checked, nsfw_step_seconds: Number($('#setNsfwStep').value),
     nsfw_threads: Number($('#setNsfwThreads').value), nsfw_threshold: Number($('#setNsfwThreshold').value),

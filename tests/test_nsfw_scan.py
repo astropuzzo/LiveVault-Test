@@ -73,12 +73,16 @@ def test_scanner_uses_real_timestamps_across_capture_gaps(tmp_path: Path):
     _fake_model(tmp_path / "big.onnx", 640)
     out = io.StringIO()
     with redirect_stdout(out):
-        result = Scanner(str(tmp_path / "fast.onnx"), str(tmp_path / "big.onnx"), step=5, threshold=0.5).run(str(gap))
+        result = Scanner(str(tmp_path / "fast.onnx"), str(tmp_path / "big.onnx"), step=5, threshold=0.5,
+                         images_dir=str(tmp_path), image_prefix="42").run(str(gap))
     events = [json.loads(line) for line in out.getvalue().splitlines()]
     assert result["status"] == "nsfw"
     assert result["frames"] == 12  # 0–40 s and 140–160 s; the gap is not sampled
     assert [(m["start"], m["label"]) for m in result["moments"]] == [(20.0, "nsfw")]
     assert any(e["type"] == "progress" for e in events) and events[-1]["type"] == "done"
+    # Preview saved from the analysed frame, one per moment, no re-seek of the file.
+    shots = [e["image"] for e in events if e["type"] == "moment" and e.get("image")]
+    assert shots == ["42-20.jpg"] and (tmp_path / "42-20.jpg").stat().st_size > 0
     with redirect_stdout(io.StringIO()):
         resumed = Scanner(str(tmp_path / "fast.onnx"), "", step=5, threshold=0.5).run(str(gap), start_at=100)
     assert resumed["frames"] == 4 and resumed["status"] == "safe"

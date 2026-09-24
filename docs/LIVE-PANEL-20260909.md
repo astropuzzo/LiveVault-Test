@@ -128,7 +128,10 @@ New image dependencies: `onnxruntime`, `numpy` (tests also use `onnx`).
   hits stay "da controllare"). Only the large model can mark NSFW.
 - Timestamps refer to the same file that is uploaded (`recordings.local_path`
   → Gofile/Pixeldrain); `nsfw_file_sig` (size-mtime) makes a converted or
-  repaired file rescan automatically. Preview JPEGs in `/data/nsfw/`.
+  repaired file rescan automatically. Preview JPEGs in `/data/nsfw/` are written
+  by the scanner from the frame already in memory (3.3.1; the 3.3.0 re-seek
+  exceeded 60 s on fragmented captures past ~40 min), so they survive the
+  local file deletion.
 - Runs at `nice 19` + `ionice -c3`, `nsfw_threads` cores (default 1); with
   `nsfw_only_when_idle` it pauses while any recorder is active. Storage
   quiesce (NVMe eject) kills the child at once and saves the position; the
@@ -145,7 +148,7 @@ core, nice 19): small model 214–278 ms/frame, large model ~4.9 s/frame, peak
 RSS 363 MB with both; 1 h 46 min capture scanned in 4 min. The leggings false
 positive of the small model alone was rejected by the large one. Not yet run
 inside the container or on a video with confirmed nudity. Asset versions
-`?v=3.3.0-nsfw1`, SW cache `livevault-shell-v3.3.0-nsfw1`.
+`?v=3.3.1-nsfw2`, SW cache `livevault-shell-v3.3.1-nsfw2`.
 Rollback: set `nsfw_enabled=false` (instant, no restart) or revert the 3.3.0
 commits and redeploy; the extra columns are ignored by older code, the
 `/data/nsfw` previews and `/data/models` files can be deleted by hand.
@@ -154,8 +157,10 @@ commits and redeploy; the extra columns are ignored by older code, the
 
 Gofile has no share page for a single file: the upload response's
 `downloadPage` is the containing folder, so every recording link opened the
-creator/day folder. From 3.3.0 (`gofile_folder_per_file=true`, default) the
-uploader creates a public subfolder named after the file inside the day
+creator/day folder. From 3.3.0, when `gofile_subfolder_per_video` is enabled (off by default since
+3.3.1: the first deploy created subfolders named after the internal capture
+file, `…partNNN.capture`, next to the loose files of the same day), the
+uploader creates a public subfolder named after the uploaded file inside the day
 folder (`WorkerManager._gofile_file_folder`, `app/workers.py`) and uploads
 into it: `recordings.remote_url` is that subfolder (only this video),
 `remote_parent_url` stays the day folder, `remote_folder_id` stores the
@@ -164,6 +169,7 @@ the file goes to the day folder as before (error under
 `last_errors["gofile-file-folder:<id>"]`). "Crea cartella Gofile" moves the
 subfolders, not the files. Files uploaded before this change keep the day
 folder link (not migrated). Pixeldrain already links each file.
+Subfolders already created stay on Gofile; move or delete them by hand.
 Rollback: untick the option in Settings → Gofile (no restart).
 
 

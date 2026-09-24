@@ -160,16 +160,16 @@ def test_gofile_gets_one_subfolder_per_video_with_fallback(monkeypatch):
             raise RuntimeError("Gofile 500")
         return f"sub-{name}", f"https://gofile.io/d/{name}"
 
-    cfg = RuntimeSettings(gofile_folder_per_file=True)
+    cfg = RuntimeSettings(gofile_subfolder_per_video=True)
     monkeypatch.setattr(workers, "runtime", lambda: cfg)
     monkeypatch.setattr(workers, "create_gofile_folder", fake_create)
     manager = WorkerManager()
     rec = SimpleNamespace(id=7, filename="aurora_20260924_2100.mp4")
-    first = asyncio.run(manager._gofile_file_folder(rec, "day-1"))
-    again = asyncio.run(manager._gofile_file_folder(rec, "day-1"))  # retry reuses it
-    assert first == again == ("sub-aurora_20260924_2100", "https://gofile.io/d/aurora_20260924_2100")
-    assert calls == [("aurora_20260924_2100", "day-1")]
+    first = asyncio.run(manager._gofile_file_folder(rec, "day-1", "011_Aurora_2026-09-24_21-00-00"))
+    again = asyncio.run(manager._gofile_file_folder(rec, "day-1", "011_Aurora_2026-09-24_21-00-00"))  # retry reuses it
+    assert first == again == ("sub-011_Aurora_2026-09-24_21-00-00", "https://gofile.io/d/011_Aurora_2026-09-24_21-00-00")
+    assert calls == [("011_Aurora_2026-09-24_21-00-00", "day-1")]  # uploaded name, not the capture name
     # Gofile error → empty ids: the upload goes to the day folder as before.
     assert asyncio.run(manager._gofile_file_folder(SimpleNamespace(id=8, filename="broken.mp4"), "day-1")) == ("", "")
-    cfg.gofile_folder_per_file = False
+    cfg.gofile_subfolder_per_video = False
     assert asyncio.run(manager._gofile_file_folder(SimpleNamespace(id=9, filename="x.mp4"), "day-1")) == ("", "")
