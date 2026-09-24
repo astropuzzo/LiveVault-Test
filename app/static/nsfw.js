@@ -18,6 +18,13 @@
   const classText = cls => classParts(cls).map(c => CLASS_TEXT[c] || c).join(' + ');
   const classIcon = cls => CLASS_ICON[classParts(cls)[0]] || 'warning';
   // Pin content: the most explicit icon, the next one stacked as a small badge.
+  // Pin colour = most explicit body part, so categories read at a glance.
+  const CLASS_CAT = {
+    FEMALE_GENITALIA_EXPOSED: 'vulva', MALE_GENITALIA_EXPOSED: 'phallus', ANUS_EXPOSED: 'anus',
+    FEMALE_BREAST_EXPOSED: 'breast', BUTTOCKS_EXPOSED: 'butt',
+  };
+  const catClass = cls => `cat-${CLASS_CAT[classParts(cls)[0]] || 'other'}`;
+  const classChips = cls => classParts(cls).map(c => `<span class="nsfw-cat-chip cat-${CLASS_CAT[c] || 'other'}">${icon(CLASS_ICON[c] || 'warning', 'mini-icon')}${esc(CLASS_TEXT[c] || c)}</span>`).join('');
   const pinIcons = cls => {
     const parts = classParts(cls);
     const extra = parts.slice(1).find(c => CLASS_ICON[c] && CLASS_ICON[c] !== CLASS_ICON[parts[0]]);
@@ -178,7 +185,7 @@
     return `<article class="nsfw-moment ${esc(moment.label)}" data-moment-at="${Number(moment.start)}">
       <button type="button" class="nsfw-shot" data-nsfw-play="${recording.id}" data-at="${Number(moment.start)}" aria-label="${action}" title="${action}">${image ? `<img src="${esc(image)}" alt="" loading="lazy">` : icon('play')}</button>
       <div><strong class="nsfw-time">${clock(moment.start, long)} – ${clock(moment.end, long)}</strong><span class="nsfw-label ${esc(moment.label)}">${esc(STATUS_TEXT[moment.label] || moment.label)}</span></div>
-      <small>${esc(classText(moment.class))} · ${Math.round(Number(moment.score) * 100)}%</small>
+      <span class="nsfw-cat-chips">${classChips(moment.class)}</span><small>${Math.round(Number(moment.score) * 100)}%</small>
     </article>`;
   }
 
@@ -199,7 +206,7 @@
       bands.push(`<button type="button" class="nsfw-tl-band ${esc(m.label)}" data-dynamic-left="${left.toFixed(3)}" data-dynamic-width="${width.toFixed(3)}" ${attrs}></button>`);
       if (left - lastIcon < 3.2) continue;  // keep icons readable on dense timelines
       lastIcon = left;
-      pins.push(`<button type="button" class="nsfw-tl-pin ${esc(m.label)}" data-dynamic-left="${Math.min(98.6, Math.max(1.4, left)).toFixed(3)}" ${attrs}>${pinIcons(m.class)}</button>`);
+      pins.push(`<button type="button" class="nsfw-tl-pin ${esc(m.label)} ${catClass(m.class)}" data-dynamic-left="${Math.min(98.6, Math.max(1.4, left)).toFixed(3)}" ${attrs}>${pinIcons(m.class)}</button>`);
     }
     const covered = moments.reduce((sum, m) => sum + Math.max(0, Number(m.end) - Number(m.start)), 0);
     const live = recording.nsfw_source === 'live' ? ` · visto dal vivo${recording.nsfw_live_coverage ? ` (${Math.round(recording.nsfw_live_coverage * 100)}%)` : ''}` : '';
@@ -252,7 +259,7 @@
         attr = `data-nsfw-pulse-group="${esc(groupKey)}"`;
       }
       const left = Math.min(98.6, Math.max(1.4, group.left));
-      return `<button type="button" class="nsfw-pulse-mark ${esc(top.label)}" data-dynamic-left="${left.toFixed(3)}" ${attr} title="${esc(title)}" aria-label="${esc(title)}">${pinIcons(cls)}${items.length > 1 ? `<b class="nsfw-pin-count">${items.length}</b>` : ''}</button>`;
+      return `<button type="button" class="nsfw-pulse-mark ${esc(top.label)} ${catClass(cls)}" data-dynamic-left="${left.toFixed(3)}" ${attr} title="${esc(title)}" aria-label="${esc(title)}">${pinIcons(cls)}${items.length > 1 ? `<b class="nsfw-pin-count">${items.length}</b>` : ''}</button>`;
     });
     return `<div class="nsfw-pulse-layer">${bands.join('')}${pins.join('')}</div>`;
   };
@@ -265,7 +272,7 @@
     const rows = items.map(m => {
       const image = safeUrl(m.image_url || '');
       const start = timestamp(m.started_at);
-      return `<button type="button" class="nsfw-group-row ${esc(m.label)}" data-nsfw-pulse="${esc(m.key)}">${image ? `<img src="${esc(image)}" alt="" loading="lazy">` : `<span class="nsfw-group-icon">${icon(classIcon(m.class))}</span>`}<span><strong>${wallClock(start)}${m.ended_at ? ` – ${wallClock(timestamp(m.ended_at))}` : ''}</strong><small>${esc(classText(m.class))} · ${esc(MARK_TEXT[m.label] || m.label)}${m.count > 1 ? ` · ${m.count} fotogrammi` : ''}</small></span>${icon('chevron-right', 'mini-icon')}</button>`;
+      return `<button type="button" class="nsfw-group-row ${esc(m.label)}" data-nsfw-pulse="${esc(m.key)}">${image ? `<img src="${esc(image)}" alt="" loading="lazy">` : `<span class="nsfw-group-icon">${icon(classIcon(m.class))}</span>`}<span><strong>${wallClock(start)}${m.ended_at ? ` – ${wallClock(timestamp(m.ended_at))}` : ''}</strong><span class="nsfw-cat-chips">${classChips(m.class)}</span><small>${esc(MARK_TEXT[m.label] || m.label)}${m.count > 1 ? ` · ${m.count} fotogrammi` : ''}</small></span>${icon('chevron-right', 'mini-icon')}</button>`;
     }).join('');
     setMarkup(dialog, `<div class="nsfw-dialog-head"><div><h2 id="nsfwDialogTitle">${esc(items[0].name || '')}</h2><small>${items.length} momenti ravvicinati</small></div><button type="button" class="icon-button" data-nsfw-close aria-label="Chiudi">${icon('x')}</button></div><div class="nsfw-group-list">${rows}</div>`);
     if (!dialog.open) dialog.showModal();
@@ -302,7 +309,7 @@
     const start = timestamp(mark.started_at);
     const shot = image ? `<img src="${esc(image)}" alt="">` : `<div class="nsfw-noshot">${icon(classIcon(mark.class))}<span>Anteprima non disponibile</span></div>`;
     setMarkup(dialog, `<div class="nsfw-dialog-head"><div><h2 id="nsfwDialogTitle">${esc(mark.name || '')}</h2><small>Live in corso · il momento sarà collegato al file quando la registrazione si chiude</small></div><span class="nsfw-badge ${esc(mark.label === 'pending' ? 'verifying' : mark.label)}">${esc(MARK_TEXT[mark.label] || mark.label)}</span><button type="button" class="icon-button" data-nsfw-close aria-label="Chiudi">${icon('x')}</button></div>
-      <div class="nsfw-lightbox">${shot}<div><strong>${wallClock(start)}${mark.ended_at ? ` – ${wallClock(timestamp(mark.ended_at))}` : ''}</strong><span>${esc(classText(mark.class))}${mark.count > 1 ? ` · ${mark.count} fotogrammi` : ''}</span></div></div>`);
+      <div class="nsfw-lightbox">${shot}<div><strong>${wallClock(start)}${mark.ended_at ? ` – ${wallClock(timestamp(mark.ended_at))}` : ''}</strong><span class="nsfw-cat-chips">${classChips(mark.class)}</span><span>${mark.count > 1 ? `${mark.count} fotogrammi` : ''}</span></div></div>`);
     if (!dialog.open) dialog.showModal();
   }
 
@@ -465,7 +472,7 @@
     // After the pulse legend is rebuilt (pulse-tuning, next frame), add the NSFW key.
     if (pulse?.querySelector('.nsfw-pulse-mark')) requestAnimationFrame(() => requestAnimationFrame(() => {
       const legend = document.querySelector('.cr-pulse-legend');
-      if (legend && !legend.querySelector('.nsfw-legend')) legend.insertAdjacentHTML('beforeend', `<span class="cr-pulse-legend-item nsfw-legend">${icon('nsfw-breast', 'mini-icon')}NSFW</span>`);
+      if (legend && !legend.querySelector('.nsfw-legend')) legend.insertAdjacentHTML('beforeend', `<span class="cr-pulse-legend-item nsfw-legend">${['FEMALE_GENITALIA_EXPOSED', 'MALE_GENITALIA_EXPOSED', 'ANUS_EXPOSED', 'FEMALE_BREAST_EXPOSED', 'BUTTOCKS_EXPOSED'].map(c => `<span class="nsfw-legend-cat cat-${CLASS_CAT[c]}">${icon(CLASS_ICON[c], 'mini-icon')}${esc(CLASS_TEXT[c])}</span>`).join('')}</span>`);
     }));
     return result;
   };

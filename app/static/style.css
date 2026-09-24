@@ -6787,3 +6787,63 @@ textarea:focus,
     animation: none !important;
   }
 }
+
+/* NSFW categories: one colour per body part (most explicit wins the pin) */
+.cat-vulva { --cat: #e23fb3; }
+.cat-phallus { --cat: #3b82f6; }
+.cat-anus { --cat: #8b5cf6; }
+.cat-breast { --cat: #fb7185; }
+.cat-butt { --cat: #f59e0b; }
+.cat-other { --cat: var(--warning); }
+.nsfw-tl-pin[class*="cat-"],
+.nsfw-pulse-mark[class*="cat-"] {
+  --tone: var(--cat);
+  background: var(--cat);
+}
+.nsfw-pulse-mark.review,
+.nsfw-tl-pin.review {
+  border-color: var(--warning);
+  opacity: 0.85;
+}
+.nsfw-pulse-mark {
+  width: 24px;
+  height: 24px;
+}
+.nsfw-tl-pin .mini-icon,
+.nsfw-pulse-mark .mini-icon {
+  width: 17px;
+  height: 17px;
+}
+.nsfw-pin-extra {
+  background: #0f0e1b;
+}
+.nsfw-cat-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.nsfw-cat-chip,
+.nsfw-legend-cat {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 7px 1px 3px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--cat) 22%, transparent);
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 600;
+}
+.nsfw-cat-chip .mini-icon,
+.nsfw-legend-cat .mini-icon {
+  width: 16px;
+  height: 16px;
+  padding: 2px;
+  border-radius: 50%;
+  background: var(--cat);
+  color: #fff;
+}
+.cr-pulse-legend-item.nsfw-legend {
+  flex-wrap: wrap;
+  gap: 6px;
+}

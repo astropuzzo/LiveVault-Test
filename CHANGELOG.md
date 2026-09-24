@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.4.6 — Categorie NSFW leggibili in Cronologia
+
+- Ogni pin ha il colore della parte più esplicita: genitali femminili magenta, maschili blu, ano viola, seno rosa, glutei arancio; icone più grandi (17 px) e legenda per categoria al posto della voce unica «NSFW».
+- Al click (singolo o gruppo) ogni momento elenca tutte le parti viste come chip colorati; anche le schede del file le mostrano.
+- «Da controllare» resta distinguibile dal bordo ambra.
+
 ## 3.4.5 — Più parti nello stesso momento, icone realistiche
 
 - Se nello stesso fotogramma si vedono più parti (es. seno e genitali) vengono registrate tutte: l'icona mostra la più esplicita (genitali > ano > seno > glutei), la seconda compare come piccolo simbolo sovrapposto, tooltip e schede le elencano tutte.
