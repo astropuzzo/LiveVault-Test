@@ -1,3 +1,5 @@
+# Changelog
+
 ## 3.0.0 — Workspace e OpenAstro Control
 
 - Nuova interfaccia coerente, navigazione desktop/mobile, ricerca rapida e filtri sorgenti.
@@ -5,8 +7,6 @@
 - Un solo foglio stile, risposte testuali compresse e aggiornamenti archivio meno frequenti.
 - Pannello versionato: telemetria condivisa, dati mancanti preservati, conteggio recorder corretto.
 - Annullamento affidabile delle azioni, supporto tastiera e operazioni server serializzate.
-
-# Changelog
 
 ## 2.8.24 — Coda elaborazione ordinata
 

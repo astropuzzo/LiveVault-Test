@@ -189,12 +189,15 @@ FFprobe + packet scan
 La repository usa una CI focalizzata sulla build reale del server:
 
 ```bash
-python -m compileall -q app tests
+python -m compileall -q app control-panel nina-monitor tests
 PYTHONPATH=. pytest -q
-node --check app/static/app.js
+for f in app/static/*.js control-panel/static/*.js nina-monitor/static/*.js; do node --check "$f"; done
+node --test tests/test_panel_frontend.cjs tests/test_nina_stellar_ui.cjs
 bash -n scripts/*.sh
 ```
 
-Il job **Core tests** installa FFmpeg e le dipendenze di sviluppo e verifica
-entrambi i siti. Il deploy del commit verificato avviene sul nodo OpenAstro tramite
+Il job **Core tests** installa FFmpeg e le dipendenze di sviluppo, verifica
+LiveVault, Control Center e NINA Monitor, costruisce e prova il container NINA
+isolato e infine richiede l'aggiornamento della documentazione operativa
+(`scripts/check-ops-docs.py`). Il deploy del commit verificato avviene sul nodo OpenAstro tramite
 Coolify; il vecchio webhook CapRover è stato rimosso. Vedi [HOSTING.md](HOSTING.md).

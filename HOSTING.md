@@ -7,7 +7,7 @@ The active server is the OpenAstro home node (`astro@192.168.1.27`).
 - Coolify, on the LAN: http://192.168.1.27:8000/
 - Coolify, inside Tailscale: http://100.85.86.96:8000/
 - Coolify HTTPS: https://openastro.tailf2871c.ts.net:10000/
-- NINA Monitor: https://openastro.tailf2871c.ts.net:9091/
+- NINA Monitor: https://openastro.tailf2871c.ts.net:8443/nina/ (remote, via the Control Funnel; no dedicated Funnel port) · LAN http://192.168.1.27:9091/
 
 Application URLs, including Coolify, use HTTPS through Tailscale Funnel and application authentication (verified 2026-09-08). The retired TierHive/CapRover instance is not a deployment target. Read [AGENTS.md](AGENTS.md) and [AI-HANDOFF.md](AI-HANDOFF.md) before administration.
 
