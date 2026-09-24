@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import re
+from struct import error as struct_error
 import time
 from collections import defaultdict, deque
 from contextlib import asynccontextmanager
@@ -35,6 +36,7 @@ from .db import (
 )
 from .file_cleanup import cleanup_empty_parents, cleanup_orphan_videos, safe_unlink
 from .media_validation import build_validation_receipt
+from .mp4_index import NotFragmented, cached_index, hls_playlist
 from .http_compression import TextCompressionMiddleware
 from .storage_response import StorageFileResponse
 from .recorder import (
@@ -534,7 +536,7 @@ async def security_headers(request: Request, call_next):
     response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
     response.headers["Content-Security-Policy"] = (
         "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; "
-        "media-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
+        "media-src 'self' blob:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
     )
     if request.url.path.startswith("/api/sources/") and request.url.path.endswith("/preview"):
         response.headers["Cache-Control"] = "private, max-age=12"
@@ -2215,6 +2217,49 @@ def view_active_capture(source_id: int, request: Request):
     path = _local_media_path(path)
     media_type = _video_media_type(path)
     return StorageFileResponse(path, media_type=media_type, headers={"Cache-Control": "private, no-store"})
+
+
+def _stream_playlist(path: Path, media_uri: str, live: bool = False) -> Response:
+    """HLS byte-range playlist for fragmented MP4, so players get the full timeline."""
+    try:
+        index = cached_index(path)
+    except (NotFragmented, OSError, ValueError, struct_error) as exc:
+        raise HTTPException(409, f"Riproduzione diretta: {exc}") from None
+    if not index.segments:
+        raise HTTPException(409, "Nessun frammento completo")
+    body = hls_playlist(index, media_uri, live=live or not index.complete)
+    return Response(body, media_type="application/vnd.apple.mpegurl", headers={"Cache-Control": "private, no-store"})
+
+
+@app.get("/api/recordings/{recording_id}/stream.m3u8")
+def stream_recording(recording_id: int, request: Request):
+    require_auth(request)
+    with db_session() as db:
+        rec = db.get(Recording, recording_id)
+        if not rec:
+            raise HTTPException(404, "Registrazione non trovata")
+        path = _local_media_path(rec.local_path)
+    return _stream_playlist(path, f"/api/recordings/{recording_id}/view")
+
+
+@app.get("/api/fragments/{fragment_id}/stream.m3u8")
+def stream_fragment(fragment_id: int, request: Request):
+    require_auth(request)
+    with db_session() as db:
+        fragment = db.get(RecordingFragment, fragment_id)
+        if not fragment:
+            raise HTTPException(404, "Parte locale non trovata")
+        path = _local_media_path(fragment.local_path)
+    return _stream_playlist(path, f"/api/fragments/{fragment_id}/view")
+
+
+@app.get("/api/sources/{source_id}/capture.m3u8")
+def stream_active_capture(source_id: int, request: Request):
+    require_auth(request)
+    path = manager.playable_active_capture_path(source_id)
+    if path is None:
+        raise HTTPException(404, "Registrazione attiva non ancora disponibile")
+    return _stream_playlist(_local_media_path(path), f"/api/sources/{source_id}/capture", live=True)
 
 
 @app.get("/api/recordings/{recording_id}/download")

@@ -476,20 +476,80 @@ function closeModal(id) {
   if (!modal) return;
   modal.classList.add('hidden');
   if (!$$('.modal:not(.hidden)').length) document.body.classList.remove('modal-open');
-  if (id === 'videoModal') {
-    $('#videoPlayer').pause();
-    $('#videoPlayer').removeAttribute('src');
-    $('#videoPlayer').load();
-  }
+  if (id === 'videoModal') stopVideo();
   if (id === 'profileModal') profileData = null;
 }
 
-function openLocalVideo(url, title = 'Copia locale') {
+// Fragmented captures have no duration in their header: the server exposes an
+// HLS byte-range playlist so the whole timeline is seekable immediately.
+let activeHls = null;
+let hlsLibrary = null;
+
+function streamPlaylistUrl(url) {
+  let path = '';
+  try { path = new URL(String(url || ''), location.origin).pathname; } catch (_error) { return ''; }
+  if (/^\/api\/(recordings|fragments)\/\d+\/view$/.test(path)) return path.replace(/\/view$/, '/stream.m3u8');
+  if (/^\/api\/sources\/\d+\/capture$/.test(path)) return `${path}.m3u8`;
+  return '';
+}
+
+function loadHlsLibrary() {
+  if (window.Hls) return Promise.resolve(window.Hls);
+  if (!hlsLibrary) hlsLibrary = new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = '/static/vendor/hls.min.js?v=1.7.2';
+    script.onload = () => resolve(window.Hls);
+    script.onerror = () => { hlsLibrary = null; reject(new Error('hls.js non disponibile')); };
+    document.head.append(script);
+  });
+  return hlsLibrary;
+}
+
+function stopVideo() {
+  const player = $('#videoPlayer');
+  if (activeHls) { activeHls.destroy(); activeHls = null; }
+  player.pause();
+  player.removeAttribute('src');
+  player.load();
+}
+
+async function playVideo(url, title) {
   const localUrl = safeUrl(url);
   if (!localUrl) return toast('Copia locale non disponibile', 'bad');
+  const player = $('#videoPlayer');
+  stopVideo();
   $('#videoTitle').textContent = title;
-  $('#videoPlayer').src = localUrl;
   openModal('videoModal');
+  const playlist = streamPlaylistUrl(localUrl);
+  if (playlist) {
+    try {
+      const response = await fetch(playlist, {credentials: 'same-origin', cache: 'no-store'});
+      if (response.ok) {
+        if (player.canPlayType('application/vnd.apple.mpegurl')) {
+          player.src = playlist;
+          return;
+        }
+        const Hls = await loadHlsLibrary();
+        if (Hls?.isSupported()) {
+          activeHls = new Hls({enableWorker: false, maxBufferLength: 30, backBufferLength: 60});
+          activeHls.on(Hls.Events.ERROR, (_event, data) => {
+            if (!data.fatal) return;
+            activeHls?.destroy();
+            activeHls = null;
+            player.src = localUrl;
+          });
+          activeHls.loadSource(playlist);
+          activeHls.attachMedia(player);
+          return;
+        }
+      }
+    } catch (_error) { /* fall back to direct playback */ }
+  }
+  player.src = localUrl;
+}
+
+function openLocalVideo(url, title = 'Copia locale') {
+  return playVideo(url, title);
 }
 
 function statusLabel(value) {
@@ -1901,9 +1961,7 @@ $('#profileContent').addEventListener('click', async event => {
     const recording = [...(profileData.recent_recordings || []), ...dailyRecordings]
       .find(item => item.id === Number(button.dataset.id));
     if (!recording?.local_available) return toast('Anteprima locale non disponibile', 'bad');
-    $('#videoTitle').textContent = `${recording.source_name} · ${recording.filename}`;
-    $('#videoPlayer').src = recording.view_url;
-    return openModal('videoModal');
+    return playVideo(recording.view_url, `${recording.source_name} · ${recording.filename}`);
   }
   if (action === 'local-capture') {
     return openLocalVideo(button.dataset.url, button.dataset.title || 'Copia locale');
@@ -1947,9 +2005,7 @@ $('#recordings').addEventListener('click', async event => {
   const action = button.dataset.recAction;
   if (action === 'preview') {
     if (!recording.local_available) return toast('Anteprima non disponibile: copia locale rimossa', 'bad');
-    $('#videoTitle').textContent = `${recording.source_name} · ${recording.filename}`;
-    $('#videoPlayer').src = recording.view_url;
-    return openModal('videoModal');
+    return playVideo(recording.view_url, `${recording.source_name} · ${recording.filename}`);
   }
   if (action === 'copy-cloud') {
     const remote = safeUrl(recording.remote_url);
