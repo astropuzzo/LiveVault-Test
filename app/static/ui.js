@@ -40,10 +40,9 @@
   showView = function showViewProduct(name, updateHash = true) {
     const result = baseShowView(name, updateHash);
     const [title, context] = viewMeta[activeView] || viewMeta.dashboard;
-    const titleNode = $('#appViewTitle');
-    const contextNode = $('#appContext');
+    const titleNode = $('#currentSectionTitle');
     if (titleNode) titleNode.textContent = title;
-    if (contextNode) contextNode.textContent = context;
+    if (titleNode) titleNode.title = context;
     document.title = `${title} · LiveVault`;
     return result;
   };
@@ -79,9 +78,16 @@
     return `${Math.round(value)} s`;
   }
 
-  activityChartSvg = function activityChartSvgProduct(rows = []) {
+  // Charts are drawn in CSS pixels of their host: a fixed 900-unit viewBox shrank
+  // axis labels to 3–6 px on phones and in the narrow right-hand column.
+  const chartBox = width => {
+    const W = Math.round(Math.min(1600, Math.max(280, Number(width) || 900)));
+    return {W, H: W < 520 ? 210 : 260, L: W < 520 ? 44 : 54};
+  };
+
+  activityChartSvg = function activityChartSvgProduct(rows = [], width = 0) {
     if (!rows.length || !rows.some(row => Number(row.online_seconds) || Number(row.recorded_seconds))) return '<div class="empty compact">Nessun dato nel periodo.</div>';
-    const W = 900, H = 272, L = 54, R = 12, T = 14, B = 34;
+    const {W, H, L} = chartBox(width), R = 12, T = 14, B = 34;
     const cw = W - L - R, ch = H - T - B;
     const maxRaw = Math.max(1, ...rows.flatMap(row => [Number(row.online_seconds) || 0, Number(row.recorded_seconds) || 0]));
     const stepBase = maxRaw / 4;
@@ -95,7 +101,8 @@
     }).join('');
     const groupWidth = cw / rows.length;
     const barWidth = Math.max(1, Math.min(8, groupWidth * .28));
-    const labelEvery = rows.length > 120 ? 30 : rows.length > 60 ? 14 : rows.length > 31 ? 7 : rows.length > 14 ? 4 : 1;
+    const maxLabels = Math.max(3, Math.floor(cw / 56));
+    const labelEvery = Math.max(1, Math.ceil(rows.length / maxLabels));
     let bars = '', labels = '';
     rows.forEach((row, index) => {
       const center = L + index * groupWidth + groupWidth / 2;
@@ -104,14 +111,14 @@
       const oh = online / maxValue * ch, rh = recorded / maxValue * ch;
       bars += `<rect class="chart-bar online" x="${(center-barWidth-.8).toFixed(2)}" y="${(T+ch-oh).toFixed(2)}" width="${barWidth.toFixed(2)}" height="${oh.toFixed(2)}"><title>${esc(row.date)} · Online ${esc(duration(online))}</title></rect>`;
       bars += `<rect class="chart-bar recorded" x="${(center+.8).toFixed(2)}" y="${(T+ch-rh).toFixed(2)}" width="${barWidth.toFixed(2)}" height="${rh.toFixed(2)}"><title>${esc(row.date)} · Registrato ${esc(duration(recorded))}</title></rect>`;
-      if (index % labelEvery === 0 || index === rows.length - 1) labels += `<text class="chart-label" x="${center.toFixed(2)}" y="${H-10}" text-anchor="middle">${esc(row.date.slice(5))}</text>`;
+      if (index % labelEvery === 0 || (index === rows.length - 1 && index % labelEvery >= labelEvery * .6)) labels += `<text class="chart-label" x="${center.toFixed(2)}" y="${H-10}" text-anchor="middle">${esc(row.date.slice(5))}</text>`;
     });
     return `<svg class="activity-chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Tempo online e registrato per giorno">${grid}${bars}${labels}</svg>`;
   };
 
-  hourlyChartSvg = function hourlyChartSvgProduct(rows = []) {
+  hourlyChartSvg = function hourlyChartSvgProduct(rows = [], width = 0) {
     if (!rows.length || !rows.some(row => Number(row.online_seconds))) return '<div class="empty compact">Nessun dato nel periodo.</div>';
-    const W = 900, H = 272, L = 54, R = 12, T = 14, B = 34;
+    const {W, H, L} = chartBox(width), R = 12, T = 14, B = 34;
     const cw = W - L - R, ch = H - T - B;
     const maxRaw = Math.max(1, ...rows.map(row => Number(row.online_seconds) || 0));
     const stepBase = maxRaw / 4;
@@ -126,7 +133,8 @@
     const bars = rows.map((row, index) => {
       const value = Number(row.online_seconds) || 0, bh=value/maxValue*ch;
       const x=L+index*groupWidth+(groupWidth-barWidth)/2;
-      const label = index % 2 === 0 ? `<text class="chart-label" x="${(L+index*groupWidth+groupWidth/2).toFixed(2)}" y="${H-10}" text-anchor="middle">${String(index).padStart(2,'0')}</text>` : '';
+      const hourStep = groupWidth >= 26 ? 2 : groupWidth >= 13 ? 3 : 6;
+      const label = index % hourStep === 0 ? `<text class="chart-label" x="${(L+index*groupWidth+groupWidth/2).toFixed(2)}" y="${H-10}" text-anchor="middle">${String(index).padStart(2,'0')}</text>` : '';
       return `<rect class="chart-bar online" x="${x.toFixed(2)}" y="${(T+ch-bh).toFixed(2)}" width="${barWidth.toFixed(2)}" height="${bh.toFixed(2)}"><title>${String(index).padStart(2,'0')}:00 · ${esc(duration(value))}</title></rect>${label}`;
     }).join('');
     return `<svg class="activity-chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Tempo online per fascia oraria">${grid}${bars}</svg>`;
@@ -166,7 +174,7 @@
       : cover ? `<img class="cr-preview-cover" src="${esc(cover)}" alt="Copertina di ${esc(profile.display_name)}" loading="lazy" decoding="async">`
       : '';
     const freshness = previewUrl ? (updated ? `Fotogramma · ${ago(updated)}` : 'Anteprima in caricamento') : cover ? 'Copertina archivio' : 'Anteprima non disponibile';
-    return `<div class="cr-preview ${profile.blocked && !profile.unavailable ? 'attention' : ''} ${wall ? 'wall' : ''}"><div class="cr-preview-placeholder"><span>${esc(controlRoomInitials(profile.display_name))}</span></div>${visual}<div class="cr-preview-state"><span class="state-dot ${profile.recording ? 'recording' : profile.live ? 'live' : ''}"></span><strong>${state}</strong>${unavailableLabel ? `<span>${esc(unavailableLabel)}</span>` : profile.blocked ? '<span>Non registrata</span>' : ''}</div><time class="cr-preview-age">${esc(freshness)}</time></div>`;
+    return `<div class="cr-preview ${profile.blocked && !profile.unavailable ? 'attention' : ''} ${wall ? 'wall' : ''}"><div class="cr-preview-placeholder"><span>${esc(controlRoomInitials(profile.display_name))}</span></div>${visual}<div class="cr-preview-state"><span class="state-dot ${profile.recording ? 'recording' : profile.live ? 'live' : ''}"></span><strong>${state}</strong>${unavailableLabel ? `<span>${esc(unavailableLabel)}</span>` : profile.blocked && wall ? '<span>Non registrata</span>' : ''}</div>${visual ? `<time class="cr-preview-age">${esc(freshness)}</time>` : ''}</div>`;
   };
 
   function processButton(profile) {
@@ -375,6 +383,5 @@
   bindProductControls();
   if(!localStorage.getItem('livevault-library-view')){libraryMode='list';localStorage.setItem('livevault-library-view','list');}
   const initial=viewMeta[activeView]||viewMeta.dashboard;
-  if($('#appViewTitle'))$('#appViewTitle').textContent=initial[0];
-  if($('#appContext'))$('#appContext').textContent=initial[1];
+  if($('#currentSectionTitle'))$('#currentSectionTitle').textContent=initial[0];
 })();

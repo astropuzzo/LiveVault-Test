@@ -1260,11 +1260,28 @@ function renderLivePauseAlert() {
   root.innerHTML = `<div class="live-pause-head"><span class="live-pause-pulse" aria-hidden="true"></span><div><strong>${esc(title)}</strong><small>${globallyPaused ? 'PAUSA GLOBALE' : 'IN PAUSA'}</small></div></div><div class="live-pause-creators">${rows.slice(0, 5).map(source => creatorLinkMarkup(source.id, source.display_name || source.name)).join('')}${rows.length > 5 ? `<span class="live-pause-more">+${rows.length - 5}</span>` : ''}</div>${globallyPaused ? '<button class="btn primary live-pause-resume" data-alert-resume type="button">Riprendi REC</button>' : ''}`;
 }
 
+function chartHostWidth(selector) {
+  const host = $(selector);
+  if (!host || !host.clientWidth) return 0;
+  const style = getComputedStyle(host);
+  return host.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+}
+
+let statisticsChartWidth = 0;
+window.addEventListener('resize', () => {
+  clearTimeout(window.__statisticsResizeTimer);
+  window.__statisticsResizeTimer = setTimeout(() => {
+    const width = chartHostWidth('#statisticsDailyChart');
+    if (activeView === 'statistics' && width && Math.abs(width - statisticsChartWidth) > 24) renderStatistics();
+  }, 180);
+});
+
 function renderStatistics() {
   if (!statisticsData) return;
   $('#statisticsSummary').innerHTML = statisticsSummaryMarkup(statisticsData);
-  $('#statisticsDailyChart').innerHTML = activityChartSvg(statisticsData.daily);
-  $('#statisticsHourlyChart').innerHTML = hourlyChartSvg(statisticsData.hourly);
+  $('#statisticsDailyChart').innerHTML = activityChartSvg(statisticsData.daily, chartHostWidth('#statisticsDailyChart'));
+  $('#statisticsHourlyChart').innerHTML = hourlyChartSvg(statisticsData.hourly, chartHostWidth('#statisticsHourlyChart'));
+  statisticsChartWidth = chartHostWidth('#statisticsDailyChart');
   $('#statisticsDataChart').innerHTML = dataFlowMarkup(statisticsData.daily);
   $('#statisticsDataTotal').textContent = humanBytes(statisticsData.summary?.recording_bytes || 0);
   $('#statisticsInsights').innerHTML = statisticsInsightsMarkup(statisticsData);

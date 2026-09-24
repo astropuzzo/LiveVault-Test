@@ -11,7 +11,7 @@ def test_dashboard_attention_opens_and_marks_problem_recordings():
     sw = (ROOT / "app/static/sw.js").read_text(encoding="utf-8")
 
     assert '<script src="/static/operations.js" defer></script>' in html
-    assert '<link rel="stylesheet" href="/static/style.css">' in html
+    assert '<link rel="stylesheet" href="/static/style.css?v=3.0.0-ui11">' in html
     assert "recordings = await api('/api/recordings?limit=2000')" in js
     assert "recording.has_audio === false" in js
     assert "option.value = 'attention'" in js

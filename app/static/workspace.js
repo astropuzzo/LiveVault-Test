@@ -21,7 +21,7 @@
   if (!document.querySelector('link[data-pulse-axis]')) {
     const pulseAxis = document.createElement('link');
     pulseAxis.rel = 'stylesheet';
-    pulseAxis.href = '/static/pulse-axis.css?v=3.0.0-redesign6';
+    pulseAxis.href = '/static/pulse-axis.css?v=3.0.0-redesign7';
     pulseAxis.dataset.pulseAxis = '1';
     document.head.appendChild(pulseAxis);
   }
@@ -29,7 +29,7 @@
   if (!document.querySelector('link[data-mobile-fixes]')) {
     const mobileFixes = document.createElement('link');
     mobileFixes.rel = 'stylesheet';
-    mobileFixes.href = '/static/mobile-fixes.css?v=3.0.0-redesign10';
+    mobileFixes.href = '/static/mobile-fixes.css?v=3.0.0-redesign11';
     mobileFixes.dataset.mobileFixes = '1';
     document.head.appendChild(mobileFixes);
   }

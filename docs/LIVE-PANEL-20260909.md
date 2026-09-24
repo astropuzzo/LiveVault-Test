@@ -38,6 +38,36 @@ the host Control Center is unaffected.
   with originals preserved. Genuine short sessions and size-limited tails remain
   possible. Existing uploaded files are not rewritten or removed.
 
+## Readability and layout pass (2026-09-24)
+
+Source only: `app/static/style.css`, `mobile-fixes.css`, `pulse-axis.css`,
+`creator-hover.css`, `ui.js`, `app.js`, `index.html`, `workspace.js`, `sw.js`.
+Runtime is the same LiveVault Coolify image; no API, database or storage change.
+
+- Minimum text size raised: 7–8 px → 10 px, 9–10 px → 11 px across LiveVault CSS.
+- Top bar title follows the active view (`#currentSectionTitle`; the renderer
+  previously targeted a missing `#appViewTitle`).
+- Analisi: summary and creator rows stack label/value/note instead of running
+  together; daily chart spans the full width; charts are drawn at the host's CSS
+  width (re-rendered on resize) so axis labels are no longer scaled to 3–6 px.
+- Libreria: status pill no longer hidden under the favourite star; action buttons
+  sit in flow instead of over the stats divider; empty tag rows collapse.
+- Monitor: live cards drop the redundant "Anteprima non disponibile"/"Non
+  registrata" overlay on the initials placeholder; the warning marker spans the
+  whole card. Collapsed-rail-only nav tooltips.
+- Profile Live DNA hourly bars were zero-width (missing flex basis) and now render.
+- Phones: header no longer overflows (connection text reduced to its dot),
+  recorder/upload controls and "Smaltisci coda" wrap instead of scrolling off
+  screen, archive actions share the status row, odd KPI tile spans the row,
+  timeline labels keep one line each.
+
+Verified only locally on synthetic data: Chromium at 1440, 900 and 390 px (touch)
+with automated overlap/overflow checks, full pytest and Node suites. Not checked
+against production data or a real phone. Asset versions: `style.css?v=3.0.0-ui11`,
+`mobile-fixes.css?v=3.0.0-redesign11`, SW cache `livevault-shell-v3.0.0-redesign11`.
+Rollback: revert the commit and redeploy LiveVault; the bumped SW cache name makes
+clients refetch either way.
+
 ## Validation and release boundary
 
 Targeted Python/Node regression tests cover request races, malformed/stale replies,

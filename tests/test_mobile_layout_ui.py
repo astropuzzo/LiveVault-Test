@@ -10,11 +10,11 @@ def test_phone_layout_has_explicit_overflow_containment_and_reflow():
 
     assert '@media(max-width:560px)' in css
     assert 'overflow-x:clip' in css
-    assert '.dashboard-filters' in css and 'grid-template-columns:minmax(0,1fr) 88px' in css
-    assert '.cr-pulse-scale,.cr-pulse-row' in css and '78px minmax(0,1fr)' in css
-    assert 'grid-template-areas:"thumb identity" "thumb upload" "actions actions"' in css
+    assert '.dashboard-filters' in css and 'grid-template-columns:minmax(0,1fr) 104px' in css
+    assert '.cr-pulse-scale,.cr-pulse-row' in css and '96px minmax(0,1fr)' in css
+    assert 'grid-template-areas:"thumb identity identity" "thumb upload actions"' in css
     assert '.archive-identity>*' in css and 'text-overflow:ellipsis' in css
     assert ':has(> .cr-live-card:only-child)' in css
-    assert '/static/mobile-fixes.css?v=3.0.0-redesign10' in workspace
-    assert "livevault-shell-v3.0.0-redesign10" in sw
+    assert '/static/mobile-fixes.css?v=3.0.0-redesign11' in workspace
+    assert "livevault-shell-v3.0.0-redesign11" in sw
     assert "'/static/mobile-fixes.css'" in sw
