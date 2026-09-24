@@ -1,5 +1,14 @@
 # Changelog
 
+## 3.1.0 — Nuova interfaccia
+
+- Nuovo sistema visivo unico: un solo foglio di stile al posto di sei livelli di correzioni, font Mona Sans ospitato localmente, palette neutra con colori riservati agli stati (live, REC, attenzione).
+- Monitor con indicatori a schede, controlli recorder/upload compatti, cronologia con colori sobri e legenda leggibile; Libreria a righe dense; Archivio e Analisi riallineati; pop-up come fogli dal basso su telefono.
+- Conferme e rinomine in finestre integrate al posto dei pop-up del browser; eliminazione creator spostata nel menu "Altre azioni".
+- I menu si chiudono cliccando fuori, con Esc o dopo la scelta; l'aggiornamento automatico non ridisegna più la vista sotto un menu aperto né quando i dati non cambiano; i gruppi dell'Archivio mantengono lo stato aperto/chiuso.
+- Numeri, dimensioni, durate e date formattati in italiano (virgola decimale, "5 ore fa", "14 set").
+- Corretti: grafico orario del profilo invisibile, avatar e miniature vuote deformati, titolo di sezione fisso su "Monitor".
+
 ## 3.0.0 — Workspace e OpenAstro Control
 
 - Nuova interfaccia coerente, navigazione desktop/mobile, ricerca rapida e filtri sorgenti.

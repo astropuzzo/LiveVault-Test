@@ -1,8 +1,11 @@
+import re
 from pathlib import Path
+
+from tests.css_contract import has_css, stylesheet
 
 ROOT = Path(__file__).resolve().parents[1]
 JS = (ROOT / 'app/static/creator-hover.js').read_text(encoding='utf-8')
-CSS = (ROOT / 'app/static/creator-hover.css').read_text(encoding='utf-8')
+CSS = stylesheet()
 HTML = (ROOT / 'app/static/index.html').read_text(encoding='utf-8')
 SW = (ROOT / 'app/static/sw.js').read_text(encoding='utf-8')
 MAIN = (ROOT / 'app/main.py').read_text(encoding='utf-8')
@@ -21,18 +24,18 @@ def test_creator_hover_is_lazy_cached_and_desktop_safe():
     assert "slice(0, 3)" in JS
     assert "event.stopImmediatePropagation()" in JS
     assert "previewAlreadyOpen" in JS
-    assert "@media(hover:none) and (pointer:coarse){.creator-hover-card{display:block" in CSS
-    assert "pointer-events:auto" in CSS
-    assert ".creator-hover-card{box-sizing:border-box;" in CSS
-    assert "display:none!important" not in CSS
+    assert has_css(CSS, "@media(hover:none) and (pointer:coarse){.creator-hover-card{display:block")
+    assert has_css(CSS, "pointer-events:auto")
+    assert has_css(CSS, ".creator-hover-card{box-sizing:border-box;")
+    assert not re.search(r"\.creator-hover-card[^{}]*\{[^}]*display:none!important", CSS)
 
 
 def test_creator_hover_assets_and_endpoint_are_wired():
     assert '@app.get("/api/sources/{source_id}/hover-preview")' in MAIN
     assert '.limit(3)' in MAIN
-    assert '/static/creator-hover.css' in HTML
+    assert '/static/style.css' in HTML
     assert '/static/creator-hover.js' in HTML
-    assert '/static/creator-hover.css' in SW
+    assert '/static/style.css' in SW
     assert '/static/creator-hover.js' in SW
-    assert '.creator-hover-videos' in CSS
-    assert 'grid-template-columns:repeat(3' in CSS
+    assert has_css(CSS, '.creator-hover-videos')
+    assert has_css(CSS, 'grid-template-columns:repeat(3')

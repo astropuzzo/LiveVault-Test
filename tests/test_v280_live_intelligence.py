@@ -1,5 +1,7 @@
 from pathlib import Path
 
+from tests.css_contract import has_css, stylesheet
+
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -27,10 +29,10 @@ def test_live_dna_uses_existing_activity_statistics():
 
 def test_archive_is_grouped_and_filterable():
     js = (ROOT / "app/static/app.js").read_text(encoding="utf-8")
-    css = (ROOT / "app/static/style.css").read_text(encoding="utf-8")
+    css = stylesheet()
     for token in ('archivePeriod', 'archiveCreator', 'archiveProvider', 'archiveStorage', 'archiveGroup', 'archiveSort'):
         assert token in js
     assert 'Per giorno' in js
     assert 'Per creator' in js
     assert 'Per sessione' in js
-    assert 'archive-group' in css
+    assert has_css(css, 'archive-group')

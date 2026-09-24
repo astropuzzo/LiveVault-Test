@@ -44,12 +44,18 @@ function safeUrl(value = '') {
   }
 }
 
+// Italian number formatting everywhere (decimal comma), no noisy decimals.
 function humanBytes(bytes = 0) {
-  let value = Number(bytes) || 0;
-  for (const unit of ['B', 'KB', 'MB', 'GB', 'TB']) {
-    if (value < 1024 || unit === 'TB') return `${value.toFixed(1)} ${unit}`;
-    value /= 1024;
-  }
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let value = Math.max(0, Number(bytes) || 0);
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) { value /= 1024; unit += 1; }
+  const digits = unit === 0 || value >= 100 ? 0 : 1;
+  return `${new Intl.NumberFormat('it-IT', {maximumFractionDigits: digits}).format(value)} ${units[unit]}`;
+}
+
+function bytesText(bytes, fallback = '—') {
+  return bytes === null || bytes === undefined || !Number.isFinite(Number(bytes)) ? fallback : humanBytes(bytes);
 }
 
 function duration(seconds) {
@@ -57,7 +63,10 @@ function duration(seconds) {
   const hours = Math.floor(value / 3600);
   const minutes = Math.floor((value % 3600) / 60);
   const rest = value % 60;
-  return hours ? `${hours}h ${minutes}m` : `${minutes}:${String(rest).padStart(2, '0')}`;
+  if (hours) return `${hours}h ${String(minutes).padStart(2, '0')}m`;
+  if (minutes >= 10 || (minutes && !rest)) return `${minutes}m`;
+  if (minutes) return `${minutes}m ${String(rest).padStart(2, '0')}s`;
+  return value ? `${rest}s` : '0m';
 }
 
 function timestamp(value) {
@@ -66,14 +75,16 @@ function timestamp(value) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+const RELATIVE_TIME = new Intl.RelativeTimeFormat('it', {numeric: 'auto'});
 function ago(value) {
   const time = timestamp(value);
   if (!time) return 'mai';
   const seconds = Math.max(0, (Date.now() - time) / 1000);
   if (seconds < 60) return 'ora';
-  if (seconds < 3600) return `${Math.floor(seconds / 60)} min fa`;
-  if (seconds < 86400) return `${Math.floor(seconds / 3600)} h fa`;
-  return `${Math.floor(seconds / 86400)} g fa`;
+  if (seconds < 3600) return RELATIVE_TIME.format(-Math.floor(seconds / 60), 'minute');
+  if (seconds < 86400) return RELATIVE_TIME.format(-Math.floor(seconds / 3600), 'hour');
+  if (seconds < 30 * 86400) return RELATIVE_TIME.format(-Math.floor(seconds / 86400), 'day');
+  return RELATIVE_TIME.format(-Math.floor(seconds / (30 * 86400)), 'month');
 }
 
 function dateText(value) {
@@ -95,6 +106,12 @@ function dateFull(value) {
 function creatorLinkMarkup(sourceId, name, extraClass = '') {
   if (!sourceId) return `<span class="${esc(extraClass)}">${esc(name)}</span>`;
   return `<button class="creator-link ${esc(extraClass)}" data-profile-link="${Number(sourceId)}" type="button">${esc(name)}</button>`;
+}
+
+function shortDate(isoDate) {
+  const date = new Date(`${String(isoDate).slice(0, 10)}T12:00:00`);
+  if (Number.isNaN(date.getTime())) return String(isoDate || '');
+  return new Intl.DateTimeFormat('it-IT', {day: 'numeric', month: 'short'}).format(date).replace('.', '');
 }
 
 function statNumber(value, suffix = '') {
@@ -337,7 +354,7 @@ function dataFlowMarkup(rows = []) {
     const count = Number(row.recording_count) || 0;
     const uploaded = Number(row.uploaded_count) || 0;
     const width = Math.max(3, bytes / maxBytes * 100);
-    return `<div class="data-flow-row"><time>${esc(row.date.slice(5))}</time><div class="data-flow-track"><i data-dynamic-width="${width.toFixed(1)}"></i></div><strong>${esc(humanBytes(bytes))}</strong><small>${count} video · ${uploaded} cloud</small></div>`;
+    return `<div class="data-flow-row"><time>${esc(shortDate(row.date))}</time><div class="data-flow-track"><i data-dynamic-width="${width.toFixed(1)}"></i></div><strong>${esc(humanBytes(bytes))}</strong><small>${count} video · ${uploaded} cloud</small></div>`;
   }).join('');
 }
 
@@ -371,6 +388,38 @@ function statisticsSummaryMarkup(data, compact = false) {
 function statisticsHistoryNote(data) {
   const summary = data?.summary || {};
   return Number(summary.estimated_online_seconds) > 0 ? 'Storico pre-2.6: stima.' : '';
+}
+
+// In-app replacement for window.confirm/prompt: same look as the panel,
+// keyboard friendly (Enter confirms, Esc cancels) and never blocks polling.
+function lvDialog({title, message = '', confirmLabel = 'Conferma', cancelLabel = 'Annulla', danger = false, fields = null}) {
+  return new Promise(resolve => {
+    const dialog = document.createElement('dialog');
+    dialog.className = 'lv-dialog';
+    const inputs = (fields || []).map((field, index) => `<label class="field"><span>${esc(field.label)}</span>${field.multiline
+      ? `<textarea name="field${index}" rows="3">${esc(field.value || '')}</textarea>`
+      : `<input name="field${index}" value="${esc(field.value || '')}" autocomplete="off">`}</label>`).join('');
+    dialog.innerHTML = `<form method="dialog" class="lv-dialog-card"><h2>${esc(title)}</h2>${message ? `<p>${esc(message)}</p>` : ''}${inputs ? `<div class="lv-dialog-fields">${inputs}</div>` : ''}<div class="lv-dialog-actions"><button class="button ${danger ? 'danger-solid' : 'primary'}" value="ok" type="submit">${esc(confirmLabel)}</button><button class="button secondary" value="cancel" type="submit">${esc(cancelLabel)}</button></div></form>`;
+    document.body.append(dialog);
+    dialog.addEventListener('close', () => {
+      const ok = dialog.returnValue === 'ok';
+      const values = fields ? fields.map((_, index) => dialog.querySelector(`[name="field${index}"]`).value) : null;
+      dialog.remove();
+      resolve(fields ? (ok ? values : null) : ok);
+    });
+    dialog.addEventListener('click', event => { if (event.target === dialog) dialog.close('cancel'); });
+    dialog.showModal();
+    (dialog.querySelector('input, textarea') || dialog.querySelector(danger ? '[value="cancel"]' : '[value="ok"]'))?.focus();
+  });
+}
+
+function uiConfirm(message, options = {}) {
+  return lvDialog({title: options.title || 'Confermi?', message, ...options});
+}
+
+async function uiPrompt(label, value = '', options = {}) {
+  const values = await lvDialog({title: options.title || label, confirmLabel: 'Salva', fields: [{label, value, multiline: options.multiline}], ...options});
+  return values ? values[0] : null;
 }
 
 function toast(message, type = 'good') {
@@ -847,7 +896,7 @@ function renderProfile() {
         : recording.local_available
           ? `<button class="profile-day-thumb ${thumb ? '' : 'empty'}" data-profile-action="preview" data-id="${recording.id}" type="button">${visual}</button>`
           : `<div class="profile-day-thumb ${thumb ? '' : 'empty'}">${visual}</div>`;
-      return `<article class="profile-day-video">${thumbnail}<div class="profile-day-video-body"><strong>${esc(recording.filename)}</strong><small>${esc(dateText(recording.started_at))} · ${esc(recording.size_human)} · ${esc(duration(recording.duration_seconds))}</small><div>${remote ? `<a class="btn quiet" href="${esc(remote)}" target="_blank" rel="noopener">Apri video ↗</a>` : '<span class="muted">Non caricato</span>'}</div></div></article>`;
+      return `<article class="profile-day-video">${thumbnail}<div class="profile-day-video-body"><strong>${esc(recording.filename)}</strong><small>${esc(dateText(recording.started_at))} · ${esc(bytesText(recording.size_bytes, recording.size_human))} · ${esc(duration(recording.duration_seconds))}</small><div>${remote ? `<a class="btn quiet" href="${esc(remote)}" target="_blank" rel="noopener">Apri video ↗</a>` : '<span class="muted">Non caricato</span>'}</div></div></article>`;
     }).join('');
     return `<details class="profile-day" ${index === 0 ? 'open' : ''}><summary><div><strong>${esc(day.date)}</strong><small>${day.file_count || 0} file · ${esc(humanBytes(day.total_bytes || 0))} · ${esc(duration(day.total_duration_seconds || 0))}</small></div><div class="profile-day-links">${cloudLinks}</div></summary><div class="profile-day-videos">${videos}</div></details>`;
   }).join('') || '<div class="empty compact">Nessuna registrazione.</div>';
@@ -855,11 +904,11 @@ function renderProfile() {
   const localCaptureCards = localCaptures.map(item => {
     const state = item.state === 'recording' ? '● REC IN CORSO' : item.state === 'ready' ? 'PRONTA · CONSOLIDAMENTO' : item.state === 'checking' ? 'CONTROLLO IN CORSO' : 'RIPRISTINO DISPONIBILE';
     const tone = item.state === 'recording' ? 'recording' : item.state === 'recovery' ? 'warning' : 'ready';
-    return `<article class="local-capture" data-tone="${tone}"><div><strong>${esc(item.source_name)}</strong><small>${esc(item.filename)} · ${esc(item.size_human || humanBytes(item.size_bytes || 0))} · ${esc(duration(item.duration_seconds || 0))}</small></div><span>${esc(state)}</span><button class="btn soft" data-profile-action="local-capture" data-url="${esc(item.view_url)}" data-title="${esc(`${item.source_name} · copia locale`)}" type="button">Anteprima locale</button></article>`;
+    return `<article class="local-capture" data-tone="${tone}"><div><strong>${esc(item.source_name)}</strong><small>${esc(item.filename)} · ${esc(bytesText(item.size_bytes, item.size_human))} · ${esc(duration(item.duration_seconds || 0))}</small></div><span>${esc(state)}</span><button class="btn soft" data-profile-action="local-capture" data-url="${esc(item.view_url)}" data-title="${esc(`${item.source_name} · copia locale`)}" type="button">Anteprima locale</button></article>`;
   }).join('');
   const localCaptureSection = localCaptureCards ? `<section class="profile-section local-captures"><div class="profile-section-head"><div><h3>Sul server adesso</h3><span>Disponibile prima del caricamento cloud</span></div><span class="count">${localCaptures.length}</span></div><div class="local-capture-list">${localCaptureCards}</div></section>` : '';
   $('#profileContent').innerHTML = `<div class="profile-overview">
-      <div class="profile-cover ${cover ? '' : 'empty'}">${cover ? `<img src="${esc(cover)}" alt="Copertina di ${esc(profile.display_name)}">` : `<span>${esc(profile.display_name.slice(0, 2).toUpperCase())}</span>`}</div>
+      <div class="profile-cover ${cover ? '' : 'empty'}">${cover ? `<img src="${esc(cover)}" alt="Copertina di ${esc(profile.display_name)}">` : `<span>${esc(controlRoomInitials(profile.display_name))}</span>`}</div>
       <div class="profile-summary"><button class="favorite-toggle ${profile.favorite ? 'active' : ''}" data-profile-action="favorite" data-id="${profile.id}" type="button" aria-pressed="${profile.favorite}">★ ${profile.favorite ? 'Preferita' : 'Preferiti'}</button><div class="profile-metrics"><span><strong>${stats.recording_count || 0}</strong> completati</span><span><strong>${localCaptures.length}</strong> locali ora</span><span><strong>${humanBytes(stats.total_bytes || 0)}</strong> archiviati</span><span><strong>${duration(stats.total_duration_seconds || 0)}</strong> durata</span><span><strong>${stats.uploaded_count || 0}</strong> cloud</span><span class="${stats.failed_count ? 'danger-text' : ''}"><strong>${stats.failed_count || 0}</strong> problemi</span></div></div>
     </div>
     <div class="profile-workspace">
@@ -960,7 +1009,7 @@ function renderRecordings() {
       ${thumbControl}
       <div class="rec-body">
         <div class="rec-title">${creatorLinkMarkup(recordingSource?.id || 0, creatorName)}</div><div class="rec-file">${esc(recording.filename)}</div><div class="rec-date">${esc(dateText(recording.started_at))} · ${esc(recording.session_id)}</div>
-        <div class="rec-meta"><span class="chip">${esc(recording.size_human)}</span><span class="chip">${esc(duration(recording.duration_seconds))}</span><span class="chip">${esc((recording.container_format || '').toUpperCase())}</span>${recordingStreamMarkup(recording)}${thumbnailState}<span class="integrity ${esc(recording.integrity_status)}">${recording.integrity_status === 'passed' ? '✓ Integro' : recording.integrity_status === 'failed' || recording.integrity_status === 'integrity_failed' ? '✕ Fallita' : `… ${esc(recording.integrity_status)}`}</span><span class="upload-status ${esc(recording.upload_status)}">${esc(uploadLabel(recording.upload_status))}${recording.upload_provider ? ` · ${esc(recording.upload_provider)}` : ''}</span></div>
+        <div class="rec-meta"><span class="chip">${esc(bytesText(recording.size_bytes, recording.size_human))}</span><span class="chip">${esc(duration(recording.duration_seconds))}</span><span class="chip">${esc((recording.container_format || '').toUpperCase())}</span>${recordingStreamMarkup(recording)}${thumbnailState}<span class="integrity ${esc(recording.integrity_status)}">${recording.integrity_status === 'passed' ? '✓ Integro' : recording.integrity_status === 'failed' || recording.integrity_status === 'integrity_failed' ? '✕ Fallita' : `… ${esc(recording.integrity_status)}`}</span><span class="upload-status ${esc(recording.upload_status)}">${esc(uploadLabel(recording.upload_status))}${recording.upload_provider ? ` · ${esc(recording.upload_provider)}` : ''}</span></div>
         ${error ? `<div class="rec-error" title="${esc(error)}">${esc(error)}</div>` : ''}
         <div class="rec-actions rec-actions-primary">
           ${remote ? `<a class="btn accent" href="${esc(remote)}" target="_blank" rel="noopener">Apri ${esc(recording.upload_provider || 'cloud')} ↗</a>` : recording.local_available ? `<button class="btn accent" data-rec-action="preview" data-id="${recording.id}" type="button">▶ Riproduci</button>` : ''}
@@ -1090,7 +1139,7 @@ function renderStorageRoute(status) {
   const handoff = status.storage_handoff || {};
   const mode = handoff.mode || 'legacy';
   const disk = status.disk || {};
-  const free = disk.free_human || '—';
+  const free = bytesText(disk.free, disk.free_human || '—');
   route.dataset.mode = mode;
 
   let title = 'STORAGE';
@@ -1156,15 +1205,15 @@ function renderStatus(status) {
   $('#historyCount').textContent = history.recordings || 0;
   $('#historyNote').textContent = `${history.sessions || 0} sessioni · ${history.today || 0} oggi`;
   $('#cloudCount').textContent = history.uploaded || 0;
-  $('#cloudNote').textContent = `${history.uploaded_human || '0 B'} verificati`;
+  $('#cloudNote').textContent = `${bytesText(history.uploaded_bytes, history.uploaded_human || '0 B')} verificati`;
   setTone('#metricCloud', history.uploaded ? 'good' : 'neutral');
-  $('#bufferValue').textContent = status.queue.local_human;
-  $('#bufferNote').textContent = status.config.buffer_max_gb ? `${status.queue.buffer_percent}% di ${status.queue.buffer_max_human}` : 'Nessun limite';
+  $('#bufferValue').textContent = bytesText(status.queue.local_bytes, status.queue.local_human);
+  $('#bufferNote').textContent = status.config.buffer_max_gb ? `${statNumber(status.queue.buffer_percent, '%')} di ${bytesText(status.queue.buffer_max_bytes, status.queue.buffer_max_human)}` : 'Nessun limite';
   $('#bufferBar').style.width = `${Math.min(100, status.queue.buffer_percent || 0)}%`;
   $('#bufferBar').className = status.queue.buffer_percent > 95 ? 'bad' : status.queue.buffer_percent > 80 ? 'warn' : '';
   setTone('#metricBuffer', status.queue.buffer_percent > 95 ? 'danger' : status.queue.buffer_percent > 80 ? 'warning' : 'neutral');
-  $('#freeSpace').textContent = status.disk.free_human;
-  $('#diskUsage').textContent = `${status.disk.used_human} / ${status.disk.total_human} usati`;
+  $('#freeSpace').textContent = bytesText(status.disk.free, status.disk.free_human);
+  $('#diskUsage').textContent = `${bytesText(status.disk.used, status.disk.used_human)} di ${bytesText(status.disk.total, status.disk.total_human)} usati`;
   const diskUsed = status.disk.total ? Math.min(100, status.disk.used / status.disk.total * 100) : 0;
   $('#diskBar').style.width = `${diskUsed}%`;
   $('#diskBar').className = status.disk.pressure === 'critical' ? 'bad' : status.disk.pressure === 'warning' ? 'warn' : '';
@@ -1192,7 +1241,7 @@ function renderStatus(status) {
   const issueCount = errorCount + Number(status.queue.integrity_failed || 0) + Number(history.audio_missing || 0);
   if (status.disk.pressure === 'critical') {
     health.className = 'status-alert'; health.innerHTML = '<span aria-hidden="true">!</span>';
-    health.setAttribute('aria-label', `Disco critico: ${status.disk.free_human} liberi`);
+    health.setAttribute('aria-label', `Disco critico: ${bytesText(status.disk.free, status.disk.free_human)} liberi`);
     health.dataset.action = 'settings'; health.disabled = false;
   } else if (issueCount) {
     health.className = 'status-alert'; health.innerHTML = `<span aria-hidden="true">!</span><b>${issueCount}</b>`;
@@ -1315,6 +1364,30 @@ async function loadProfileStatistics(days) {
   renderProfile();
 }
 
+// Periodic refreshes must not rebuild the list under the user's pointer: an
+// identical render is skipped, and while a row menu is open the view render is
+// deferred until the menu closes.
+function setMarkup(root, html) {
+  if (!root) return false;
+  if (root.__lvMarkup === html && root.firstChild === root.__lvFirst && root.childNodes.length === root.__lvCount) return false;
+  root.innerHTML = html;
+  root.__lvMarkup = html;
+  root.__lvFirst = root.firstChild;
+  root.__lvCount = root.childNodes.length;
+  return true;
+}
+
+let pendingViewRender = false;
+function viewInteractionActive() {
+  return !!document.querySelector('#mainContent details.row-more[open]');
+}
+
+function renderActiveView() {
+  if (activeView === 'dashboard') { renderSources(); renderLivePauseAlert(); }
+  if (activeView === 'library') { fillLibraryControls(); renderLibrary(); }
+  if (activeView === 'archive') renderRecordings();
+}
+
 async function refresh({includeRecordings = false, deferDashboardRender = false} = {}) {
   if (refreshBusy) return;
   refreshBusy = true;
@@ -1336,12 +1409,15 @@ async function refresh({includeRecordings = false, deferDashboardRender = false}
     }
     buildLibraryProfiles();
     renderStatus(status);
-    if (activeView === 'dashboard' && !deferDashboardRender) renderSources();
-    if (activeView === 'library') {
-      fillLibraryControls();
-      renderLibrary();
+    if (viewInteractionActive()) pendingViewRender = true;
+    else {
+      if (activeView === 'dashboard' && !deferDashboardRender) renderSources();
+      if (activeView === 'library') {
+        fillLibraryControls();
+        renderLibrary();
+      }
+      if (activeView === 'archive') renderRecordings();
     }
-    if (activeView === 'archive') renderRecordings();
     if (activeView === 'dashboard') renderLivePauseAlert();
     if (activeView === 'statistics' && Date.now() - lastStatisticsLoad > 30000) loadStatistics(statisticsDays).catch(() => {});
     $('#connectionState').textContent = `Aggiornato ${new Date().toLocaleTimeString('it-IT', {hour:'2-digit',minute:'2-digit'})}`;
@@ -1509,11 +1585,11 @@ $('#retryAllBtn').addEventListener('click', async event => {
 });
 
 $('#cleanupBtn').addEventListener('click', async event => {
-  if (!confirm('Eliminare solo le copie locali già caricate e verificate? Cloud e miniature restano.')) return;
+  if (!(await uiConfirm('Vengono eliminate solo le copie locali già caricate e verificate. Cloud e miniature restano.', {title: 'Liberare lo spazio dei file caricati?', confirmLabel: 'Libera spazio'}))) return;
   setBusy(event.currentTarget, true, 'Pulizia…');
   try {
     const response = await api('/api/recordings/cleanup-uploaded', {method: 'POST'});
-    toast(`Liberati ${response.freed_human}${response.errors?.length ? ` · ${response.errors.length} errori` : ''}`, response.errors?.length ? 'bad' : 'good');
+    toast(`Liberati ${bytesText(response.freed, response.freed_human)}${response.errors?.length ? ` · ${response.errors.length} errori` : ''}`, response.errors?.length ? 'bad' : 'good');
     await refresh({includeRecordings: true});
   } catch (error) { toast(error.message, 'bad'); }
   finally { setBusy(event.currentTarget, false); }
@@ -1522,14 +1598,14 @@ $('#cleanupBtn').addEventListener('click', async event => {
 $('#purgeLocalBtn').addEventListener('click', async event => {
   const selected = sources.find(source => source.id === sourceFilterId);
   const target = selected ? ` della sorgente ${selected.name}` : ' di tutte le sorgenti';
-  if (!confirm(`Eliminare definitivamente tutti i video locali${target}, anche quelli non caricati? Le voci archivio, miniature e copie cloud restano.`)) return;
+  if (!(await uiConfirm(`Vengono eliminati tutti i video locali${target}, anche quelli non ancora caricati. Voci archivio, miniature e copie cloud restano.`, {title: 'Eliminare tutti i video locali?', confirmLabel: 'Elimina video locali', danger: true}))) return;
   setBusy(event.currentTarget, true, 'Pulizia…');
   try {
     const response = await api('/api/recordings/cleanup-local', {
       method: 'POST',
       body: JSON.stringify({scope: 'all', source_id: sourceFilterId || null, include_orphans: !sourceFilterId, delete_thumbnails: false, confirm: true})
     });
-    toast(`Rimossi ${response.removed} file · liberati ${response.freed_human}${response.skipped_active ? ` · ${response.skipped_active} live saltati` : ''}`, response.errors?.length ? 'bad' : 'good');
+    toast(`Rimossi ${response.removed} file · liberati ${bytesText(response.freed, response.freed_human)}${response.skipped_active ? ` · ${response.skipped_active} live saltati` : ''}`, response.errors?.length ? 'bad' : 'good');
     await refresh({includeRecordings: true});
   } catch (error) { toast(error.message, 'bad'); }
   finally { setBusy(event.currentTarget, false); }
@@ -1619,7 +1695,7 @@ $('#sources').addEventListener('click', async event => {
       await api(`/api/sources/${id}`, {method: 'PATCH', body: JSON.stringify({enabled: !source.enabled})});
       toast(source.enabled ? 'Sorgente in pausa' : 'Sorgente riattivata');
     } else if (action === 'delete') {
-      if (!confirm(`Archiviare ${source.name}? Recorder e controlli si fermano; profilo, file, storico e cloud restano.`)) return;
+      if (!(await uiConfirm('Recorder e controlli si fermano; profilo, file, storico e cloud restano.', {title: `Archiviare ${source.name}?`, confirmLabel: 'Archivia'}))) return;
       await api(`/api/sources/${id}`, {method: 'DELETE'});
       toast('Sorgente archiviata; puoi ripristinarla dalla Libreria');
     }
@@ -1684,7 +1760,7 @@ $('#librarySources').addEventListener('click', async event => {
     } else if (action === 'delete-profile') {
       const profile = profileForId(source.profile_id);
       const name = profile?.display_name || source.display_name || source.name;
-      if (!confirm(`Eliminare definitivamente la creator ${name}? Verranno rimossi il profilo e tutte le sorgenti collegate. Le registrazioni già salvate e i file locali/cloud RESTANO nell'Archivio. Questa operazione non può essere annullata.`)) return;
+      if (!(await uiConfirm("Vengono rimossi il profilo e tutte le sorgenti collegate. Registrazioni salvate e file locali/cloud restano nell'Archivio. L'operazione non è reversibile.", {title: `Eliminare ${name}?`, confirmLabel: 'Elimina creator', danger: true}))) return;
       const response = await api(`/api/library/profiles/${source.profile_id}`, {method: 'DELETE'});
       selectedProfiles.delete(Number(source.profile_id));
       toast(`Creator eliminata definitivamente${response.preserved_recordings ? ` · ${response.preserved_recordings} registrazioni conservate` : ''}`);
@@ -1736,26 +1812,25 @@ $('#collectionCreateForm').addEventListener('submit', async event => {
 async function taxonomyAction(action, id) {
   if (action === 'edit-category') {
     const item = libraryMeta.categories.find(row => row.id === id);
-    const name = prompt('Nome categoria', item?.name || '');
+    const name = await uiPrompt('Nome categoria', item?.name || '', {title: 'Rinomina categoria'});
     if (name === null) return;
     await api(`/api/library/categories/${id}`, {method: 'PATCH', body: JSON.stringify({name, color: item.color})});
   } else if (action === 'delete-category') {
     const item = libraryMeta.categories.find(row => row.id === id);
-    if (!confirm(`Eliminare la categoria “${item?.name || ''}”? Profili e registrazioni non verranno eliminati.`)) return;
+    if (!(await uiConfirm('Profili e registrazioni non vengono eliminati.', {title: `Eliminare la categoria “${item?.name || ''}”?`, confirmLabel: 'Elimina', danger: true}))) return;
     await api(`/api/library/categories/${id}`, {method: 'DELETE'});
   } else if (action === 'edit-collection') {
     const item = libraryMeta.collections.find(row => row.id === id);
-    const name = prompt('Nome raccolta', item?.name || '');
-    if (name === null) return;
-    const description = prompt('Descrizione', item?.description || '');
-    if (description === null) return;
+    const values = await lvDialog({title: 'Modifica raccolta', confirmLabel: 'Salva', fields: [{label: 'Nome raccolta', value: item?.name || ''}, {label: 'Descrizione', value: item?.description || '', multiline: true}]});
+    if (values === null) return;
+    const [name, description] = values;
     await api(`/api/library/collections/${id}`, {method: 'PATCH', body: JSON.stringify({name, description})});
   } else if (action === 'toggle-collection') {
     const item = libraryMeta.collections.find(row => row.id === id);
     await api(`/api/library/collections/${id}`, {method: 'PATCH', body: JSON.stringify({pinned: !item.pinned})});
   } else if (action === 'delete-collection') {
     const item = libraryMeta.collections.find(row => row.id === id);
-    if (!confirm(`Eliminare la raccolta “${item?.name || ''}”? File, profili e cartelle cloud non verranno eliminati.`)) return;
+    if (!(await uiConfirm('File, profili e cartelle cloud non vengono eliminati.', {title: `Eliminare la raccolta “${item?.name || ''}”?`, confirmLabel: 'Elimina', danger: true}))) return;
     await api(`/api/library/collections/${id}`, {method: 'DELETE'});
   }
   await refresh({includeRecordings: false});
@@ -1801,7 +1876,7 @@ $('#profileContent').addEventListener('click', async event => {
   }
   if (action === 'delete-profile') {
     const profile = profileData.source;
-    if (!confirm(`Eliminare definitivamente la creator ${profile.display_name}? Verranno rimossi il profilo e tutte le sorgenti collegate. Le registrazioni già salvate e i file locali/cloud RESTANO nell'Archivio. Questa operazione non può essere annullata.`)) return;
+    if (!(await uiConfirm("Vengono rimossi il profilo e tutte le sorgenti collegate. Registrazioni salvate e file locali/cloud restano nell'Archivio. L'operazione non è reversibile.", {title: `Eliminare ${profile.display_name}?`, confirmLabel: 'Elimina creator', danger: true}))) return;
     setBusy(button, true, 'Eliminazione…');
     try {
       const response = await api(`/api/library/profiles/${profile.profile_id}`, {method: 'DELETE'});
@@ -1899,19 +1974,19 @@ $('#recordings').addEventListener('click', async event => {
       const response = await api(`/api/recordings/${id}/integrity`, {method: 'POST'});
       toast(response.ok ? 'Integrità, audio e video confermati' : `Controllo fallito: ${response.error}`, response.ok ? 'good' : 'bad');
     } else if (action === 'convert') {
-      if (!confirm('Convertire questo file in MP4 senza ricodifica? Il nuovo MP4 tornerà in coda upload.')) return;
+      if (!(await uiConfirm('Remux senza ricodifica: il nuovo MP4 torna in coda upload.', {title: 'Convertire in MP4?', confirmLabel: 'Converti'}))) return;
       await api(`/api/recordings/${id}/convert-mp4`, {method: 'POST'});
       toast('Conversione MP4 completata');
     } else if (action === 'delete-local') {
       const uploaded = recording.upload_status === 'uploaded';
-      const warning = uploaded ? 'Eliminare la copia locale? Cloud e miniatura resteranno.' : 'Questo file non risulta caricato: eliminarlo significa perdere il video locale. Continuare?';
-      if (!confirm(warning)) return;
+      const warning = uploaded ? 'La copia cloud e la miniatura restano disponibili.' : 'Il file non risulta caricato nel cloud: eliminandolo il video va perso definitivamente.';
+      if (!(await uiConfirm(warning, {title: 'Eliminare la copia locale?', confirmLabel: 'Elimina copia locale', danger: !uploaded}))) return;
       const response = await api(`/api/recordings/${id}/local?force=${uploaded ? 'false' : 'true'}`, {method: 'DELETE'});
-      toast(`File locale eliminato · ${response.freed_human} liberati`);
+      toast(`File locale eliminato · ${bytesText(response.freed, response.freed_human)} liberati`);
     } else if (action === 'delete-record') {
-      if (!confirm('Eliminare voce archivio, copia locale e miniatura? Il file cloud non verrà cancellato.')) return;
+      if (!(await uiConfirm('Vengono rimosse voce archivio, copia locale e miniatura. Il file cloud non viene cancellato.', {title: 'Eliminare la registrazione?', confirmLabel: 'Elimina', danger: true}))) return;
       const response = await api(`/api/recordings/${id}?delete_file=true&delete_thumbnail=true`, {method: 'DELETE'});
-      toast(`Registrazione eliminata${response.freed ? ` · ${response.freed_human} liberati` : ''}`);
+      toast(`Registrazione eliminata${response.freed ? ` · ${bytesText(response.freed, response.freed_human)} liberati` : ''}`);
     }
     await refresh({includeRecordings: true});
   } catch (error) { toast(error.message, 'bad'); }
@@ -2911,7 +2986,8 @@ refresh = async function refreshV280(options = {}) {
   await refreshV271({...options, deferDashboardRender: shouldLoadPulse});
   await pulsePromise;
   if (activeView === 'dashboard') {
-    renderSources();
+    if (viewInteractionActive()) pendingViewRender = true;
+    else renderSources();
     renderLivePauseAlert();
   }
 };

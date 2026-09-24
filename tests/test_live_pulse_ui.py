@@ -1,5 +1,7 @@
 from pathlib import Path
 
+from tests.css_contract import has_css, stylesheet
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -11,7 +13,7 @@ def pulse_function(js: str) -> str:
 
 def test_live_pulse_is_csp_safe_and_shows_live_and_recording_geometry():
     js = (ROOT / 'app/static/app.js').read_text(encoding='utf-8')
-    css = (ROOT / 'app/static/style.css').read_text(encoding='utf-8')
+    css = stylesheet()
     main = (ROOT / 'app/main.py').read_text(encoding='utf-8')
     pulse = pulse_function(js)
 
@@ -40,11 +42,11 @@ def test_live_pulse_is_csp_safe_and_shows_live_and_recording_geometry():
     assert '/api/fragments/{fragment_id}/view' in main
     assert 'pulseMissingIntervals' in js
     assert 'cr-pulse-missed-span' in js
-    assert '.cr-pulse-missed-span' in css
+    assert has_css(css, '.cr-pulse-missed-span')
     assert "Intl.DateTimeFormat().resolvedOptions().timeZone" in js
     assert "const DISPLAY_TIME_ZONE_LABEL = 'ora locale'" not in js
-    assert '--recording:' in css
-    assert '.cr-pulse-rec-span{fill:var(--recording)' in css
+    assert has_css(css, '--recording:')
+    assert has_css(css, '.cr-pulse-rec-span{fill:var(--recording)')
 
     assert "style-src 'self'" in main
     assert "style-src 'self' 'unsafe-inline'" not in main
@@ -52,7 +54,7 @@ def test_live_pulse_is_csp_safe_and_shows_live_and_recording_geometry():
 
 def test_touch_timeline_preview_requires_explicit_open_action():
     js = (ROOT / 'app/static/app.js').read_text(encoding='utf-8')
-    css = (ROOT / 'app/static/mobile-fixes.css').read_text(encoding='utf-8')
+    css = stylesheet()
 
     preview_start = js.index('function pulsePreviewUsesTap()')
     preview_end = js.index('function pulseRangeLabel', preview_start)
@@ -67,6 +69,6 @@ def test_touch_timeline_preview_requires_explicit_open_action():
     assert 'data-pulse-preview-close' in preview
     assert 'Apri video' in preview
     assert 'data-open-url=' in pulse
-    assert '.cr-pulse-media-preview.tap-mode' in css
-    assert 'bottom:calc(70px + env(safe-area-inset-bottom))' in css
-    assert '.cr-pulse-media-preview-actions .button{min-height:40px}' in css
+    assert has_css(css, '.cr-pulse-media-preview.tap-mode')
+    assert has_css(css, 'bottom:calc(70px + env(safe-area-inset-bottom))')
+    assert has_css(css, '.cr-pulse-media-preview-actions .button{min-height:40px}')

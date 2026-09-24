@@ -9,7 +9,7 @@ database or dirty host checkout were changed. GPT Harness required reauthenticat
 ## Fixes in source
 
 Branch `codex/live-panel-consistency`, based on production/main `607a151`.
-Application paths: `app/static/app.js`, `ui.js`, `pulse-tuning.js`, `pulse-axis.css`,
+Application paths: `app/static/app.js`, `ui.js`, `pulse-tuning.js`, `pulse-axis.css` (merged into `style.css` in 3.1),
 `app/main.py`, `app/main/__init__.py`, `app/workers/size_policy.py`,
 `app/workers/__init__.py`. Production runs these paths in the Coolify image;
 the host Control Center is unaffected.
@@ -38,35 +38,41 @@ the host Control Center is unaffected.
   with originals preserved. Genuine short sessions and size-limited tails remain
   possible. Existing uploaded files are not rewritten or removed.
 
-## Readability and layout pass (2026-09-24)
+## Interface 3.1 (2026-09-24)
 
-Source only: `app/static/style.css`, `mobile-fixes.css`, `pulse-axis.css`,
-`creator-hover.css`, `ui.js`, `app.js`, `index.html`, `workspace.js`, `sw.js`.
-Runtime is the same LiveVault Coolify image; no API, database or storage change.
+Source only, LiveVault 3.1.0: `app/static/style.css` (the only stylesheet),
+`app/static/fonts/` (Mona Sans, SIL OFL, licence alongside), `app.js`, `ui.js`,
+`pulse-tuning.js`, `workspace.js`, `index.html`, `sw.js`, `manifest.webmanifest`.
+Runtime is the same LiveVault Coolify image; no API, database, storage or
+setting change. The Control Center and NINA Monitor are untouched.
 
-- Minimum text size raised: 7–8 px → 10 px, 9–10 px → 11 px across LiveVault CSS.
-- Top bar title follows the active view (`#currentSectionTitle`; the renderer
-  previously targeted a missing `#appViewTitle`).
-- Analisi: summary and creator rows stack label/value/note instead of running
-  together; daily chart spans the full width; charts are drawn at the host's CSS
-  width (re-rendered on resize) so axis labels are no longer scaled to 3–6 px.
-- Libreria: status pill no longer hidden under the favourite star; action buttons
-  sit in flow instead of over the stats divider; empty tag rows collapse.
-- Monitor: live cards drop the redundant "Anteprima non disponibile"/"Non
-  registrata" overlay on the initials placeholder; the warning marker spans the
-  whole card. Collapsed-rail-only nav tooltips.
-- Profile Live DNA hourly bars were zero-width (missing flex basis) and now render.
-- Phones: header no longer overflows (connection text reduced to its dot),
-  recorder/upload controls and "Smaltisci coda" wrap instead of scrolling off
-  screen, archive actions share the status row, odd KPI tile spans the row,
-  timeline labels keep one line each.
+- Styling: `style.css` replaces the former `style.css` + `creator-hover.css` +
+  runtime-injected `ui-fixes.css`, `dashboard-tuning.css`, `pulse-axis.css`,
+  `mobile-fixes.css`. The merge was first verified style-identical (computed
+  styles of every element in all four views at 1440/900/390 px), then rewritten
+  as one token-based design system. `pulse-tuning.js` is a normal deferred
+  script instead of being injected after `load`.
+- Font: Mona Sans served from `/static/fonts/` (CSP allows only same origin).
+  Proportional figures are used because its tabular zero is slashed.
+- Behaviour: native `confirm()`/`prompt()` replaced by an in-app `<dialog>`
+  (`lvDialog` in `app.js`); row menus close on outside click, Escape or after an
+  action and only one stays open; periodic refreshes skip identical markup and
+  defer view renders while a row menu is open; archive groups keep their
+  open/closed state; the library "delete creator" action moved into the menu.
+- Formatting: sizes, percentages, durations, relative times and chart dates use
+  Italian formatting on the client (`humanBytes`, `bytesText`, `duration`, `ago`,
+  `shortDate`); the API `*_human` strings are only fallbacks.
+- Fixed: section title stuck on "Monitor", invisible hourly Live DNA bars,
+  `.empty` padding deforming empty thumbnails/avatars, chart labels scaled to
+  3–6 px, overlapping Analisi summary text, library status hidden under the star.
 
-Verified only locally on synthetic data: Chromium at 1440, 900 and 390 px (touch)
-with automated overlap/overflow checks, full pytest and Node suites. Not checked
-against production data or a real phone. Asset versions: `style.css?v=3.0.0-ui11`,
-`mobile-fixes.css?v=3.0.0-redesign11`, SW cache `livevault-shell-v3.0.0-redesign11`.
-Rollback: revert the commit and redeploy LiveVault; the bumped SW cache name makes
-clients refetch either way.
+Verified only locally on synthetic data: Chromium at 1440, 900 and 390 px (touch),
+automated overlap/overflow checks, scripted menu/dialog/refresh interaction
+checks, full pytest and Node suites. Not checked against production data or on a
+real phone. Asset versions `?v=3.1.0-design1`, SW cache
+`livevault-shell-v3.1.0-design1` (installed PWAs refetch the shell).
+Rollback: revert the 3.1.0 commits and redeploy LiveVault; nothing persistent
+changes, and the SW cache name changes again on rollback deploys.
 
 ## Validation and release boundary
 

@@ -73,7 +73,7 @@
 
   function durationScale(seconds) {
     const value = Number(seconds) || 0;
-    if (value >= 3600) return `${(value / 3600).toFixed(value >= 36000 ? 0 : 1)} h`;
+    if (value >= 3600) return `${new Intl.NumberFormat('it-IT', {maximumFractionDigits: value >= 36000 ? 0 : 1}).format(value / 3600)} h`;
     if (value >= 60) return `${Math.round(value / 60)} min`;
     return `${Math.round(value)} s`;
   }
@@ -111,7 +111,7 @@
       const oh = online / maxValue * ch, rh = recorded / maxValue * ch;
       bars += `<rect class="chart-bar online" x="${(center-barWidth-.8).toFixed(2)}" y="${(T+ch-oh).toFixed(2)}" width="${barWidth.toFixed(2)}" height="${oh.toFixed(2)}"><title>${esc(row.date)} · Online ${esc(duration(online))}</title></rect>`;
       bars += `<rect class="chart-bar recorded" x="${(center+.8).toFixed(2)}" y="${(T+ch-rh).toFixed(2)}" width="${barWidth.toFixed(2)}" height="${rh.toFixed(2)}"><title>${esc(row.date)} · Registrato ${esc(duration(recorded))}</title></rect>`;
-      if (index % labelEvery === 0 || (index === rows.length - 1 && index % labelEvery >= labelEvery * .6)) labels += `<text class="chart-label" x="${center.toFixed(2)}" y="${H-10}" text-anchor="middle">${esc(row.date.slice(5))}</text>`;
+      if (index % labelEvery === 0 || (index === rows.length - 1 && index % labelEvery >= labelEvery * .6)) labels += `<text class="chart-label" x="${center.toFixed(2)}" y="${H-10}" text-anchor="middle">${esc(shortDate(row.date))}</text>`;
     });
     return `<svg class="activity-chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Tempo online e registrato per giorno">${grid}${bars}${labels}</svg>`;
   };
@@ -242,18 +242,18 @@
     const blocked = live.filter(p => p.blocked && !p.unavailable).length;
     $('#sourceCount').textContent = profiles.length;
     if (!profiles.length) {
-      root.innerHTML = `<div class="empty">${sources.length ? 'Nessuna sorgente corrisponde ai filtri.' : 'Nessuna sorgente configurata.'}</div>`;
+      setMarkup(root, `<div class="empty">${sources.length ? 'Nessuna sorgente corrisponde ai filtri.' : 'Nessuna sorgente configurata.'}</div>`);
       renderControlRoomWall([]);
       return;
     }
     const pulse = typeof controlRoomPulseMarkup === 'function' ? controlRoomPulseMarkup() : '';
     const recent = typeof controlRoomRecentEnded === 'function' ? controlRoomRecentEnded(profiles) : [];
-    root.innerHTML = `<div class="monitor-summary"><div><span class="state-dot ${live.length ? 'live' : ''}"></span><strong>${live.length} live</strong><span>${blocked ? `${blocked} da controllare` : live.length ? 'Copertura REC attiva' : 'Nessuna live'}</span></div><button class="btn secondary compact" data-live-wall type="button" ${live.length ? '' : 'disabled'}>${icon('grid','button-icon')}<span>Live wall</span></button></div>
+    setMarkup(root, `<div class="monitor-summary"><div><span class="state-dot ${live.length ? 'live' : ''}"></span><strong>${live.length} live</strong><span>${blocked ? `${blocked} da controllare` : live.length ? 'Copertura REC attiva' : 'Nessuna live'}</span></div><button class="btn secondary compact" data-live-wall type="button" ${live.length ? '' : 'disabled'}>${icon('grid','button-icon')}<span>Live wall</span></button></div>
       ${pulse}
       <section class="monitor-section"><header><h3>Live</h3><span>${live.length}</span></header>${live.length ? `<div class="cr-live-grid">${live.map(p => controlRoomLiveCard(p)).join('')}</div>` : '<div class="empty compact">Nessuna creator live.</div>'}</section>
       ${recent.length ? `<section class="monitor-section"><header><h3>Appena terminate</h3><span>${recent.length}</span></header><div class="cr-ended-list">${recent.map(controlRoomEndedCard).join('')}</div></section>` : ''}
       ${offlineFocus.length ? `<section class="monitor-section"><header><h3>Focus</h3><span>${offlineFocus.length}</span></header><div class="cr-compact-list">${offlineFocus.map(p => controlRoomCompactRow(p,true)).join('')}</div></section>` : ''}
-      <details id="controlRoomOffline" class="cr-offline" ${controlRoomOfflineOpen ? 'open' : ''}><summary><span>Altre creator</span><span>${offline.length}</span>${icon('chevron-down','mini-icon')}</summary><div class="cr-compact-list">${offline.length ? offline.map(p => controlRoomCompactRow(p)).join('') : '<div class="empty compact">Nessuna.</div>'}</div></details>`;
+      <details id="controlRoomOffline" class="cr-offline" ${controlRoomOfflineOpen ? 'open' : ''}><summary><span>Altre creator</span><span>${offline.length}</span>${icon('chevron-down','mini-icon')}</summary><div class="cr-compact-list">${offline.length ? offline.map(p => controlRoomCompactRow(p)).join('') : '<div class="empty compact">Nessuna.</div>'}</div></details>`);
     renderControlRoomWall(profiles);
   };
 
@@ -272,21 +272,28 @@
     $('#libraryGridBtn').setAttribute('aria-pressed',String(libraryMode==='grid'));
     $('#libraryListBtn').setAttribute('aria-pressed',String(libraryMode==='list'));
     $('#libraryResultsMeta').textContent = `${visible.length} di ${libraryProfiles.length}`;
-    if (!visible.length) { root.innerHTML='<div class="empty">Nessun risultato.</div>'; updateSelectionUi(visible); return; }
-    root.innerHTML = visible.map(profile => {
+    if (!visible.length) { setMarkup(root, '<div class="empty">Nessun risultato.</div>'); updateSelectionUi(visible); return; }
+    setMarkup(root, visible.map(profile => {
       const checked=selectedProfiles.has(profile.profile_id), cover=safeUrl(profile.cover_thumbnail_url);
       const statusText=statusLabel(profile.status);
+      const recorded=Number(profile.recording_count)||0;
+      const stats=recorded
+        ? `<span><strong>${recorded}</strong> file</span><span><strong>${esc(humanBytes(profile.total_bytes))}</strong></span><span><strong>${esc(duration(profile.total_duration_seconds))}</strong></span><span><strong>${profile.uploaded_count}</strong> cloud</span>`
+        : '<span>Nessuna registrazione</span>';
       return `<article class="library-card ${checked?'selected':''} ${profile.favorite?'favorite':''}">
         <label class="library-select"><input type="checkbox" data-profile-select="${profile.profile_id}" ${checked?'checked':''}><span class="sr-only">Seleziona ${esc(profile.display_name)}</span></label>
-        <button class="favorite-btn ${profile.favorite?'active':''}" data-lib-action="favorite" data-id="${profile.representative_id}" type="button" aria-label="${profile.favorite?'Rimuovi dai preferiti':'Aggiungi ai preferiti'}" data-tooltip="Preferiti">${icon('star')}</button>
-        <button class="library-cover" data-lib-action="profile" data-id="${profile.representative_id}" type="button">${cover?`<img src="${esc(cover)}" alt="" loading="lazy">`:`<span>${esc(controlRoomInitials(profile.display_name))}</span>`}</button>
-        <div class="library-card-body"><div class="library-card-head"><div><h3>${creatorLinkMarkup(profile.representative_id,profile.display_name)}</h3><p>${esc(profile.provider_labels.join(' · '))}</p></div><span class="source-status ${esc(profile.status)}">${esc(statusText)}</span></div>
-        <div class="library-tags">${categoryTags(profile)}</div>
-        <div class="library-stats"><span><strong>${profile.recording_count}</strong> file</span><span><strong>${esc(humanBytes(profile.total_bytes))}</strong></span><span><strong>${esc(duration(profile.total_duration_seconds))}</strong></span><span><strong>${profile.uploaded_count}</strong> cloud</span></div>
-        <div class="library-recency">Ultima REC ${profile.last_recording_at?esc(ago(profile.last_recording_at)):'mai'}</div>
-        <div class="library-actions">${actionButton('users','Apri profilo',`data-lib-action="profile" data-id="${profile.representative_id}"`)}${actionButton('archive','Apri archivio',`data-lib-action="archive" data-id="${profile.representative_id}"`)}${profile.archived?actionButton('rotate-ccw','Ripristina',`data-lib-action="restore" data-id="${profile.representative_id}"`):''}${actionButton('trash','Elimina creator',`data-lib-action="delete-profile" data-id="${profile.representative_id}"`,'danger')}</div></div>
+        <button class="library-cover" data-lib-action="profile" data-id="${profile.representative_id}" type="button" aria-label="Apri profilo di ${esc(profile.display_name)}">${cover?`<img src="${esc(cover)}" alt="" loading="lazy">`:`<span>${esc(controlRoomInitials(profile.display_name))}</span>`}</button>
+        <div class="library-identity"><h3>${creatorLinkMarkup(profile.representative_id,profile.display_name)}</h3><p>${esc(profile.provider_labels.join(' · '))}</p><div class="library-tags">${categoryTags(profile)}</div></div>
+        <span class="source-status ${esc(profile.status)}">${esc(statusText)}</span>
+        <div class="library-stats">${stats}</div>
+        <div class="library-recency">${profile.last_recording_at?`Ultima REC ${esc(ago(profile.last_recording_at))}`:'Mai registrata'}</div>
+        <div class="library-actions"><button class="favorite-btn ${profile.favorite?'active':''}" data-lib-action="favorite" data-id="${profile.representative_id}" type="button" aria-pressed="${profile.favorite?'true':'false'}" aria-label="${profile.favorite?'Rimuovi dai preferiti':'Aggiungi ai preferiti'}" data-tooltip="${profile.favorite?'Rimuovi dai preferiti':'Preferita'}">${icon('star')}</button>${actionButton('archive','Apri archivio',`data-lib-action="archive" data-id="${profile.representative_id}"`)}<details class="row-more"><summary class="icon-button" aria-label="Altre azioni" data-tooltip="Altre azioni">${icon('more')}</summary><div class="row-menu">
+          <button type="button" data-lib-action="profile" data-id="${profile.representative_id}">${icon('users')}<span>Apri profilo</span></button>
+          ${profile.archived?`<button type="button" data-lib-action="restore" data-id="${profile.representative_id}">${icon('rotate-ccw')}<span>Ripristina sorgente</span></button>`:''}
+          <button class="danger-menu" type="button" data-lib-action="delete-profile" data-id="${profile.representative_id}">${icon('trash')}<span>Elimina creator</span></button>
+        </div></details></div>
       </article>`;
-    }).join('');
+    }).join(''));
     updateSelectionUi(visible);
     applyDynamicStyles(root);
   };
@@ -315,11 +322,18 @@
       <button class="archive-thumb ${preview?'':'empty'}" type="button" data-rec-action="preview" data-id="${recording.id}" aria-label="Anteprima ${esc(recording.filename)}" ${recording.local_available?'':'disabled'}>${preview?`<img src="${esc(preview)}" alt="" loading="lazy">`:icon('play')}</button>
       <div class="archive-identity"><strong>${creatorLinkMarkup(source?.id||0,creator)}</strong><span title="${esc(recording.filename)}">${esc(recording.filename)}</span><small>${esc(dateText(recording.started_at))}</small></div>
       <div class="archive-health">${reasons.length?`<span class="attention-label">${icon('warning','mini-icon')}<span>${esc(reasons.join(' · '))}</span></span>`:recordingStreamMarkup(recording)}<span class="integrity ${esc(recording.integrity_status)}">${recording.integrity_status==='passed'?'Integro':esc(recording.integrity_status||'—')}</span></div>
-      <div class="archive-number"><strong>${esc(duration(recording.duration_seconds))}</strong><span>${esc(recording.size_human)}</span></div>
+      <div class="archive-number"><strong>${esc(duration(recording.duration_seconds))}</strong><span>${esc(bytesText(recording.size_bytes, recording.size_human))}</span></div>
       <div class="archive-upload"><span class="upload-status ${esc(recording.upload_status)}">${esc(uploadLabel(recording.upload_status))}</span><small>${esc(recording.upload_provider||'')}</small></div>
       <div class="rec-actions">${primary}${remote?actionButton('copy','Copia link',`data-rec-action="copy-cloud" data-id="${recording.id}"`):''}<details class="row-more"><summary class="icon-button" aria-label="Altre azioni" data-tooltip="Altre azioni">${icon('more')}</summary><div class="row-menu align-right">${recording.local_available?`<button data-rec-action="preview" data-id="${recording.id}" type="button">${icon('play')}<span>Anteprima locale</span></button><a href="/api/recordings/${recording.id}/download">${icon('download')}<span>Scarica</span></a>`:''}${collection?`<a href="${esc(collection)}">${icon('archive')}<span>Archivio camera</span></a>`:''}${recording.local_available&&recording.integrity_status==='passed'?`<button data-rec-action="upload-now" data-id="${recording.id}" type="button">${icon('cloud-upload')}<span>Upload ora</span></button>`:''}${recording.local_available?`<button data-rec-action="integrity" data-id="${recording.id}" type="button">${icon('check')}<span>Ricontrolla integrità</span></button>`:''}${recording.local_available&&recording.container_format!=='mp4'?`<button data-rec-action="convert" data-id="${recording.id}" type="button">${icon('refresh')}<span>Converti MP4</span></button>`:''}${recording.local_available?`<button class="danger-menu" data-rec-action="delete-local" data-id="${recording.id}" type="button">${icon('trash')}<span>Elimina copia locale</span></button>`:''}<button class="danger-menu" data-rec-action="delete-record" data-id="${recording.id}" type="button">${icon('trash')}<span>Elimina voce archivio</span></button></div></details></div>
     </article>`;
   }
+
+  // Day/creator groups keep the open state the user chose across refreshes.
+  const archiveGroupOpen = new Map();
+  document.addEventListener('toggle', event => {
+    const group = event.target;
+    if (group instanceof HTMLDetailsElement && group.classList.contains('archive-group') && group.dataset.groupKey) archiveGroupOpen.set(group.dataset.groupKey, group.open);
+  }, true);
 
   renderRecordings = function renderRecordingsProduct() {
     fillArchiveIntelControls();
@@ -327,9 +341,9 @@
     if(toggle&&!toggle.dataset.productDecorated){toggle.dataset.productDecorated='1';toggle.innerHTML=`${icon('filter','button-icon')}<span>Filtri</span>`;}
     const visible=recordings.filter(r=>recordingMatches(r)&&archiveIntelMatches(r));
     const root=$('#recordings');
-    if(!visible.length){root.innerHTML='<div class="empty">Nessuna registrazione nei filtri.</div>';$('#recordingFooter').textContent=recordings.length?`${recordings.length} file caricati`:'';return;}
+    if(!visible.length){setMarkup(root,'<div class="empty">Nessuna registrazione nei filtri.</div>');$('#recordingFooter').textContent=recordings.length?`${recordings.length} file caricati`:'';return;}
     const groups=archiveGroupRows(visible);
-    root.innerHTML=groups.slice(0,archiveGroupLimit).map((group,index)=>`<details class="archive-group" ${index<3?'open':''}><summary><span><strong>${esc(group.label)}</strong><small>${esc(archiveGroupSummary(group))}</small></span>${icon('chevron-down','mini-icon')}</summary><div class="archive-table-head"><span>Registrazione</span><span>Integrità</span><span>Durata / dimensione</span><span>Cloud</span><span>Azioni</span></div><div class="archive-group-grid">${group.rows.map(archiveRecordRow).join('')}</div></details>`).join('');
+    setMarkup(root,groups.slice(0,archiveGroupLimit).map((group,index)=>`<details class="archive-group" data-group-key="${esc(group.label)}" ${(archiveGroupOpen.has(group.label)?archiveGroupOpen.get(group.label):index<3)?'open':''}><summary><span><strong>${esc(group.label)}</strong><small>${esc(archiveGroupSummary(group))}</small></span>${icon('chevron-down','mini-icon')}</summary><div class="archive-table-head"><span>Registrazione</span><span>Integrità</span><span>Durata / dimensione</span><span>Cloud</span><span>Azioni</span></div><div class="archive-group-grid">${group.rows.map(archiveRecordRow).join('')}</div></details>`).join(''));
     if(groups.length>archiveGroupLimit)root.insertAdjacentHTML('beforeend',`<button class="btn secondary archive-more" type="button" data-archive-more="1">Mostra altri ${Math.min(10,groups.length-archiveGroupLimit)}</button>`);
     const total=Number(statusData?.history?.recordings??recordings.length);
     $('#recordingFooter').textContent=`${visible.length} nei filtri · ${groups.length} gruppi · ${recordings.length} caricati`;
@@ -365,11 +379,37 @@
   const baseRefreshProduct = refresh;
   refresh = async function refreshProduct(options = {}) {
     await baseRefreshProduct(options);
-    if(activeView==='dashboard')renderSources();
-    if(activeView==='library')renderLibrary();
-    if(activeView==='archive')renderRecordings();
-    if(activeView==='statistics')renderStatistics();
   };
+
+  function closeRowMenus(except = null) {
+    document.querySelectorAll('details.row-more[open]').forEach(menu => { if (menu !== except) menu.open = false; });
+  }
+
+  function bindRowMenus() {
+    document.addEventListener('toggle', event => {
+      const menu = event.target;
+      if (!(menu instanceof HTMLDetailsElement) || !menu.classList.contains('row-more')) return;
+      if (menu.open) closeRowMenus(menu);
+      else if (pendingViewRender && !viewInteractionActive()) {
+        pendingViewRender = false;
+        renderActiveView();
+      }
+    }, true);
+    document.addEventListener('pointerdown', event => {
+      if (!event.target.closest('details.row-more')) closeRowMenus();
+    });
+    document.addEventListener('click', event => {
+      const item = event.target.closest('.row-menu button, .row-menu a');
+      if (item) setTimeout(() => { const menu = item.closest('details.row-more'); if (menu) menu.open = false; }, 0);
+    });
+    document.addEventListener('keydown', event => {
+      if (event.key !== 'Escape') return;
+      const open = document.querySelector('details.row-more[open]');
+      if (!open) return;
+      open.open = false;
+      open.querySelector('summary')?.focus();
+    });
+  }
 
   function bindProductControls() {
     document.addEventListener('click', event=>{
@@ -381,6 +421,7 @@
   }
 
   bindProductControls();
+  bindRowMenus();
   if(!localStorage.getItem('livevault-library-view')){libraryMode='list';localStorage.setItem('livevault-library-view','list');}
   const initial=viewMeta[activeView]||viewMeta.dashboard;
   if($('#currentSectionTitle'))$('#currentSectionTitle').textContent=initial[0];

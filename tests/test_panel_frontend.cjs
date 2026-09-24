@@ -152,6 +152,23 @@ test('moving focus into the touch preview does not dismiss its playback action',
   handler({target:{closest:()=>true}, relatedTarget:null});
   assert.equal(hidden, 1);
 });
+test('LiveVault formats sizes, durations and dates the Italian way', () => {
+  const ctx = vm.createContext({});
+  vm.runInContext(liveSource.slice(liveSource.indexOf('function humanBytes('), liveSource.indexOf('function timestamp(')), ctx);
+  vm.runInContext(liveSource.slice(liveSource.indexOf('function shortDate('), liveSource.indexOf('function statNumber(')), ctx);
+  assert.equal(ctx.humanBytes(0), '0 B');
+  assert.equal(ctx.humanBytes(1536), '1,5 KB');
+  assert.equal(ctx.humanBytes(650 * 1024 ** 2), '650 MB');
+  assert.equal(ctx.humanBytes(3.6 * 1024 ** 3), '3,6 GB');
+  assert.equal(ctx.bytesText(undefined, '12.0 GB'), '12.0 GB');
+  assert.equal(ctx.duration(0), '0m');
+  assert.equal(ctx.duration(45), '45s');
+  assert.equal(ctx.duration(125), '2m 05s');
+  assert.equal(ctx.duration(42 * 60 + 30), '42m');
+  assert.equal(ctx.duration(2 * 3600 + 40 * 60), '2h 40m');
+  assert.equal(ctx.shortDate('2026-09-14'), '14 set');
+});
+
 vm.runInContext(source.slice(source.indexOf('function mean('), source.indexOf('function chartMarkup(')), context);
 test('missing telemetry is excluded from averages', () => {
   assert.equal(context.mean([{temp: null}, {temp: 50}, {temp: 60}], 'temp'), 55);

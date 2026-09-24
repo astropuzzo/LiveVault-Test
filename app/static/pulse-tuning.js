@@ -40,43 +40,43 @@
     const defs = svgNode('defs');
 
     const privatePattern = svgNode('pattern', {id: 'lv-pulse-private', width: 11, height: 11, patternUnits: 'userSpaceOnUse'});
-    patternRect(privatePattern, '#9a5cff', 11, 11);
-    privatePattern.append(svgNode('path', {d: 'M-3 11L11-3M3 14L14 3', stroke: '#e2d4ff', 'stroke-width': 1.05, opacity: .42}));
+    patternRect(privatePattern, '#a88bfa', 11, 11);
+    privatePattern.append(svgNode('path', {d: 'M-3 11L11-3M3 14L14 3', stroke: '#1a1330', 'stroke-width': 1.4, opacity: .35}));
     defs.append(privatePattern);
 
     const tipjarPattern = svgNode('pattern', {id: 'lv-pulse-tipjar', width: 12, height: 12, patternUnits: 'userSpaceOnUse'});
-    patternRect(tipjarPattern, '#f1a72a', 12, 12);
-    tipjarPattern.append(svgNode('circle', {cx: 3, cy: 3, r: .95, fill: '#fff0b7', opacity: .46}));
-    tipjarPattern.append(svgNode('circle', {cx: 9, cy: 9, r: .95, fill: '#85540a', opacity: .52}));
+    patternRect(tipjarPattern, '#f0943f', 12, 12);
+    tipjarPattern.append(svgNode('circle', {cx: 3, cy: 3, r: 1.1, fill: '#2a1506', opacity: .4}));
+    tipjarPattern.append(svgNode('circle', {cx: 9, cy: 9, r: 1.1, fill: '#2a1506', opacity: .4}));
     defs.append(tipjarPattern);
 
     const cloudPattern = svgNode('pattern', {id: 'lv-pulse-cloud', width: 18, height: 18, patternUnits: 'userSpaceOnUse'});
-    patternRect(cloudPattern, '#32d583', 18, 18);
+    patternRect(cloudPattern, '#3ecf8e', 18, 18);
     cloudPattern.append(svgNode('path', {
       d: 'M9 3.2L10 8L14.8 9L10 10L9 14.8L8 10L3.2 9L8 8Z',
-      fill: '#e9fff3',
-      opacity: .36,
+      fill: '#06261a',
+      opacity: .3,
     }));
     defs.append(cloudPattern);
 
     const processingPattern = svgNode('pattern', {id: 'lv-pulse-processing', width: 12, height: 12, patternUnits: 'userSpaceOnUse'});
-    patternRect(processingPattern, '#22c7ff', 12, 12);
-    processingPattern.append(svgNode('path', {d: 'M3 3L9 9M9 3L3 9', stroke: '#d8f7ff', 'stroke-width': .85, opacity: .38}));
+    patternRect(processingPattern, '#6aa6ff', 12, 12);
+    processingPattern.append(svgNode('path', {d: 'M-3 12L12-3M3 15L15 3', stroke: '#0b1a33', 'stroke-width': 1.4, opacity: .35}));
     defs.append(processingPattern);
 
     const missedPattern = svgNode('pattern', {id: 'lv-pulse-missed', width: 14, height: 14, patternUnits: 'userSpaceOnUse'});
-    patternRect(missedPattern, '#ff4fc8', 14, 14);
-    missedPattern.append(svgNode('path', {d: 'M0 8Q3.5 3.5 7 8T14 8', stroke: '#ffd2f1', 'stroke-width': 1, fill: 'none', opacity: .42}));
+    patternRect(missedPattern, '#ec6fb3', 14, 14);
+    missedPattern.append(svgNode('path', {d: 'M0 8Q3.5 3.5 7 8T14 8', stroke: '#2d0b1d', 'stroke-width': 1.2, fill: 'none', opacity: .35}));
     defs.append(missedPattern);
 
     const restrictedPattern = svgNode('pattern', {id: 'lv-pulse-restricted', width: 10, height: 10, patternUnits: 'userSpaceOnUse'});
-    patternRect(restrictedPattern, '#77818c', 10, 10);
-    restrictedPattern.append(svgNode('path', {d: 'M2.5 0V10M7.5 0V10', stroke: '#dce2e8', 'stroke-width': .8, opacity: .38}));
+    patternRect(restrictedPattern, '#8b8b95', 10, 10);
+    restrictedPattern.append(svgNode('path', {d: 'M2.5 0V10M7.5 0V10', stroke: '#16161a', 'stroke-width': 1.2, opacity: .35}));
     defs.append(restrictedPattern);
 
     const unrecordedPattern = svgNode('pattern', {id: 'lv-pulse-unrecorded', width: 12, height: 12, patternUnits: 'userSpaceOnUse'});
-    patternRect(unrecordedPattern, '#ff7a3d', 12, 12);
-    unrecordedPattern.append(svgNode('path', {d: 'M-3 8L2 3L7 8L12 3L17 8', stroke: '#ffe1d0', 'stroke-width': 1, fill: 'none', opacity: .4}));
+    patternRect(unrecordedPattern, '#56627a', 12, 12);
+    unrecordedPattern.append(svgNode('path', {d: 'M-3 12L12-3M3 15L15 3', stroke: '#ec6fb3', 'stroke-width': 2, opacity: .85}));
     defs.append(unrecordedPattern);
 
     host.append(defs);
@@ -225,15 +225,15 @@
   }
 
   const LEGEND = [
-    ['online', 'ONLINE', '#2f7cff'],
-    ['private', 'PRIVATA', 'url(#lv-pulse-private)'],
-    ['tipjar', 'TIP-JAR', 'url(#lv-pulse-tipjar)'],
-    ['rec', 'REC', '#ff4f62'],
-    ['unrecorded', 'INTERVALLO SENZA REC', 'url(#lv-pulse-unrecorded)'],
+    ['online', 'ONLINE', '#56627a'],
+    ['rec', 'REC', '#ff5c5c'],
     ['remote', 'CLOUD', 'url(#lv-pulse-cloud)'],
     ['processing', 'IN ELABORAZIONE', 'url(#lv-pulse-processing)'],
-    ['restricted', 'LIMITATA', 'url(#lv-pulse-restricted)'],
     ['missed', 'NON REC', 'url(#lv-pulse-missed)'],
+    ['unrecorded', 'INTERVALLO SENZA REC', 'url(#lv-pulse-unrecorded)'],
+    ['private', 'PRIVATA', 'url(#lv-pulse-private)'],
+    ['tipjar', 'TIP-JAR', 'url(#lv-pulse-tipjar)'],
+    ['restricted', 'LIMITATA', 'url(#lv-pulse-restricted)'],
   ];
 
   function legendSwatch(tone, fill) {
@@ -335,6 +335,6 @@
     resizeTimer = setTimeout(() => requestAnimationFrame(decoratePulse), 120);
   });
 
-  // This script is loaded dynamically: boot may have already completed.
+  // Deferred after app.js: boot may already have rendered before this override.
   if (!app.classList.contains('hidden')) loadControlRoomPulse().then(() => renderSources());
 })();

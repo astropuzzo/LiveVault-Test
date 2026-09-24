@@ -1,11 +1,13 @@
 from pathlib import Path
 
+from tests.css_contract import has_css, stylesheet
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_pulse_has_patterns_real_time_scale_and_selectable_window():
     js = (ROOT / 'app/static/pulse-tuning.js').read_text(encoding='utf-8')
-    css = (ROOT / 'app/static/pulse-axis.css').read_text(encoding='utf-8')
+    css = stylesheet()
     facade = (ROOT / 'app/main/__init__.py').read_text(encoding='utf-8')
 
     assert "{hours: 6, label: '6h'}" in js
@@ -27,30 +29,31 @@ def test_pulse_has_patterns_real_time_scale_and_selectable_window():
     assert 'halfHours: true' in js
     assert 'cr-pulse-hour-line minor' in js
     assert 'cr-pulse-day-line' in js
-    assert '.cr-pulse-day-line' in css
-    assert '.cr-pulse-half-hour-line' in css
+    assert has_css(css, '.cr-pulse-day-line')
+    assert has_css(css, '.cr-pulse-half-hour-line')
 
     # Pattern tiles must paint their semantic hue with explicit numeric geometry.
     # Percentage-sized rects inside SVG paint servers rendered inconsistently and
     # could expose the blue ONLINE layer beneath the texture.
     assert 'function patternRect(pattern, fill, width, height)' in js
-    assert "patternRect(privatePattern, '#9a5cff', 11, 11)" in js
-    assert "patternRect(tipjarPattern, '#f1a72a', 12, 12)" in js
-    assert "patternRect(cloudPattern, '#32d583', 18, 18)" in js
-    assert "patternRect(processingPattern, '#22c7ff', 12, 12)" in js
-    assert "patternRect(missedPattern, '#ff4fc8', 14, 14)" in js
+    assert "patternRect(privatePattern, '#a88bfa', 11, 11)" in js
+    assert "patternRect(tipjarPattern, '#f0943f', 12, 12)" in js
+    assert "patternRect(cloudPattern, '#3ecf8e', 18, 18)" in js
+    assert "patternRect(processingPattern, '#6aa6ff', 12, 12)" in js
+    assert "patternRect(missedPattern, '#ec6fb3', 14, 14)" in js
     assert "width: '100%'" not in js
     assert "height: '100%'" not in js
 
     for pattern in ['private', 'tipjar', 'cloud', 'processing', 'missed', 'restricted', 'unrecorded']:
         assert f"id: 'lv-pulse-{pattern}'" in js
-        assert f'url(#lv-pulse-{pattern})' in css or f'url(#lv-pulse-{pattern})' in js
+        assert has_css(css, f'url(#lv-pulse-{pattern})') or f'url(#lv-pulse-{pattern})' in js
     assert "svgNode('circle'" in js
     assert 'M9 3.2L10 8L14.8 9' in js
 
     assert "['remote', 'CLOUD', 'url(#lv-pulse-cloud)']" in js
     assert 'cr-pulse-legend-swatch' in js
-    assert 'justify-self:center' in css
+    # The legend spans its own row under the title and window selector.
+    assert has_css(css, '.cr-pulse-legend {grid-column: 1 / -1; grid-row: 2;')
 
 
 def test_pulse_legend_names_every_supported_state_without_vague_recovery_copy():

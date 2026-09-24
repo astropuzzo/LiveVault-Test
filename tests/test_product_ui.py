@@ -1,5 +1,7 @@
 from pathlib import Path
 
+from tests.css_contract import has_css, stylesheet
+
 
 ROOT = Path(__file__).resolve().parents[1]
 STATIC = ROOT / "app" / "static"
@@ -7,12 +9,12 @@ STATIC = ROOT / "app" / "static"
 
 def test_product_ui_is_dark_icon_driven_and_preserves_primary_hooks():
     html = (STATIC / "index.html").read_text(encoding="utf-8")
-    css = (STATIC / "style.css").read_text(encoding="utf-8")
+    css = stylesheet()
     ui = (STATIC / "ui.js").read_text(encoding="utf-8")
     icons = (STATIC / "icons.svg").read_text(encoding="utf-8")
 
     assert '<meta name="color-scheme" content="dark">' in html
-    assert "color-scheme:dark" in css
+    assert has_css(css, "color-scheme:dark")
     assert "gradient" not in css.lower()
     assert "glass" not in css.lower()
     assert "/static/icons.svg#monitor" in html

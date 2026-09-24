@@ -56,7 +56,7 @@ BASE = Path(__file__).parent
 LOGIN_FAILURES: dict[str, deque[float]] = defaultdict(deque)
 LOGIN_WINDOW = 10 * 60
 LOGIN_MAX_FAILURES = 6
-VERSION = "3.0.0"
+VERSION = "3.1.0"
 
 
 class LoginBody(BaseModel):

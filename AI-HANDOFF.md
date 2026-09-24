@@ -84,7 +84,7 @@ client desktop. Il payload dedicato è
 completo, che è molto più costoso. Per rollout senza interrompere registrazioni
 attive, il frontend mantiene un fallback temporaneo al profilo completo quando il nuovo
 endpoint risponde 404; dopo il redeploy applicativo usa automaticamente il payload
-leggero. Asset: `app/static/creator-hover.js` e `.css`. La card touch usa `box-sizing:border-box` per restare entro il viewport anche con padding e bordo.
+leggero. Asset: `app/static/creator-hover.js`; stile nella sezione "Creator hover preview" di `app/static/style.css` (unico foglio di stile dalla 3.1). La card touch usa `box-sizing:border-box` per restare entro il viewport anche con padding e bordo.
 Rollback: revert della relativa modifica UI/API e redeploy LiveVault; nessun dato o
 schema persistente viene modificato. Il contratto UI resta globale perché tutti i
 nomi creator interattivi condividono `data-profile-link`; non duplicare richieste o

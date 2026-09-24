@@ -1,17 +1,19 @@
 from pathlib import Path
 
+from tests.css_contract import has_css, stylesheet
+
 
 def test_control_room_ui_hooks_exist():
     js = Path("app/static/app.js").read_text(encoding="utf-8")
-    css = Path("app/static/style.css").read_text(encoding="utf-8")
+    css = stylesheet()
     assert "LiveVault Control Room v2.7.1" in js
     assert "controlRoomProfileRows" in js
     assert "data-live-wall" in js
     assert "data-focus-toggle" in js
     assert "preview_updated_at" in js
-    assert ".cr-live-grid" in css
-    assert ".cr-wall-grid" in css
-    assert ".cr-compact-row" in css
+    assert has_css(css, ".cr-live-grid")
+    assert has_css(css, ".cr-wall-grid")
+    assert has_css(css, ".cr-compact-row")
 
 
 def test_preview_and_focus_backend_hooks_exist():

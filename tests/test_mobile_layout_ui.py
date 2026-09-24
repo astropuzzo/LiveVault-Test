@@ -1,20 +1,23 @@
 from pathlib import Path
 
+from tests.css_contract import has_css, stylesheet
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_phone_layout_has_explicit_overflow_containment_and_reflow():
-    css = (ROOT / 'app/static/mobile-fixes.css').read_text(encoding='utf-8')
+    css = stylesheet()
     workspace = (ROOT / 'app/static/workspace.js').read_text(encoding='utf-8')
     sw = (ROOT / 'app/static/sw.js').read_text(encoding='utf-8')
 
-    assert '@media(max-width:560px)' in css
-    assert 'overflow-x:clip' in css
-    assert '.dashboard-filters' in css and 'grid-template-columns:minmax(0,1fr) 104px' in css
-    assert '.cr-pulse-scale,.cr-pulse-row' in css and '96px minmax(0,1fr)' in css
-    assert 'grid-template-areas:"thumb identity identity" "thumb upload actions"' in css
-    assert '.archive-identity>*' in css and 'text-overflow:ellipsis' in css
-    assert ':has(> .cr-live-card:only-child)' in css
-    assert '/static/mobile-fixes.css?v=3.0.0-redesign11' in workspace
-    assert "livevault-shell-v3.0.0-redesign11" in sw
-    assert "'/static/mobile-fixes.css'" in sw
+    assert has_css(css, '@media(max-width:560px)')
+    assert has_css(css, 'overflow-x:clip')
+    assert has_css(css, '.dashboard-filters') and has_css(css, 'grid-template-columns:minmax(0,1fr) 112px')
+    assert has_css(css, '.cr-pulse-scale,.cr-pulse-row') and has_css(css, '96px minmax(0,1fr)')
+    assert has_css(css, 'grid-template-areas:"thumb identity identity" "thumb upload actions"')
+    assert has_css(css, '.archive-identity>*') and has_css(css, 'text-overflow:ellipsis')
+    assert has_css(css, ':has(> .cr-live-card:only-child)')
+    # One stylesheet, loaded by index.html: no runtime-injected CSS layers.
+    assert "createElement('link')" not in workspace
+    assert "livevault-shell-v" in sw
+    assert "'/static/style.css'" in sw

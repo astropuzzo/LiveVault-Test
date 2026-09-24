@@ -1,5 +1,7 @@
 from pathlib import Path
 
+from tests.css_contract import has_css, stylesheet
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -20,16 +22,16 @@ def test_storyboard_is_nine_frame_v2():
 def test_pulse_exposes_exact_recording_media():
     main = (ROOT / "app/main.py").read_text(encoding="utf-8")
     js = (ROOT / "app/static/app.js").read_text(encoding="utf-8")
-    css = (ROOT / "app/static/style.css").read_text(encoding="utf-8")
+    css = stylesheet()
     for token in ('"recordings": recording_segments', '"remote_url": str(recording.remote_url or "")', '"thumbnail_url": _safe_thumbnail_url'):
         assert token in main
     for token in ("pulseRecordingFiles", "cr-pulse-rec-media", "data-preview-url", 'target="_blank"', "ensurePulseMediaPreview"):
         assert token in js
-    assert ".cr-pulse-media-preview" in css
-    assert "position:fixed" in css
+    assert has_css(css, ".cr-pulse-media-preview")
+    assert has_css(css, "position:fixed")
 
 
 def test_release_tracks_current_version():
-    assert (ROOT / "VERSION").read_text(encoding="utf-8").strip() == "3.0.0"
-    assert 'VERSION = "3.0.0"' in (ROOT / "app/main.py").read_text(encoding="utf-8")
-    assert "livevault-shell-v3.0.0" in (ROOT / "app/static/sw.js").read_text(encoding="utf-8")
+    assert (ROOT / "VERSION").read_text(encoding="utf-8").strip() == "3.1.0"
+    assert 'VERSION = "3.1.0"' in (ROOT / "app/main.py").read_text(encoding="utf-8")
+    assert "livevault-shell-v3.1.0" in (ROOT / "app/static/sw.js").read_text(encoding="utf-8")

@@ -1,5 +1,5 @@
-const CACHE='livevault-shell-v3.0.0-redesign11';
-const SHELL=['/static/style.css','/static/creator-hover.css','/static/ui-fixes.css','/static/dashboard-tuning.css','/static/pulse-axis.css','/static/mobile-fixes.css','/static/icons.svg','/static/app.js','/static/creator-hover.js','/static/operations.js','/static/workspace.js','/static/ui.js','/static/pulse-tuning.js','/static/icon.svg','/manifest.webmanifest'];
+const CACHE='livevault-shell-v3.1.0-design1';
+const SHELL=['/static/style.css','/static/icons.svg','/static/app.js','/static/creator-hover.js','/static/operations.js','/static/workspace.js','/static/ui.js','/static/pulse-tuning.js','/static/icon.svg','/static/fonts/mona-sans-latin-wght.woff2','/manifest.webmanifest'];
 self.addEventListener('install',event=>event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(SHELL)).then(()=>self.skipWaiting())));
 self.addEventListener('activate',event=>event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(key=>key.startsWith('livevault-shell-')&&key!==CACHE).map(key=>caches.delete(key)))).then(()=>self.clients.claim())));
 self.addEventListener('fetch',event=>{

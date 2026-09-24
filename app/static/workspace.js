@@ -2,45 +2,6 @@
 (() => {
   'use strict';
 
-  if (!document.querySelector('link[data-ui-fixes]')) {
-    const fixes = document.createElement('link');
-    fixes.rel = 'stylesheet';
-    fixes.href = '/static/ui-fixes.css?v=3.0.0-redesign9';
-    fixes.dataset.uiFixes = '1';
-    document.head.appendChild(fixes);
-  }
-
-  if (!document.querySelector('link[data-dashboard-tuning]')) {
-    const tuning = document.createElement('link');
-    tuning.rel = 'stylesheet';
-    tuning.href = '/static/dashboard-tuning.css?v=3.0.0-redesign3';
-    tuning.dataset.dashboardTuning = '1';
-    document.head.appendChild(tuning);
-  }
-
-  if (!document.querySelector('link[data-pulse-axis]')) {
-    const pulseAxis = document.createElement('link');
-    pulseAxis.rel = 'stylesheet';
-    pulseAxis.href = '/static/pulse-axis.css?v=3.0.0-redesign7';
-    pulseAxis.dataset.pulseAxis = '1';
-    document.head.appendChild(pulseAxis);
-  }
-
-  if (!document.querySelector('link[data-mobile-fixes]')) {
-    const mobileFixes = document.createElement('link');
-    mobileFixes.rel = 'stylesheet';
-    mobileFixes.href = '/static/mobile-fixes.css?v=3.0.0-redesign11';
-    mobileFixes.dataset.mobileFixes = '1';
-    document.head.appendChild(mobileFixes);
-  }
-
-  window.addEventListener('load', () => {
-    if (document.querySelector('script[data-pulse-tuning]')) return;
-    const pulseScript = document.createElement('script');
-    pulseScript.src = '/static/pulse-tuning.js?v=3.0.0-redesign7';
-    pulseScript.dataset.pulseTuning = '1';
-    document.head.appendChild(pulseScript);
-  }, {once:true});
   const svg = name => `<svg class="mini-icon" aria-hidden="true"><use href="/static/icons.svg#${name}"></use></svg>`;
   const dialog = $('#commandDialog');
   const input = $('#commandSearch');
