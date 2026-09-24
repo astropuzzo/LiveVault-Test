@@ -125,6 +125,8 @@ class Recording(Base):
     cloud_day_key: Mapped[str] = mapped_column(String(10), default="", index=True)
     remote_parent_id: Mapped[str] = mapped_column(String(255), default="")
     remote_parent_url: Mapped[str] = mapped_column(Text, default="")
+    # Gofile per-video subfolder holding this file ('' = file sits in the day folder).
+    remote_folder_id: Mapped[str] = mapped_column(String(255), default="")
     upload_attempts: Mapped[int] = mapped_column(Integer, default=0)
     last_error: Mapped[str] = mapped_column(Text, default="")
     local_deleted: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -143,6 +145,17 @@ class Recording(Base):
     has_audio: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     video_codec: Mapped[str] = mapped_column(String(40), default="")
     audio_codec: Mapped[str] = mapped_column(String(40), default="")
+    # NSFW scan: pending|scanning|paused|safe|review|nsfw|error|skipped
+    nsfw_status: Mapped[str] = mapped_column(String(16), default="pending", index=True)
+    nsfw_progress: Mapped[float] = mapped_column(Float, default=0.0)
+    nsfw_resume_at: Mapped[float] = mapped_column(Float, default=0.0)
+    nsfw_moments: Mapped[str] = mapped_column(Text, default="")
+    nsfw_hits: Mapped[str] = mapped_column(Text, default="")
+    nsfw_max_score: Mapped[float] = mapped_column(Float, default=0.0)
+    nsfw_error: Mapped[str] = mapped_column(Text, default="")
+    nsfw_scanned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # size-mtime of the file the moments refer to; a converted/repaired file is rescanned.
+    nsfw_file_sig: Mapped[str] = mapped_column(String(64), default="")
 
 
 class RecordingFragment(Base):
@@ -239,6 +252,16 @@ def _migrate_recordings() -> None:
         "cloud_day_key": "VARCHAR(10) NOT NULL DEFAULT ''",
         "remote_parent_id": "VARCHAR(255) NOT NULL DEFAULT ''",
         "remote_parent_url": "TEXT NOT NULL DEFAULT ''",
+        "remote_folder_id": "VARCHAR(255) NOT NULL DEFAULT ''",
+        "nsfw_status": "VARCHAR(16) NOT NULL DEFAULT 'pending'",
+        "nsfw_progress": "FLOAT NOT NULL DEFAULT 0",
+        "nsfw_resume_at": "FLOAT NOT NULL DEFAULT 0",
+        "nsfw_moments": "TEXT NOT NULL DEFAULT ''",
+        "nsfw_hits": "TEXT NOT NULL DEFAULT ''",
+        "nsfw_max_score": "FLOAT NOT NULL DEFAULT 0",
+        "nsfw_error": "TEXT NOT NULL DEFAULT ''",
+        "nsfw_scanned_at": "DATETIME",
+        "nsfw_file_sig": "VARCHAR(64) NOT NULL DEFAULT ''",
     }
     with engine.begin() as conn:
         for name, ddl in additions.items():
@@ -248,6 +271,9 @@ def _migrate_recordings() -> None:
         conn.execute(text("CREATE INDEX IF NOT EXISTS ix_recordings_thumbnail_status ON recordings (thumbnail_status)"))
         conn.execute(text("UPDATE recordings SET thumbnail_status = 'ready' WHERE thumbnail_path <> ''"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS ix_recordings_upload_priority ON recordings (upload_priority)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_recordings_nsfw_status ON recordings (nsfw_status)"))
+        # A file already removed locally can never be scanned.
+        conn.execute(text("UPDATE recordings SET nsfw_status = 'skipped' WHERE local_deleted = 1 AND nsfw_status = 'pending'"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS ix_recordings_cloud_day_key ON recordings (cloud_day_key)"))
         # Older releases mixed local wall-clock values with UTC in started_at.
         # The segment mtime and probed duration provide an unambiguous UTC start.

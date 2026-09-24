@@ -55,8 +55,11 @@
     const rows=recordings.filter(recording=>recordingMatches(recording)&&archiveIntelMatches(recording));
     if(!rows.length)return toast('Nessun file nella selezione.','bad');
     const cell=value=>{let text=String(value??'');if(/^[=+@\-\t\r]/.test(text))text=`'${text}`;return `"${text.replace(/"/g,'""')}"`;};
-    const keys=['id','source_name','filename','started_at','duration_seconds','size_bytes','upload_status','integrity_status','remote_url'];
-    const csv=[keys.join(','),...rows.map(row=>keys.map(key=>cell(row[key])).join(','))].join('\r\n');
+    const keys=['id','source_name','filename','started_at','duration_seconds','size_bytes','upload_status','integrity_status','remote_url','nsfw_status','nsfw_moments'];
+    // Moments as "h:mm:ss-h:mm:ss label" so they can be looked up in the cloud copy of the same file.
+    const hms=s=>{s=Math.max(0,Math.round(Number(s)||0));return `${Math.floor(s/3600)}:${String(Math.floor(s%3600/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;};
+    const value=(row,key)=>key==='nsfw_moments'?(row.nsfw_moments||[]).map(m=>`${hms(m.start)}-${hms(m.end)} ${m.label}`).join(' | '):row[key];
+    const csv=[keys.join(','),...rows.map(row=>keys.map(key=>cell(value(row,key))).join(','))].join('\r\n');
     const url=URL.createObjectURL(new Blob(['\uFEFF',csv],{type:'text/csv;charset=utf-8'}));
     const link=document.createElement('a');link.href=url;link.download='livevault-archivio.csv';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
     toast(`${rows.length} file esportati.`);

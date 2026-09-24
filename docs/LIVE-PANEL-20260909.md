@@ -107,7 +107,65 @@ real ffmpeg fMP4, SSE change event, full pytest/Node suites). Asset versions
 Rollback: revert the 3.2.0 commits and redeploy; no persistent data changes
 (only two optional localStorage keys in browsers).
 
-## Validation and release boundary
+## NSFW moment scan 3.3 (2026-09-24)
+
+Source only, LiveVault 3.3.0, disabled by default (`nsfw_enabled=false`).
+Code: `app/nsfw_scan.py` (scanner, separate process), `app/nsfw_worker.py`
+(queue mixed into `WorkerManager`, task `nsfw-scan`), `app/static/nsfw.js`,
+settings in `app/settings_store.py` (`nsfw_*`), columns `recordings.nsfw_*`
+(added by `_migrate_recordings`, rows already deleted locally become `skipped`).
+New image dependencies: `onnxruntime`, `numpy` (tests also use `onnx`).
+
+- Models are not in the image. Copy NudeNet 3.4 `320n.onnx` and `640m.onnx` to
+  host `/data/livevault/models/` (container `/data/models/`, eMMC, never the
+  NVMe so an eject is not blocked). Missing models → state `models_missing`,
+  nothing is scanned and deletions are not held.
+- Pipeline: ffmpeg decodes keyframes only, one every `nsfw_step_seconds` of
+  real pts (capture gaps are skipped, timestamps stay those of the file);
+  small model on every frame, large model only on suspects (±1 frame) and,
+  inside a confirmed stretch, once every 60 s (a fully explicit video costs
+  minutes, not hours; hard cap 400 large-model frames per file, beyond that
+  hits stay "da controllare"). Only the large model can mark NSFW.
+- Timestamps refer to the same file that is uploaded (`recordings.local_path`
+  → Gofile/Pixeldrain); `nsfw_file_sig` (size-mtime) makes a converted or
+  repaired file rescan automatically. Preview JPEGs in `/data/nsfw/`.
+- Runs at `nice 19` + `ionice -c3`, `nsfw_threads` cores (default 1); with
+  `nsfw_only_when_idle` it pauses while any recorder is active. Storage
+  quiesce (NVMe eject) kills the child at once and saves the position; the
+  scan resumes from there. With `nsfw_hold_delete` an uploaded file is kept
+  locally until scanned, at most `nsfw_max_hold_hours` (24) and never under
+  disk pressure.
+- API: `GET /api/nsfw` (state, live progress, counts, model presence),
+  `POST /api/recordings/{id}/nsfw` (`rescan|skip|mark_safe|mark_nsfw`),
+  `GET /api/nsfw/images/{id}-{t}.jpg`. Archive search `is:nsfw`, `is:safe`,
+  `is:controllare`, `is:daanalizzare`; CSV export includes the moments.
+
+Measured on the node (2026-09-24, benchmark venv in `/opt/nsfw-bench`, one
+core, nice 19): small model 214–278 ms/frame, large model ~4.9 s/frame, peak
+RSS 363 MB with both; 1 h 46 min capture scanned in 4 min. The leggings false
+positive of the small model alone was rejected by the large one. Not yet run
+inside the container or on a video with confirmed nudity. Asset versions
+`?v=3.3.0-nsfw1`, SW cache `livevault-shell-v3.3.0-nsfw1`.
+Rollback: set `nsfw_enabled=false` (instant, no restart) or revert the 3.3.0
+commits and redeploy; the extra columns are ignored by older code, the
+`/data/nsfw` previews and `/data/models` files can be deleted by hand.
+
+## Gofile link per recording (2026-09-24)
+
+Gofile has no share page for a single file: the upload response's
+`downloadPage` is the containing folder, so every recording link opened the
+creator/day folder. From 3.3.0 (`gofile_folder_per_file=true`, default) the
+uploader creates a public subfolder named after the file inside the day
+folder (`WorkerManager._gofile_file_folder`, `app/workers.py`) and uploads
+into it: `recordings.remote_url` is that subfolder (only this video),
+`remote_parent_url` stays the day folder, `remote_folder_id` stores the
+subfolder id. The same subfolder is reused on retries; if creating it fails
+the file goes to the day folder as before (error under
+`last_errors["gofile-file-folder:<id>"]`). "Crea cartella Gofile" moves the
+subfolders, not the files. Files uploaded before this change keep the day
+folder link (not migrated). Pixeldrain already links each file.
+Rollback: untick the option in Settings → Gofile (no restart).
+
 
 Targeted Python/Node regression tests cover request races, malformed/stale replies,
 timeline gaps, mobile expansion, missing media, date boundaries, short-prefix

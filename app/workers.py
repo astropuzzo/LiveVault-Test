@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import replace
 import contextlib
 import json
 import shutil
@@ -31,6 +32,7 @@ from .media_validation import build_validation_receipt, integrity_from_validatio
 from .source_providers import probe
 from .storage import disk_state
 from . import storage_handoff
+from .nsfw_worker import NsfwWorkerMixin
 from .uploaders import UploadCancelled, create_gofile_folder, create_pixeldrain_list, provider_available, upload
 from .utils import generate_live_preview, generate_thumbnail, human_bytes, safe_name, sha256_file, utcnow, verify_media
 
@@ -109,7 +111,7 @@ def capture_output_files(session: RecorderSession) -> list[Path]:
     )
 
 
-class WorkerManager:
+class WorkerManager(NsfwWorkerMixin):
     def __init__(self) -> None:
         self.active: dict[int, RecorderSession] = {}
         self._storage_jobs = 0
@@ -133,6 +135,7 @@ class WorkerManager:
         self._session_continuations: dict[int, tuple[str, float]] = {}
         self._preview_locks: dict[int, asyncio.Lock] = {}
         self._preview_semaphore = asyncio.Semaphore(1)
+        self._gofile_file_folders: dict[int, tuple[str, str, str]] = {}
         self._mp4_finalize_lock = asyncio.Lock()
         self._recovery_lock = asyncio.Lock()
         self.recovery_task: asyncio.Task | None = None
@@ -177,11 +180,13 @@ class WorkerManager:
                     continue
                 self._recover_interrupted_uploads()
                 self._recover_interrupted_thumbnails()
+                self._recover_interrupted_nsfw()
                 self.tasks = [
                     asyncio.create_task(self._poll_loop(), name="source-poller"),
                     asyncio.create_task(self._upload_loop(), name="uploader"),
                     asyncio.create_task(self._thumbnail_loop(), name="thumbnail-worker"),
                     asyncio.create_task(self._cleanup_loop(), name="storage-guard"),
+                    asyncio.create_task(self._nsfw_loop(), name="nsfw-scan"),
                 ]
                 # Recording must resume immediately after a reboot. Multi-GB
                 # orphan inspection runs beside the poller, never in front of it.
@@ -287,6 +292,7 @@ class WorkerManager:
             "thumbnail_queue": "running" if any(task.get_name() == "thumbnail-worker" and not task.done() for task in self.tasks) else "idle",
             "recovery": "running" if self.recovery_task and not self.recovery_task.done() else "idle",
             "maintenance": "running" if self.backfill_task and not self.backfill_task.done() else "idle",
+            "nsfw": self.nsfw_state,
         }
 
     def _recover_interrupted_uploads(self) -> None:
@@ -652,6 +658,8 @@ class WorkerManager:
                 return False
             if cfg.generate_thumbnails and current.thumbnail_status not in {"ready", "disabled"}:
                 return False
+            if getattr(current, "nsfw_status", "") == "scanning" or self.nsfw_hold_blocks_delete(current):
+                return False
         try:
             path.unlink(missing_ok=True)
         except OSError as exc:
@@ -661,6 +669,8 @@ class WorkerManager:
             current = db.get(Recording, recording_id)
             if current and current.upload_status == "uploaded":
                 current.local_deleted = True
+                if getattr(current, "nsfw_status", "") in ("pending", "paused"):
+                    current.nsfw_status = "skipped"
         self.last_errors.pop(f"delete-after-upload:{recording_id}", None)
         return True
 
@@ -1651,6 +1661,26 @@ class WorkerManager:
             display_name = profile.display_name if profile else source.name
             return source.profile_id, day_key, f"{display_name} - {day_key}"[:255], bool(source.organize_cloud)
 
+    async def _gofile_file_folder(self, rec: Recording, day_folder_id: str) -> tuple[str, str]:
+        """Per-video subfolder of the day folder: its page shows only this file.
+
+        Reused across retries of the same recording; on any Gofile error the
+        upload falls back to the day folder (previous behaviour).
+        """
+        if not runtime().gofile_folder_per_file or not day_folder_id:
+            return "", ""
+        cached = self._gofile_file_folders.get(rec.id)
+        if cached and cached[0] == day_folder_id:
+            return cached[1], cached[2]
+        try:
+            folder_id, folder_url = await asyncio.to_thread(create_gofile_folder, Path(rec.filename).stem, day_folder_id)
+        except Exception as exc:
+            self.last_errors[f"gofile-file-folder:{rec.id}"] = f"Sottocartella non creata, uso la cartella del giorno: {exc}"[-600:]
+            return "", ""
+        self.last_errors.pop(f"gofile-file-folder:{rec.id}", None)
+        self._gofile_file_folders[rec.id] = (day_folder_id, folder_id, folder_url)
+        return folder_id, folder_url
+
     async def _gofile_folder_for(self, rec: Recording) -> tuple[str, str, str]:
         """Return the Gofile folder dedicated to this creator and Frankfurt calendar day."""
         profile_id, day_key, title, organize = self._cloud_day_spec(rec)
@@ -1923,15 +1953,21 @@ class WorkerManager:
                         gofile_folder_id = ""
                         gofile_folder_url = ""
                         recording_day_key = cloud_day_key(rec.started_at)
+                        file_folder_url = ""
+                        target_folder_id = ""
                         if provider == "gofile":
                             gofile_folder_id, gofile_folder_url, recording_day_key = await self._gofile_folder_for(rec)
+                            target_folder_id, file_folder_url = await self._gofile_file_folder(rec, gofile_folder_id)
                         result = await asyncio.to_thread(
                             upload,
                             path,
                             provider,
                             progress,
-                            gofile_folder_id,
+                            target_folder_id or gofile_folder_id,
                         )
+                        if result.verified and file_folder_url:
+                            result = replace(result, remote_url=file_folder_url)
+                            self._gofile_file_folders.pop(rec.id, None)
                         if result.verified:
                             break
                         errors.append(f"{provider}: verifica remota non riuscita")
@@ -1953,6 +1989,7 @@ class WorkerManager:
                             if result.provider == "gofile" and gofile_folder_id:
                                 current.remote_parent_id = gofile_folder_id
                                 current.remote_parent_url = gofile_folder_url
+                            current.remote_folder_id = target_folder_id if result.provider == "gofile" and file_folder_url else ""
                             current.uploaded_at = utcnow()
                             current.last_error = ""
                     if result.provider == "gofile" and gofile_folder_id:

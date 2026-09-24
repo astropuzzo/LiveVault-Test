@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.3.0 — Analisi NSFW
+
+- Nuova analisi opzionale dei video: segna i momenti con nudità con il tempo esatto del file caricato su Gofile/Pixeldrain, con anteprima, "Guarda da qui", "Copia elenco" e link al cloud.
+- Due modelli: quello veloce scorre tutto il video, quello preciso conferma solo i sospetti (niente falsi allarmi tipo leggings); nei tratti lunghi ricontrolla una volta al minuto.
+- Avanzamento in tempo reale (percentuale, fotogrammi, tempo rimanente), pausa automatica durante le registrazioni e allo stacco dell'NVMe con ripresa dal punto raggiunto.
+- Gofile: il link di ogni registrazione ora apre solo quel video (una sottocartella per file dentro la cartella del giorno); disattivabile nelle impostazioni. I file già caricati mantengono il link alla cartella.
+- Impostazioni modificabili: frequenza, soglie, core CPU, cosa cercare, attesa prima di eliminare il file locale. Filtri archivio `is:nsfw`, `is:safe`, `is:controllare`.
+
 ## 3.2.0 — Glass e nuove funzioni
 
 - Grafica "glass": sfondo ad aurore, pannelli traslucidi sfocati, bordi luminosi, pulsante principale a gradiente; fallback senza sfocatura.

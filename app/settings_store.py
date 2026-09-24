@@ -14,6 +14,9 @@ from .db import AppSetting, db_session
 
 
 SECRET_KEYS = {"gofile_token", "pixeldrain_api_key"}
+NSFW_KEYS = ("nsfw_enabled", "nsfw_step_seconds", "nsfw_candidate", "nsfw_threshold", "nsfw_threads",
+             "nsfw_only_when_idle", "nsfw_hold_delete", "nsfw_max_hold_hours", "nsfw_classes",
+             "nsfw_fast_model", "nsfw_verify_model")
 
 
 @dataclass
@@ -39,9 +42,24 @@ class RuntimeSettings:
     gofile_token: str = ""
     gofile_folder_id: str = ""
     gofile_region: str = "auto"
+    # One public subfolder per video inside the day folder, so the recording
+    # link opens that single file (Gofile has no per-file share page).
+    gofile_folder_per_file: bool = True
     pixeldrain_api_key: str = ""
     recording_paused: bool = False
     upload_paused: bool = False
+    # NSFW moment scan (app/nsfw_scan.py). Off until the models are installed.
+    nsfw_enabled: bool = False
+    nsfw_step_seconds: float = 5.0
+    nsfw_candidate: float = 0.35
+    nsfw_threshold: float = 0.6
+    nsfw_threads: int = 1
+    nsfw_only_when_idle: bool = True
+    nsfw_hold_delete: bool = True
+    nsfw_max_hold_hours: int = 24
+    nsfw_classes: str = "FEMALE_BREAST_EXPOSED,FEMALE_GENITALIA_EXPOSED,MALE_GENITALIA_EXPOSED,ANUS_EXPOSED"
+    nsfw_fast_model: str = "/data/models/320n.onnx"
+    nsfw_verify_model: str = "/data/models/640m.onnx"
 
 
 _state = RuntimeSettings(
@@ -178,10 +196,12 @@ def public_settings() -> dict:
         "fallback_uploader": s.fallback_uploader,
         "gofile_folder_id": s.gofile_folder_id,
         "gofile_region": s.gofile_region,
+        "gofile_folder_per_file": s.gofile_folder_per_file,
         "gofile_configured": bool(s.gofile_token),
         "gofile_token_hint": ("••••" + s.gofile_token[-4:]) if s.gofile_token else "",
         "pixeldrain_configured": bool(s.pixeldrain_api_key),
         "pixeldrain_key_hint": ("••••" + s.pixeldrain_api_key[-4:]) if s.pixeldrain_api_key else "",
         "recording_paused": s.recording_paused,
         "upload_paused": s.upload_paused,
+        **{key: getattr(s, key) for key in NSFW_KEYS},
     }

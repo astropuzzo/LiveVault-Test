@@ -1027,7 +1027,7 @@ function uploadLabel(value) {
 //   stato:caricato|coda|fallito|errore|upload
 //   >1gb <500mb size>2gb  → file size;  durata>30m dur<10m >1h → duration
 //   dal:2026-09-01 al:2026-09-10 oggi ieri settimana mese → start date
-//   is:locale is:cloud is:problema
+//   is:locale is:cloud is:problema is:nsfw is:safe is:controllare is:daanalizzare
 const ARCHIVE_STATUS_ALIASES = {
   caricato: ['uploaded'], cloud: ['uploaded'], coda: ['pending', 'waiting_config'], attesa: ['pending', 'waiting_config'],
   fallito: ['failed', 'integrity_failed'], errore: ['failed', 'integrity_failed'], upload: ['uploading'],
@@ -1074,6 +1074,10 @@ function parseArchiveQuery(raw) {
       const from = {oggi: dayStart(0), ieri: dayStart(1), settimana: dayStart(7), mese: dayStart(30)}[token];
       const to = token === 'ieri' ? dayStart(0) : Infinity;
       tests.push(r => timestamp(r.started_at) >= from && timestamp(r.started_at) < to);
+    } else if ((match = token.match(/^is:(nsfw|safe|sicuro|controllare|review|analisi|daanalizzare)$/))) {
+      const wanted = {nsfw: ['nsfw'], safe: ['safe'], sicuro: ['safe'], controllare: ['review'], review: ['review'],
+        analisi: ['pending', 'scanning', 'paused'], daanalizzare: ['pending', 'scanning', 'paused']}[match[1]];
+      tests.push(r => wanted.includes(r.nsfw_status || 'pending'));
     } else if ((match = token.match(/^is:(locale|local|cloud|problema|problem)$/))) {
       const kind = match[1];
       tests.push(r => kind.startsWith('local') ? !!r.local_available && !r.local_deleted
@@ -1222,6 +1226,7 @@ async function loadSettings() {
   $('#setAttempts').value = settings.max_upload_attempts;
   $('#setGofileFolder').value = settings.gofile_folder_id || '';
   $('#setGofileRegion').value = settings.gofile_region || 'auto';
+  $('#setGofilePerFile').checked = settings.gofile_folder_per_file !== false;
   $('#setGofileToken').value = '';
   $('#setPixeldrainKey').value = '';
   $('#clearGofile').checked = false;
@@ -1232,6 +1237,18 @@ async function loadSettings() {
   $('#gofileState').className = `provider-state ${settings.gofile_configured ? 'ok' : ''}`;
   $('#pixeldrainState').textContent = settings.pixeldrain_configured ? 'Configurato' : 'Non configurato';
   $('#pixeldrainState').className = `provider-state ${settings.pixeldrain_configured ? 'ok' : ''}`;
+  $('#setNsfwEnabled').checked = !!settings.nsfw_enabled;
+  $('#setNsfwStep').value = settings.nsfw_step_seconds;
+  $('#setNsfwThreads').value = settings.nsfw_threads;
+  $('#setNsfwThreshold').value = settings.nsfw_threshold;
+  $('#setNsfwCandidate').value = settings.nsfw_candidate;
+  $('#setNsfwIdle').checked = !!settings.nsfw_only_when_idle;
+  $('#setNsfwHold').checked = !!settings.nsfw_hold_delete;
+  $('#setNsfwHoldHours').value = settings.nsfw_max_hold_hours;
+  $('#setNsfwFast').value = settings.nsfw_fast_model || '';
+  $('#setNsfwVerify').value = settings.nsfw_verify_model || '';
+  const nsfwClasses = String(settings.nsfw_classes || '').split(',');
+  $$('[data-nsfw-class]').forEach(box => { box.checked = nsfwClasses.includes(box.dataset.nsfwClass); });
   $('#settingsError').textContent = '';
 }
 
@@ -2135,8 +2152,14 @@ $('#settingsForm').addEventListener('submit', async event => {
     delete_after_upload: $('#setDeleteAfter').checked, primary_uploader: $('#setPrimary').value,
     fallback_uploader: $('#setFallback').value, upload_retry_seconds: Number($('#setRetry').value),
     max_upload_attempts: Number($('#setAttempts').value), gofile_folder_id: $('#setGofileFolder').value.trim(),
-    gofile_region: $('#setGofileRegion').value, clear_gofile_token: $('#clearGofile').checked,
-    clear_pixeldrain_api_key: $('#clearPixeldrain').checked
+    gofile_region: $('#setGofileRegion').value, gofile_folder_per_file: $('#setGofilePerFile').checked, clear_gofile_token: $('#clearGofile').checked,
+    clear_pixeldrain_api_key: $('#clearPixeldrain').checked,
+    nsfw_enabled: $('#setNsfwEnabled').checked, nsfw_step_seconds: Number($('#setNsfwStep').value),
+    nsfw_threads: Number($('#setNsfwThreads').value), nsfw_threshold: Number($('#setNsfwThreshold').value),
+    nsfw_candidate: Number($('#setNsfwCandidate').value), nsfw_only_when_idle: $('#setNsfwIdle').checked,
+    nsfw_hold_delete: $('#setNsfwHold').checked, nsfw_max_hold_hours: Number($('#setNsfwHoldHours').value),
+    nsfw_classes: $$('[data-nsfw-class]').filter(box => box.checked).map(box => box.dataset.nsfwClass).join(','),
+    nsfw_fast_model: $('#setNsfwFast').value.trim(), nsfw_verify_model: $('#setNsfwVerify').value.trim()
   };
   if ($('#setGofileToken').value.trim()) body.gofile_token = $('#setGofileToken').value.trim();
   if ($('#setPixeldrainKey').value.trim()) body.pixeldrain_api_key = $('#setPixeldrainKey').value.trim();

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import re
 from struct import error as struct_error
 import time
@@ -38,6 +39,7 @@ from .file_cleanup import cleanup_empty_parents, cleanup_orphan_videos, safe_unl
 from .media_validation import build_validation_receipt
 from .mp4_index import NotFragmented, cached_index, hls_playlist
 from .predictions import forecast, rank_upcoming
+from .nsfw_scan import LABELS as NSFW_LABELS
 from .http_compression import TextCompressionMiddleware
 from .storage_response import StorageFileResponse
 from .recorder import (
@@ -59,7 +61,7 @@ BASE = Path(__file__).parent
 LOGIN_FAILURES: dict[str, deque[float]] = defaultdict(deque)
 LOGIN_WINDOW = 10 * 60
 LOGIN_MAX_FAILURES = 6
-VERSION = "3.2.0"
+VERSION = "3.3.0"
 
 
 class LoginBody(BaseModel):
@@ -181,8 +183,20 @@ class SettingsPatch(BaseModel):
     clear_gofile_token: bool = False
     gofile_folder_id: str | None = Field(default=None, max_length=200)
     gofile_region: str | None = None
+    gofile_folder_per_file: bool | None = None
     pixeldrain_api_key: str | None = Field(default=None, max_length=500)
     clear_pixeldrain_api_key: bool = False
+    nsfw_enabled: bool | None = None
+    nsfw_step_seconds: float | None = Field(default=None, ge=1, le=60)
+    nsfw_candidate: float | None = Field(default=None, ge=0.05, le=0.95)
+    nsfw_threshold: float | None = Field(default=None, ge=0.1, le=0.99)
+    nsfw_threads: int | None = Field(default=None, ge=1, le=4)
+    nsfw_only_when_idle: bool | None = None
+    nsfw_hold_delete: bool | None = None
+    nsfw_max_hold_hours: int | None = Field(default=None, ge=0, le=720)
+    nsfw_classes: str | None = Field(default=None, max_length=600)
+    nsfw_fast_model: str | None = Field(default=None, max_length=300)
+    nsfw_verify_model: str | None = Field(default=None, max_length=300)
 
 
 def _normalize_source_or_400(platform: str, value: str) -> tuple[str, str]:
@@ -697,6 +711,25 @@ def patch_settings(body: SettingsPatch, request: Request):
         updates["gofile_token"] = ""
     if clear_pixeldrain:
         updates["pixeldrain_api_key"] = ""
+    if "nsfw_classes" in updates:
+        classes = [c.strip().upper() for c in updates["nsfw_classes"].split(",") if c.strip()]
+        if not classes or any(c not in NSFW_LABELS for c in classes):
+            raise HTTPException(400, "Classi NSFW non valide")
+        updates["nsfw_classes"] = ",".join(dict.fromkeys(classes))
+    for model_key in ("nsfw_fast_model", "nsfw_verify_model"):
+        if model_key in updates:
+            value = updates[model_key].strip()
+            # Models are loaded from the persistent models folder only.
+            models_root = (settings.data_dir / "models").resolve()
+            if value and (not re.fullmatch(r"[A-Za-z0-9_./-]+\.onnx", value)
+                          or Path(value).resolve().parent != models_root):
+                raise HTTPException(400, f"Il modello deve essere un file .onnx in {settings.data_dir / 'models'}")
+            if model_key == "nsfw_fast_model" and not value:
+                raise HTTPException(400, "Il modello veloce è obbligatorio")
+            updates[model_key] = value
+    nsfw_candidate = float(updates.get("nsfw_candidate", runtime().nsfw_candidate))
+    if nsfw_candidate > float(updates.get("nsfw_threshold", runtime().nsfw_threshold)):
+        raise HTTPException(400, "La soglia sospetto deve essere ≤ della soglia NSFW")
     # Validate disk guard ordering using current values plus this patch.
     current = runtime()
     min_free = float(updates.get("min_free_gb", current.min_free_gb))
@@ -2015,13 +2048,17 @@ async def organize_source_cloud(source_id: int, request: Request):
                     source.gofile_folder_id = folder_id
                     source.gofile_folder_url = folder_url
         with db_session() as db:
-            remote_ids = list(db.scalars(
-                select(Recording.remote_id).where(
-                    Recording.source_id == source_id,
-                    Recording.upload_provider == "gofile",
-                    Recording.remote_id != "",
-                )
-            ).all())
+            # Move the per-video subfolder when there is one, so each
+            # recording link keeps pointing at a page with just that file.
+            remote_ids = list(dict.fromkeys(
+                folder or remote for remote, folder in db.execute(
+                    select(Recording.remote_id, Recording.remote_folder_id).where(
+                        Recording.source_id == source_id,
+                        Recording.upload_provider == "gofile",
+                        Recording.remote_id != "",
+                    )
+                ).all()
+            ))
         moved = 0
         warning = ""
         if remote_ids:
@@ -2158,7 +2195,91 @@ def _recording_json(r: Recording) -> dict:
         "thumbnail_status": r.thumbnail_status, "thumbnail_error": r.thumbnail_error,
         "thumbnail_url": thumbnail_url,
         "view_url": f"/api/recordings/{r.id}/view" if local_available else "",
+        "nsfw_status": r.nsfw_status or "pending",
+        "nsfw_progress": round(float(r.nsfw_progress or 0), 3),
+        "nsfw_max_score": round(float(r.nsfw_max_score or 0), 3),
+        "nsfw_moments": _nsfw_moments(r.nsfw_moments),
+        "nsfw_error": r.nsfw_error or "",
+        "nsfw_scanned_at": _iso_utc(r.nsfw_scanned_at),
     }
+
+
+def _nsfw_moments(raw: str) -> list[dict]:
+    try:
+        value = json.loads(raw or "[]")
+    except ValueError:
+        return []
+    return [
+        {**m, "image_url": f"/api/nsfw/images/{m['image']}" if m.get("image") else ""}
+        for m in value if isinstance(m, dict)
+    ][:200]
+
+
+NSFW_ACTIONS = {"rescan", "skip", "mark_safe", "mark_nsfw"}
+
+
+class NsfwAction(BaseModel):
+    action: str
+
+
+@app.get("/api/nsfw")
+def nsfw_status(request: Request):
+    require_auth(request)
+    cfg = runtime()
+    with db_session() as db:
+        counts = dict(db.execute(select(Recording.nsfw_status, func.count()).group_by(Recording.nsfw_status)).all())
+        queue_local = db.scalar(select(func.count()).select_from(Recording).where(
+            Recording.local_deleted.is_(False), Recording.nsfw_status.in_(["pending", "paused", "scanning"]))) or 0
+    models = {}
+    for key in ("nsfw_fast_model", "nsfw_verify_model"):
+        path = Path(getattr(cfg, key) or "")
+        present = bool(getattr(cfg, key)) and path.is_file()
+        models[key] = {"path": str(getattr(cfg, key) or ""), "present": present,
+                       "size_bytes": path.stat().st_size if present else 0}
+    return {**manager.nsfw_snapshot(), "enabled": cfg.nsfw_enabled, "queue": int(queue_local),
+            "counts": {str(k): int(v) for k, v in counts.items()}, "models": models}
+
+
+@app.post("/api/recordings/{recording_id}/nsfw")
+async def nsfw_recording_action(recording_id: int, body: NsfwAction, request: Request):
+    require_auth(request)
+    if body.action not in NSFW_ACTIONS:
+        raise HTTPException(400, "Azione non valida")
+    current = manager.nsfw_current or {}
+    with db_session() as db:
+        rec = db.get(Recording, recording_id)
+        if not rec:
+            raise HTTPException(404, "Registrazione non trovata")
+        if body.action == "rescan":
+            if rec.local_deleted or not Path(rec.local_path).is_file():
+                raise HTTPException(409, "File locale non più disponibile: impossibile rianalizzare")
+            if rec.nsfw_status == "scanning":
+                raise HTTPException(409, "Analisi già in corso")
+            rec.nsfw_status, rec.nsfw_resume_at, rec.nsfw_progress = "pending", 0.0, 0.0
+            rec.nsfw_hits, rec.nsfw_error = "", ""
+        elif body.action == "skip":
+            if current.get("recording_id") == recording_id:
+                manager.request_nsfw_stop("user")
+            else:
+                rec.nsfw_status, rec.nsfw_error = "skipped", "Esclusa dall'analisi"
+        else:
+            # Manual verdict wins over the model (e.g. leggings flagged as nudity).
+            rec.nsfw_status = "safe" if body.action == "mark_safe" else "nsfw"
+            rec.nsfw_error = "Esito impostato manualmente"
+        result = _recording_json(rec)
+    manager.wake()
+    return result
+
+
+@app.get("/api/nsfw/images/{name}")
+def nsfw_image(name: str, request: Request):
+    require_auth(request)
+    if not re.fullmatch(r"\d+-\d+\.jpg", name):
+        raise HTTPException(404, "Immagine non trovata")
+    path = settings.data_dir / "nsfw" / name
+    if not path.is_file():
+        raise HTTPException(404, "Immagine non trovata")
+    return FileResponse(path, media_type="image/jpeg", headers={"Cache-Control": "private, max-age=86400"})
 
 
 @app.get("/api/recordings")
