@@ -79,6 +79,8 @@ class ProviderSpec:
     username_based: bool = True
     last_broadcast: bool = False
     support_level: str = "beta"
+    # For sites whose channel id is not the first URL path segment.
+    slug_regex: str = ""
 
 
 PROVIDERS = (
@@ -154,6 +156,164 @@ PROVIDERS = (
         "URL live YouTube",
         "es. https://youtube.com/watch?v=...",
         "youtube",
+        username_based=False,
+    ),
+    ProviderSpec(
+        "tiktok",
+        "TikTok Live",
+        ("tiktok.com", "www.tiktok.com", "m.tiktok.com"),
+        "Utente o URL TikTok",
+        "es. https://tiktok.com/@nome/live",
+        "tiktok:live",
+        url_template="https://www.tiktok.com/@{slug}/live",
+    ),
+    ProviderSpec(
+        "cammodels",
+        "CamModels",
+        ("cammodels.com", "www.cammodels.com"),
+        "Username o URL CamModels",
+        "es. https://cammodels.com/cam/nome",
+        "CamModels",
+        url_template="https://www.cammodels.com/cam/{slug}/",
+        slug_regex=r"^/cam/([^/]+)",
+    ),
+    ProviderSpec(
+        "soop",
+        "SOOP (AfreecaTV)",
+        ("sooplive.com", "play.sooplive.com"),
+        "ID o URL SOOP",
+        "es. https://play.sooplive.com/nome",
+        "soop:live",
+        url_template="https://play.sooplive.com/{slug}",
+    ),
+    ProviderSpec(
+        "chzzk",
+        "CHZZK",
+        ("chzzk.naver.com",),
+        "URL live CHZZK",
+        "es. https://chzzk.naver.com/live/<id>",
+        "chzzk:live",
+        url_template="https://chzzk.naver.com/live/{slug}",
+        slug_regex=r"^/live/([0-9a-fA-F]{32})",
+    ),
+    ProviderSpec(
+        "bigo",
+        "Bigo Live",
+        ("bigo.tv", "www.bigo.tv"),
+        "ID o URL Bigo",
+        "es. https://bigo.tv/nome",
+        "Bigo",
+        url_template="https://www.bigo.tv/{slug}",
+    ),
+    ProviderSpec(
+        "picarto",
+        "Picarto",
+        ("picarto.tv", "www.picarto.tv"),
+        "Canale o URL Picarto",
+        "es. https://picarto.tv/canale",
+        "picarto",
+        url_template="https://picarto.tv/{slug}",
+    ),
+    ProviderSpec(
+        "twitcasting",
+        "TwitCasting",
+        ("twitcasting.tv", "www.twitcasting.tv"),
+        "Utente o URL TwitCasting",
+        "es. https://twitcasting.tv/nome",
+        "TwitCastingLive",
+        url_template="https://twitcasting.tv/{slug}",
+    ),
+    ProviderSpec(
+        "dlive",
+        "DLive",
+        ("dlive.tv", "www.dlive.tv"),
+        "Canale o URL DLive",
+        "es. https://dlive.tv/canale",
+        "dlive:stream",
+        url_template="https://dlive.tv/{slug}",
+    ),
+    ProviderSpec(
+        "vklive",
+        "VK Video Live",
+        ("live.vkvideo.ru", "live.vkplay.ru"),
+        "Canale o URL VK Live",
+        "es. https://live.vkvideo.ru/canale",
+        "VKPlayLive",
+        url_template="https://live.vkvideo.ru/{slug}",
+    ),
+    ProviderSpec(
+        "huya",
+        "Huya",
+        ("huya.com", "www.huya.com"),
+        "Stanza o URL Huya",
+        "es. https://huya.com/stanza",
+        "huya:live",
+        url_template="https://www.huya.com/{slug}",
+    ),
+    ProviderSpec(
+        "douyu",
+        "Douyu",
+        ("douyu.com", "www.douyu.com"),
+        "Stanza o URL Douyu",
+        "es. https://douyu.com/stanza",
+        "DouyuTV",
+        url_template="https://www.douyu.com/{slug}",
+    ),
+    ProviderSpec(
+        "younow",
+        "YouNow",
+        ("younow.com", "www.younow.com"),
+        "Utente o URL YouNow",
+        "es. https://younow.com/nome",
+        "YouNowLive",
+        url_template="https://www.younow.com/{slug}",
+    ),
+    ProviderSpec(
+        "showroom",
+        "SHOWROOM",
+        ("showroom-live.com", "www.showroom-live.com"),
+        "Stanza o URL SHOWROOM",
+        "es. https://showroom-live.com/r/stanza",
+        "showroom:live",
+        url_template="https://www.showroom-live.com/r/{slug}",
+        slug_regex=r"^/r/([^/]+)",
+    ),
+    ProviderSpec(
+        "17live",
+        "17LIVE",
+        ("17.live",),
+        "URL live 17LIVE",
+        "es. https://17.live/en/live/123",
+        "17live",
+        url_template="https://17.live/en/live/{slug}",
+        slug_regex=r"^/(?:[a-z]{2}(?:-[A-Za-z]{2})?/)?live/(\d+)",
+    ),
+    ProviderSpec(
+        "mixch",
+        "MixChannel",
+        ("mixch.tv",),
+        "URL live MixChannel",
+        "es. https://mixch.tv/u/123/live",
+        "mixch",
+        url_template="https://mixch.tv/u/{slug}/live",
+        slug_regex=r"^/u/(\d+)",
+    ),
+    ProviderSpec(
+        "rumble",
+        "Rumble",
+        ("rumble.com",),
+        "URL live Rumble",
+        "es. https://rumble.com/v...html",
+        "Rumble",
+        username_based=False,
+    ),
+    ProviderSpec(
+        "niconico",
+        "Niconico Live",
+        ("live.nicovideo.jp",),
+        "URL live Niconico",
+        "es. https://live.nicovideo.jp/watch/lv...",
+        "niconico:live",
         username_based=False,
     ),
 )
@@ -291,6 +451,14 @@ def _username_from_value(value: str, spec: ProviderSpec) -> str:
     raw = value.strip()
     if "://" in raw:
         url = _public_https_url(raw, allowed_hosts=spec.hosts)
+        if spec.slug_regex:
+            match = re.match(spec.slug_regex, urlparse(url).path)
+            if not match:
+                raise ValueError(f"URL {spec.label} non riconosciuto")
+            raw = match.group(1)
+            if not USERNAME_RE.fullmatch(raw):
+                raise ValueError(f"nome canale {spec.label} non valido")
+            return raw.lower()
         parts = [part for part in urlparse(url).path.split("/") if part]
         if not parts:
             raise ValueError("l'URL non contiene il nome del canale")
