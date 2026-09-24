@@ -66,15 +66,41 @@ _install_size_policy(_processing_manager)
 from app.config import settings as _recovery_settings  # noqa: E402
 from app.recovery_policy import (  # noqa: E402
     finalizing_error_is_unrecoverable as _finalizing_error_is_unrecoverable,
+    quarantine_stem as _quarantine_stem,
     recovery_quarantine_path as _recovery_quarantine_path,
+    redundant_copy_reason as _redundant_copy_reason,
 )
+from app import storage_handoff as _recovery_storage  # noqa: E402
 from app.utils import verify_media as _recovery_verify_media  # noqa: E402
 
 
+def _purge_redundant_quarantine(self) -> None:
+    """Delete quarantined remux copies whose capture is still on disk or already uploaded."""
+    freed = 0
+    for path in sorted(_recovery_settings.recordings_dir.rglob(".*.recovery-failed*.mp4")):
+        if self._stopping or not _recovery_storage.media_online():
+            return
+        try:
+            reason = _redundant_copy_reason(path.parent, _quarantine_stem(path))
+            if not reason:
+                continue
+            size = path.stat().st_size
+            path.unlink()
+            path.with_name(f"{path.name}.txt").unlink(missing_ok=True)
+            freed += size
+        except OSError as exc:
+            self.last_errors[f"recovery-purge:{path}"] = str(exc)[-600:]
+    if freed:
+        self.recovery_purged_bytes = getattr(self, "recovery_purged_bytes", 0) + freed
+
+
 async def _recover_stale_finalizing_files_safe(self) -> None:
+    if not _recovery_storage.media_online():
+        return
+    await asyncio.to_thread(_purge_redundant_quarantine, self)
     cutoff = time.time() - 30 * 60
     for temporary in sorted(_recovery_settings.recordings_dir.rglob(".*.finalizing.mp4")):
-        if self._stopping:
+        if self._stopping or not _recovery_storage.media_online():
             return
         if not temporary.is_file():
             continue
@@ -100,6 +126,12 @@ async def _recover_stale_finalizing_files_safe(self) -> None:
             self.last_errors.pop(key, None)
             continue
         detail = str(integrity.error or temporary.name)
+        # Interrupted Stripchat remux: the raw <stem>.capture.mp4 holds the real
+        # data (or was already uploaded) - the half copy is only a duplicate.
+        if await asyncio.to_thread(_redundant_copy_reason, temporary.parent, stem):
+            temporary.unlink(missing_ok=True)
+            self.last_errors.pop(key, None)
+            continue
         if _finalizing_error_is_unrecoverable(detail):
             quarantine = _recovery_quarantine_path(temporary)
             try:

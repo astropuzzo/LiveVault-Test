@@ -831,7 +831,18 @@ class WorkerManager(NsfwWorkerMixin, LiveNsfwMixin):
                 # A public numbered output can be present if a deploy stopped
                 # an older non-atomic stitch. It is not a capture fragment and
                 # must never be fed back into the next stitch batch.
-                if not is_capture_part(path):
+                # Raw Stripchat parts (<stem>.capture.mp4) whose remux was
+                # interrupted are real capture parts too: without this they
+                # stayed on disk forever, never stitched nor uploaded.
+                raw_part = path.name.endswith(".capture.mp4") and is_capture_part(
+                    path.with_name(path.name[:-len(".capture.mp4")] + ".mp4"))
+                if raw_part:
+                    remuxed = path.with_name(path.name[:-len(".capture.mp4")] + ".mp4")
+                    with db_session() as db:
+                        known = db.scalar(select(Recording.id).where(Recording.filename == remuxed.name).limit(1))
+                    if remuxed.is_file() or known:
+                        continue  # the remuxed part exists or was recorded: the raw one is a duplicate
+                if not (is_capture_part(path) or raw_part):
                     continue
             source_folder = path.parent.parent.name if path.parent.parent else "recovered"
             source = next((s for s in sources if int(marker_data.get("source_id") or 0) == s.id), None)

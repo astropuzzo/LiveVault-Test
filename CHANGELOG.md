@@ -1,5 +1,10 @@
 # Changelog
 
+## 3.4.4 — Recupero dei remux interrotti
+
+- Le copie a metà dei remux Stripchat interrotti non finiscono più in quarantena quando il file grezzo `.capture.mp4` è ancora presente o già caricato; le quarantene già esistenti in quella condizione vengono eliminate in automatico (circa 17 GB sul nodo).
+- Le parti grezze rimaste orfane nelle cartelle di sessione vengono ora indicizzate, unite e caricate invece di restare sul disco per sempre.
+
 ## 3.4.3 — Cronologia da telefono senza sovrapposizioni
 
 - Colonna dei nomi opaca: le icone scorrono sotto i nomi invece di mischiarsi al testo.

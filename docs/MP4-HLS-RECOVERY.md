@@ -96,3 +96,29 @@ ripristinare il corrispondente originale verificato, quindi rivalidare i metadat
 gli originali riproducono l'errore noto. Conservare anche l'archivio precedente
 `/data/livevault/mp4-recovery-20260911` per 403/404: il loro recupero della
 release `606e9c3` era già stato verificato l'11 settembre.
+
+## Remux interrotti e quarantena `.recovery-failed` (2026-09-24, 3.4.4)
+
+Sintomo verificato sul nodo: 20 file nascosti `.<stem>.recovery-failed.mp4`
+(17,6 GB) nelle cartelle di sessione, tutti con `moov atom not found`.
+Causa: Stripchat scrive la parte grezza `<stem>.capture.mp4` e la rimuxa in
+`<stem>.mp4` tramite `.<stem>.finalizing.mp4`; un remux interrotto lascia la
+grezza intatta. Il recupero (`app/main/__init__.py`,
+`_recover_stale_finalizing_files_safe`) cercava solo `<stem>.mp4` e metteva
+in quarantena la copia a metà come fosse l'unica. Verifica DB del 2026-09-24:
+per ogni file la grezza era ancora su disco oppure già `uploaded` con nome
+`<stem>.capture.mp4`.
+
+Dal 3.4.4 (`app/recovery_policy.py`, `redundant_copy_reason`):
+- una copia temporanea non valida viene eliminata se esiste la grezza o la
+  rimuxata, o se nel DB c'è una registrazione `uploaded` con quel nome; resta
+  in quarantena solo se è davvero l'unica copia;
+- a ogni passata di recupero (NVMe online) le quarantene già esistenti con la
+  stessa condizione vengono eliminate insieme alla nota `.txt`; le altre
+  restano (es. `.001_miss_hinata_…`, caricata con un nome diverso);
+- `_recover_orphans` indicizza anche le parti grezze `…_partNNN.capture.mp4`
+  rimaste in cartelle con marker di sessione (prima ignorate: mai unite né
+  caricate), salvo che esista la rimuxata o una registrazione con quel nome.
+
+Rollback: revert del commit 3.4.4; le quarantene già eliminate non sono
+recuperabili, ma erano duplicati della grezza o di un file già nel cloud.

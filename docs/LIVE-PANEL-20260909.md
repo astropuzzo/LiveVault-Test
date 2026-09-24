@@ -205,7 +205,7 @@ Verified locally: unit/integration tests with a real growing fragmented MP4
 (quiesce pause, buffer continuation, verification during a switch, mapping
 onto a two-part stitch), and a simulated live in the panel. Not yet run on
 the node with real captures and the NudeNet models. Asset versions
-`?v=3.4.3-live4`, SW cache `livevault-shell-v3.4.3-live4`.
+`?v=3.4.4-live5`, SW cache `livevault-shell-v3.4.4-live5`.
 Rollback: untick "Analizza durante la registrazione" (instant), or revert the
 3.4.0 commit and redeploy; the two new tables and columns are ignored by older
 code; `/data/nsfw/live-*.jpg` and `/data/nsfw/verify/` can be deleted by hand.
