@@ -1021,12 +1021,85 @@ function uploadLabel(value) {
   })[value] || value;
 }
 
+// Archive search syntax (combinable, case-insensitive):
+//   free words            → all must appear in creator / file / session
+//   creator:nome  c:nome  → creator name contains
+//   stato:caricato|coda|fallito|errore|upload
+//   >1gb <500mb size>2gb  → file size;  durata>30m dur<10m >1h → duration
+//   dal:2026-09-01 al:2026-09-10 oggi ieri settimana mese → start date
+//   is:locale is:cloud is:problema
+const ARCHIVE_STATUS_ALIASES = {
+  caricato: ['uploaded'], cloud: ['uploaded'], coda: ['pending', 'waiting_config'], attesa: ['pending', 'waiting_config'],
+  fallito: ['failed', 'integrity_failed'], errore: ['failed', 'integrity_failed'], upload: ['uploading'],
+  conversione: ['converting'], mancante: ['missing'], scartato: ['discarded'],
+};
+
+function parseSizeBytes(value) {
+  const match = String(value).match(/^(\d+(?:[.,]\d+)?)(k|m|g|t)?b?$/i);
+  if (!match) return null;
+  const units = {k: 1024, m: 1024 ** 2, g: 1024 ** 3, t: 1024 ** 4};
+  return Number(match[1].replace(',', '.')) * (units[(match[2] || 'm').toLowerCase()] || 1);
+}
+
+function parseDurationSeconds(value) {
+  const match = String(value).match(/^(\d+(?:[.,]\d+)?)(s|m|min|h)?$/i);
+  if (!match) return null;
+  const units = {s: 1, m: 60, min: 60, h: 3600};
+  return Number(match[1].replace(',', '.')) * (units[(match[2] || 'm').toLowerCase()] || 60);
+}
+
+function parseArchiveQuery(raw) {
+  const words = [];
+  const tests = [];
+  const dayStart = offset => { const date = new Date(); date.setHours(0, 0, 0, 0); date.setDate(date.getDate() - offset); return date.getTime(); };
+  for (const token of String(raw || '').trim().toLocaleLowerCase('it').split(/\s+/).filter(Boolean)) {
+    let match;
+    if ((match = token.match(/^(?:creator|c):(.+)$/))) {
+      const needle = match[1];
+      tests.push(r => String(r.source_name || '').toLocaleLowerCase('it').includes(needle));
+    } else if ((match = token.match(/^(?:stato|status):(.+)$/))) {
+      const wanted = ARCHIVE_STATUS_ALIASES[match[1]] || [match[1]];
+      tests.push(r => wanted.includes(r.upload_status));
+    } else if ((match = token.match(/^(?:size|peso)?([<>])=?(\d+(?:[.,]\d+)?(?:k|m|g|t)b?)$/)) && parseSizeBytes(match[2]) !== null && /[kmgt]/.test(match[2])) {
+      const limit = parseSizeBytes(match[2]); const op = match[1];
+      tests.push(r => op === '>' ? Number(r.size_bytes) > limit : Number(r.size_bytes) < limit);
+    } else if ((match = token.match(/^(?:durata|dur)?([<>])=?(\d+(?:[.,]\d+)?(?:s|m|min|h)?)$/)) && parseDurationSeconds(match[2]) !== null) {
+      const limit = parseDurationSeconds(match[2]); const op = match[1];
+      tests.push(r => op === '>' ? Number(r.duration_seconds) > limit : Number(r.duration_seconds) < limit);
+    } else if ((match = token.match(/^(dal|al|from|to):(\d{4}-\d{2}-\d{2})$/))) {
+      const bound = new Date(`${match[2]}T00:00:00`).getTime();
+      const after = match[1] === 'dal' || match[1] === 'from';
+      tests.push(r => after ? timestamp(r.started_at) >= bound : timestamp(r.started_at) < bound + 86400000);
+    } else if (['oggi', 'ieri', 'settimana', 'mese'].includes(token)) {
+      const from = {oggi: dayStart(0), ieri: dayStart(1), settimana: dayStart(7), mese: dayStart(30)}[token];
+      const to = token === 'ieri' ? dayStart(0) : Infinity;
+      tests.push(r => timestamp(r.started_at) >= from && timestamp(r.started_at) < to);
+    } else if ((match = token.match(/^is:(locale|local|cloud|problema|problem)$/))) {
+      const kind = match[1];
+      tests.push(r => kind.startsWith('local') ? !!r.local_available && !r.local_deleted
+        : kind === 'cloud' ? r.upload_status === 'uploaded'
+        : ['failed', 'integrity_failed'].includes(r.upload_status) || r.integrity_status === 'failed' || r.has_audio === false || r.has_video === false);
+    } else {
+      words.push(token);
+    }
+  }
+  return {words, tests};
+}
+
+let archiveQueryCache = {raw: null, parsed: null};
+function recordingQueryMatches(recording) {
+  const raw = $('#recordingSearch')?.value || '';
+  if (archiveQueryCache.raw !== raw) archiveQueryCache = {raw, parsed: parseArchiveQuery(raw)};
+  const {words, tests} = archiveQueryCache.parsed;
+  const haystack = `${recording.source_name} ${recording.filename} ${recording.session_id}`.toLocaleLowerCase('it');
+  return words.every(word => haystack.includes(word)) && tests.every(test => test(recording));
+}
+
 function recordingMatches(recording) {
-  const query = $('#recordingSearch').value.trim().toLocaleLowerCase('it');
   const status = $('#recordingStatus').value;
   return (!sourceFilterId || recording.source_id === sourceFilterId)
     && (status === 'all' || recording.upload_status === status)
-    && (!query || `${recording.source_name} ${recording.filename} ${recording.session_id}`.toLocaleLowerCase('it').includes(query));
+    && recordingQueryMatches(recording);
 }
 
 function recordingStreamMarkup(recording) {
@@ -2106,8 +2179,35 @@ async function boot() {
 }
 
 boot();
+// Real-time: the server pushes a `change` event when sources, recordings or
+// the recorder state change. Polling stays as a slower safety net.
+let liveEvents = null;
+let liveEventsOpen = false;
+let lastAutoRefresh = 0;
+let liveChangeTimer = 0;
+
+function connectLiveEvents() {
+  if (!('EventSource' in window) || liveEvents || app.classList.contains('hidden')) return;
+  liveEvents = new EventSource('/api/events');
+  liveEvents.onopen = () => { liveEventsOpen = true; };
+  liveEvents.onerror = () => { liveEventsOpen = false; };
+  liveEvents.addEventListener('change', () => {
+    clearTimeout(liveChangeTimer);
+    liveChangeTimer = setTimeout(() => {
+      if (document.hidden) return;
+      lastAutoRefresh = Date.now();
+      refresh();
+      if (typeof notifyStateChange === 'function') notifyStateChange();
+    }, 400);
+  });
+}
+
 setInterval(() => {
-  if (!document.hidden && !app.classList.contains('hidden')) refresh();
+  if (document.hidden || app.classList.contains('hidden')) return;
+  connectLiveEvents();
+  if (liveEventsOpen && Date.now() - lastAutoRefresh < 30000) return;
+  lastAutoRefresh = Date.now();
+  refresh();
 }, 8000);
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden && !app.classList.contains('hidden')) refresh();

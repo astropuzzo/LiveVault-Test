@@ -15,8 +15,10 @@ def test_product_ui_is_dark_icon_driven_and_preserves_primary_hooks():
 
     assert '<meta name="color-scheme" content="dark">' in html
     assert has_css(css, "color-scheme:dark")
-    assert "gradient" not in css.lower()
-    assert "glass" not in css.lower()
+    # 3.2 glass layer: frosted surfaces with fallbacks for no-blur / reduced transparency.
+    assert has_css(css, "--glass-blur:")
+    assert has_css(css, "@supports not ((backdrop-filter")
+    assert "prefers-reduced-transparency" in css
     assert "/static/icons.svg#monitor" in html
     assert '<symbol id="search"' in icons
     assert '<symbol id="settings"' in icons

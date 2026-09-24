@@ -78,11 +78,10 @@
   recordingMatches = function recordingMatchesWithAttention(recording) {
     const status = $('#recordingStatus')?.value || 'all';
     if (status !== 'attention' && status !== 'audio_missing') return baseRecordingMatches(recording);
-    const query = ($('#recordingSearch')?.value || '').trim().toLocaleLowerCase('it');
     const statusMatch = status === 'attention' ? needsAttention(recording) : recording.has_audio === false;
     return (!sourceFilterId || recording.source_id === sourceFilterId)
       && statusMatch
-      && (!query || `${recording.source_name} ${recording.filename} ${recording.session_id}`.toLocaleLowerCase('it').includes(query));
+      && recordingQueryMatches(recording);
   };
 
   const baseRenderRecordingsAttention = renderRecordings;

@@ -50,4 +50,7 @@
   <symbol id="chevron-right" viewBox="0 0 24 24"><g class="i"><path d="m9 6 6 6-6 6"/></g></symbol>
   <symbol id="fullscreen" viewBox="0 0 24 24"><g class="i"><path d="M8 3H3v5M16 3h5v5M8 21H3v-5M16 21h5v-5"/></g></symbol>
   <symbol id="folder" viewBox="0 0 24 24"><g class="i"><path d="M3 6h7l2 2h9v11H3Z"/></g></symbol>
+  <symbol id="bell" viewBox="0 0 24 24"><g class="i"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15Z"/><path d="M10 20.5a2.2 2.2 0 0 0 4 0"/></g></symbol>
+  <symbol id="bell-off" viewBox="0 0 24 24"><g class="i"><path d="M8.6 5.8A6 6 0 0 1 18 11v4.5M6 11v5l-1.5 2H17"/><path d="M10 20.5a2.2 2.2 0 0 0 4 0M3.5 3.5l17 17"/></g></symbol>
+  <symbol id="sparkles" viewBox="0 0 24 24"><g class="i"><path d="M12 3.5 13.6 8.4 18.5 10 13.6 11.6 12 16.5 10.4 11.6 5.5 10 10.4 8.4Z"/><path d="M18.5 15.5 19.2 17.3 21 18 19.2 18.7 18.5 20.5 17.8 18.7 16 18 17.8 17.3Z"/></g></symbol>
 </svg>

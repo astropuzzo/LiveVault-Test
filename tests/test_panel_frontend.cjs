@@ -222,3 +222,21 @@ test('dashboard search uses grouped source rows and respects status filters', ()
   assert.equal(dashboard.dashboardProfileMatches(profile), false);
   assert.equal(dashboard.dashboardProfileMatches({...profile, live:true}), true);
 });
+
+test('archive query syntax filters by creator, status, size, duration and flags', () => {
+  const appSource = fs.readFileSync('app/static/app.js', 'utf8');
+  const controls = {'#recordingSearch': {value: ''}};
+  const ctx = vm.createContext({$: s => controls[s], timestamp: v => Date.parse(v) || 0});
+  vm.runInContext(appSource.slice(appSource.indexOf('const ARCHIVE_STATUS_ALIASES'), appSource.indexOf('function recordingMatches(')), ctx);
+  const rec = {source_name: 'Zoe Blaze', filename: 'a.mp4', session_id: 's1', upload_status: 'failed', size_bytes: 2 * 1024 ** 3, duration_seconds: 3600, started_at: '2026-09-01T10:00:00Z', local_available: true};
+  const match = q => { controls['#recordingSearch'].value = q; return ctx.recordingQueryMatches(rec); };
+  assert.equal(match('creator:zoe stato:fallito >1gb durata>30m'), true);
+  assert.equal(match('stato:cloud'), false);
+  assert.equal(match('<1gb'), false);
+  assert.equal(match('durata<30m'), false);
+  assert.equal(match('is:locale is:problema dal:2026-08-30 al:2026-09-01'), true);
+  assert.equal(match('al:2026-08-31'), false);
+  assert.equal(match('blaze a.mp4'), true);
+  assert.equal(ctx.parseSizeBytes('1,5g'), 1.5 * 1024 ** 3);
+  assert.equal(ctx.parseDurationSeconds('2h'), 7200);
+});

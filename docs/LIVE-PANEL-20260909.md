@@ -69,10 +69,43 @@ setting change. The Control Center and NINA Monitor are untouched.
 Verified only locally on synthetic data: Chromium at 1440, 900 and 390 px (touch),
 automated overlap/overflow checks, scripted menu/dialog/refresh interaction
 checks, full pytest and Node suites. Not checked against production data or on a
-real phone. Asset versions `?v=3.1.0-design1`, SW cache
-`livevault-shell-v3.1.0-design1` (installed PWAs refetch the shell).
+real phone. Asset versions and SW cache are superseded by 3.2 below.
 Rollback: revert the 3.1.0 commits and redeploy LiveVault; nothing persistent
 changes, and the SW cache name changes again on rollback deploys.
+
+## Interface 3.2 glass and features (2026-09-24)
+
+Source only, LiveVault 3.2.0. Same Coolify image and database schema; no new
+dependency on the host (hls.js 1.7.2 is vendored in `app/static/vendor/`).
+
+- Glass visual layer (`style.css`, section "Glass layer"): aurora background,
+  frosted panels with `backdrop-filter`, fallbacks for browsers without blur and
+  for `prefers-reduced-transparency`; animation stops with reduced motion.
+- Seekable playback: `app/mp4_index.py` reads only box headers of fragmented
+  MP4 captures and serves HLS byte-range playlists at
+  `/api/recordings/{id}/stream.m3u8`, `/api/fragments/{id}/stream.m3u8`,
+  `/api/sources/{id}/capture.m3u8` (409 when the file is not fragmented; the
+  player then falls back to the direct file). CSP gains `media-src 'self' blob:`.
+- 17 new providers in `app/source_providers.py` (TikTok, CamModels, SOOP, CHZZK,
+  Bigo, Picarto, TwitCasting, DLive, VK Live, Huya, Douyu, YouNow, Showroom,
+  17LIVE, MixChannel, Rumble, Niconico); capture still goes through yt-dlp/
+  streamlink, so per-site success depends on those extractors.
+- Real-time: `GET /api/events` (SSE, excluded from compression) emits `change`
+  when a state fingerprint changes (checked every 2 s, stream closed after
+  300 s, client reconnects); polling drops to 30 s while connected.
+- Forecasts: `app/predictions.py` + `GET /api/predictions` (5-minute cache):
+  168 hour-of-week bins over 90 days, 21-day half-life, neighbour smoothing and
+  Bayesian shrinkage toward base rates; shown in "Prossime live previste".
+- `features.js`: browser notifications (opt-in, stored in localStorage
+  `livevault-notifications`), saved archive filters (`livevault-archive-filters`),
+  forecast panel. Archive search accepts `creator:`, `stato:`, `>1gb`,
+  `durata>30m`, `dal:/al:YYYY-MM-DD`, `oggi/ieri/settimana/mese`, `is:locale|cloud|problema`.
+
+Verified locally on synthetic data only (Chromium 1440/390 px, HLS seek on a
+real ffmpeg fMP4, SSE change event, full pytest/Node suites). Asset versions
+`?v=3.2.0-glass1`, SW cache `livevault-shell-v3.2.0-glass1`.
+Rollback: revert the 3.2.0 commits and redeploy; no persistent data changes
+(only two optional localStorage keys in browsers).
 
 ## Validation and release boundary
 

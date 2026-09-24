@@ -8,7 +8,7 @@
   <title>LiveVault</title>
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" href="/static/icon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/static/style.css?v=3.1.0-design1">
+  <link rel="stylesheet" href="/static/style.css?v=3.2.0-glass1">
 </head>
 <body>
   <a class="skip-link" href="#mainContent">Vai al contenuto</a>
@@ -46,6 +46,7 @@
       <div class="app-bar-context"><strong id="currentSectionTitle">Monitor</strong><span id="connectionState" class="connection-state" role="status">Connessione…</span><span id="storageRoute" class="storage-route" data-mode="unknown" role="status" aria-live="polite"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#hard-drive"></use></svg><strong>Storage…</strong><small>verifica</small></span></div>
       <div class="app-bar-actions">
         <button id="commandButton" class="command-trigger" type="button" aria-label="Cerca" data-tooltip="Cerca · Ctrl K"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#search"></use></svg><span>Cerca</span><kbd>Ctrl K</kbd></button>
+        <button id="notifyBtn" class="icon-button notify-button" type="button" aria-label="Attiva notifiche" data-tooltip="Attiva notifiche"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#bell-off"></use></svg></button>
         <button class="mobile-settings icon-button" type="button" aria-label="Impostazioni" data-open-settings><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#settings"></use></svg></button>
       </div>
     </header>
@@ -77,6 +78,8 @@
           <div id="sources" class="source-list"></div>
         </section>
 
+        <section id="forecastPanel" class="panel forecast-panel hidden" aria-live="polite"></section>
+
         <section id="errorsPanel" class="attention-panel panel section hidden"><div class="surface-header section-head"><div class="attention-title"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#warning"></use></svg><h2>Errori recenti</h2><span id="diagnosticCount" class="count danger">0</span></div><div class="diagnostic-actions"><button id="retryRecoveryBtn" class="button secondary compact" type="button"><svg class="icon"><use href="/static/icons.svg#rotate-ccw"></use></svg><span>Recupera file</span></button><button id="clearErrorsBtn" class="icon-button" type="button" aria-label="Pulisci avvisi" data-tooltip="Pulisci avvisi"><svg class="icon"><use href="/static/icons.svg#trash"></use></svg></button></div></div><pre id="errors"></pre></section>
       </div>
 
@@ -99,7 +102,7 @@
       <div id="archiveView" class="view-section hidden" data-page="archive">
         <header class="page-header"><div><h1>Archivio</h1><p>Gestione rapida delle registrazioni locali e cloud.</p></div><button id="exportArchive" type="button" class="button secondary"><svg class="icon"><use href="/static/icons.svg#download"></use></svg><span>Esporta CSV</span></button></header>
         <section id="archive" class="archive-surface panel section" data-columns="1">
-          <div class="archive-toolbar-row"><label class="search-control archive-search"><svg class="icon"><use href="/static/icons.svg#search"></use></svg><input id="recordingSearch" aria-label="Cerca registrazioni" type="search" placeholder="Cerca sorgente, sessione o file"></label><label class="select-control archive-status"><svg class="icon"><use href="/static/icons.svg#filter"></use></svg><select id="recordingStatus" aria-label="Stato registrazione"><option value="all">Tutti gli stati</option><option value="uploaded">Caricati</option><option value="pending">In attesa</option><option value="uploading">Upload</option><option value="failed">Falliti</option><option value="integrity_failed">Integrità fallita</option><option value="converting">Conversione MP4</option><option value="waiting_config">Config mancante</option><option value="discarded">Locale eliminato</option></select></label><div class="archive-bulk-actions"><button id="retryAllBtn" class="icon-button" type="button" aria-label="Riprova falliti" data-tooltip="Riprova falliti"><svg class="icon"><use href="/static/icons.svg#rotate-ccw"></use></svg></button><button id="cleanupBtn" class="icon-button" type="button" aria-label="Libera file caricati" data-tooltip="Libera caricati"><svg class="icon"><use href="/static/icons.svg#broom"></use></svg></button><button id="purgeLocalBtn" class="icon-button danger" type="button" aria-label="Pulisci file locali" data-tooltip="Pulisci locali"><svg class="icon"><use href="/static/icons.svg#trash"></use></svg></button></div></div>
+          <div class="archive-toolbar-row"><label class="search-control archive-search"><svg class="icon"><use href="/static/icons.svg#search"></use></svg><input id="recordingSearch" aria-label="Cerca registrazioni" type="search" placeholder="Cerca… es. creator:aurora &gt;1gb dal:2026-09-01" title="Filtri: creator:nome · stato:caricato|coda|fallito · &gt;1gb · durata&gt;30m · dal:/al:AAAA-MM-GG · oggi · ieri · settimana · is:locale|cloud|problema"></label><label class="select-control archive-status"><svg class="icon"><use href="/static/icons.svg#filter"></use></svg><select id="recordingStatus" aria-label="Stato registrazione"><option value="all">Tutti gli stati</option><option value="uploaded">Caricati</option><option value="pending">In attesa</option><option value="uploading">Upload</option><option value="failed">Falliti</option><option value="integrity_failed">Integrità fallita</option><option value="converting">Conversione MP4</option><option value="waiting_config">Config mancante</option><option value="discarded">Locale eliminato</option></select></label><div class="archive-bulk-actions"><button id="retryAllBtn" class="icon-button" type="button" aria-label="Riprova falliti" data-tooltip="Riprova falliti"><svg class="icon"><use href="/static/icons.svg#rotate-ccw"></use></svg></button><button id="cleanupBtn" class="icon-button" type="button" aria-label="Libera file caricati" data-tooltip="Libera caricati"><svg class="icon"><use href="/static/icons.svg#broom"></use></svg></button><button id="purgeLocalBtn" class="icon-button danger" type="button" aria-label="Pulisci file locali" data-tooltip="Pulisci locali"><svg class="icon"><use href="/static/icons.svg#trash"></use></svg></button></div></div>
           <div class="section-head archive-section-head sr-only"><h2>Registrazioni</h2><div class="archive-view-options" role="group" aria-label="Numero di colonne"><button class="icon-btn active" type="button" data-archive-columns="1" aria-label="Una colonna"></button><button class="icon-btn" type="button" data-archive-columns="2" aria-label="Due colonne"></button><button class="icon-btn" type="button" data-archive-columns="3" aria-label="Tre colonne"></button></div></div>
           <div class="toolbar archive-hooks" aria-hidden="true"></div><div id="sourceFilterBar" class="filter-bar hidden"><span id="sourceFilterNote"></span><button id="clearSourceFilter" class="icon-button" type="button" aria-label="Rimuovi filtro sorgente"><svg class="icon"><use href="/static/icons.svg#x"></use></svg></button></div><div id="recordings" class="recording-grid"></div><div class="archive-footer"><div id="recordingFooter" class="footer-note"></div><button id="loadOlderRecordings" class="button secondary compact" type="button" hidden>Carica precedenti</button></div>
         </section>
@@ -129,11 +132,12 @@
   <div id="videoModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="videoTitle"><div class="backdrop" data-close-modal="video"></div><div class="modal-card video-card panel"><div class="modal-head"><h2 id="videoTitle">Video</h2><button class="icon-button" type="button" data-close-modal="video" aria-label="Chiudi"><svg class="icon"><use href="/static/icons.svg#x"></use></svg></button></div><video id="videoPlayer" controls preload="metadata"></video></div></div>
   <aside id="livePauseAlert" class="live-pause-alert hidden" aria-live="assertive" aria-label="Creator live non registrate"></aside><div id="toastRegion" class="toasts" aria-live="polite"></div>
   <dialog id="commandDialog" class="command-dialog" aria-labelledby="commandTitle"><div class="command-head"><div><svg class="icon"><use href="/static/icons.svg#search"></use></svg><h2 id="commandTitle">Cerca</h2></div><button id="closeCommands" class="icon-button" type="button" aria-label="Chiudi ricerca"><svg class="icon"><use href="/static/icons.svg#x"></use></svg></button></div><label class="command-input"><svg class="icon"><use href="/static/icons.svg#search"></use></svg><input id="commandSearch" type="search" aria-label="Cerca pagine o creator" placeholder="Creator o sezione" autocomplete="off"></label><div id="commandResults" class="command-results"></div><footer><span>Freccia su/giù: seleziona</span><span>Invio: apri</span><span>Esc: chiudi</span></footer></dialog>
-  <script src="/static/app.js?v=3.1.0-design1" defer></script>
-  <script src="/static/creator-hover.js?v=3.1.0-design1" defer></script>
-  <script src="/static/operations.js?v=3.1.0-design1" defer></script>
-  <script src="/static/workspace.js?v=3.1.0-design1" defer></script>
-  <script src="/static/ui.js?v=3.1.0-design1" defer></script>
-  <script src="/static/pulse-tuning.js?v=3.1.0-design1" defer></script>
+  <script src="/static/app.js?v=3.2.0-glass1" defer></script>
+  <script src="/static/creator-hover.js?v=3.2.0-glass1" defer></script>
+  <script src="/static/operations.js?v=3.2.0-glass1" defer></script>
+  <script src="/static/workspace.js?v=3.2.0-glass1" defer></script>
+  <script src="/static/ui.js?v=3.2.0-glass1" defer></script>
+  <script src="/static/pulse-tuning.js?v=3.2.0-glass1" defer></script>
+  <script src="/static/features.js?v=3.2.0-glass1" defer></script>
 </body>
 </html>

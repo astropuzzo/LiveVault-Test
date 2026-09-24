@@ -12,7 +12,7 @@ from zoneinfo import ZoneInfo
 from typing import Literal
 
 from fastapi import FastAPI, HTTPException, Request, Response
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from sqlalchemy import case, delete, distinct, func, or_, select
@@ -37,6 +37,7 @@ from .db import (
 from .file_cleanup import cleanup_empty_parents, cleanup_orphan_videos, safe_unlink
 from .media_validation import build_validation_receipt
 from .mp4_index import NotFragmented, cached_index, hls_playlist
+from .predictions import forecast, rank_upcoming
 from .http_compression import TextCompressionMiddleware
 from .storage_response import StorageFileResponse
 from .recorder import (
@@ -58,7 +59,7 @@ BASE = Path(__file__).parent
 LOGIN_FAILURES: dict[str, deque[float]] = defaultdict(deque)
 LOGIN_WINDOW = 10 * 60
 LOGIN_MAX_FAILURES = 6
-VERSION = "3.1.0"
+VERSION = "3.2.0"
 
 
 class LoginBody(BaseModel):
@@ -2738,6 +2739,113 @@ def cleanup_uploaded_recordings(request: Request):
         except HTTPException as exc:
             errors.append(f"#{recording_id}: {exc.detail}")
     return {"ok": not errors, "removed": removed, "freed": freed, "freed_human": human_bytes(freed), "errors": errors[:50]}
+
+
+# ---------- Live forecasts ----------
+_prediction_cache: dict[str, object] = {"at": 0.0, "value": None}
+
+
+def _build_predictions() -> dict:
+    now = datetime.now(timezone.utc)
+    try:
+        tz = ZoneInfo(settings.timezone)
+    except Exception:
+        tz = ZoneInfo("UTC")
+    since = now - timedelta(days=90)
+    with db_session() as db:
+        rows = db.execute(
+            select(Source.id, Source.profile_id, Source.last_status, Profile.display_name)
+            .join(Profile, Profile.id == Source.profile_id, isouter=True)
+            .where(Source.archived.is_(False))
+        ).all()
+        sessions = db.execute(
+            select(LiveSession.source_id, LiveSession.started_at, LiveSession.ended_at)
+            .where(or_(LiveSession.ended_at.is_(None), LiveSession.ended_at >= since))
+        ).all()
+    by_source: dict[int, list] = defaultdict(list)
+    for source_id, started, ended in sessions:
+        by_source[int(source_id)].append((started, ended))
+    profiles: dict[int, dict] = {}
+    for source_id, profile_id, status, name in rows:
+        key = int(profile_id or -source_id)
+        entry = profiles.setdefault(key, {"profile_id": profile_id, "representative_source_id": source_id,
+                                          "display_name": name or str(source_id), "live": False, "sessions": []})
+        entry["live"] = entry["live"] or status in {"live", "recording", "private", "tipjar", "restricted"}
+        entry["sessions"].extend(by_source.get(int(source_id), []))
+    creators = []
+    for entry in profiles.values():
+        result = forecast(entry.pop("sessions"), now=now, tz=tz).as_dict()
+        creators.append({**entry, **result})
+    creators.sort(key=lambda row: -row["probability_24h"])
+    return {"generated_at": now.isoformat(), "timezone": str(tz), "creators": creators,
+            "upcoming": rank_upcoming([row for row in creators if not row["live"]])}
+
+
+@app.get("/api/predictions")
+def predictions(request: Request):
+    require_auth(request)
+    now = time.monotonic()
+    if _prediction_cache["value"] is None or now - float(_prediction_cache["at"]) > 300:
+        _prediction_cache.update(at=now, value=_build_predictions())
+    return _prediction_cache["value"]
+
+
+# ---------- Real-time change notifications (Server-Sent Events) ----------
+# One cheap state fingerprint shared by every open panel; clients refetch only
+# when it changes instead of polling the full API every few seconds.
+_signature_cache: dict[str, object] = {"at": 0.0, "value": ""}
+
+
+def _state_signature() -> str:
+    now = time.monotonic()
+    if now - float(_signature_cache["at"]) < 1.5:
+        return str(_signature_cache["value"])
+    with db_session() as db:
+        sources = db.execute(select(Source.id, Source.last_status, Source.enabled, Source.archived).order_by(Source.id)).all()
+        recordings = db.execute(select(
+            func.count(Recording.id), func.max(Recording.id), func.max(Recording.uploaded_at),
+            func.sum(case((Recording.upload_status.in_(["pending", "uploading", "failed", "waiting_config"]), 1), else_=0)),
+            func.sum(case((Recording.local_deleted.is_(True), 1), else_=0)),
+        )).one()
+        fragments = db.scalar(select(func.count(RecordingFragment.id))) or 0
+    snapshot = manager.snapshot() if hasattr(manager, "snapshot") else {}
+    active = sorted(str(item.get("source_id")) for item in (snapshot.get("active") or []) if isinstance(item, dict))
+    cfg = runtime()
+    value = repr((
+        tuple(tuple(row) for row in sources), tuple(recordings), fragments, active,
+        bool(getattr(cfg, "recording_paused", False)), bool(getattr(cfg, "upload_paused", False)),
+    ))
+    _signature_cache.update(at=now, value=value)
+    return value
+
+
+@app.get("/api/events")
+async def events(request: Request):
+    require_auth(request)
+
+    async def stream():
+        last = ""
+        started = time.monotonic()
+        yield "retry: 3000\n\n"
+        while time.monotonic() - started < 300:
+            if await request.is_disconnected():
+                return
+            try:
+                current = await asyncio.to_thread(_state_signature)
+            except Exception:
+                current = last
+            if current != last:
+                if last:
+                    yield f"event: change\ndata: {int(time.time())}\n\n"
+                last = current
+            else:
+                yield ": keep-alive\n\n"
+            await asyncio.sleep(2)
+
+    return StreamingResponse(stream(), media_type="text/event-stream", headers={
+        "Cache-Control": "no-cache, no-transform",
+        "X-Accel-Buffering": "no",
+    })
 
 
 @app.get("/healthz")

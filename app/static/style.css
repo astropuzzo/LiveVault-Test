@@ -4629,6 +4629,403 @@ body.modal-open {
 }
 
 /* =====================================================================
+ * Glass layer (3.2): aurora canvas, translucent frosted surfaces,
+ * luminous edges. Blur is applied to large containers only (panels, bars,
+ * dialogs) — never per row — to stay smooth on phones.
+ * ===================================================================== */
+:root {
+  --bg: #06060b;
+  --chrome: rgba(14, 14, 24, 0.55);
+  --surface: rgba(26, 24, 44, 0.42);
+  --surface-2: rgba(255, 255, 255, 0.065);
+  --surface-3: rgba(255, 255, 255, 0.11);
+  --inset: rgba(0, 0, 0, 0.24);
+  --line: rgba(255, 255, 255, 0.085);
+  --line-2: rgba(255, 255, 255, 0.14);
+  --line-3: rgba(255, 255, 255, 0.24);
+  --text: #f1f1f6;
+  --text-2: #b3b3c4;
+  --text-3: #80808f;
+  --text-4: #5a5a6a;
+
+  --accent: #9d8cff;
+  --accent-2: #5cc8ff;
+  --primary: #f1f1f6;
+  --primary-fill: linear-gradient(135deg, #a08cff 0%, #6f8dff 45%, #4cc9f0 100%);
+  --on-primary: #ffffff;
+
+  --glass-blur: blur(22px) saturate(165%);
+  --glass-edge: inset 0 1px 0 rgba(255, 255, 255, 0.09), inset 0 0 0 1px rgba(255, 255, 255, 0.035);
+  --glass-shadow: 0 18px 50px rgba(0, 0, 0, 0.38);
+  --shadow-pop: 0 0 0 1px rgba(255, 255, 255, 0.12), 0 24px 70px rgba(0, 0, 0, 0.6);
+  --ring: 0 0 0 2px rgba(6, 6, 11, 0.9), 0 0 0 4px rgba(157, 140, 255, 0.6);
+  --r-lg: 16px;
+  --r-xl: 22px;
+}
+
+/* Aurora canvas behind everything. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: -10vh -10vw;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(70vw 70vh at 18% 8%, rgba(124, 92, 255, 0.5), transparent 70%),
+    radial-gradient(55vw 60vh at 92% 12%, rgba(34, 211, 238, 0.34), transparent 68%),
+    radial-gradient(70vw 70vh at 78% 96%, rgba(255, 92, 138, 0.32), transparent 70%),
+    radial-gradient(50vw 55vh at 6% 88%, rgba(62, 207, 142, 0.24), transparent 68%),
+    radial-gradient(40vw 40vh at 50% 50%, rgba(111, 141, 255, 0.16), transparent 72%), var(--bg);
+  animation: aurora-drift 38s ease-in-out infinite alternate;
+}
+body::after {
+  /* Fine grain keeps the gradients from banding on 8-bit panels. */
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0.05;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+@keyframes aurora-drift {
+  to {
+    transform: translate3d(2vw, -1.5vh, 0) scale(1.04);
+  }
+}
+html,
+body {
+  background: var(--bg);
+}
+body {
+  background: transparent;
+}
+
+/* The KPI wrapper is a layout box: only its tiles are glass. */
+.status-surface.panel {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+/* Frosted containers */
+.panel,
+.status-metric,
+.stats-metric,
+.operation-control,
+.library-grid.list,
+.library-grid.grid .library-card,
+.login-panel,
+.profile-section,
+.cr-live-card,
+.forecast-day,
+.stats-large-chart,
+.profile-intel-card {
+  background: var(--surface);
+  border-color: var(--line);
+  box-shadow: var(--glass-edge), var(--glass-shadow);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+}
+.cr-live-card,
+.profile-section,
+.stats-large-chart,
+.profile-intel-card,
+.forecast-day {
+  box-shadow: var(--glass-edge);
+}
+.panel .panel,
+.panel .cr-live-card,
+.profile-section .stats-large-chart,
+.profile-section .profile-intel-card,
+.profile-section .forecast-day {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  background: rgba(255, 255, 255, 0.035);
+}
+.navigation-rail,
+.app-bar {
+  background: var(--chrome);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+}
+.navigation-rail {
+  box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.06);
+}
+.modal-card,
+.row-menu,
+.command-dialog,
+.lv-dialog,
+.creator-hover-card,
+.toast,
+.cr-pulse-media-preview,
+.live-pause-alert,
+.bulk-bar {
+  background: rgba(22, 22, 36, 0.72);
+  -webkit-backdrop-filter: blur(28px) saturate(170%);
+  backdrop-filter: blur(28px) saturate(170%);
+}
+.profile-card {
+  background: rgba(10, 10, 18, 0.74);
+}
+.profile-card > .profile-head,
+.profile-save,
+.modal-head,
+.modal-actions {
+  background: rgba(16, 16, 28, 0.7);
+}
+.backdrop,
+.command-dialog::backdrop,
+.lv-dialog::backdrop {
+  background: rgba(4, 4, 10, 0.55);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+}
+.cr-wall,
+.cr-wall-header {
+  background: rgba(6, 6, 11, 0.86);
+  -webkit-backdrop-filter: blur(24px);
+  backdrop-filter: blur(24px);
+}
+
+/* Luminous primary action and navigation */
+.button.primary,
+.btn.primary {
+  border-color: transparent;
+  background: var(--primary-fill);
+  color: var(--on-primary);
+  box-shadow:
+    0 8px 24px rgba(111, 141, 255, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.35);
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.15);
+}
+.button.primary:hover,
+.btn.primary:hover {
+  background: var(--primary-fill);
+  color: var(--on-primary);
+  filter: brightness(1.08);
+  box-shadow:
+    0 10px 30px rgba(111, 141, 255, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.4);
+}
+.button,
+.btn,
+.command-trigger,
+.search-control,
+.select-control,
+input,
+select,
+textarea {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+input,
+select,
+textarea,
+.search-control,
+.select-control {
+  background-color: rgba(0, 0, 0, 0.22);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+select option {
+  background: #161622;
+}
+input:focus,
+select:focus,
+textarea:focus,
+.search-control:focus-within,
+.select-control:focus-within {
+  border-color: rgba(157, 140, 255, 0.7);
+  box-shadow: 0 0 0 3px rgba(157, 140, 255, 0.18);
+}
+.nav-link.active {
+  background: linear-gradient(90deg, rgba(157, 140, 255, 0.2), rgba(92, 200, 255, 0.06));
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+.nav-link.active .icon {
+  color: var(--accent);
+}
+.product-mark .icon,
+.mobile-product .icon,
+.login-mark {
+  color: var(--accent);
+}
+.login-mark {
+  background: linear-gradient(135deg, rgba(160, 140, 255, 0.25), rgba(76, 201, 240, 0.18));
+  border-color: rgba(255, 255, 255, 0.16);
+}
+.smart-link.active {
+  background: linear-gradient(90deg, rgba(157, 140, 255, 0.18), rgba(92, 200, 255, 0.05));
+}
+.icon-button.active,
+.icon-button.selected {
+  background: rgba(157, 140, 255, 0.18);
+  border-color: rgba(157, 140, 255, 0.35);
+  color: #fff;
+}
+:focus-visible {
+  box-shadow: var(--ring);
+}
+
+/* Numbers and meters glow slightly on glass */
+.status-metric > strong,
+.stats-metric strong {
+  text-shadow: 0 0 22px rgba(157, 140, 255, 0.22);
+}
+.meter i {
+  background: linear-gradient(90deg, #9d8cff, #5cc8ff);
+}
+.data-flow-track i,
+.leader-progress,
+.forecast-meter i {
+  background: linear-gradient(90deg, #9d8cff, #5cc8ff);
+}
+.status-metric::before {
+  box-shadow: 0 0 14px var(--tone);
+}
+
+/* Upcoming live forecasts */
+.forecast-panel {
+  overflow: hidden;
+}
+.forecast-panel .surface-header small {
+  font-size: 12px;
+}
+.forecast-list {
+  display: grid;
+  gap: 2px;
+  padding: 8px;
+}
+.forecast-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(120px, 220px) 48px 64px;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 10px;
+  border-radius: var(--r);
+}
+.forecast-row:hover {
+  background: var(--surface-2);
+}
+.forecast-who {
+  display: grid;
+  min-width: 0;
+}
+.forecast-who .creator-link {
+  font-size: 14px;
+}
+.forecast-meter {
+  height: 6px;
+  border-radius: 99px;
+  background: rgba(255, 255, 255, 0.07);
+  overflow: hidden;
+}
+.forecast-meter i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+}
+.forecast-row > strong {
+  text-align: right;
+  font-size: 14px;
+  font-weight: 620;
+}
+.forecast-confidence {
+  justify-self: end;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-2);
+  font-size: 11.5px;
+}
+.forecast-row[data-confidence="alta"] .forecast-confidence {
+  background: color-mix(in srgb, var(--live) 16%, transparent);
+  color: color-mix(in srgb, var(--live) 75%, #fff);
+}
+
+/* Notification toggle */
+.notify-button.active {
+  color: var(--accent);
+}
+
+/* Saved archive filters */
+.saved-filters {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.saved-filter {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  border: 1px solid var(--line-2);
+  border-radius: 999px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+.saved-filter.active {
+  border-color: rgba(157, 140, 255, 0.55);
+  background: rgba(157, 140, 255, 0.16);
+}
+.saved-filter button {
+  min-height: 28px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  padding: 0 6px 0 12px;
+  font-size: 12.5px;
+}
+.saved-filter .saved-filter-remove {
+  padding: 0 10px 0 4px;
+  color: var(--text-3);
+}
+.saved-filter .saved-filter-remove:hover {
+  color: var(--danger);
+}
+
+/* Accessibility and capability fallbacks */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  :root {
+    --surface: rgba(24, 24, 36, 0.94);
+    --chrome: rgba(14, 14, 22, 0.97);
+  }
+}
+@media (prefers-reduced-transparency: reduce) {
+  :root {
+    --surface: #17171f;
+    --chrome: #101017;
+  }
+  body::before,
+  body::after {
+    display: none;
+  }
+  .panel,
+  .navigation-rail,
+  .app-bar,
+  .modal-card,
+  .row-menu {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+@media (max-width: 820px) {
+  .forecast-row {
+    grid-template-columns: minmax(0, 1fr) 44px;
+    row-gap: 6px;
+  }
+  .forecast-meter {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+  .forecast-confidence {
+    display: none;
+  }
+}
+
+/* =====================================================================
  * Responsive
  * ===================================================================== */
 @media (max-width: 1320px) {

@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.2.0 — Glass e nuove funzioni
+
+- Grafica "glass": sfondo ad aurore, pannelli traslucidi sfocati, bordi luminosi, pulsante principale a gradiente; fallback senza sfocatura.
+- Riproduzione locale con timeline completa subito e salto a qualsiasi punto (playlist HLS a byte-range, senza ricodifica).
+- 17 nuovi siti supportati (TikTok, SOOP, CHZZK, Bigo, Picarto, TwitCasting, Rumble, Niconico e altri).
+- Aggiornamento in tempo reale via SSE; previsioni live con modello orario pesato sul recente; notifiche del browser; ricerca archivio avanzata e filtri salvati.
+
 ## 3.1.0 — Nuova interfaccia
 
 - Nuovo sistema visivo unico: un solo foglio di stile al posto di sei livelli di correzioni, font Mona Sans ospitato localmente, palette neutra con colori riservati agli stati (live, REC, attenzione).
