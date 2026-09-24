@@ -157,3 +157,25 @@ def test_live_capture_is_marked_while_growing_then_mapped_onto_the_stitched_file
         assert solo.nsfw_source == "live" and solo.nsfw_status == "nsfw"
         moments = json.loads(solo.nsfw_moments)
         assert len(moments) == 1 and 9 <= moments[0]["start"] <= 11 and moments[0]["image"]
+
+
+def test_each_moment_keeps_a_preview_even_if_its_first_frame_is_rejected(tmp_path, live_env):
+    (tmp_path / "nsfw").mkdir()
+    base = datetime(2026, 9, 24, 20, 0, tzinfo=timezone.utc)
+    with live_env() as db:
+        for index, (state, offset) in enumerate([("rejected", 0), ("confirmed", 5), ("inherited", 10), ("inherited", 50)]):
+            name = f"live-7-{index}.jpg"
+            (tmp_path / "nsfw" / name).write_bytes(b"jpg")
+            db.add(NsfwMark(source_id=7, part_path="p", part_time=offset, wall_at=base + timedelta(seconds=offset),
+                            state=state, image="" if state == "rejected" else name))
+        db.commit()
+        ids = [m.id for m in db.scalars(select(NsfwMark).order_by(NsfwMark.id)).all()]
+    manager = WorkerManager()
+    for mark_id in ids[1:]:
+        manager._prune_preview(mark_id)
+    with live_env() as db:
+        kept = [m.image for m in db.scalars(select(NsfwMark).order_by(NsfwMark.id)).all()]
+    # The first surviving frame keeps its picture, the next one inside 30 s is
+    # pruned, a frame 40 s later (long stretch) gets its own again.
+    assert kept == ["", "live-7-1.jpg", "", "live-7-3.jpg"]
+    assert not (tmp_path / "nsfw" / "live-7-2.jpg").exists()

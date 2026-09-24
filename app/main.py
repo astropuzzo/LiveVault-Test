@@ -63,7 +63,7 @@ BASE = Path(__file__).parent
 LOGIN_FAILURES: dict[str, deque[float]] = defaultdict(deque)
 LOGIN_WINDOW = 10 * 60
 LOGIN_MAX_FAILURES = 6
-VERSION = "3.4.0"
+VERSION = "3.4.1"
 
 
 class LoginBody(BaseModel):
@@ -2310,6 +2310,16 @@ async def nsfw_recording_action(recording_id: int, body: NsfwAction, request: Re
         result = _recording_json(rec)
     manager.wake()
     return result
+
+
+@app.get("/api/recordings/{recording_id}")
+def recording_detail(recording_id: int, request: Request):
+    require_auth(request)
+    with db_session() as db:
+        rec = db.get(Recording, recording_id)
+        if not rec:
+            raise HTTPException(404, "Registrazione non trovata")
+        return _recording_json(rec)
 
 
 @app.get("/api/nsfw/images/{name}")

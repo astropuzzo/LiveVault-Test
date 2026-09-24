@@ -176,7 +176,11 @@ Code: `app/nsfw_live_worker.py` (tasks `nsfw-live`, `nsfw-verify` in
   jumps to the newest fragment and the gap is left to the full scan.
 - Suspects (`nsfw_candidate`) are stored with part path, part time and wall
   clock; a cropped preview and a 640x640 copy are written to `/data/nsfw/`
-  (internal drive). The verifier runs the large model on that copy (helper
+  (internal drive). Since 3.4.1 every suspect keeps its preview until
+  verified; kept marks then prune previews of later frames of the same part
+  within 30 s (`_prune_preview`), so a moment keeps a picture even when its
+  first frame is rejected. Pulse clicks on closed recordings load them via
+  `GET /api/recordings/{id}`. The verifier runs the large model on that copy (helper
   closed after 2 idle minutes, ~300 MB while active), inheriting a
   confirmation for 60 s inside a confirmed stretch; copies are deleted after
   verification, previews of rejected frames too.
@@ -197,7 +201,7 @@ Verified locally: unit/integration tests with a real growing fragmented MP4
 (quiesce pause, buffer continuation, verification during a switch, mapping
 onto a two-part stitch), and a simulated live in the panel. Not yet run on
 the node with real captures and the NudeNet models. Asset versions
-`?v=3.4.0-live1`, SW cache `livevault-shell-v3.4.0-live1`.
+`?v=3.4.1-live2`, SW cache `livevault-shell-v3.4.1-live2`.
 Rollback: untick "Analizza durante la registrazione" (instant), or revert the
 3.4.0 commit and redeploy; the two new tables and columns are ignored by older
 code; `/data/nsfw/live-*.jpg` and `/data/nsfw/verify/` can be deleted by hand.

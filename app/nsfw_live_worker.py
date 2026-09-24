@@ -45,7 +45,7 @@ from .utils import utcnow
 LIVE_COVERAGE_OK = 0.85
 INHERIT_SECONDS = 60
 BACKLOG_JUMP_SECONDS = 60
-PREVIEW_GAP_SECONDS = 30  # a new preview only when a new moment starts
+PREVIEW_GAP_SECONDS = 30  # at most one kept preview per 30 s of a moment
 ACTIVE_MARK_STATES = ("pending", "confirmed", "inherited", "review")
 NSFW_LABEL = {"confirmed": "nsfw", "inherited": "nsfw", "review": "review", "pending": "review"}
 
@@ -151,7 +151,6 @@ class LiveTrack:
     samples: int = 0
     marks: int = 0
     errors: int = 0
-    last_mark_time: float = float("-inf")
 
 
 def cluster_marks(marks: list, gap_seconds: float = 30.0, step: float = 5.0) -> list[dict]:
@@ -332,7 +331,10 @@ class LiveNsfwMixin:
                 "path": str(track.path), "init": track.reader.init_length, "offset": fragment.offset,
                 "length": fragment.length, "candidate": float(cfg.nsfw_candidate),
                 "images_dir": str(folder), "prefix": prefix,
-                "preview": fragment.time - track.last_mark_time > PREVIEW_GAP_SECONDS,
+                # Every suspect keeps a preview until verified; duplicates inside
+                # a moment are pruned afterwards (_prune_preview), so a moment
+                # never loses its picture when its first frame is rejected.
+                "preview": True,
             }, timeout=45)
         finally:
             self._storage_jobs -= 1
@@ -361,8 +363,12 @@ class LiveNsfwMixin:
             ))
         if not verifier:
             _remove_images(None, reply.get("verify_image"))
+            with db_session() as db:
+                latest = db.scalar(select(NsfwMark.id).where(NsfwMark.source_id == track.source_id)
+                                   .order_by(NsfwMark.id.desc()).limit(1))
+            if latest:
+                self._prune_preview(int(latest))
         track.marks += 1
-        track.last_mark_time = fragment.time
 
     def _nsfw_live_cover(self, track: LiveTrack, at: float, step: float) -> None:
         with db_session() as db:
@@ -448,8 +454,28 @@ class LiveNsfwMixin:
             current.verify_image = ""
             recording_id = current.recording_id
         _remove_images(mark.image if state == "rejected" else None, mark.verify_image)
+        if state != "rejected":
+            self._prune_preview(mark.id)
         if recording_id:
             self.nsfw_finalize_live(int(recording_id))
+
+    def _prune_preview(self, mark_id: int) -> None:
+        """Keep one preview per moment: drop this one if an earlier kept mark covers it."""
+        with db_session() as db:
+            mark = db.get(NsfwMark, mark_id)
+            if mark is None or not mark.image:
+                return
+            # Same capture part, measured on the file's own clock (exact, unlike wall time).
+            earlier = db.scalar(select(NsfwMark).where(
+                NsfwMark.part_path == mark.part_path, NsfwMark.id != mark.id, NsfwMark.image != "",
+                NsfwMark.state.in_(["confirmed", "inherited", "review"]),
+                NsfwMark.part_time < mark.part_time,
+                NsfwMark.part_time >= mark.part_time - PREVIEW_GAP_SECONDS,
+            ).limit(1))
+            if earlier is None:
+                return
+            image, mark.image = mark.image, ""
+        _remove_images(image, None)
 
     # ---------- mapping onto the uploaded file ----------
     def nsfw_attach_parts(self, recording_id: int, parts: list[tuple[str, float, float]]) -> None:

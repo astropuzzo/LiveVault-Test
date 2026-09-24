@@ -1,5 +1,10 @@
 # Changelog
 
+## 3.4.1 — Correzioni segni NSFW sulla Cronologia
+
+- Clic su un segno di una registrazione già chiusa: apre i momenti di quel file direttamente sul momento cliccato (fotogramma, tempo nel file, link al cloud), anche se l'archivio non è ancora stato caricato.
+- Segni dal vivo: ogni momento conserva un'anteprima anche quando il suo primo fotogramma viene scartato dal modello preciso (ne resta al massimo una ogni 30 s di momento); dove un'anteprima manca compare un segnaposto invece di un riquadro vuoto.
+
 ## 3.4.0 — Analisi NSFW dal vivo
 
 - I momenti con nudità vengono segnati mentre la live è in registrazione: il nodo guarda un fotogramma ogni pochi secondi del file che sta crescendo, a turno tra le live e con un tetto di CPU (la registrazione ha sempre la precedenza).

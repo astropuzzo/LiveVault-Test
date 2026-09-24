@@ -47,7 +47,10 @@
     return `mancano ~${(seconds / 3600).toLocaleString('it-IT', {maximumFractionDigits: 1})} h`;
   }
 
-  const findRecording = id => (typeof recordings !== 'undefined' ? recordings : []).find(row => Number(row.id) === Number(id));
+  // Recordings opened from the Monitor may not be in the loaded archive page.
+  const extraRecordings = new Map();
+  const findRecording = id => (typeof recordings !== 'undefined' ? recordings : []).find(row => Number(row.id) === Number(id))
+    || extraRecordings.get(Number(id));
   const liveFor = id => (info?.current && Number(info.current.recording_id) === Number(id) ? info.current : null);
 
   function badgeText(recording) {
@@ -221,43 +224,53 @@
     return `<div class="nsfw-pulse-layer">${bands.join('')}${pins.join('')}</div>`;
   };
 
-  function openPulseMark(key) {
+  async function openPulseMark(key) {
     const mark = pulseMarks.get(key);
     if (!mark) return;
-    const recording = mark.recording_id ? findRecording(mark.recording_id) : null;
+    let recording = mark.recording_id ? findRecording(mark.recording_id) : null;
+    if (!recording && mark.recording_id) {
+      try {
+        recording = await api(`/api/recordings/${mark.recording_id}`);
+        extraRecordings.set(Number(recording.id), recording);
+      } catch (_error) { recording = null; }
+    }
     if (recording) {
       openDialog(recording.id);
+      // Jump straight to the clicked moment: frame, time and cloud link.
       const at = Number(mark.file_time);
       const nearest = (recording.nsfw_moments || []).reduce((best, m) => (!best || Math.abs(m.start - at) < Math.abs(best.start - at) ? m : best), null);
-      if (nearest) setTimeout(() => {
+      if (nearest) {
+        openShot(recording, nearest.start, false);
         const card = document.querySelector(`#nsfwDialog [data-moment-at="${CSS.escape(String(nearest.start))}"]`);
-        card?.scrollIntoView({behavior: 'smooth', block: 'center'});
         card?.classList.add('flash');
         setTimeout(() => card?.classList.remove('flash'), 1400);
-      }, 150);
+      }
       return;
     }
-    // Still recording (or file not loaded): show what was seen and when.
+    // Still recording: show what was seen and when.
     const dialog = $('#nsfwDialog');
     if (!dialog) return;
     dialogRecordingId = null;
     const image = safeUrl(mark.image_url || '');
     const start = timestamp(mark.started_at);
-    setMarkup(dialog, `<div class="nsfw-dialog-head"><div><h2 id="nsfwDialogTitle">${esc(mark.name || '')}</h2><small>${mark.recording_id ? 'Registrazione in archivio' : 'Live in corso · il momento sarà collegato al file quando la registrazione si chiude'}</small></div><span class="nsfw-badge ${esc(mark.label === 'pending' ? 'verifying' : mark.label)}">${esc(MARK_TEXT[mark.label] || mark.label)}</span><button type="button" class="icon-button" data-nsfw-close aria-label="Chiudi">${icon('x')}</button></div>
-      <div class="nsfw-lightbox">${image ? `<img src="${esc(image)}" alt="">` : ''}<div><strong>${wallClock(start)}${mark.ended_at ? ` – ${wallClock(timestamp(mark.ended_at))}` : ''}</strong><span>${esc(CLASS_TEXT[mark.class] || mark.class || '')}${mark.count > 1 ? ` · ${mark.count} fotogrammi` : ''}${mark.approx ? ' · posizione stimata' : ''}</span></div></div>`);
+    const shot = image ? `<img src="${esc(image)}" alt="">` : `<div class="nsfw-noshot">${icon(classIcon(mark.class))}<span>Anteprima non disponibile</span></div>`;
+    setMarkup(dialog, `<div class="nsfw-dialog-head"><div><h2 id="nsfwDialogTitle">${esc(mark.name || '')}</h2><small>Live in corso · il momento sarà collegato al file quando la registrazione si chiude</small></div><span class="nsfw-badge ${esc(mark.label === 'pending' ? 'verifying' : mark.label)}">${esc(MARK_TEXT[mark.label] || mark.label)}</span><button type="button" class="icon-button" data-nsfw-close aria-label="Chiudi">${icon('x')}</button></div>
+      <div class="nsfw-lightbox">${shot}<div><strong>${wallClock(start)}${mark.ended_at ? ` – ${wallClock(timestamp(mark.ended_at))}` : ''}</strong><span>${esc(CLASS_TEXT[mark.class] || mark.class || '')}${mark.count > 1 ? ` · ${mark.count} fotogrammi` : ''}</span></div></div>`);
     if (!dialog.open) dialog.showModal();
   }
 
-  function openShot(recording, seconds) {
+  function openShot(recording, seconds, copy = true) {
     const moment = (recording.nsfw_moments || []).find(m => Number(m.start) === Number(seconds));
     const long = Number(recording.duration_seconds || 0) >= 3600;
     const time = clock(seconds, long);
-    navigator.clipboard?.writeText(time).catch(() => {});
+    if (copy) navigator.clipboard?.writeText(time).catch(() => {});
     const remote = safeUrl(recording.remote_url);
     const image = safeUrl(moment?.image_url || '');
     const box = $('#nsfwDialog .nsfw-lightbox');
     if (!box) return;
-    setMarkup(box, `${image ? `<img src="${esc(image)}" alt="">` : ''}<div><strong>${time}${moment ? ` – ${clock(moment.end, long)}` : ''}</strong><span>Tempo copiato: nel player del cloud vai a ${time}.</span></div><div class="nsfw-lightbox-actions">${remote ? `<a class="button primary compact" href="${esc(remote)}" target="_blank" rel="noopener">${icon('external', 'button-icon')}<span>Apri nel cloud</span></a>` : ''}<button type="button" class="button secondary compact" data-nsfw-lightbox-close>${icon('x', 'button-icon')}<span>Chiudi</span></button></div>`);
+    const shot = image ? `<img src="${esc(image)}" alt="">` : `<div class="nsfw-noshot">${icon(classIcon(moment?.class))}<span>Anteprima non disponibile${recording.local_available ? ' · usa "Rianalizza NSFW" per rigenerarla' : ''}</span></div>`;
+    const local = recording.view_url ? `<button type="button" class="button secondary compact" data-nsfw-play="${recording.id}" data-at="${Number(seconds)}">${icon('play', 'button-icon')}<span>Guarda da qui</span></button>` : '';
+    setMarkup(box, `${shot}<div><strong>${time}${moment ? ` – ${clock(moment.end, long)}` : ''}</strong><span>${copy ? `Tempo copiato: nel player del cloud vai a ${time}.` : `Nel file caricato: vai a ${time}.`}</span></div><div class="nsfw-lightbox-actions">${remote ? `<a class="button primary compact" href="${esc(remote)}" target="_blank" rel="noopener">${icon('external', 'button-icon')}<span>Apri nel cloud</span></a>` : ''}${local}<button type="button" class="button secondary compact" data-nsfw-lightbox-close>${icon('x', 'button-icon')}<span>Chiudi</span></button></div>`);
     box.hidden = false;
   }
 

@@ -5726,6 +5726,24 @@ textarea:focus,
     animation: none;
   }
 }
+.nsfw-noshot {
+  display: grid;
+  place-items: center;
+  gap: 8px;
+  aspect-ratio: 16 / 9;
+  border: 1px dashed var(--line-2);
+  border-radius: 10px;
+  background: var(--inset);
+  color: var(--text-3);
+  font-size: 12.5px;
+  text-align: center;
+  padding: 10px;
+}
+.nsfw-noshot .icon {
+  width: 34px;
+  height: 34px;
+  color: var(--text-2);
+}
 
 /* =====================================================================
  * Responsive
