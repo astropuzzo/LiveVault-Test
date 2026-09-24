@@ -20,11 +20,14 @@ def test_judge_needs_large_model_to_confirm():
 
 
 def test_merge_moments_joins_nearby_hits_and_keeps_worst_label():
-    verdicts = [Verdict(100, "review", 0.62, "A"), Verdict(105, "nsfw", 0.8, "B"), Verdict(110, "review", 0.9, "C"),
-                Verdict(300, "review", 0.65, "D"), Verdict(200, "", 0.1, "")]
+    verdicts = [Verdict(100, "review", 0.62, "BUTTOCKS_EXPOSED"), Verdict(105, "nsfw", 0.8, "FEMALE_BREAST_EXPOSED"),
+                Verdict(110, "review", 0.9, "FEMALE_GENITALIA_EXPOSED"), Verdict(300, "review", 0.65, "ANUS_EXPOSED"),
+                Verdict(200, "", 0.1, "")]
     moments = merge_moments(verdicts, step=5)
     assert [(m.start, m.end, m.label) for m in moments] == [(100, 115, "nsfw"), (300, 305, "review")]
-    assert moments[0].score == 0.8 and moments[0].cls == "B"
+    assert moments[0].score == 0.8
+    # Everything seen in the moment is kept, most explicit first.
+    assert moments[0].cls == "FEMALE_GENITALIA_EXPOSED+FEMALE_BREAST_EXPOSED+BUTTOCKS_EXPOSED"
     assert overall(moments) == "nsfw"
     assert overall([Moment(1, 2, "review", 0.7, "A")]) == "review"
     assert overall([]) == "safe"
@@ -105,3 +108,15 @@ def test_fully_explicit_video_verifies_only_periodically(tmp_path: Path):
     assert result["frames"] == 120
     assert result["verified"] <= 12  # one confirmation per minute, not 120
     assert [(m["start"], m["end"], m["label"]) for m in result["moments"]] == [(0.0, 600.0, "nsfw")]
+
+
+def test_class_scores_reports_every_clear_class_most_explicit_first():
+    import numpy as np
+    from app.nsfw_scan import class_scores
+    output = np.zeros((1, 22, 3), np.float32)
+    output[0, 4 + 3, 0] = 0.85   # FEMALE_BREAST_EXPOSED, the strongest
+    output[0, 4 + 4, 1] = 0.55   # FEMALE_GENITALIA_EXPOSED, weaker but clear
+    output[0, 4 + 2, 2] = 0.20   # BUTTOCKS_EXPOSED, noise
+    score, cls = class_scores(output, [2, 3, 4])
+    assert score == pytest.approx(0.85)
+    assert cls == "FEMALE_GENITALIA_EXPOSED+FEMALE_BREAST_EXPOSED"

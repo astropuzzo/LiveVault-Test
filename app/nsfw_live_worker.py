@@ -27,7 +27,6 @@ import os
 import shutil
 import sys
 import time
-from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -37,7 +36,7 @@ from sqlalchemy import func, select
 from . import storage_handoff
 from .db import NsfwCoverage, NsfwMark, Recording, db_session
 from .mp4_index import GrowingIndex, LiveFragment, NotFragmented
-from .nsfw_scan import Verdict, merge_moments, overall
+from .nsfw_scan import Verdict, combine_classes, merge_moments, overall
 from .nsfw_worker import file_signature, nsfw_dir
 from .settings_store import runtime
 from .utils import utcnow
@@ -166,7 +165,7 @@ def cluster_marks(marks: list, gap_seconds: float = 30.0, step: float = 5.0) -> 
         if last and (at - last["_end"]).total_seconds() <= gap_seconds:
             last["_end"] = at + timedelta(seconds=step)
             last["count"] += 1
-            last["_classes"][mark.verified_cls or mark.cls] += 1
+            last["cls"] = combine_classes(last["cls"], mark.verified_cls, mark.cls)
             rank = {"pending": 0, "review": 1, "nsfw": 2}
             if rank[state] > rank[last["label"]]:
                 last["label"] = state
@@ -175,12 +174,12 @@ def cluster_marks(marks: list, gap_seconds: float = 30.0, step: float = 5.0) -> 
             continue
         moments.append({
             "_start": at, "_end": at + timedelta(seconds=step), "label": state, "count": 1,
-            "_classes": Counter([mark.verified_cls or mark.cls]), "image": mark.image or "",
+            "cls": combine_classes(mark.verified_cls, mark.cls), "image": mark.image or "",
             "recording_id": mark.recording_id, "file_time": mark.file_time, "mark_id": mark.id,
         })
     out = []
     for moment in moments:
-        cls = moment["_classes"].most_common(1)[0][0] if moment["_classes"] else ""
+        cls = moment["cls"]
         out.append({
             "started_at": moment["_start"].isoformat(), "ended_at": moment["_end"].isoformat(),
             "label": moment["label"], "class": cls, "count": moment["count"],
@@ -521,7 +520,7 @@ class LiveNsfwMixin:
                 label = NSFW_LABEL.get(mark.state)
                 if label and mark.file_time is not None:
                     score = mark.verified_score if mark.verified_score is not None else mark.fast_score
-                    verdicts.append(Verdict(float(mark.file_time), label, float(score or 0), mark.verified_cls or mark.cls))
+                    verdicts.append(Verdict(float(mark.file_time), label, float(score or 0), combine_classes(mark.verified_cls, mark.cls)))
             step = max(5.0, float(cfg.nsfw_step_seconds)) * 1.5
             moments = merge_moments(verdicts, step)
             payload = []

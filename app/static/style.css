@@ -5893,6 +5893,24 @@ textarea:focus,
 .nsfw-group-row:hover {
   border-color: var(--tone);
 }
+/* Second body part seen in the same moment, stacked on the pin */
+.nsfw-pin-extra {
+  position: absolute;
+  left: -7px;
+  bottom: -6px;
+  display: grid;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  border: 1.5px solid #0f0e1b;
+  border-radius: 50%;
+  background: var(--tone);
+  color: #fff;
+}
+.nsfw-pin-extra .mini-icon {
+  width: 10px;
+  height: 10px;
+}
 
 /* =====================================================================
  * Responsive

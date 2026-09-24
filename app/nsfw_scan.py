@@ -65,18 +65,39 @@ class Verdict:
     verified: float | None = None
 
 
+# Most explicit first: the timeline icon shows the first one, the lists all.
+EXPLICITNESS = {"FEMALE_GENITALIA_EXPOSED": 5, "MALE_GENITALIA_EXPOSED": 5, "ANUS_EXPOSED": 4,
+                "FEMALE_BREAST_EXPOSED": 3, "BUTTOCKS_EXPOSED": 2}
+
+
+def combine_classes(*values: str) -> str:
+    """Union of "A+B" class lists, most explicit first."""
+    seen = {part for value in values for part in str(value or "").split("+") if part}
+    return "+".join(sorted(seen, key=lambda c: (-EXPLICITNESS.get(c, 0), c)))
+
+
 def class_scores(output, hot_indexes: list[int]) -> tuple[float, str]:
-    """Best score among the hot classes of one YOLOv8 output (1, 4+C, N)."""
+    """Best score among the hot classes of one YOLOv8 output (1, 4+C, N).
+
+    Every hot class clearly present in the frame is reported (score at least
+    0.3 and at least half of the best), most explicit first, so breasts and
+    genitals seen together are both kept and genitals win the icon.
+    """
     import numpy as np
     rows = np.asarray(output)[0]  # (4+C, N)
     scores = rows[4:, :]
-    best_score, best_cls = 0.0, ""
+    per_class: dict[str, float] = {}
     for index in hot_indexes:
         if index < scores.shape[0] and scores.shape[1]:
-            value = float(scores[index].max())
-            if value > best_score:
-                best_score, best_cls = value, LABELS[index]
-    return best_score, best_cls
+            per_class[LABELS[index]] = float(scores[index].max())
+    if not per_class:
+        return 0.0, ""
+    best = max(per_class.values())
+    floor = max(0.3, best * 0.5)
+    present = [cls for cls, value in per_class.items() if value >= floor]
+    if not present:
+        present = [max(per_class, key=per_class.get)]
+    return best, combine_classes(*present)
 
 
 def downsample(frame, size: int):
@@ -111,7 +132,8 @@ def merge_moments(verdicts: list[Verdict], step: float, gap_factor: float = 2.5)
         if last and verdict.t - last.end <= step * gap_factor:
             last.end = verdict.t + step
             if SEVERITY[verdict.label] > SEVERITY[last.label] or (verdict.label == last.label and verdict.score > last.score):
-                last.label, last.score, last.cls = verdict.label, verdict.score, verdict.cls
+                last.label, last.score = verdict.label, verdict.score
+            last.cls = combine_classes(last.cls, verdict.cls)
             continue
         moments.append(Moment(verdict.t, verdict.t + step, verdict.label, verdict.score, verdict.cls))
     return moments

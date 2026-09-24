@@ -1,5 +1,10 @@
 # Changelog
 
+## 3.4.5 — Più parti nello stesso momento, icone realistiche
+
+- Se nello stesso fotogramma si vedono più parti (es. seno e genitali) vengono registrate tutte: l'icona mostra la più esplicita (genitali > ano > seno > glutei), la seconda compare come piccolo simbolo sovrapposto, tooltip e schede le elencano tutte.
+- Nuove icone piene e ombreggiate, più realistiche e riconoscibili anche piccole.
+
 ## 3.4.4 — Recupero dei remux interrotti
 
 - Le copie a metà dei remux Stripchat interrotti non finiscono più in quarantena quando il file grezzo `.capture.mp4` è ancora presente o già caricato; le quarantene già esistenti in quella condizione vengono eliminate in automatico (circa 17 GB sul nodo).

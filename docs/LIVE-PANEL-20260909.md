@@ -155,6 +155,11 @@ commits and redeploy; the extra columns are ignored by older code, the
 
 ## Live NSFW analysis 3.4 (2026-09-24)
 
+Since 3.4.5 a frame reports every hot class scoring at least 0.3 and half of
+the best one (`class_scores` in `app/nsfw_scan.py`), stored as "A+B" most
+explicit first (`EXPLICITNESS`); moments and Monitor clusters keep the union.
+
+
 Source only, LiveVault 3.4.0; active when `nsfw_enabled` and `nsfw_live_enabled`
 (default on) and the models of the 3.3 section are present.
 Code: `app/nsfw_live_worker.py` (tasks `nsfw-live`, `nsfw-verify` in
@@ -205,7 +210,7 @@ Verified locally: unit/integration tests with a real growing fragmented MP4
 (quiesce pause, buffer continuation, verification during a switch, mapping
 onto a two-part stitch), and a simulated live in the panel. Not yet run on
 the node with real captures and the NudeNet models. Asset versions
-`?v=3.4.4-live5`, SW cache `livevault-shell-v3.4.4-live5`.
+`?v=3.4.5-live6`, SW cache `livevault-shell-v3.4.5-live6`.
 Rollback: untick "Analizza durante la registrazione" (instant), or revert the
 3.4.0 commit and redeploy; the two new tables and columns are ignored by older
 code; `/data/nsfw/live-*.jpg` and `/data/nsfw/verify/` can be deleted by hand.
