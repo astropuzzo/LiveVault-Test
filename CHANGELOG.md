@@ -1,5 +1,9 @@
 # Changelog
 
+## 3.4.9 — Icone NSFW più belle
+
+- Disegno più morbido e pulito, senza riflessi e dettagli che davano un effetto inquietante: tette su busto (non sembrano più occhi), figa, cazzo, culo e buco del culo con toni rosati coerenti.
+
 ## 3.4.8 — Fix icone sparite
 
 - In 3.4.7 un attributo duplicato nel simbolo `nsfw-anus` rendeva `icons.svg` XML non valido e il browser non mostrava più nessuna icona. Corretto; nuovo test `tests/test_icons_sprite.py` valida lo sprite.
