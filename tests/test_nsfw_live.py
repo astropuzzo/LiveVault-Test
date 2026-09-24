@@ -179,3 +179,53 @@ def test_each_moment_keeps_a_preview_even_if_its_first_frame_is_rejected(tmp_pat
     # pruned, a frame 40 s later (long stretch) gets its own again.
     assert kept == ["", "live-7-1.jpg", "", "live-7-3.jpg"]
     assert not (tmp_path / "nsfw" / "live-7-2.jpg").exists()
+
+
+def test_marks_on_the_raw_capture_follow_the_remuxed_part(tmp_path, live_env, monkeypatch):
+    """Stripchat samples <stem>.capture.mp4 live, then indexes the remuxed <stem>.mp4."""
+    cfg = RuntimeSettings(nsfw_enabled=True, nsfw_step_seconds=5.0)
+    monkeypatch.setattr(nsfw_live_worker, "runtime", lambda: cfg)
+    raw = tmp_path / "002_demo_part001.capture.mp4"
+    remuxed = tmp_path / "002_demo_part001.mp4"
+    remuxed.write_bytes(b"x")
+    base = datetime(2026, 9, 24, 20, 0, tzinfo=timezone.utc)
+    with live_env() as db:
+        db.add(NsfwMark(source_id=7, part_path=str(raw), part_time=30.0, wall_at=base, state="confirmed",
+                        cls="FEMALE_GENITALIA_EXPOSED"))
+        db.add(NsfwCoverage(part_path=str(raw), source_id=7, samples=50, covered_seconds=118.0))
+        rec = Recording(source_id=7, source_name="demo", session_id="s1", local_path=str(remuxed),
+                        filename=remuxed.name, started_at=base, integrity_status="passed", upload_status="pending")
+        db.add(rec)
+        db.commit()
+        rec_id = rec.id
+    manager = WorkerManager()
+    manager._delete_uploaded_local_if_ready = lambda *_a: False
+    manager.nsfw_attach_parts(rec_id, [(str(remuxed), 0.0, 120.0)])
+    with live_env() as db:
+        rec = db.get(Recording, rec_id)
+        assert rec.nsfw_source == "live" and rec.nsfw_status == "nsfw"  # no full re-scan
+        assert rec.nsfw_live_coverage == pytest.approx(118 / 120, abs=0.01)
+        assert json.loads(rec.nsfw_moments)[0]["start"] == 30.0
+        assert db.scalar(select(NsfwCoverage)) is None
+
+
+def test_queued_full_scan_is_skipped_when_live_marks_cover_the_file(tmp_path, live_env, monkeypatch):
+    cfg = RuntimeSettings(nsfw_enabled=True, nsfw_step_seconds=5.0)
+    monkeypatch.setattr(nsfw_live_worker, "runtime", lambda: cfg)
+    remuxed = tmp_path / "003_demo.mp4"
+    remuxed.write_bytes(b"x")
+    with live_env() as db:
+        db.add(NsfwCoverage(part_path=str(tmp_path / "003_demo.capture.mp4"), source_id=7, samples=40, covered_seconds=60.0))
+        rec = Recording(source_id=7, source_name="demo", session_id="s1", local_path=str(remuxed), filename=remuxed.name,
+                        started_at=datetime.now(timezone.utc), duration_seconds=60.0, integrity_status="passed",
+                        upload_status="pending", nsfw_status="pending")
+        db.add(rec)
+        db.commit()
+        db.expunge(rec)
+    manager = WorkerManager()
+    manager._delete_uploaded_local_if_ready = lambda *_a: False
+    manager._nsfw_command = lambda _rec: pytest.fail("full scan must not start")
+    asyncio.run(manager._run_nsfw_job(rec))
+    with live_env() as db:
+        done = db.get(Recording, rec.id)
+        assert done.nsfw_source == "live" and done.nsfw_status == "safe"

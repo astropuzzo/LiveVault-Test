@@ -185,6 +185,14 @@ class NsfwWorkerMixin:
             return
         hits = _load(rec.nsfw_hits)
         resume_at = float(rec.nsfw_resume_at or 0)
+        if resume_at <= 0 and not hits and rec.nsfw_source != "live" and hasattr(self, "nsfw_attach_parts"):
+            # Queued before its live marks were matched (e.g. raw .capture name):
+            # attach them now and skip the full scan when coverage is enough.
+            self.nsfw_attach_parts(rec.id, [(str(path), 0.0, float(rec.duration_seconds or 0))])
+            with db_session() as db:
+                current = db.get(Recording, rec.id)
+                if current is None or current.nsfw_source == "live":
+                    return
         nsfw_dir().mkdir(parents=True, exist_ok=True)
         if resume_at <= 0 and not hits:
             for old in nsfw_dir().glob(f"{rec.id}-*.jpg"):

@@ -1,5 +1,10 @@
 # Changelog
 
+## 3.4.10 — Niente doppia analisi dopo il live
+
+- Bug: l'analisi dal vivo delle live Stripchat registrava i risultati sul file grezzo `.capture.mp4`, ma il file finale è il `.mp4` rimuxato; i nomi non combaciavano, la copertura risultava 0 e ogni registrazione veniva rianalizzata da capo. Ora i due nomi sono collegati: con copertura ≥ 85% basta il live.
+- Prima di avviare un'analisi completa già in coda si riprova l'abbinamento con i dati del live (salva i file singoli accodati prima del fix).
+
 ## 3.4.9 — Icone NSFW più belle
 
 - Disegno più morbido e pulito, senza riflessi e dettagli che davano un effetto inquietante: tette su busto (non sembrano più occhi), figa, cazzo, culo e buco del culo con toni rosati coerenti.

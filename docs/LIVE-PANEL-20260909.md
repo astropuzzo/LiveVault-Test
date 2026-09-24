@@ -212,6 +212,17 @@ Code: `app/nsfw_live_worker.py` (tasks `nsfw-live`, `nsfw-verify` in
   `verifying` until every mark is verified, then safe/review/nsfw without a
   full scan; lower coverage keeps `pending` for the full scan. Manual verdicts
   are never overwritten.
+- Since 3.4.10 (fixed 2026-09-24): Stripchat is sampled on the raw
+  `<stem>.capture.mp4` but indexed/stitched as the remuxed `<stem>.mp4`
+  (`_remux` in `app/stripchat_capture.py`, `-start_at_zero`, same timeline).
+  Before 3.4.10 the names never matched, coverage was 0 and every Stripchat
+  recording was fully re-scanned. `live_aliases()` in
+  `app/nsfw_live_worker.py` now matches both names; `_run_nsfw_job` in
+  `app/nsfw_worker.py` re-tries the match before starting a queued full scan
+  (rescues single-part files queued earlier). Stitched sessions finalized
+  before the fix lost their part offsets and are still fully scanned once.
+  Orphan live marks from before the fix stay in `nsfw_marks` with
+  `recording_id` NULL (harmless). Rollback: revert the commit.
 
 Verified locally: unit/integration tests with a real growing fragmented MP4
 (quiesce pause, buffer continuation, verification during a switch, mapping

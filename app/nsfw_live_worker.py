@@ -480,24 +480,22 @@ class LiveNsfwMixin:
     def nsfw_attach_parts(self, recording_id: int, parts: list[tuple[str, float, float]]) -> None:
         """parts: (capture part path, offset in the final file, duration) in file order."""
         cfg = runtime()
-        paths = [path for path, _offset, _duration in parts]
         with db_session() as db:
             rec = db.get(Recording, recording_id)
             if rec is None:
                 return
             for path, offset, _duration in parts:
-                for mark in db.scalars(select(NsfwMark).where(NsfwMark.part_path == path)).all():
+                for mark in db.scalars(select(NsfwMark).where(NsfwMark.part_path.in_(live_aliases(path)))).all():
                     mark.recording_id = recording_id
                     mark.file_time = float(offset) + float(mark.part_time)
             covered = total = 0.0
-            coverage = {row.part_path: row for row in db.scalars(
-                select(NsfwCoverage).where(NsfwCoverage.part_path.in_(paths))).all()}
             for path, _offset, duration in parts:
                 total += max(0.0, float(duration))
-                row = coverage.get(path)
-                if row is not None:
-                    covered += min(float(row.covered_seconds), max(0.0, float(duration)))
+                seen = 0.0
+                for row in db.scalars(select(NsfwCoverage).where(NsfwCoverage.part_path.in_(live_aliases(path)))).all():
+                    seen += float(row.covered_seconds)
                     db.delete(row)
+                covered += min(seen, max(0.0, float(duration)))
             ratio = covered / total if total > 0 else 0.0
             rec.nsfw_live_coverage = round(ratio, 3)
             if cfg.nsfw_enabled and ratio >= LIVE_COVERAGE_OK and rec.nsfw_status == "pending":
@@ -542,6 +540,20 @@ class LiveNsfwMixin:
         if done:
             with contextlib.suppress(Exception):
                 self._delete_uploaded_local_if_ready(recording_id, local_path)
+
+
+def live_aliases(path: str) -> list[str]:
+    """Names a part had while it was sampled live.
+
+    Stripchat records ``<stem>.capture.mp4`` and remuxes it into ``<stem>.mp4``
+    (same timeline, ``-start_at_zero``): marks and coverage keyed on the raw
+    name belong to the remuxed part too.
+    """
+    part = Path(path)
+    names = [str(part)]
+    if ".capture." not in part.name:
+        names += [str(part.with_name(f"{part.stem}.capture{ext}")) for ext in (".mp4", ".webm")]
+    return names
 
 
 def _remove_images(preview: str | None, verify_path: str | None) -> None:
