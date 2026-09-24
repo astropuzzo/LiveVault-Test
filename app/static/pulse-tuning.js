@@ -308,11 +308,64 @@
   };
 
   const renderSourcesBase = renderSources;
+  /* Phones: the timeline becomes wide and scrolls sideways with a finger,
+     names stay pinned on the left, "Ora" jumps back to the present. */
+  const PHONE = typeof window.matchMedia === 'function' ? window.matchMedia('(max-width: 620px)') : {matches: false};
+  let pulseScroll = {left: 0, atEnd: true};
+  window.pulsePixelsPerHour = () => {
+    if (!PHONE.matches) return 0;
+    const hours = Number(controlRoomPulseData?.hours) || selectedHours;
+    return hours <= 24 ? 170 : hours <= 72 ? 60 : 28;
+  };
+
+  function mountPulseScroller() {
+    if (typeof document.querySelector !== 'function') return;
+    const pulse = document.querySelector('.cr-pulse');
+    if (!pulse) return;
+    const perHour = window.pulsePixelsPerHour();
+    let scroller = pulse.querySelector('.cr-pulse-scroll');
+    if (!perHour) {
+      if (scroller) scroller.replaceWith(...scroller.childNodes);
+      pulse.classList.remove('scrollable');
+      pulse.querySelector('.cr-pulse-now')?.remove();
+      return;
+    }
+    if (!scroller) {
+      const items = [...pulse.querySelectorAll(':scope > .cr-pulse-scale, :scope > .cr-pulse-row')];
+      if (!pulse.querySelector(':scope > .cr-pulse-row')) return;
+      scroller = document.createElement('div');
+      scroller.className = 'cr-pulse-scroll';
+      items[0].before(scroller);
+      scroller.append(...items);
+      const now = document.createElement('button');
+      now.type = 'button';
+      now.className = 'cr-pulse-now';
+      now.hidden = true;
+      now.textContent = 'Ora ›';
+      now.addEventListener('click', () => scroller.scrollTo({left: scroller.scrollWidth, behavior: 'smooth'}));
+      scroller.before(now);
+      scroller.addEventListener('scroll', () => {
+        const atEnd = scroller.scrollLeft + scroller.clientWidth >= scroller.scrollWidth - 24;
+        pulseScroll = {left: scroller.scrollLeft, atEnd};
+        now.hidden = atEnd;
+        pulse.classList.toggle('scrolled', scroller.scrollLeft > 4);
+      }, {passive: true});
+    }
+    pulse.classList.add('scrollable');
+    const hours = Number(controlRoomPulseData?.hours) || selectedHours;
+    scroller.style.setProperty('--pulse-track', `${Math.round(hours * perHour)}px`);
+    scroller.scrollLeft = pulseScroll.atEnd ? scroller.scrollWidth : pulseScroll.left;
+    const now = pulse.querySelector('.cr-pulse-now');
+    if (now) now.hidden = pulseScroll.atEnd;
+  }
+
   renderSources = function renderSourcesWithPulseScale(...args) {
     const result = renderSourcesBase.apply(this, args);
-    requestAnimationFrame(decoratePulse);
+    mountPulseScroller();
+    requestAnimationFrame(() => { decoratePulse(); mountPulseScroller(); });
     return result;
   };
+  PHONE.addEventListener?.('change', () => renderSources());
 
   document.addEventListener('change', async event => {
     const select = event.target.closest('[data-pulse-hours]');

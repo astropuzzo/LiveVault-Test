@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.4.2 — Cronologia leggibile da telefono
+
+- Su telefono la Cronologia si scorre col dito: ogni ora è larga (circa un'ora e mezza visibile), i nomi restano fissi a sinistra, all'apertura si vede il presente e il pulsante "Ora" ci riporta; la posizione resta ferma durante gli aggiornamenti.
+- Le icone NSFW troppo vicine per lo spazio reale diventano un'unica icona con il numero; toccandola si apre l'elenco dei momenti con anteprima.
+- Legenda su una sola riga scorrevole.
+
 ## 3.4.1 — Correzioni segni NSFW sulla Cronologia
 
 - Clic su un segno di una registrazione già chiusa: apre i momenti di quel file direttamente sul momento cliccato (fotogramma, tempo nel file, link al cloud), anche se l'archivio non è ancora stato caricato.

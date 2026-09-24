@@ -199,30 +199,68 @@
 
   /* ---------- Monitor timeline (Cronologia) ---------- */
   const pulseMarks = new Map();
+  const pulseGroups = new Map();
+  const RANK = {pending: 0, review: 1, nsfw: 2};
   window.pulseNsfwLayer = (sessions, xFor) => {
     const moments = sessions.flatMap(session => (session.nsfw_moments || []).map(m => ({...m, name: session.display_name})))
       .sort((a, b) => timestamp(a.started_at) - timestamp(b.started_at));
     if (!moments.length) return '';
-    if (pulseMarks.size > 3000) pulseMarks.clear();
-    let lastIcon = -99;
+    if (pulseMarks.size > 3000) { pulseMarks.clear(); pulseGroups.clear(); }
+    // Group pins that would overlap at the real on-screen width (phones
+    // scroll a wide track; desktop uses the visible one): one pin + count.
+    const hours = Math.max(1, Number(controlRoomPulseData?.hours) || 6);
+    const perHour = typeof window.pulsePixelsPerHour === 'function' ? window.pulsePixelsPerHour() : 0;
+    const trackPx = perHour ? hours * perHour : Math.max(500, window.innerWidth - 420);
+    const minGap = 26 / trackPx * 100;
     const bands = [];
-    const pins = [];
+    const groups = [];
     for (const m of moments) {
       const start = timestamp(m.started_at);
       const end = Math.max(start, timestamp(m.ended_at) || start);
       const left = xFor(start) / 10;
       const width = Math.max(0.3, (xFor(end) - xFor(start)) / 10);
-      const key = `${m.started_at}|${m.recording_id || ''}|${m.mark_id || ''}`;
-      pulseMarks.set(key, m);
-      const title = `${wallClock(start)} · ${CLASS_TEXT[m.class] || m.class || 'Nudità'} · ${MARK_TEXT[m.label] || m.label}${m.count > 1 ? ` · ${m.count} fotogrammi` : ''}${m.approx ? ' · posizione stimata' : ''}`;
+      m.key = `${m.started_at}|${m.recording_id || ''}|${m.mark_id || ''}`;
+      pulseMarks.set(m.key, m);
       bands.push(`<i class="nsfw-pulse-band ${esc(m.label)}" data-dynamic-left="${left.toFixed(3)}" data-dynamic-width="${Math.min(100 - left, width).toFixed(3)}"></i>`);
-      if (left - lastIcon < 1.4) continue;
-      lastIcon = left;
-      // Keep the whole round pin inside the track at the edges of the window.
-      pins.push(`<button type="button" class="nsfw-pulse-mark ${esc(m.label)}" data-dynamic-left="${Math.min(98.6, Math.max(1.4, left)).toFixed(3)}" data-nsfw-pulse="${esc(key)}" title="${esc(title)}" aria-label="${esc(title)}">${icon(classIcon(m.class), 'mini-icon')}</button>`);
+      const last = groups[groups.length - 1];
+      if (last && left - last.left < minGap) last.items.push(m);
+      else groups.push({left, items: [m]});
     }
+    const pins = groups.map(group => {
+      const {items} = group;
+      const top = items.reduce((best, m) => (RANK[m.label] > RANK[best.label] ? m : best), items[0]);
+      const counts = items.reduce((map, m) => map.set(m.class, (map.get(m.class) || 0) + 1), new Map());
+      const cls = [...counts.entries()].sort((a, b) => b[1] - a[1])[0][0];
+      const first = timestamp(items[0].started_at);
+      const lastEnd = timestamp(items[items.length - 1].ended_at) || first;
+      const title = items.length > 1
+        ? `${items.length} momenti · ${wallClock(first)}–${wallClock(lastEnd)} · tocca per l'elenco`
+        : `${wallClock(first)} · ${CLASS_TEXT[cls] || cls || 'Nudità'} · ${MARK_TEXT[top.label] || top.label}${top.count > 1 ? ` · ${top.count} fotogrammi` : ''}${top.approx ? ' · posizione stimata' : ''}`;
+      let attr = `data-nsfw-pulse="${esc(items[0].key)}"`;
+      if (items.length > 1) {
+        const groupKey = `g:${items.map(m => m.key).join(',')}`;
+        pulseGroups.set(groupKey, items);
+        attr = `data-nsfw-pulse-group="${esc(groupKey)}"`;
+      }
+      const left = Math.min(98.6, Math.max(1.4, group.left));
+      return `<button type="button" class="nsfw-pulse-mark ${esc(top.label)}" data-dynamic-left="${left.toFixed(3)}" ${attr} title="${esc(title)}" aria-label="${esc(title)}">${icon(classIcon(cls), 'mini-icon')}${items.length > 1 ? `<b class="nsfw-pin-count">${items.length}</b>` : ''}</button>`;
+    });
     return `<div class="nsfw-pulse-layer">${bands.join('')}${pins.join('')}</div>`;
   };
+
+  function openPulseGroup(groupKey) {
+    const items = pulseGroups.get(groupKey);
+    const dialog = $('#nsfwDialog');
+    if (!items || !dialog) return;
+    dialogRecordingId = null;
+    const rows = items.map(m => {
+      const image = safeUrl(m.image_url || '');
+      const start = timestamp(m.started_at);
+      return `<button type="button" class="nsfw-group-row ${esc(m.label)}" data-nsfw-pulse="${esc(m.key)}">${image ? `<img src="${esc(image)}" alt="" loading="lazy">` : `<span class="nsfw-group-icon">${icon(classIcon(m.class))}</span>`}<span><strong>${wallClock(start)}${m.ended_at ? ` – ${wallClock(timestamp(m.ended_at))}` : ''}</strong><small>${esc(CLASS_TEXT[m.class] || m.class || '')} · ${esc(MARK_TEXT[m.label] || m.label)}${m.count > 1 ? ` · ${m.count} fotogrammi` : ''}</small></span>${icon('chevron-right', 'mini-icon')}</button>`;
+    }).join('');
+    setMarkup(dialog, `<div class="nsfw-dialog-head"><div><h2 id="nsfwDialogTitle">${esc(items[0].name || '')}</h2><small>${items.length} momenti ravvicinati</small></div><button type="button" class="icon-button" data-nsfw-close aria-label="Chiudi">${icon('x')}</button></div><div class="nsfw-group-list">${rows}</div>`);
+    if (!dialog.open) dialog.showModal();
+  }
 
   async function openPulseMark(key) {
     const mark = pulseMarks.get(key);
@@ -371,6 +409,8 @@
     if (open && !action) { event.preventDefault(); openDialog(open.dataset.nsfwOpen); return; }
     if (action) { event.preventDefault(); runAction(action.dataset.nsfwAction, action.dataset.id, action); return; }
     if (play) { event.preventDefault(); playAt(play.dataset.nsfwPlay, play.dataset.at); return; }
+    const pulseGroup = event.target.closest('[data-nsfw-pulse-group]');
+    if (pulseGroup) { event.preventDefault(); openPulseGroup(pulseGroup.dataset.nsfwPulseGroup); return; }
     const pulseMark = event.target.closest('[data-nsfw-pulse]');
     if (pulseMark) { event.preventDefault(); openPulseMark(pulseMark.dataset.nsfwPulse); return; }
     const seekBar = event.target.closest('[data-nsfw-seek]');

@@ -17,3 +17,10 @@ def test_live_nsfw_ui_hooks_and_icons_are_wired():
     html = (STATIC / "index.html").read_text(encoding="utf-8")
     for field in ("setNsfwLive", "setNsfwLiveFps", "setNsfwLiveLoad"):
         assert f'id="{field}"' in html
+
+
+def test_phone_timeline_scrolls_and_groups_pins():
+    tuning = (STATIC / "pulse-tuning.js").read_text(encoding="utf-8")
+    assert "window.pulsePixelsPerHour" in tuning and "cr-pulse-scroll" in tuning and "cr-pulse-now" in tuning
+    nsfw = (STATIC / "nsfw.js").read_text(encoding="utf-8")
+    assert "data-nsfw-pulse-group" in nsfw and "nsfw-pin-count" in nsfw

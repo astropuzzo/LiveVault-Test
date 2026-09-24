@@ -180,7 +180,11 @@ Code: `app/nsfw_live_worker.py` (tasks `nsfw-live`, `nsfw-verify` in
   verified; kept marks then prune previews of later frames of the same part
   within 30 s (`_prune_preview`), so a moment keeps a picture even when its
   first frame is rejected. Pulse clicks on closed recordings load them via
-  `GET /api/recordings/{id}`. The verifier runs the large model on that copy (helper
+  `GET /api/recordings/{id}`.
+- Phones (<= 620 px, 3.4.2): `pulse-tuning.js` wraps scale and rows in a
+  horizontal scroller (170 px/h up to 24 h, 60 px/h up to 3 days, 28 px/h
+  beyond), names sticky, scroll kept across refreshes; pins closer than 26 px
+  at the real width are grouped with a count (`openPulseGroup` in `nsfw.js`). The verifier runs the large model on that copy (helper
   closed after 2 idle minutes, ~300 MB while active), inheriting a
   confirmation for 60 s inside a confirmed stretch; copies are deleted after
   verification, previews of rejected frames too.
@@ -201,7 +205,7 @@ Verified locally: unit/integration tests with a real growing fragmented MP4
 (quiesce pause, buffer continuation, verification during a switch, mapping
 onto a two-part stitch), and a simulated live in the panel. Not yet run on
 the node with real captures and the NudeNet models. Asset versions
-`?v=3.4.1-live2`, SW cache `livevault-shell-v3.4.1-live2`.
+`?v=3.4.2-live3`, SW cache `livevault-shell-v3.4.2-live3`.
 Rollback: untick "Analizza durante la registrazione" (instant), or revert the
 3.4.0 commit and redeploy; the two new tables and columns are ignored by older
 code; `/data/nsfw/live-*.jpg` and `/data/nsfw/verify/` can be deleted by hand.
