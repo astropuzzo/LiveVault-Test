@@ -4,7 +4,7 @@ sqlalchemy>=2.0,<3
 pydantic>=2.11,<3
 requests>=2.32,<3
 cryptography>=50.0.1,<51
-tzdata>=2025.2,<2027
+tzdata>=2026.4,<2027
 yt-dlp[default,curl-cffi]==2026.8.19
 onnxruntime>=1.20,<2
 numpy>=2.1,<3
