@@ -163,7 +163,8 @@ pins are coloured by the most explicit part (`CLASS_CAT`/`catClass` in
 `app/static/nsfw.js`, `.cat-*` rules at the end of `app/static/style.css`), the
 Cronologia legend lists each category and dialogs show every part as chips
 (`classChips`). 3.4.7 renames the categories (`CLASS_TEXT`) and redraws the
-`nsfw-*` symbols in `app/static/icons.svg` (new `nsfw-anus`). Frontend only; rollback = revert the commit.
+`nsfw-*` symbols in `app/static/icons.svg` (new `nsfw-anus`); 3.4.8 fixes the sprite XML (a malformed symbol hides every
+icon; `tests/test_icons_sprite.py` guards it). Frontend only; rollback = revert the commit.
 
 
 Source only, LiveVault 3.4.0; active when `nsfw_enabled` and `nsfw_live_enabled`

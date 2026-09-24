@@ -1,5 +1,9 @@
 # Changelog
 
+## 3.4.8 — Fix icone sparite
+
+- In 3.4.7 un attributo duplicato nel simbolo `nsfw-anus` rendeva `icons.svg` XML non valido e il browser non mostrava più nessuna icona. Corretto; nuovo test `tests/test_icons_sprite.py` valida lo sprite.
+
 ## 3.4.7 — Nomi diretti e icone dettagliate
 
 - Categorie chiamate come si chiamano: Figa, Cazzo, Buco del culo, Tette, Culo (Cronologia, schede, impostazioni).
