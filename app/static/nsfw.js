@@ -5,8 +5,15 @@
   const icon = (name, cls = 'icon') => `<svg class="${cls}" aria-hidden="true"><use href="/static/icons.svg#${name}"></use></svg>`;
   const STATUS_TEXT = {
     nsfw: 'NSFW', review: 'Da controllare', safe: 'Safe', scanning: 'Analisi', paused: 'In pausa',
-    pending: 'Da analizzare', error: 'Errore analisi', skipped: 'Non analizzato',
+    pending: 'Da analizzare', error: 'Errore analisi', skipped: 'Non analizzato', verifying: 'In verifica',
   };
+  const CLASS_ICON = {
+    FEMALE_BREAST_EXPOSED: 'nsfw-breast', BUTTOCKS_EXPOSED: 'nsfw-butt', ANUS_EXPOSED: 'nsfw-butt',
+    FEMALE_GENITALIA_EXPOSED: 'nsfw-vulva', MALE_GENITALIA_EXPOSED: 'nsfw-phallus',
+  };
+  const MARK_TEXT = {nsfw: 'NSFW confermato', review: 'Da controllare', pending: 'In verifica'};
+  const classIcon = cls => CLASS_ICON[cls] || 'warning';
+  const wallClock = time => new Intl.DateTimeFormat('it-IT', {timeZone: DISPLAY_TIME_ZONE, hour: '2-digit', minute: '2-digit', second: '2-digit'}).format(new Date(time));
   const CLASS_TEXT = {
     FEMALE_BREAST_EXPOSED: 'Seno scoperto', FEMALE_GENITALIA_EXPOSED: 'Genitali femminili',
     MALE_GENITALIA_EXPOSED: 'Genitali maschili', ANUS_EXPOSED: 'Ano', BUTTOCKS_EXPOSED: 'Glutei scoperti',
@@ -76,6 +83,19 @@
   };
 
   /* ---------- Progress panel ---------- */
+  const LIVE_STATE_TEXT = {
+    running: 'Analisi dal vivo attiva', idle: 'Dal vivo: nessuna live in registrazione', disabled: 'Analisi dal vivo spenta',
+    storage_switch: 'Dal vivo in pausa: cambio disco in corso', busy: 'Dal vivo in attesa: CPU occupata dalla registrazione',
+    models_missing: 'Dal vivo: modello mancante', error: 'Errore analisi dal vivo',
+  };
+
+  function liveMarkup(live) {
+    if (!live || (live.state === 'disabled' && !live.verify_queue)) return '';
+    const tracks = (live.tracks || []).map(t => `<span class="nsfw-live-track ${t.unsupported ? 'off' : ''}" title="${esc(t.unsupported || '')}"><strong>${esc(t.name)}</strong><small>${t.unsupported ? 'formato non analizzabile dal vivo: analisi dopo la chiusura' : `${Number(t.samples || 0).toLocaleString('it-IT')} fotogrammi · ${t.marks} segni${t.lag_seconds != null && t.lag_seconds > 15 ? ` · ${Math.round(t.lag_seconds)} s indietro` : ''}`}</small></span>`).join('');
+    const verify = live.verify_queue ? `<span class="nsfw-live-verify">${icon('eye', 'mini-icon')}<span>${live.verify_queue} da verificare${live.verify_state === 'running' ? ' · verifica in corso' : live.verify_state === 'busy' ? ' · in attesa di CPU' : ''}</span></span>` : '';
+    return `<div class="nsfw-live"><div class="nsfw-live-head"><span class="nsfw-live-dot ${esc(live.state)}" aria-hidden="true"></span><strong>${esc(LIVE_STATE_TEXT[live.state] || live.state)}</strong>${verify}</div>${tracks ? `<div class="nsfw-live-tracks">${tracks}</div>` : ''}</div>`;
+  }
+
   function renderPanel() {
     const root = $('#nsfwPanel');
     if (!root) return;
@@ -106,7 +126,7 @@
     } else if (info.state === 'waiting_storage') {
       body = '<p class="nsfw-note">NVMe scollegato: l\'analisi riprende quando torna disponibile.</p>';
     }
-    setMarkup(root, `<header class="nsfw-head"><div>${icon('sparkles')}<h2>Analisi NSFW</h2><span class="nsfw-state ${esc(state)}">${esc(STATE_TEXT[state] || state)}</span></div><div class="nsfw-counts">${chip('nsfw', 'NSFW', 'is:nsfw')}${chip('review', 'Da controllare', 'is:controllare')}${chip('safe', 'Safe', 'is:safe')}${queue}</div></header>${body}`);
+    setMarkup(root, `<header class="nsfw-head"><div>${icon('sparkles')}<h2>Analisi NSFW</h2><span class="nsfw-state ${esc(state)}">${esc(STATE_TEXT[state] || state)}</span></div><div class="nsfw-counts">${chip('nsfw', 'NSFW', 'is:nsfw')}${chip('review', 'Da controllare', 'is:controllare')}${chip('safe', 'Safe', 'is:safe')}${queue}</div></header>${liveMarkup(info.live)}${body}`);
     applyDynamicStyles(root);
   }
 
@@ -149,19 +169,83 @@
     </article>`;
   }
 
-  // Moments laid out on the whole duration; works without the local file.
+  // Moments laid out on the whole duration, with an icon for what was seen.
+  // HTML (not a stretched SVG) so icons keep their shape; works without the local file.
   function timelineMarkup(recording, moments) {
     const total = Math.max(Number(recording.duration_seconds) || 0, ...moments.map(m => Number(m.end) || 0), 1);
     const long = total >= 3600;
-    const ticks = [0, .25, .5, .75, 1].map(r => `<text x="${(r * 1000).toFixed(1)}" y="46" text-anchor="${r === 0 ? 'start' : r === 1 ? 'end' : 'middle'}">${clock(total * r, long)}</text>`).join('');
-    const bars = moments.map(m => {
-      const x = Math.max(0, Number(m.start) / total * 1000);
-      const w = Math.max(4, (Number(m.end) - Number(m.start)) / total * 1000);
-      return `<rect class="nsfw-tl-bar ${esc(m.label)}" x="${x.toFixed(1)}" y="6" width="${Math.min(w, 1000 - x).toFixed(1)}" height="22" rx="4" data-nsfw-seek="${recording.id}" data-at="${Number(m.start)}" tabindex="0" role="button"><title>${clock(m.start, long)} – ${clock(m.end, long)} · ${esc(STATUS_TEXT[m.label] || m.label)}</title></rect>`;
-    }).join('');
+    const ticks = [0, .25, .5, .75, 1].map(r => `<span class="nsfw-tl-tick" data-dynamic-left="${(r * 100).toFixed(2)}">${clock(total * r, long)}</span>`).join('');
+    let lastIcon = -99;
+    const bands = [];
+    const pins = [];
+    for (const m of moments) {
+      const left = Math.max(0, Math.min(100, Number(m.start) / total * 100));
+      const width = Math.max(0.6, Math.min(100 - left, (Number(m.end) - Number(m.start)) / total * 100));
+      const label = `${clock(m.start, long)} – ${clock(m.end, long)} · ${CLASS_TEXT[m.class] || m.class || ''} · ${STATUS_TEXT[m.label] || m.label}`;
+      const attrs = `data-nsfw-seek="${recording.id}" data-at="${Number(m.start)}" title="${esc(label)}" aria-label="${esc(label)}"`;
+      bands.push(`<button type="button" class="nsfw-tl-band ${esc(m.label)}" data-dynamic-left="${left.toFixed(3)}" data-dynamic-width="${width.toFixed(3)}" ${attrs}></button>`);
+      if (left - lastIcon < 3.2) continue;  // keep icons readable on dense timelines
+      lastIcon = left;
+      pins.push(`<button type="button" class="nsfw-tl-pin ${esc(m.label)}" data-dynamic-left="${Math.min(98.6, Math.max(1.4, left)).toFixed(3)}" ${attrs}>${icon(classIcon(m.class), 'mini-icon')}</button>`);
+    }
     const covered = moments.reduce((sum, m) => sum + Math.max(0, Number(m.end) - Number(m.start)), 0);
-    return `<div class="nsfw-timeline"><div class="nsfw-timeline-head"><strong>Timeline</strong><span>${moments.length} momenti · ${clock(covered, long)} su ${clock(total, long)} (${Math.round(covered / total * 100)}%)</span></div>
-      <svg viewBox="0 0 1000 52" preserveAspectRatio="none" role="img" aria-label="Momenti sulla durata del video"><rect class="nsfw-tl-track" x="0" y="6" width="1000" height="22" rx="6"></rect>${bars}${ticks}</svg></div>`;
+    const live = recording.nsfw_source === 'live' ? ` · visto dal vivo${recording.nsfw_live_coverage ? ` (${Math.round(recording.nsfw_live_coverage * 100)}%)` : ''}` : '';
+    return `<div class="nsfw-timeline"><div class="nsfw-timeline-head"><strong>Timeline</strong><span>${moments.length} momenti · ${clock(covered, long)} su ${clock(total, long)} (${Math.round(covered / total * 100)}%)${live}</span></div>
+      <div class="nsfw-tl" role="group" aria-label="Momenti sulla durata del video"><div class="nsfw-tl-pins">${pins.join('')}</div><div class="nsfw-tl-track">${bands.join('')}</div><div class="nsfw-tl-ticks">${ticks}</div></div></div>`;
+  }
+
+  /* ---------- Monitor timeline (Cronologia) ---------- */
+  const pulseMarks = new Map();
+  window.pulseNsfwLayer = (sessions, xFor) => {
+    const moments = sessions.flatMap(session => (session.nsfw_moments || []).map(m => ({...m, name: session.display_name})))
+      .sort((a, b) => timestamp(a.started_at) - timestamp(b.started_at));
+    if (!moments.length) return '';
+    if (pulseMarks.size > 3000) pulseMarks.clear();
+    let lastIcon = -99;
+    const bands = [];
+    const pins = [];
+    for (const m of moments) {
+      const start = timestamp(m.started_at);
+      const end = Math.max(start, timestamp(m.ended_at) || start);
+      const left = xFor(start) / 10;
+      const width = Math.max(0.3, (xFor(end) - xFor(start)) / 10);
+      const key = `${m.started_at}|${m.recording_id || ''}|${m.mark_id || ''}`;
+      pulseMarks.set(key, m);
+      const title = `${wallClock(start)} · ${CLASS_TEXT[m.class] || m.class || 'Nudità'} · ${MARK_TEXT[m.label] || m.label}${m.count > 1 ? ` · ${m.count} fotogrammi` : ''}${m.approx ? ' · posizione stimata' : ''}`;
+      bands.push(`<i class="nsfw-pulse-band ${esc(m.label)}" data-dynamic-left="${left.toFixed(3)}" data-dynamic-width="${Math.min(100 - left, width).toFixed(3)}"></i>`);
+      if (left - lastIcon < 1.4) continue;
+      lastIcon = left;
+      // Keep the whole round pin inside the track at the edges of the window.
+      pins.push(`<button type="button" class="nsfw-pulse-mark ${esc(m.label)}" data-dynamic-left="${Math.min(98.6, Math.max(1.4, left)).toFixed(3)}" data-nsfw-pulse="${esc(key)}" title="${esc(title)}" aria-label="${esc(title)}">${icon(classIcon(m.class), 'mini-icon')}</button>`);
+    }
+    return `<div class="nsfw-pulse-layer">${bands.join('')}${pins.join('')}</div>`;
+  };
+
+  function openPulseMark(key) {
+    const mark = pulseMarks.get(key);
+    if (!mark) return;
+    const recording = mark.recording_id ? findRecording(mark.recording_id) : null;
+    if (recording) {
+      openDialog(recording.id);
+      const at = Number(mark.file_time);
+      const nearest = (recording.nsfw_moments || []).reduce((best, m) => (!best || Math.abs(m.start - at) < Math.abs(best.start - at) ? m : best), null);
+      if (nearest) setTimeout(() => {
+        const card = document.querySelector(`#nsfwDialog [data-moment-at="${CSS.escape(String(nearest.start))}"]`);
+        card?.scrollIntoView({behavior: 'smooth', block: 'center'});
+        card?.classList.add('flash');
+        setTimeout(() => card?.classList.remove('flash'), 1400);
+      }, 150);
+      return;
+    }
+    // Still recording (or file not loaded): show what was seen and when.
+    const dialog = $('#nsfwDialog');
+    if (!dialog) return;
+    dialogRecordingId = null;
+    const image = safeUrl(mark.image_url || '');
+    const start = timestamp(mark.started_at);
+    setMarkup(dialog, `<div class="nsfw-dialog-head"><div><h2 id="nsfwDialogTitle">${esc(mark.name || '')}</h2><small>${mark.recording_id ? 'Registrazione in archivio' : 'Live in corso · il momento sarà collegato al file quando la registrazione si chiude'}</small></div><span class="nsfw-badge ${esc(mark.label === 'pending' ? 'verifying' : mark.label)}">${esc(MARK_TEXT[mark.label] || mark.label)}</span><button type="button" class="icon-button" data-nsfw-close aria-label="Chiudi">${icon('x')}</button></div>
+      <div class="nsfw-lightbox">${image ? `<img src="${esc(image)}" alt="">` : ''}<div><strong>${wallClock(start)}${mark.ended_at ? ` – ${wallClock(timestamp(mark.ended_at))}` : ''}</strong><span>${esc(CLASS_TEXT[mark.class] || mark.class || '')}${mark.count > 1 ? ` · ${mark.count} fotogrammi` : ''}${mark.approx ? ' · posizione stimata' : ''}</span></div></div>`);
+    if (!dialog.open) dialog.showModal();
   }
 
   function openShot(recording, seconds) {
@@ -274,6 +358,8 @@
     if (open && !action) { event.preventDefault(); openDialog(open.dataset.nsfwOpen); return; }
     if (action) { event.preventDefault(); runAction(action.dataset.nsfwAction, action.dataset.id, action); return; }
     if (play) { event.preventDefault(); playAt(play.dataset.nsfwPlay, play.dataset.at); return; }
+    const pulseMark = event.target.closest('[data-nsfw-pulse]');
+    if (pulseMark) { event.preventDefault(); openPulseMark(pulseMark.dataset.nsfwPulse); return; }
     const seekBar = event.target.closest('[data-nsfw-seek]');
     if (seekBar) {
       const card = document.querySelector(`#nsfwDialog [data-moment-at="${CSS.escape(seekBar.dataset.at)}"]`);
@@ -306,6 +392,19 @@
   showView = function showViewWithNsfw(name, updateHash = true) {
     const result = baseShowViewNsfw(name, updateHash);
     if (activeView === 'archive') poll();
+    return result;
+  };
+
+  const baseRenderSourcesNsfw = renderSources;
+  renderSources = function renderSourcesWithNsfw(...args) {
+    const result = baseRenderSourcesNsfw.apply(this, args);
+    const pulse = document.querySelector('.cr-pulse');
+    if (pulse) applyDynamicStyles(pulse);
+    // After the pulse legend is rebuilt (pulse-tuning, next frame), add the NSFW key.
+    if (pulse?.querySelector('.nsfw-pulse-mark')) requestAnimationFrame(() => requestAnimationFrame(() => {
+      const legend = document.querySelector('.cr-pulse-legend');
+      if (legend && !legend.querySelector('.nsfw-legend')) legend.insertAdjacentHTML('beforeend', `<span class="cr-pulse-legend-item nsfw-legend">${icon('nsfw-breast', 'mini-icon')}NSFW</span>`);
+    }));
     return result;
   };
 

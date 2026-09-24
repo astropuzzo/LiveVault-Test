@@ -85,3 +85,23 @@ def test_real_ffmpeg_fragmented_capture(tmp_path: Path):
     index = build_index(path)
     assert index.complete
     assert index.duration == pytest.approx(20.0, abs=0.2)
+
+
+def test_growing_index_reads_only_new_complete_fragments(tmp_path: Path):
+    from app.mp4_index import GrowingIndex
+    full = synthetic_fmp4(10)  # 10 fragments x 1 s
+    path = tmp_path / "live.mp4"
+    # Writer mid-way: init + 3 fragments + half of the 4th mdat.
+    probe = tmp_path / "probe.mp4"
+    probe.write_bytes(full)
+    ends = [s.offset + s.length for s in build_index(probe, target_seconds=0.5).segments]
+    path.write_bytes(full[:ends[2] + 40])
+    reader = GrowingIndex(path)
+    first = reader.poll()
+    assert [round(f.time) for f in first] == [0, 1, 2]
+    assert reader.poll() == []  # nothing new, incomplete tail is not returned
+    path.write_bytes(full)
+    rest = reader.poll()
+    assert [round(f.time) for f in rest] == [3, 4, 5, 6, 7, 8, 9]
+    assert reader.latest_time == pytest.approx(10.0)
+    assert rest[-1].offset + rest[-1].length == len(full)

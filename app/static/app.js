@@ -125,6 +125,10 @@ function applyDynamicStyles(root = document) {
     const value = String(node.dataset.tagColor || '').trim();
     if (/^#[0-9a-f]{6}$/i.test(value)) node.style.setProperty('--tag', value);
   }
+  for (const node of scope.querySelectorAll('[data-dynamic-left]')) {
+    const value = Math.max(0, Math.min(100, Number(node.dataset.dynamicLeft) || 0));
+    node.style.left = `${value}%`;
+  }
   for (const node of scope.querySelectorAll('[data-dynamic-width]')) {
     const value = Math.max(0, Math.min(100, Number(node.dataset.dynamicWidth) || 0));
     node.style.width = `${value}%`;
@@ -1243,6 +1247,9 @@ async function loadSettings() {
   $('#setNsfwThreshold').value = settings.nsfw_threshold;
   $('#setNsfwCandidate').value = settings.nsfw_candidate;
   $('#setNsfwIdle').checked = !!settings.nsfw_only_when_idle;
+  $('#setNsfwLive').checked = settings.nsfw_live_enabled !== false;
+  $('#setNsfwLiveFps').value = settings.nsfw_live_fps;
+  $('#setNsfwLiveLoad').value = settings.nsfw_live_max_load;
   $('#setNsfwHold').checked = !!settings.nsfw_hold_delete;
   $('#setNsfwHoldHours').value = settings.nsfw_max_hold_hours;
   $('#setNsfwFast').value = settings.nsfw_fast_model || '';
@@ -2157,6 +2164,8 @@ $('#settingsForm').addEventListener('submit', async event => {
     nsfw_enabled: $('#setNsfwEnabled').checked, nsfw_step_seconds: Number($('#setNsfwStep').value),
     nsfw_threads: Number($('#setNsfwThreads').value), nsfw_threshold: Number($('#setNsfwThreshold').value),
     nsfw_candidate: Number($('#setNsfwCandidate').value), nsfw_only_when_idle: $('#setNsfwIdle').checked,
+    nsfw_live_enabled: $('#setNsfwLive').checked, nsfw_live_fps: Number($('#setNsfwLiveFps').value),
+    nsfw_live_max_load: Number($('#setNsfwLiveLoad').value),
     nsfw_hold_delete: $('#setNsfwHold').checked, nsfw_max_hold_hours: Number($('#setNsfwHoldHours').value),
     nsfw_classes: $$('[data-nsfw-class]').filter(box => box.checked).map(box => box.dataset.nsfwClass).join(','),
     nsfw_fast_model: $('#setNsfwFast').value.trim(), nsfw_verify_model: $('#setNsfwVerify').value.trim()
@@ -2871,7 +2880,8 @@ function controlRoomPulseMarkup() {
       const recMarkerX = firstRec ? xFor(Math.max(start, timestamp(firstRec.started_at))) : null;
       return `<g class="cr-pulse-session"><rect class="cr-pulse-live-span ${session.state === 'live' ? 'current' : ''} ${!hasRecording && !unavailableIntervals.length ? 'unrecorded' : ''}" x="${x.toFixed(3)}" y="2" width="${liveWidth.toFixed(3)}" height="12" rx="6" ry="6"></rect>${unavailable}${missed}<line class="cr-pulse-live-marker" x1="${x.toFixed(3)}" y1="0" x2="${x.toFixed(3)}" y2="16"></line>${recMarkerX === null ? '' : `<line class="cr-pulse-rec-marker" x1="${recMarkerX.toFixed(3)}" y1="1" x2="${recMarkerX.toFixed(3)}" y2="15"></line>`}${recs}<title>${esc(title)}</title></g>`;
     }).join('');
-    return `<div class="cr-pulse-row"><div class="cr-pulse-who">${creatorLinkMarkup(representative.representative_source_id, representative.display_name, 'cr-pulse-name')}${pulseSessionTimingMarkup(representative)}</div><div class="cr-pulse-track"><svg class="cr-pulse-svg" viewBox="0 0 1000 16" preserveAspectRatio="none" role="img" aria-label="Timeline ${esc(representative.display_name)}">${graphics}</svg></div></div>`;
+    const nsfwLayer = typeof pulseNsfwLayer === 'function' ? pulseNsfwLayer(profileSessions, xFor) : '';
+    return `<div class="cr-pulse-row" data-profile-id="${profileId}"><div class="cr-pulse-who">${creatorLinkMarkup(representative.representative_source_id, representative.display_name, 'cr-pulse-name')}${pulseSessionTimingMarkup(representative)}</div><div class="cr-pulse-track"><svg class="cr-pulse-svg" viewBox="0 0 1000 16" preserveAspectRatio="none" role="img" aria-label="Timeline ${esc(representative.display_name)}">${graphics}</svg>${nsfwLayer}</div></div>`;
   }).join('');
   const hidden = Math.max(0, profileOrder.length - recentProfiles.length);
   const notice = controlRoomPulseLoading ? 'Caricamento cronologia…' : controlRoomPulseError ? (lastControlRoomPulseLoad ? `Cronologia non aggiornata · ultimo aggiornamento ${dateText(controlRoomPulseData.generated_at)}` : 'Cronologia non disponibile · nuovo tentativo automatico') : '';

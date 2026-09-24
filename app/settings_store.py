@@ -16,7 +16,7 @@ from .db import AppSetting, db_session
 SECRET_KEYS = {"gofile_token", "pixeldrain_api_key"}
 NSFW_KEYS = ("nsfw_enabled", "nsfw_step_seconds", "nsfw_candidate", "nsfw_threshold", "nsfw_threads",
              "nsfw_only_when_idle", "nsfw_hold_delete", "nsfw_max_hold_hours", "nsfw_classes",
-             "nsfw_fast_model", "nsfw_verify_model")
+             "nsfw_fast_model", "nsfw_verify_model", "nsfw_live_enabled", "nsfw_live_fps", "nsfw_live_max_load")
 
 
 @dataclass
@@ -60,6 +60,11 @@ class RuntimeSettings:
     nsfw_classes: str = "FEMALE_BREAST_EXPOSED,FEMALE_GENITALIA_EXPOSED,MALE_GENITALIA_EXPOSED,ANUS_EXPOSED"
     nsfw_fast_model: str = "/data/models/320n.onnx"
     nsfw_verify_model: str = "/data/models/640m.onnx"
+    # Live analysis while recording: frames per second across all captures, and
+    # the 1-minute load average above which sampling waits (recording first).
+    nsfw_live_enabled: bool = True
+    nsfw_live_fps: float = 0.5
+    nsfw_live_max_load: float = 3.0
 
 
 _state = RuntimeSettings(

@@ -32,6 +32,8 @@ from .media_validation import build_validation_receipt, integrity_from_validatio
 from .source_providers import probe
 from .storage import disk_state
 from . import storage_handoff
+from .nsfw_live_worker import LiveNsfwMixin
+from .nsfw_scan import _probe_full
 from .nsfw_worker import NsfwWorkerMixin
 from .uploaders import UploadCancelled, create_gofile_folder, create_pixeldrain_list, provider_available, upload
 from .utils import generate_live_preview, generate_thumbnail, human_bytes, safe_name, sha256_file, utcnow, verify_media
@@ -64,6 +66,13 @@ def public_recording_filename(source_name: str, started_at: datetime, sequence: 
     clean_source = safe_name(source_name) or "recording"
     extension = suffix if suffix.startswith(".") else f".{suffix}"
     return f"{max(1, int(sequence)):03d}_{clean_source}_{local_started:%Y-%m-%d_%H-%M-%S}{extension}"
+
+
+def _safe_duration(path: Path) -> float:
+    try:
+        return float(_probe_full(str(path))[1])
+    except Exception:
+        return 0.0
 
 
 def stitch_gap_open(last_at: datetime, now: datetime, gap_seconds: int = SESSION_STITCH_GAP_SECONDS) -> bool:
@@ -111,7 +120,7 @@ def capture_output_files(session: RecorderSession) -> list[Path]:
     )
 
 
-class WorkerManager(NsfwWorkerMixin):
+class WorkerManager(NsfwWorkerMixin, LiveNsfwMixin):
     def __init__(self) -> None:
         self.active: dict[int, RecorderSession] = {}
         self._storage_jobs = 0
@@ -187,6 +196,8 @@ class WorkerManager(NsfwWorkerMixin):
                     asyncio.create_task(self._thumbnail_loop(), name="thumbnail-worker"),
                     asyncio.create_task(self._cleanup_loop(), name="storage-guard"),
                     asyncio.create_task(self._nsfw_loop(), name="nsfw-scan"),
+                    asyncio.create_task(self._nsfw_live_loop(), name="nsfw-live"),
+                    asyncio.create_task(self._nsfw_verify_loop(), name="nsfw-verify"),
                 ]
                 # Recording must resume immediately after a reboot. Multi-GB
                 # orphan inspection runs beside the poller, never in front of it.
@@ -1179,6 +1190,9 @@ class WorkerManager(NsfwWorkerMixin):
         output = paths[0].parent / public_recording_filename(display_name, started, sequence, suffix)
         temporary = output.with_name(f".{output.stem}.finalizing{output.suffix}")
         temporary.unlink(missing_ok=True)
+        # The concat demuxer lays parts back-to-back by container duration: the
+        # same offsets move live NSFW marks onto the stitched file's timeline.
+        part_durations = await asyncio.to_thread(lambda: [_safe_duration(path) for path in paths])
         await stitch_recording_parts(paths, temporary, allow_transcode=allow_transcode)
         if temporary.suffix.lower() == ".mp4":
             await self._prepare_mp4(temporary)
@@ -1194,8 +1208,9 @@ class WorkerManager(NsfwWorkerMixin):
         finalized = max(item.finalized_at for item in good)
         with db_session() as db:
             existing = db.scalar(select(Recording).where(Recording.local_path == str(output)))
+            recording_id = int(existing.id) if existing is not None else None
             if existing is None:
-                db.add(Recording(
+                created = Recording(
                     source_id=first.source_id,
                     source_name=first.source_name,
                     session_id=first.session_id,
@@ -1218,12 +1233,24 @@ class WorkerManager(NsfwWorkerMixin):
                     has_audio=integrity.has_audio,
                     video_codec=integrity.codec("video"),
                     audio_codec=integrity.codec("audio"),
-                ))
+                )
+                db.add(created)
+                db.flush()
+                recording_id = int(created.id)
             fragment_ids = [int(fragment.id) for fragment in fragments]
             for fragment in db.scalars(select(RecordingFragment).where(
                 RecordingFragment.id.in_(fragment_ids)
             )).all():
                 db.delete(fragment)
+        if recording_id is not None:
+            offsets, elapsed = [], 0.0
+            for path, part_duration in zip(paths, part_durations):
+                offsets.append((str(path), elapsed, float(part_duration or 0)))
+                elapsed += float(part_duration or 0)
+            try:
+                self.nsfw_attach_parts(recording_id, offsets)
+            except Exception as exc:
+                self.last_errors[f"nsfw-attach:{recording_id}"] = str(exc)[-600:]
         for path in paths:
             if path != output:
                 path.unlink(missing_ok=True)
@@ -1265,7 +1292,7 @@ class WorkerManager(NsfwWorkerMixin):
         with db_session() as db:
             if db.scalar(select(Recording).where(Recording.local_path == str(path))):
                 return True
-            db.add(Recording(
+            created = Recording(
                 source_id=source_id,
                 source_name=source_name,
                 session_id=session_id,
@@ -1288,7 +1315,15 @@ class WorkerManager(NsfwWorkerMixin):
                 has_audio=integrity.has_audio if integrity else None,
                 video_codec=integrity.codec("video") if integrity else "",
                 audio_codec=integrity.codec("audio") if integrity else "",
-            ))
+            )
+            db.add(created)
+            db.flush()
+            recording_id = int(created.id)
+        if integrity and integrity.ok:
+            try:
+                self.nsfw_attach_parts(recording_id, [(str(path), 0.0, float(integrity.duration or 0))])
+            except Exception as exc:
+                self.last_errors[f"nsfw-attach:{recording_id}"] = str(exc)[-600:]
         self.last_errors.pop(f"finalize:{source_id}", None)
         return True
 

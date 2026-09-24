@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.4.0 — Analisi NSFW dal vivo
+
+- I momenti con nudità vengono segnati mentre la live è in registrazione: il nodo guarda un fotogramma ogni pochi secondi del file che sta crescendo, a turno tra le live e con un tetto di CPU (la registrazione ha sempre la precedenza).
+- Icone stilizzate (seno, glutei, genitali) sulla Cronologia del Monitor in tempo reale e sulla timeline dei momenti in archivio; clic per vedere il fotogramma o aprire il momento nel file.
+- Il modello preciso conferma i sospetti lavorando solo su copie salvate nella memoria interna: continua anche mentre l'NVMe è staccato. Il campionamento si ferma solo durante lo stacco/riattacco e riprende da solo sul buffer interno o sull'NVMe.
+- Alla chiusura della sessione i segni vengono spostati sulla timeline del file caricato (anche quando più pezzi vengono uniti): se la live è stata vista quasi tutta, non serve l'analisi completa dopo.
+- L'analisi completa dei file ora prosegue anche sul buffer interno quando l'NVMe è staccato.
+
 ## 3.3.1 — Correzioni analisi NSFW e Gofile
 
 - Anteprime dei momenti salvate durante l'analisi (prima mancavano oltre i primi minuti: estrarle dal file richiedeva più di 60 s sul nodo) e disponibili anche dopo la cancellazione del file locale.

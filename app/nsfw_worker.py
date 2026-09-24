@@ -73,14 +73,17 @@ class NsfwWorkerMixin:
 
     def _next_nsfw_job(self) -> Recording | None:
         with db_session() as db:
-            rec = db.scalar(
+            candidates = db.scalars(
                 select(Recording)
                 .where(Recording.local_deleted.is_(False), Recording.integrity_status == "passed",
                        Recording.nsfw_status.in_(["pending", "paused"]))
                 # Already uploaded files first: they only wait for the scan to be deleted.
                 .order_by(case((Recording.upload_status == "uploaded", 0), else_=1), Recording.started_at.asc())
-                .limit(1)
-            )
+                .limit(50)
+            ).all()
+            # NVMe detached: only files written to the internal buffer are reachable.
+            buffering = storage_handoff.state()["mode"] == "buffer"
+            rec = next((row for row in candidates if not buffering or Path(row.local_path).is_file()), None)
             if rec is None:
                 # Moments must match the file that goes to the cloud: if a
                 # scanned local file was converted or repaired, scan it again.
@@ -107,7 +110,7 @@ class NsfwWorkerMixin:
         cfg = runtime()
         if not cfg.nsfw_enabled:
             return "disabled"
-        if not storage_handoff.media_online():
+        if not storage_handoff.media_online() and storage_handoff.state()["mode"] != "buffer":
             return "waiting_storage"
         if cfg.nsfw_only_when_idle and getattr(self, "active", None):
             return "waiting_idle"
@@ -157,7 +160,8 @@ class NsfwWorkerMixin:
         cfg = runtime()
         if self._stopping:
             return "shutdown"
-        if storage_handoff.state()["mode"] == "quiesce" or not storage_handoff.media_online():
+        # Attaching/detaching the NVMe: close the file at once, resume later.
+        if storage_handoff.state()["mode"] not in ("nvme", "legacy", "buffer"):
             return "storage"
         if not cfg.nsfw_enabled:
             return "disabled"
@@ -168,10 +172,12 @@ class NsfwWorkerMixin:
     def request_nsfw_stop(self, reason: str = "user") -> None:
         self._nsfw_stop_reason = reason
 
-    @storage_handoff.media_job
+    @storage_handoff.media_job(buffering=True)
     async def _run_nsfw_job(self, rec: Recording) -> None:
         path = Path(rec.local_path)
         if not path.is_file():
+            if storage_handoff.state()["mode"] == "buffer":
+                return  # on the detached NVMe: scanned when it is back
             with db_session() as db:
                 current = db.get(Recording, rec.id)
                 if current:
@@ -259,6 +265,7 @@ class NsfwWorkerMixin:
             current = db.get(Recording, rec.id)
             if current:
                 current.nsfw_status = overall(moments)
+                current.nsfw_source = "scan"
                 current.nsfw_moments = json.dumps(payload)
                 current.nsfw_hits = json.dumps(hits)
                 current.nsfw_max_score = max((m.score for m in moments), default=0.0)

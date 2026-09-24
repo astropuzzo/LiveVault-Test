@@ -245,3 +245,81 @@ def hls_playlist(index: FragmentIndex, media_uri: str, live: bool = False) -> st
     if not live:
         lines.append("#EXT-X-ENDLIST")
     return "\n".join(lines) + "\n"
+
+
+@dataclass(frozen=True)
+class LiveFragment:
+    offset: int
+    length: int
+    time: float  # seconds from the first fragment (same basis as pts - start_time)
+    duration: float
+
+
+class GrowingIndex:
+    """Incremental box reader for a fragmented MP4 that is still being written.
+
+    Each ``poll`` parses only the bytes appended since the previous call (box
+    headers and the small ``moof`` boxes; ``mdat`` payloads are skipped), so a
+    recorder writing for hours costs a few reads per poll. A fragment is only
+    returned once its ``mdat`` is complete on disk.
+    """
+
+    def __init__(self, path: Path):
+        self.path = Path(path)
+        self.position = 0
+        self.init_length = 0
+        self.track: int | None = None
+        self.timescale = 1
+        self.default_duration = 0
+        self.first_base: int | None = None
+        self.running_base = 0
+        self.latest_time = 0.0
+        self._pending: tuple[int, int | None, int] | None = None
+
+    def poll(self, limit: int = 4096) -> list[LiveFragment]:
+        size = os.path.getsize(self.path)
+        found: list[LiveFragment] = []
+        with open(self.path, "rb") as handle:
+            while self.position + 8 <= size and len(found) < limit:
+                handle.seek(self.position)
+                header = handle.read(16)
+                box_size, kind = struct.unpack_from(">I4s", header)
+                if box_size == 1 and len(header) >= 16:
+                    box_size = struct.unpack_from(">Q", header, 8)[0]
+                elif box_size == 0:
+                    break  # "to end of file": still being written
+                if box_size < 8 or self.position + box_size > size:
+                    break  # incomplete box: try again on the next poll
+                if kind == b"moov":
+                    handle.seek(self.position)
+                    tracks, defaults, fragmented = _parse_moov(handle.read(box_size))
+                    if not fragmented:
+                        raise NotFragmented("MP4 already has a complete index")
+                    video = next((tid for tid, (_, handler) in tracks.items() if handler == b"vide"), None)
+                    self.track = video if video is not None else next(iter(tracks), None)
+                    if self.track is None:
+                        raise NotFragmented("No track in moov")
+                    self.timescale = tracks[self.track][0] or 1
+                    self.default_duration = defaults.get(self.track, 0)
+                    self.init_length = self.position + box_size
+                elif kind == b"moof" and self.init_length:
+                    if box_size > 4 * 1024 * 1024:
+                        raise NotFragmented("Unexpectedly large moof")
+                    handle.seek(self.position)
+                    base, ticks = _fragment_ticks(handle.read(box_size), self.track, self.default_duration)
+                    self._pending = (self.position, base, ticks)
+                elif kind == b"mdat" and self._pending:
+                    start, base, ticks = self._pending
+                    self._pending = None
+                    if base is None:
+                        base = self.running_base
+                    if self.first_base is None:
+                        self.first_base = base
+                    self.running_base = base + ticks
+                    time_value = max(0.0, (base - self.first_base) / self.timescale)
+                    self.latest_time = max(self.latest_time, time_value + ticks / self.timescale)
+                    found.append(LiveFragment(start, self.position + box_size - start, time_value, ticks / self.timescale))
+                elif self.position == 0 and kind not in (b"ftyp", b"moov", b"free", b"skip", b"uuid", b"styp"):
+                    raise NotFragmented("Not an MP4")
+                self.position += box_size
+        return found

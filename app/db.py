@@ -156,6 +156,9 @@ class Recording(Base):
     nsfw_scanned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # size-mtime of the file the moments refer to; a converted/repaired file is rescanned.
     nsfw_file_sig: Mapped[str] = mapped_column(String(64), default="")
+    # "live" = built from marks taken during the recording, "scan" = full file scan, "manual".
+    nsfw_source: Mapped[str] = mapped_column(String(16), default="")
+    nsfw_live_coverage: Mapped[float] = mapped_column(Float, default=0.0)
 
 
 class RecordingFragment(Base):
@@ -200,6 +203,50 @@ class LiveSession(Base):
     last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     origin: Mapped[str] = mapped_column(String(32), default="probe", index=True)
     access_status: Mapped[str] = mapped_column(String(24), default="live", index=True)
+
+
+class NsfwMark(Base):
+    """One suspect frame seen while a live was being recorded.
+
+    ``part_path``/``part_time`` locate it in the capture part being written;
+    at stitching time it gets ``recording_id``/``file_time`` in the uploaded
+    file. ``wall_at`` places it on the Monitor timeline.
+    """
+    __tablename__ = "nsfw_marks"
+    __table_args__ = (
+        Index("ix_nsfw_marks_source_wall", "source_id", "wall_at"),
+        Index("ix_nsfw_marks_state", "state"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    source_id: Mapped[int] = mapped_column(Integer, index=True)
+    session_id: Mapped[str] = mapped_column(String(80), default="")
+    part_path: Mapped[str] = mapped_column(Text, index=True)
+    part_time: Mapped[float] = mapped_column(Float, default=0.0)
+    wall_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    fast_score: Mapped[float] = mapped_column(Float, default=0.0)
+    cls: Mapped[str] = mapped_column(String(40), default="")
+    # pending (waiting for the large model) | confirmed | inherited | review | rejected
+    state: Mapped[str] = mapped_column(String(16), default="pending")
+    verified_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    verified_cls: Mapped[str] = mapped_column(String(40), default="")
+    image: Mapped[str] = mapped_column(String(120), default="")
+    verify_image: Mapped[str] = mapped_column(Text, default="")
+    recording_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    file_time: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+
+class NsfwCoverage(Base):
+    """How much of a capture part the live sampler actually looked at."""
+    __tablename__ = "nsfw_coverage"
+
+    part_path: Mapped[str] = mapped_column(Text, primary_key=True)
+    source_id: Mapped[int] = mapped_column(Integer, index=True)
+    samples: Mapped[int] = mapped_column(Integer, default=0)
+    first_time: Mapped[float] = mapped_column(Float, default=0.0)
+    last_time: Mapped[float] = mapped_column(Float, default=0.0)
+    covered_seconds: Mapped[float] = mapped_column(Float, default=0.0)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
 class AppSetting(Base):
@@ -262,6 +309,8 @@ def _migrate_recordings() -> None:
         "nsfw_error": "TEXT NOT NULL DEFAULT ''",
         "nsfw_scanned_at": "DATETIME",
         "nsfw_file_sig": "VARCHAR(64) NOT NULL DEFAULT ''",
+        "nsfw_source": "VARCHAR(16) NOT NULL DEFAULT ''",
+        "nsfw_live_coverage": "FLOAT NOT NULL DEFAULT 0",
     }
     with engine.begin() as conn:
         for name, ddl in additions.items():

@@ -27,6 +27,7 @@ from .db import (
     Collection,
     CollectionProfile,
     LiveSession,
+    NsfwMark,
     Profile,
     ProfileCategory,
     Recording,
@@ -40,6 +41,7 @@ from .media_validation import build_validation_receipt
 from .mp4_index import NotFragmented, cached_index, hls_playlist
 from .predictions import forecast, rank_upcoming
 from .nsfw_scan import LABELS as NSFW_LABELS
+from .nsfw_live_worker import cluster_marks
 from .http_compression import TextCompressionMiddleware
 from .storage_response import StorageFileResponse
 from .recorder import (
@@ -61,7 +63,7 @@ BASE = Path(__file__).parent
 LOGIN_FAILURES: dict[str, deque[float]] = defaultdict(deque)
 LOGIN_WINDOW = 10 * 60
 LOGIN_MAX_FAILURES = 6
-VERSION = "3.3.1"
+VERSION = "3.4.0"
 
 
 class LoginBody(BaseModel):
@@ -197,6 +199,9 @@ class SettingsPatch(BaseModel):
     nsfw_classes: str | None = Field(default=None, max_length=600)
     nsfw_fast_model: str | None = Field(default=None, max_length=300)
     nsfw_verify_model: str | None = Field(default=None, max_length=300)
+    nsfw_live_enabled: bool | None = None
+    nsfw_live_fps: float | None = Field(default=None, ge=0.05, le=4)
+    nsfw_live_max_load: float | None = Field(default=None, ge=0.5, le=16)
 
 
 def _normalize_source_or_400(platform: str, value: str) -> tuple[str, str]:
@@ -1669,6 +1674,14 @@ def control_room_pulse(request: Request, hours: int = 12):
             ).order_by(RecordingFragment.started_at.asc())
         ).all()) if source_ids else []
         fragment_rows = [row for row in fragment_rows if Path(row.local_path).is_file()]
+        marks_by_source: dict[int, list[NsfwMark]] = defaultdict(list)
+        if source_ids:
+            for mark in db.scalars(select(NsfwMark).where(
+                NsfwMark.source_id.in_(source_ids),
+                NsfwMark.wall_at >= window_start,
+                NsfwMark.state.in_(["pending", "confirmed", "inherited", "review"]),
+            ).order_by(NsfwMark.wall_at)).all():
+                marks_by_source[int(mark.source_id)].append(mark)
 
         by_profile: dict[int, list[dict]] = defaultdict(list)
         sources_by_profile: dict[int, list[Source]] = defaultdict(list)
@@ -1850,7 +1863,31 @@ def control_room_pulse(request: Request, hours: int = 12):
                     state = "saved"
                 else:
                     state = "ended"
+                session_marks = [
+                    mark for source_id in linked_ids for mark in marks_by_source.get(source_id, [])
+                    if started <= _pulse_aware(mark.wall_at) <= ended + timedelta(seconds=5)
+                ]
+                nsfw_moments = cluster_marks(session_marks, step=float(runtime().nsfw_step_seconds))
+                live_recordings = {int(m.recording_id) for m in session_marks if m.recording_id}
+                for recording, rec_start, _rec_end in overlapping:
+                    # Files scanned after the fact have no wall-clock marks: place their
+                    # moments from the file start (approximate across capture gaps).
+                    if int(recording.id) in live_recordings or recording.nsfw_source == "live":
+                        continue
+                    base = _pulse_aware(recording.started_at)
+                    for moment in _nsfw_moments(recording.nsfw_moments):
+                        at = base + timedelta(seconds=float(moment.get("start") or 0))
+                        if not (started <= at <= ended):
+                            continue
+                        nsfw_moments.append({
+                            "started_at": _iso_utc(at),
+                            "ended_at": _iso_utc(base + timedelta(seconds=float(moment.get("end") or 0))),
+                            "label": str(moment.get("label") or "review"), "class": str(moment.get("class") or ""),
+                            "count": 1, "image_url": moment.get("image_url") or "", "recording_id": int(recording.id),
+                            "file_time": float(moment.get("start") or 0), "mark_id": None, "approx": True,
+                        })
                 sessions.append({
+                    "nsfw_moments": nsfw_moments,
                     "id": f"p{profile_id}-{int(started.timestamp())}",
                     "profile_id": profile_id,
                     "representative_source_id": int(representative.id) if representative else None,
@@ -2201,6 +2238,8 @@ def _recording_json(r: Recording) -> dict:
         "nsfw_moments": _nsfw_moments(r.nsfw_moments),
         "nsfw_error": r.nsfw_error or "",
         "nsfw_scanned_at": _iso_utc(r.nsfw_scanned_at),
+        "nsfw_source": r.nsfw_source or "",
+        "nsfw_live_coverage": round(float(r.nsfw_live_coverage or 0), 3),
     }
 
 
@@ -2236,7 +2275,8 @@ def nsfw_status(request: Request):
         present = bool(getattr(cfg, key)) and path.is_file()
         models[key] = {"path": str(getattr(cfg, key) or ""), "present": present,
                        "size_bytes": path.stat().st_size if present else 0}
-    return {**manager.nsfw_snapshot(), "enabled": cfg.nsfw_enabled, "queue": int(queue_local),
+    return {**manager.nsfw_snapshot(), "live": manager.nsfw_live_snapshot(), "enabled": cfg.nsfw_enabled,
+            "live_enabled": bool(cfg.nsfw_live_enabled), "queue": int(queue_local),
             "counts": {str(k): int(v) for k, v in counts.items()}, "models": models}
 
 
@@ -2256,7 +2296,7 @@ async def nsfw_recording_action(recording_id: int, body: NsfwAction, request: Re
             if rec.nsfw_status == "scanning":
                 raise HTTPException(409, "Analisi già in corso")
             rec.nsfw_status, rec.nsfw_resume_at, rec.nsfw_progress = "pending", 0.0, 0.0
-            rec.nsfw_hits, rec.nsfw_error = "", ""
+            rec.nsfw_hits, rec.nsfw_error, rec.nsfw_source = "", "", ""
         elif body.action == "skip":
             if current.get("recording_id") == recording_id:
                 manager.request_nsfw_stop("user")
@@ -2266,6 +2306,7 @@ async def nsfw_recording_action(recording_id: int, body: NsfwAction, request: Re
             # Manual verdict wins over the model (e.g. leggings flagged as nudity).
             rec.nsfw_status = "safe" if body.action == "mark_safe" else "nsfw"
             rec.nsfw_error = "Esito impostato manualmente"
+            rec.nsfw_source = "manual"
         result = _recording_json(rec)
     manager.wake()
     return result
@@ -2274,7 +2315,7 @@ async def nsfw_recording_action(recording_id: int, body: NsfwAction, request: Re
 @app.get("/api/nsfw/images/{name}")
 def nsfw_image(name: str, request: Request):
     require_auth(request)
-    if not re.fullmatch(r"\d+-\d+\.jpg", name):
+    if not re.fullmatch(r"(live-)?\d+-\d+\.jpg", name):
         raise HTTPException(404, "Immagine non trovata")
     path = settings.data_dir / "nsfw" / name
     if not path.is_file():

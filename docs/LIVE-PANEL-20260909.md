@@ -148,10 +148,59 @@ core, nice 19): small model 214–278 ms/frame, large model ~4.9 s/frame, peak
 RSS 363 MB with both; 1 h 46 min capture scanned in 4 min. The leggings false
 positive of the small model alone was rejected by the large one. Not yet run
 inside the container or on a video with confirmed nudity. Asset versions
-`?v=3.3.1-nsfw2`, SW cache `livevault-shell-v3.3.1-nsfw2`.
+asset versions: see the 3.4 section below.
 Rollback: set `nsfw_enabled=false` (instant, no restart) or revert the 3.3.0
 commits and redeploy; the extra columns are ignored by older code, the
 `/data/nsfw` previews and `/data/models` files can be deleted by hand.
+
+## Live NSFW analysis 3.4 (2026-09-24)
+
+Source only, LiveVault 3.4.0; active when `nsfw_enabled` and `nsfw_live_enabled`
+(default on) and the models of the 3.3 section are present.
+Code: `app/nsfw_live_worker.py` (tasks `nsfw-live`, `nsfw-verify` in
+`WorkerManager`), `app/nsfw_live.py` (persistent helper processes),
+`GrowingIndex` in `app/mp4_index.py`, tables `nsfw_marks` and `nsfw_coverage`
+(created by `create_all`), columns `recordings.nsfw_source` and
+`recordings.nsfw_live_coverage`, hooks in `_stitch_fragment_group` and
+`_index_file` (`app/workers.py`), `nsfw_moments` per session in
+`GET /api/control-room/pulse`, `live` block in `GET /api/nsfw`.
+
+- Sampling: round-robin over active captures, `nsfw_live_fps` frames/s in
+  total (default 0.5), one keyframe every `nsfw_step_seconds` of each capture.
+  Only the fragments appended since the previous pass are parsed; one fragment
+  (init + moof/mdat) is piped to ffmpeg and the small model in a `nice 19` /
+  `ionice -c3` helper that stays loaded (~100 MB). It waits while the 1-minute
+  load average exceeds `nsfw_live_max_load` (default 3.0 on 4 cores). Only
+  fragmented `.mp4` captures are sampled live; other formats fall back to the
+  full scan after the session. When sampling falls more than 60 s behind it
+  jumps to the newest fragment and the gap is left to the full scan.
+- Suspects (`nsfw_candidate`) are stored with part path, part time and wall
+  clock; a cropped preview and a 640x640 copy are written to `/data/nsfw/`
+  (internal drive). The verifier runs the large model on that copy (helper
+  closed after 2 idle minutes, ~300 MB while active), inheriting a
+  confirmation for 60 s inside a confirmed stretch; copies are deleted after
+  verification, previews of rejected frames too.
+- Storage handoff: `quiesce` pauses sampling (each fragment read is counted
+  as a storage job, so the detach waits at most one read); `buffer` and
+  `nvme` both sample (the capture path is the same, on the internal buffer or
+  on the NVMe). Verification never reads recordings and runs in every mode.
+  The full-file scan (3.3) also runs on buffer files now; files left on the
+  detached NVMe stay queued.
+- Mapping: at stitching, part offsets are the container durations in concat
+  order (same as the concat demuxer), so `file_time = offset + part_time`.
+  Coverage >= 85% of the stitched duration → `nsfw_source=live`, status
+  `verifying` until every mark is verified, then safe/review/nsfw without a
+  full scan; lower coverage keeps `pending` for the full scan. Manual verdicts
+  are never overwritten.
+
+Verified locally: unit/integration tests with a real growing fragmented MP4
+(quiesce pause, buffer continuation, verification during a switch, mapping
+onto a two-part stitch), and a simulated live in the panel. Not yet run on
+the node with real captures and the NudeNet models. Asset versions
+`?v=3.4.0-live1`, SW cache `livevault-shell-v3.4.0-live1`.
+Rollback: untick "Analizza durante la registrazione" (instant), or revert the
+3.4.0 commit and redeploy; the two new tables and columns are ignored by older
+code; `/data/nsfw/live-*.jpg` and `/data/nsfw/verify/` can be deleted by hand.
 
 ## Gofile link per recording (2026-09-24)
 
