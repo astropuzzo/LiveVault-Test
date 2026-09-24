@@ -52,3 +52,12 @@ def test_visual_qa_layer_uses_data_driven_surfaces_and_progressive_disclosure():
     assert 'backdrop-filter:blur(28px)' in css
     assert "setHeroBar('#heroCpuBar'" in js
     assert "media.classList.toggle('media-tech-open')" in js
+
+
+def test_glass_layer_is_last_and_has_fallbacks():
+    html = (ROOT / 'index.html').read_text(encoding='utf-8')
+    assert html.index('/magic.css?v=') < html.index('/glass.css?v=1.0-glass')
+    css = (ROOT / 'glass.css').read_text(encoding='utf-8')
+    assert '@supports not ((backdrop-filter' in css
+    assert 'prefers-reduced-transparency' in css
+    assert '"/glass.css"' in (ROOT / 'sw.js').read_text(encoding='utf-8')

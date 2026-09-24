@@ -103,3 +103,16 @@ Playback is planned per file using ffprobe. Browser-safe H.264/AAC MP4 and WebM 
 Le modifiche visive al Control Center non si considerano concluse sulla sola base di lint, test DOM o responsive contract. Il flusso di rilascio UI deve includere un rendering reale con dati del nodo, screenshot almeno a viewport mobile 412×915 e desktop 1440×1000, ispezione visiva delle schermate Dashboard/Media/Sistema e una nuova iterazione se gerarchia, densità, spaziature, profondità o stati risultano deboli. Solo dopo il visual QA si copiano gli asset statici in produzione e si verifica che gli hash deployati coincidano con quelli testati.
 
 Il browser QA/Playwright è volutamente separato dal runtime del pannello e non è una dipendenza di produzione. Durante registrazioni LiveVault attive le catture e i test vanno eseguiti a bassa priorità e non devono avviare transcoding, scansioni media forzate o benchmark.
+
+## Livello glass (2026-09-24)
+
+`control-panel/static/glass.css` (`?v=1.0-glass`, ultimo foglio in `index.html`,
+aggiunto alla SHELL di `sw.js`, cache `openastro-control-v21.0-glass`) applica
+sfondo ad aurore e superfici traslucide sfocate, con fallback senza
+`backdrop-filter` e per `prefers-reduced-transparency`/`reduced-motion`.
+Solo CSS: nessun cambio a `server.py`, servizi o permessi. Verificato solo con
+gli asset statici serviti in locale (senza dati del nodo) a 1440×900 e 390×844;
+il visual QA con dati reali richiesto sopra resta da fare prima di copiare gli
+asset in `/opt/openastro-control/static`. Rollback: rimuovere il `<link>` a
+`glass.css` (o ripristinare `index.html` e `sw.js` precedenti); non serve
+riavviare il servizio.
