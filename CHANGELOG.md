@@ -1,5 +1,9 @@
 # Changelog
 
+## 3.4.13 — Il campionamento dal vivo non si ferma più per il carico
+
+- Sul nodo il carico medio conta anche l'I/O USB (1,6–2 a riposo): ogni unione di file o ripartenza lo portava sopra la soglia e il campionamento si fermava. La prima registrazione dopo la 3.4.12 si è chiusa col 73% di copertura ed è finita in coda per l'analisi completa. Ora il campionamento (modello piccolo, bassa priorità, 15–30% di un core) continua sempre; sopra la soglia aspetta solo la verifica col modello grande.
+
 ## 3.4.12 — L'analisi dal vivo arriva davvero sui file, niente scansioni accanto alle live
 
 - Bug vero dietro la doppia analisi: l'unione delle parti usata in produzione non collegava mai i segni NSFW dal vivo al file finale (sul nodo 1669 segni, nessuno collegato; copertura sempre 0). Ogni registrazione veniva quindi rianalizzata da capo. Ora i segni e la copertura passano sul file unito e con copertura ≥ 85% la registrazione si chiude come analizzata dal vivo.

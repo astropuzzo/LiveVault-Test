@@ -245,9 +245,14 @@ and `_index_file` (`app/workers.py`), both through `nsfw_attach_stitched` /
   (init + moof/mdat) is piped to ffmpeg and the small model in a `nice 19` /
   `ionice -c3` helper that stays loaded (~100 MB) and, like the verifier, runs
   on one core whatever "Core CPU" says (3.4.12). `ionice -c3` has no effect on
-  the node NVMe (`sdb` uses `mq-deadline`, checked 2026-09-25). It waits while
-  the 1-minute load average exceeds `nsfw_live_max_load` (default 3.0 on 4
-  cores; 3.1 on the node). Only
+  the node NVMe (`sdb` uses `mq-deadline`, checked 2026-09-25). Since 3.4.13
+  the sampler ignores the load: only the verifier waits while the 1-minute load
+  average exceeds `nsfw_live_max_load` (default 3.0 on 4 cores; 3.1 on the
+  node). Measured 2026-09-25 on 3.4.12: the node load counts USB I/O (1.6–2
+  with nothing recording) and the stitch of a 1.9 GB part plus a capture restart
+  pushed it to 5; the sampler paused, wasianbby's recording 1106 ended at 73%
+  coverage and was queued for a full scan. With two captures the sampler uses
+  ~15–30% of one core at nice 19. Only
   fragmented `.mp4` captures are sampled live; other formats fall back to the
   full scan after the session. When sampling falls more than 60 s behind it
   jumps to the newest fragment and the gap is left to the full scan.

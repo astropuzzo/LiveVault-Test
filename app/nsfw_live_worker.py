@@ -231,8 +231,11 @@ class LiveNsfwMixin:
             return "models_missing"
         if not getattr(self, "active", None):
             return "idle"
-        if load_average() > float(cfg.nsfw_live_max_load):
-            return "busy"
+        # No load gate here: one small-model frame every few seconds at nice 19
+        # (~15-30% of a core) cannot starve a capture, while on the node the
+        # 1-minute load counts USB I/O (1.6-2 with nothing recording) and every
+        # stitch pushed it over nsfw_live_max_load: the pauses cost 27% coverage
+        # (2026-09-25) and sent the file to a full scan. The verifier still waits.
         return ""
 
     def _nsfw_live_sync_tracks(self) -> None:

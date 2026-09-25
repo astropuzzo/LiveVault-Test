@@ -15,7 +15,7 @@ SOURCE.txt identifica la revisione (ultimo allineamento completo: 2026-09-25,
 incluse le guide collegate da questo file). Il vecchio handoff duplicato è stato sostituito
 da un rinvio, con originale conservato nella directory rollback.
 
-## Handoff corrente — 2026-09-25 (LiveVault 3.4.12)
+## Handoff corrente — 2026-09-25 (LiveVault 3.4.13)
 Sessione locale con SSH al nodo. Misure, cause, procedure e rollback in
 [LIVE-PANEL-20260909.md](docs/LIVE-PANEL-20260909.md) (sezioni "Short captures
 in Cronologia" e NSFW 3.3/3.4) e [MP4-HLS-RECOVERY.md](docs/MP4-HLS-RECOVERY.md)
@@ -25,7 +25,8 @@ in Cronologia" e NSFW 3.3/3.4) e [MP4-HLS-RECOVERY.md](docs/MP4-HLS-RECOVERY.md)
   Fuso del container Europe/Rome (nomi file), nodo Europe/London, DB in UTC.
 - NSFW: NudeNet 3.4 ONNX 320n (campionamento) + 640m (verifica), modelli in
   `/data/livevault/models`; analisi dal vivo durante la registrazione (sampler +
-  verifier, nice 19, sempre 1 core) e scansione completa solo per file non coperti
+  verifier, nice 19, sempre 1 core; dalla 3.4.13 solo il verifier aspetta sopra
+  `nsfw_live_max_load`) e scansione completa solo per file non coperti
   (copertura < 85%), a registrazioni ferme quando l'analisi dal vivo è attiva.
   Impostazioni runtime NSFW sul nodo (tabella `app_settings`, non toccate):
   `nsfw_threads=3`, `nsfw_only_when_idle=false`, `nsfw_live_max_load=3.1`,
@@ -53,10 +54,15 @@ in Cronologia" e NSFW 3.3/3.4) e [MP4-HLS-RECOVERY.md](docs/MP4-HLS-RECOVERY.md)
   manifest in `/home/astro/archive/nsfw-bench-scripts-20260925.tar.gz`. ONNX EraX,
   video di prova su NVMe, `/tmp/erax-cmp` e `/opt/erax-export` erano già stati
   rimossi a mano dall'utente (history shell di astro).
+- Verifica 3.4.12 con live (09:25–10:05 UTC, wasianbby + tinnydoll Chaturbate):
+  scansione completa in `waiting_idle`, helper NSFW 9–87% (mai oltre un core),
+  capture 25–30%, load 1,2–2,7 fuori dalle unioni. Prima registrazione unita dopo
+  il fix, 1106 wasianbby: segni collegati, `nsfw_live_coverage=0,732` (prima sempre
+  0) ma < 85% perché il campionatore si fermava col load > 3,1 durante unione da
+  1,9 GB + ripartenza (load 5,04): corretto in 3.4.13.
 - Aperti, in ordine:
-  1. Verifica post-deploy 3.4.12 con live attive: CPU (`top -o %CPU`, nessun
-     `app.nsfw_scan` accanto alle capture) e prima registrazione Stripchat unita con
-     `nsfw_source=live`. Al deploy nessuna live era in registrazione.
+  1. Verifica 3.4.13: prossime registrazioni (Stripchat compresa) con
+     `nsfw_source=live`, copertura ≥ 85%, nessun `app.nsfw_scan` accanto alle capture.
   2. **Registrazioni micro-frammentate**: la raffica di Top Twins (26 capture in
      75 min, 06:38–07:53 UTC) è iniziata a CPU 45–55%: il motivo del riavvio non era
      registrato. Alla prossima raffica leggere `capture chiusa` nei log. Prima

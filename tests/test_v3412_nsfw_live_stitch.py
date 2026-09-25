@@ -167,3 +167,24 @@ def test_capture_end_line_keeps_the_reason_and_hides_signed_urls():
     assert "Top Twins" in line and "riavvio: segmenti video scaduti" in line and "23 s" in line
     assert "exit 255" in line and "skipping 36 segments ahead" in line
     assert "secret" not in line and "https://edge.example/v/chunk_9.ts?…" in line
+
+
+def test_sampler_ignores_the_load_but_the_verifier_waits(env, monkeypatch):
+    """3.4.13: pausing the cheap sampler on load cost live coverage; only the large model waits."""
+    monkeypatch.setattr(nsfw_live_worker, "load_average", lambda: 9.0)
+    env.cfg.nsfw_fast_model = __file__
+    env.cfg.nsfw_verify_model = __file__
+    manager = workers.WorkerManager()
+    manager.active = {25: object()}
+    assert manager._nsfw_live_gate() == ""
+    with env.scope() as db:
+        db.add(NsfwMark(source_id=25, part_path="/rec/p.mp4", wall_at=BASE, state="pending", fast_score=0.9))
+
+    async def no_wait(_seconds):
+        return None
+
+    monkeypatch.setattr(nsfw_live_worker.asyncio, "sleep", no_wait)
+    asyncio.run(manager._nsfw_verify_once())
+    assert manager.nsfw_verify_state == "busy"
+    with env.scope() as db:
+        assert db.scalar(select(NsfwMark)).state == "pending"  # verified later, not dropped
