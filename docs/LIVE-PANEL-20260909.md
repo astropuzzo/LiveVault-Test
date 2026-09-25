@@ -80,6 +80,23 @@ Coolify UUID). Also fixed: `/api/status` could fail with "dictionary changed
 size during iteration" (`local_buffer_bytes`/`snapshot` now iterate a copy).
 Rollback: revert the 3.4.12 commit and redeploy.
 
+First cause seen with the new line (2026-09-25 09:48 UTC, tinnydoll,
+Chaturbate): `fine stream o errore · 748 s · exit 0` with
+`HTTP error 403 Forbidden` / `Failed to reload playlist`: the signed HLS URL
+expired after ~12 minutes, ffmpeg ended cleanly and the poller started a new
+capture at once (a new part and a short hole each time).
+
+Segment length: `segment_minutes` was 120, so a Chaturbate part only closed at
+the end of a capture or when the watcher's size check (`safe_stop_bytes`,
+~1.9 GB, about an hour at 1080p) restarted ffmpeg, which leaves a hole. Set to
+15 on 2026-09-25 09:50 UTC (user request, `PATCH /api/settings`, captures
+started afterwards): the segment muxer cuts at a keyframe inside the same
+process (no reconnect, no hole), `_watch_session` indexes every closed part,
+`_stitch_group_ready` publishes each ~15-minute part as a recording, and its
+live NSFW marks are attached then. Cloud files for Chaturbate become ~15
+minutes long (Stripchat already was). Rollback: Settings → Registrazione →
+Segmento = 120.
+
 ## Interface 3.1 (2026-09-24)
 
 Source only, LiveVault 3.1.0: `app/static/style.css` (the only stylesheet),

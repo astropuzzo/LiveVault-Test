@@ -27,9 +27,15 @@ in Cronologia" e NSFW 3.3/3.4) e [MP4-HLS-RECOVERY.md](docs/MP4-HLS-RECOVERY.md)
   `/data/livevault/models`; analisi dal vivo durante la registrazione (sampler +
   verifier, nice 19, sempre 1 core) e scansione completa solo per file non coperti
   (copertura < 85%), a registrazioni ferme quando l'analisi dal vivo è attiva.
-  Impostazioni runtime sul nodo (tabella `app_settings`, non toccate):
+  Impostazioni runtime NSFW sul nodo (tabella `app_settings`, non toccate):
   `nsfw_threads=3`, `nsfw_only_when_idle=false`, `nsfw_live_max_load=3.1`,
   `nsfw_step_seconds=4`, `nsfw_live_fps=0.5`.
+- `segment_minutes` portato da 120 a 15 il 2026-09-25 09:50 UTC su richiesta
+  utente (PATCH `/api/settings`, vale per le capture avviate dopo): ffmpeg taglia
+  nello stesso processo senza buchi, ogni parte da 15 min viene unita, collegata ai
+  segni NSFW live e caricata mentre la live continua; niente più riavvio al limite
+  di ~2 GB (circa ogni ora a 1080p). File Chaturbate da ~15 min invece di ~50.
+  Rollback: Impostazioni → Registrazione → Segmento = 120.
 - Trovato e corretto in 3.4.12 (verifica su nodo 2026-09-25): l'unione usata in
   produzione (`app/workers/__init__.py`) non collegava mai i segni live (1669
   segni orfani, copertura 0, ogni file rianalizzato); le scansioni complete a 3 core
@@ -53,7 +59,10 @@ in Cronologia" e NSFW 3.3/3.4) e [MP4-HLS-RECOVERY.md](docs/MP4-HLS-RECOVERY.md)
      `nsfw_source=live`. Al deploy nessuna live era in registrazione.
   2. **Registrazioni micro-frammentate**: la raffica di Top Twins (26 capture in
      75 min, 06:38–07:53 UTC) è iniziata a CPU 45–55%: il motivo del riavvio non era
-     registrato. Alla prossima raffica leggere `capture chiusa` nei log.
+     registrato. Alla prossima raffica leggere `capture chiusa` nei log. Prima
+     causa osservata col nuovo log (09:48 UTC, tinnydoll): dopo 748 s ffmpeg esce
+     con `HTTP 403` sul reload della playlist (URL firmato Chaturbate scaduto) e la
+     capture riparte subito; da misurare il buco a ogni ripartenza.
   3. Qualità modello: confronto utente su 171 frame (`F:\erax\confronto.py` sul PC):
      NudeNet con BUTTOCKS a 0.5 = 43 FP, a 0.8 = 0 FP/21 FN; EraX/Felldude ~0 FP e
      ~27 FN ma 3–8× più lenti. Manca il confronto per categoria. Nessun cambio di
