@@ -1,5 +1,10 @@
 # Changelog
 
+## 3.4.15 — Niente falsi riavvii con i segmenti da 15 minuti
+
+- Con il segmento a 15 minuti la parte chiusa viene unita e cancellata mentre la live continua: il controllo «nessun dato HLS scritto» sommava solo i file rimasti, vedeva il totale calare e dopo 35 s riavviava una capture sana (tinnydoll alle 10:26 UTC, subito dopo la prima parte unita). Ora conta tutto ciò che la capture ha scritto, parti già unite comprese.
+- Un file cancellato mentre si elencano le parti non può più far fallire il controllo della capture.
+
 ## 3.4.14 — Log delle capture più chiaro, copertura dal vivo non azzerata
 
 - Il log `capture chiusa` distingue le fermate decise da LiveVault o dall'utente (fermata manuale, cambio storage, buffer pieno, disco in emergenza, pausa globale, arresto servizio) dai veri problemi dello stream: prima una sorgente messa in pausa a mano risultava «fine stream o errore».

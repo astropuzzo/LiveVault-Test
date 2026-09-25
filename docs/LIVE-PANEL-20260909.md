@@ -99,8 +99,15 @@ started afterwards): the segment muxer cuts at a keyframe inside the same
 process (no reconnect, no hole), `_watch_session` indexes every closed part,
 `_stitch_group_ready` publishes each ~15-minute part as a recording, and its
 live NSFW marks are attached then. Cloud files for Chaturbate become ~15
-minutes long (Stripchat already was). Rollback: Settings → Registrazione →
-Segmento = 120.
+minutes long (Stripchat already was). First result: recording 1109 (tinnydoll,
+901 s, 10:09–10:24 UTC) closed `nsfw` with `nsfw_source=live`, coverage 0.997,
+no full scan. Side effect found at once and fixed in 3.4.15: the stall guard
+summed only the parts still on disk, the stitched part was deleted while the
+capture ran and 35 s later a healthy Chaturbate capture was restarted
+(`riavvio: nessun dato HLS scritto · 1003 s · 48.8 MB`, 10:26 UTC).
+`capture_bytes_written()` in `app/workers.py` now keeps a monotonic per-part
+total and `capture_output_files()` tolerates a part deleted while listing.
+Rollback: Settings → Registrazione → Segmento = 120 (and/or revert 3.4.15).
 
 ## Interface 3.1 (2026-09-24)
 

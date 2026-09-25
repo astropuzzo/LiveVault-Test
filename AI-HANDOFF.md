@@ -15,7 +15,7 @@ SOURCE.txt identifica la revisione (ultimo allineamento completo: 2026-09-25,
 incluse le guide collegate da questo file). Il vecchio handoff duplicato è stato sostituito
 da un rinvio, con originale conservato nella directory rollback.
 
-## Handoff corrente — 2026-09-25 (LiveVault 3.4.14)
+## Handoff corrente — 2026-09-25 (LiveVault 3.4.15)
 Sessione locale con SSH al nodo. Misure, cause, procedure e rollback in
 [LIVE-PANEL-20260909.md](docs/LIVE-PANEL-20260909.md) (sezioni "Short captures
 in Cronologia" e NSFW 3.3/3.4) e [MP4-HLS-RECOVERY.md](docs/MP4-HLS-RECOVERY.md)
@@ -36,6 +36,10 @@ in Cronologia" e NSFW 3.3/3.4) e [MP4-HLS-RECOVERY.md](docs/MP4-HLS-RECOVERY.md)
   nello stesso processo senza buchi, ogni parte da 15 min viene unita, collegata ai
   segni NSFW live e caricata mentre la live continua; niente più riavvio al limite
   di ~2 GB (circa ogni ora a 1080p). File Chaturbate da ~15 min invece di ~50.
+  Primo risultato: registrazione 1109 (tinnydoll, 901 s) chiusa `nsfw` con
+  `nsfw_source=live`, copertura 0,997, senza analisi completa. Effetto collaterale
+  (falso riavvio "nessun dato HLS scritto" quando la parte unita viene cancellata a
+  capture in corso) corretto in 3.4.15.
   Rollback: Impostazioni → Registrazione → Segmento = 120.
 - Trovato e corretto in 3.4.12 (verifica su nodo 2026-09-25): l'unione usata in
   produzione (`app/workers/__init__.py`) non collegava mai i segni live (1669

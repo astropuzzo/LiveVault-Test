@@ -234,3 +234,35 @@ def test_a_capture_stopped_by_the_user_is_logged_as_such(monkeypatch):
     session.stop_reason = ""
     asyncio.run(manager.stop_all_recordings("cambio storage"))
     assert session.stop_reason == "cambio storage"
+
+
+def test_stall_guard_counts_parts_already_stitched_and_deleted(tmp_path):
+    """3.4.15: with 15-minute segments the stitched part vanished and a healthy capture looked stalled."""
+    first = tmp_path / "s_20260925_120000_1_part000.mp4"
+    second = tmp_path / "s_20260925_120000_1_part001.mp4"
+    first.write_bytes(b"x" * 500)
+    second.write_bytes(b"x" * 10)
+    seen = {}
+    assert workers.capture_bytes_written(seen, [first, second]) == 510
+    first.unlink()  # stitched into a recording while the capture continues
+    second.write_bytes(b"x" * 12)
+    assert workers.capture_bytes_written(seen, [first, second]) == 512  # still growing, not 12
+    assert workers.capture_bytes_written(seen, [second]) == 512
+
+
+def test_capture_files_survive_a_part_deleted_during_listing(tmp_path, monkeypatch):
+    part = tmp_path / "s_c_part000.mp4"
+    part.write_bytes(b"x")
+    session = SimpleNamespace(directory=tmp_path, extension=".mp4", capture_prefix="s_c_part")
+    real_stat = Path.stat
+    calls = {"part": 0}
+
+    def flaky_stat(self, *args, **kwargs):
+        if self == part:
+            calls["part"] += 1
+            if calls["part"] > 1:  # is_file() saw it, then the stitch deleted it
+                raise FileNotFoundError(self)
+        return real_stat(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "stat", flaky_stat)
+    assert workers.capture_output_files(session) == [part]  # no exception while sorting

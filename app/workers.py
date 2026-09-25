@@ -131,13 +131,34 @@ def capture_output_files(session: RecorderSession) -> list[Path]:
             return False
         return is_capture_part(path)
 
+    def modified(path: Path) -> float:
+        # A closed part can be stitched and deleted while the capture runs.
+        try:
+            return path.stat().st_mtime
+        except OSError:
+            return 0.0
+
     return sorted(
         (
             path for path in session.directory.glob(f"*{session.extension}")
             if path.is_file() and not path.name.startswith(".") and capture_part(path)
         ),
-        key=lambda path: path.stat().st_mtime,
+        key=modified,
     )
+
+
+def capture_bytes_written(seen: dict[Path, int], files: list[Path]) -> int:
+    """Bytes this capture has written so far, never decreasing.
+
+    With in-process segments a closed part is stitched and deleted while the
+    capture continues; summing only the files still on disk made the total
+    drop and the 35 s stall guard restarted a healthy capture (tinnydoll,
+    2026-09-25 10:26 UTC, right after its first 15-minute part was stitched).
+    """
+    for path in files:
+        with contextlib.suppress(OSError):
+            seen[path] = max(seen.get(path, 0), path.stat().st_size)
+    return sum(seen.values())
 
 
 class WorkerManager(NsfwWorkerMixin, LiveNsfwMixin):
@@ -1532,6 +1553,7 @@ class WorkerManager(NsfwWorkerMixin, LiveNsfwMixin):
         slot_released = False
         last_capture_bytes = -1
         last_capture_growth = time.monotonic()
+        written: dict[Path, int] = {}
         try:
             while session.process.returncode is None:
                 await asyncio.sleep(1)
@@ -1543,7 +1565,7 @@ class WorkerManager(NsfwWorkerMixin, LiveNsfwMixin):
                     await stop_recorder(session)
                     continue
                 files = capture_output_files(session)
-                capture_bytes = sum(path.stat().st_size for path in files)
+                capture_bytes = capture_bytes_written(written, files)
                 if capture_bytes > last_capture_bytes:
                     last_capture_bytes = capture_bytes
                     last_capture_growth = time.monotonic()
@@ -1572,8 +1594,9 @@ class WorkerManager(NsfwWorkerMixin, LiveNsfwMixin):
             files = capture_output_files(session)
             # FFmpeg may satisfy -fs and exit between one-second size samples.
             # Treat a clean exit very close to the cap as a rollover as well.
+            capture_bytes_written(written, files)  # final sizes, tolerant of stitched parts
             if session.process.returncode == 0 and any(
-                path.stat().st_size >= int(session.safe_stop_bytes * 0.98)
+                written.get(path, 0) >= int(session.safe_stop_bytes * 0.98)
                 for path in files
             ):
                 session.rollover_requested = True
@@ -1671,7 +1694,9 @@ class WorkerManager(NsfwWorkerMixin, LiveNsfwMixin):
             else:
                 reason = "fine stream o errore"
             with contextlib.suppress(Exception):
-                print(capture_end_line(session, reason, total_session_bytes, utcnow()), file=sys.stderr, flush=True)
+                # Everything this capture wrote, parts already stitched included.
+                written_total = max(total_session_bytes, sum(written.values()))
+                print(capture_end_line(session, reason, written_total, utcnow()), file=sys.stderr, flush=True)
             if not slot_released:
                 self.wake()
 
