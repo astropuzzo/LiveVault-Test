@@ -47,11 +47,14 @@ in Cronologia" e NSFW 3.3/3.4) e [MP4-HLS-RECOVERY.md](docs/MP4-HLS-RECOVERY.md)
   giravano accanto alle live (CPU 91–99% 07:06–07:48 UTC, capture con fino al 53%
   di video perso nello stesso intervallo). I motivi dei riavvii capture ora finiscono
   nei log del container (`grep 'capture chiusa'`).
-- Deploy 3.4.12: `main` bd9f744 (CI verde, anche la CI di `main` era rossa dalla
-  3.4.10 per un test non isolato), Coolify auto-deploy 2026-09-25 09:10 UTC,
-  container `ahul2vdjkyvjiwgzpcrmxzfe-090948731340` healthy, backup DB
-  `openastro-action backup_now` prima del deploy. Rollback: redeploy da Coolify
-  dell'immagine `ahul2vdjkyvjiwgzpcrmxzfe:c6b53572…` o revert di bd9f744/d62209a.
+- Deploy in produzione: 3.4.15 `main` bcfa13a, Coolify auto-deploy 2026-09-25
+  11:56 UTC, container `ahul2vdjkyvjiwgzpcrmxzfe-115538265753` healthy (prima:
+  3.4.12 bd9f744 alle 09:10, 3.4.13 bd6ad1a alle 10:09; 3.4.14 solo nel branch).
+  CI verde su ogni commit; la CI di `main` era rossa dalla 3.4.10 per un test non
+  isolato, corretto. Backup DB `openastro-action backup_now` prima del primo deploy.
+  Rollback: redeploy da Coolify dell'immagine precedente
+  (`ahul2vdjkyvjiwgzpcrmxzfe:c6b53572…` = 3.4.11) o revert dei commit
+  d62209a..bcfa13a; nessuna modifica di schema.
 - Pulizia bench NSFW (2026-09-25, dopo risultati NSFW in app 1102–1105): rimossi
   `/opt/nsfw-bench` (venv 240 MB, copia `640m.onnx` con SHA-256 identico al modello
   in uso, script), `/tmp/nsfw-check`, `/tmp/nsfw-hits`; script archiviati con
@@ -65,8 +68,10 @@ in Cronologia" e NSFW 3.3/3.4) e [MP4-HLS-RECOVERY.md](docs/MP4-HLS-RECOVERY.md)
   0) ma < 85% perché il campionatore si fermava col load > 3,1 durante unione da
   1,9 GB + ripartenza (load 5,04): corretto in 3.4.13.
 - Aperti, in ordine:
-  1. Verifica 3.4.13: prossime registrazioni (Stripchat compresa) con
-     `nsfw_source=live`, copertura ≥ 85%, nessun `app.nsfw_scan` accanto alle capture.
+  1. Verifica Stripchat: le registrazioni Chaturbate 1109 e 1110 (tinnydoll) si sono
+     chiuse dal vivo (copertura 0,997, niente analisi completa); nessuna live Stripchat
+     è andata in onda pubblica dopo il deploy. Controllare la prossima di AliciaBrooks:
+     `nsfw_source=live` e copertura ≥ 85% (nomi `.capture.mp4` → `.mp4`).
   2. **Registrazioni micro-frammentate**: la raffica di Top Twins (26 capture in
      75 min, 06:38–07:53 UTC) è iniziata a CPU 45–55%: il motivo del riavvio non era
      registrato. Alla prossima raffica leggere `capture chiusa` nei log. Prima
@@ -79,8 +84,9 @@ in Cronologia" e NSFW 3.3/3.4) e [MP4-HLS-RECOVERY.md](docs/MP4-HLS-RECOVERY.md)
      NudeNet con BUTTOCKS a 0.5 = 43 FP, a 0.8 = 0 FP/21 FN; EraX/Felldude ~0 FP e
      ~27 FN ma 3–8× più lenti. Manca il confronto per categoria. Nessun cambio di
      modello deciso; eventuale ritaratura soglie (`nsfw_candidate`/`nsfw_threshold`).
-  4. La CPU del nodo è 4 core: anche senza NSFW il carico a riposo misurato era ~1,6–2.
-     Se le live restano lente con 3.4.12, valutare `nsfw_live_fps` e il verifier.
+  4. La CPU del nodo è 4 core e il load conta anche l'I/O USB (0,6–2 a riposo). Con
+     più live insieme osservare load e `verify_queue`; leve: `nsfw_live_fps`,
+     `nsfw_live_max_load` (ora limita solo il verifier).
 - Preferenze utente: italiano, push diretto su `main` consentito, nessun trailer
   co-autore nei commit, agire senza chiedere conferme per ogni passo.
 
