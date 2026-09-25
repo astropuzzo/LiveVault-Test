@@ -15,7 +15,7 @@ SOURCE.txt identifica la revisione (ultimo allineamento completo: 2026-09-25,
 incluse le guide collegate da questo file). Il vecchio handoff duplicato è stato sostituito
 da un rinvio, con originale conservato nella directory rollback.
 
-## Handoff corrente — 2026-09-25 (LiveVault 3.4.13)
+## Handoff corrente — 2026-09-25 (LiveVault 3.4.14)
 Sessione locale con SSH al nodo. Misure, cause, procedure e rollback in
 [LIVE-PANEL-20260909.md](docs/LIVE-PANEL-20260909.md) (sezioni "Short captures
 in Cronologia" e NSFW 3.3/3.4) e [MP4-HLS-RECOVERY.md](docs/MP4-HLS-RECOVERY.md)
@@ -68,7 +68,9 @@ in Cronologia" e NSFW 3.3/3.4) e [MP4-HLS-RECOVERY.md](docs/MP4-HLS-RECOVERY.md)
      registrato. Alla prossima raffica leggere `capture chiusa` nei log. Prima
      causa osservata col nuovo log (09:48 UTC, tinnydoll): dopo 748 s ffmpeg esce
      con `HTTP 403` sul reload della playlist (URL firmato Chaturbate scaduto) e la
-     capture riparte subito; da misurare il buco a ogni ripartenza.
+     capture riparte subito; da misurare il buco a ogni ripartenza. La chiusura di
+     wasianbby delle ~10:07 UTC era invece una fermata dell'utente (sorgente rimossa):
+     dalla 3.4.14 il log scrive `fermata manuale` e gli altri motivi interni.
   3. Qualità modello: confronto utente su 171 frame (`F:\erax\confronto.py` sul PC):
      NudeNet con BUTTOCKS a 0.5 = 43 FP, a 0.8 = 0 FP/21 FN; EraX/Felldude ~0 FP e
      ~27 FN ma 3–8× più lenti. Manca il confronto per categoria. Nessun cambio di

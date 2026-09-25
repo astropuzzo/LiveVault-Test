@@ -29,6 +29,9 @@ from .settings_store import runtime
 from .utils import utcnow
 
 OPEN_STATES = ("pending", "scanning", "paused")
+# After a (re)start the poller needs a moment to resume the live captures; a
+# full scan started in that gap competes with them and is stopped at once.
+STARTUP_GRACE_SECONDS = 90
 
 
 def file_signature(path: Path) -> str:
@@ -62,6 +65,7 @@ class NsfwWorkerMixin:
     nsfw_state: str = "disabled"
     nsfw_detail: str = ""
     _nsfw_stop_reason: str = ""
+    _nsfw_ready_at: float = 0.0
 
     def nsfw_snapshot(self) -> dict:
         return {"state": self.nsfw_state, "detail": self.nsfw_detail, "current": self.nsfw_current}
@@ -113,9 +117,12 @@ class NsfwWorkerMixin:
         ``nsfw_live_max_load`` so the sampler stopped, and left every file
         uncovered, i.e. queued for yet another full scan.
         """
+        yields = bool(cfg.nsfw_only_when_idle or cfg.nsfw_live_enabled)
+        if yields and time.monotonic() < self._nsfw_ready_at:
+            return True
         if not getattr(self, "active", None):
             return False
-        return bool(cfg.nsfw_only_when_idle or cfg.nsfw_live_enabled)
+        return yields
 
     def _nsfw_threads(self, cfg) -> int:
         # The "Core CPU" setting is for idle time; next to a capture one core only.
@@ -137,6 +144,7 @@ class NsfwWorkerMixin:
         return ""
 
     async def _nsfw_loop(self) -> None:
+        self._nsfw_ready_at = time.monotonic() + STARTUP_GRACE_SECONDS
         while not self._stopping:
             try:
                 gate = self._nsfw_gate()
@@ -203,9 +211,12 @@ class NsfwWorkerMixin:
             return
         hits = _load(rec.nsfw_hits)
         resume_at = float(rec.nsfw_resume_at or 0)
-        if resume_at <= 0 and not hits and rec.nsfw_source != "live" and hasattr(self, "nsfw_attach_parts"):
+        if (resume_at <= 0 and not hits and rec.nsfw_source != "live" and not rec.nsfw_live_coverage
+                and hasattr(self, "nsfw_attach_parts")):
             # Queued before its live marks were matched (e.g. raw .capture name):
             # attach them now and skip the full scan when coverage is enough.
+            # Never after a stitch already measured the coverage: matching the
+            # final name again finds nothing and would reset it to 0.
             self.nsfw_attach_parts(rec.id, [(str(path), 0.0, float(rec.duration_seconds or 0))])
             with db_session() as db:
                 current = db.get(Recording, rec.id)

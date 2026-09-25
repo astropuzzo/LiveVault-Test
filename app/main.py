@@ -63,7 +63,7 @@ BASE = Path(__file__).parent
 LOGIN_FAILURES: dict[str, deque[float]] = defaultdict(deque)
 LOGIN_WINDOW = 10 * 60
 LOGIN_MAX_FAILURES = 6
-VERSION = "3.4.13"
+VERSION = "3.4.14"
 
 
 class LoginBody(BaseModel):
@@ -765,7 +765,7 @@ async def control_recordings(body: BoolBody, request: Request):
     require_auth(request)
     set_values({"recording_paused": body.paused})
     if body.paused and body.stop_active:
-        await manager.stop_all_recordings()
+        await manager.stop_all_recordings("pausa globale registrazioni")
     manager.wake()
     return {"ok": True, "paused": body.paused}
 

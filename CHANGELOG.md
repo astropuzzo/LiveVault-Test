@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.4.14 — Log delle capture più chiaro, copertura dal vivo non azzerata
+
+- Il log `capture chiusa` distingue le fermate decise da LiveVault o dall'utente (fermata manuale, cambio storage, buffer pieno, disco in emergenza, pausa globale, arresto servizio) dai veri problemi dello stream: prima una sorgente messa in pausa a mano risultava «fine stream o errore».
+- Una registrazione già collegata all'analisi dal vivo non perde più la sua copertura quando entra in coda per l'analisi completa (sul nodo la 1106 era passata da 73% a 0%).
+- Dopo un riavvio del container l'analisi completa aspetta 90 s che le registrazioni riprendano, invece di partire e fermarsi subito.
+
 ## 3.4.13 — Il campionamento dal vivo non si ferma più per il carico
 
 - Sul nodo il carico medio conta anche l'I/O USB (1,6–2 a riposo): ogni unione di file o ripartenza lo portava sopra la soglia e il campionamento si fermava. La prima registrazione dopo la 3.4.12 si è chiusa col 73% di copertura ed è finita in coda per l'analisi completa. Ora il campionamento (modello piccolo, bassa priorità, 15–30% di un core) continua sempre; sopra la soglia aspetta solo la verifica col modello grande.

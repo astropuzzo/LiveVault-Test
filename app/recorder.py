@@ -148,6 +148,8 @@ class RecorderSession:
     capture_prefix: str = ""
     # Last meaningful recorder stderr lines, logged when the capture ends.
     stderr_tail: list[str] = field(default_factory=list)
+    # Why LiveVault itself stopped the capture (user action, storage guard...).
+    stop_reason: str = ""
 
 
 def _ffmpeg_headers(headers: dict[str, str]) -> str:

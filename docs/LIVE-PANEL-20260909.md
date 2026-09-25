@@ -72,8 +72,13 @@ captures when live analysis is on, one core for every helper next to a
 capture), and one container-log line per closed capture from
 `capture_end_line()` in `app/workers.py`:
 `[recorder] capture chiusa: <source> · <reason> · <seconds> s · <bytes> · exit <code> · <last stderr lines>`
-(reason `riavvio: <transport fault>`, `cambio parte`, `arresto servizio` or
-`fine stream o errore`; URL query strings are cut). Next storm:
+(reason `riavvio: <transport fault>`; since 3.4.14 the stop reason LiveVault
+itself set: `fermata manuale` for user actions through `stop_source`,
+`cambio storage`, `buffer interno pieno`, `disco in emergenza`,
+`buffer oltre limite`, `pausa globale registrazioni`, `arresto servizio`;
+then `cambio parte` or `fine stream o errore`; URL query strings are cut).
+Before 3.4.14 a user stop was logged as `fine stream o errore` (wasianbby,
+2026-09-25 ~10:07 UTC, source removed by the user). Next storm:
 `docker logs --since 2h <container> 2>&1 | grep 'capture chiusa'` with the
 container from `docker ps --format '{{.Names}}'` (name starts with the
 Coolify UUID). Also fixed: `/api/status` could fail with "dictionary changed
@@ -302,6 +307,13 @@ and `_index_file` (`app/workers.py`), both through `nsfw_attach_stitched` /
   `tests/test_v3412_nsfw_live_stitch.py` runs that production path.
   Recordings stitched before 3.4.12 keep their scan results; their live marks
   and stale `nsfw_coverage` rows stay orphaned (harmless, not backfilled).
+  3.4.14: the 3.4.10 re-match in `_run_nsfw_job` only runs while
+  `nsfw_live_coverage` is 0 (it matched the stitched name, found nothing and
+  reset recording 1106 from 0.732 to 0 on 2026-09-25; that value was not
+  restored). Full scans also wait `STARTUP_GRACE_SECONDS` (90 s) after a
+  container start when they would yield to captures: right after the 3.4.13
+  deploy a scan started before the poller had resumed tinnydoll and was paused
+  seconds later.
 - CPU next to captures. 3.4.11 (no onnxruntime spinning, NSFW ffmpeg
   `-threads 1`, `helper_env()` with OMP/OpenBLAS/MKL = 1) was live on the node
   on 2026-09-25 but the scan helper still took 120–207% (runtime setting

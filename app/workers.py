@@ -234,7 +234,7 @@ class WorkerManager(NsfwWorkerMixin, LiveNsfwMixin):
     async def stop(self) -> None:
         self._stopping = True
         self._wake_event.set()
-        await self.stop_all_recordings()
+        await self.stop_all_recordings("arresto servizio")
         uploader_task = next((task for task in self.tasks if task.get_name() == "uploader"), None)
         if uploader_task and not uploader_task.done():
             with contextlib.suppress(Exception):
@@ -353,22 +353,23 @@ class WorkerManager(NsfwWorkerMixin, LiveNsfwMixin):
         finally:
             self._wake_event.clear()
 
-    async def stop_source(self, source_id: int) -> None:
+    async def stop_source(self, source_id: int, reason: str = "fermata manuale") -> None:
         lock = self._source_check_locks.setdefault(source_id, asyncio.Lock())
         async with lock:
             session = self.active.get(source_id)
             if not session:
                 return
+            session.stop_reason = session.stop_reason or reason
             await stop_recorder(session)
             task = self.watch_tasks.get(source_id)
             if task and task is not asyncio.current_task():
                 with contextlib.suppress(Exception):
                     await asyncio.wait_for(asyncio.shield(task), timeout=10)
 
-    async def stop_all_recordings(self) -> None:
+    async def stop_all_recordings(self, reason: str = "arresto di tutte le registrazioni") -> None:
         source_ids = list(self.active)
         if source_ids:
-            await asyncio.gather(*(self.stop_source(source_id) for source_id in source_ids), return_exceptions=True)
+            await asyncio.gather(*(self.stop_source(source_id, reason) for source_id in source_ids), return_exceptions=True)
 
     def local_buffer_bytes(self) -> int:
         total = 0
@@ -1661,6 +1662,8 @@ class WorkerManager(NsfwWorkerMixin, LiveNsfwMixin):
                         source.last_error = ""
             if controlled_restart:
                 reason = f"riavvio: {session.restart_reason or 'richiesto'}"
+            elif session.stop_reason:
+                reason = session.stop_reason
             elif size_rollover:
                 reason = "cambio parte"
             elif self._stopping:
@@ -2120,7 +2123,7 @@ class WorkerManager(NsfwWorkerMixin, LiveNsfwMixin):
                 if mode == "quiesce":
                     for session in list(self.active.values()):
                         session.rollover_requested = True
-                    await self.stop_all_recordings()
+                    await self.stop_all_recordings("cambio storage")
                     # Pollers resolving an input must observe capture_allowed before
                     # publishing a session; wait for their per-source locks as well.
                     checking = any(lock.locked() for lock in self._source_check_locks.values())
@@ -2142,7 +2145,7 @@ class WorkerManager(NsfwWorkerMixin, LiveNsfwMixin):
                         self.last_errors["storage"] = "Buffer interno pieno: registrazioni sospese fino al rientro NVMe"
                         for session in list(self.active.values()):
                             session.rollover_requested = True
-                        await self.stop_all_recordings()
+                        await self.stop_all_recordings("buffer interno pieno")
                     await asyncio.sleep(0.25)
                     continue
                 cfg = runtime()
@@ -2151,11 +2154,11 @@ class WorkerManager(NsfwWorkerMixin, LiveNsfwMixin):
                 over_buffer = cfg.buffer_max_gb > 0 and buffer_bytes > cfg.buffer_max_gb * 1024**3
                 if state.free_gb <= cfg.emergency_free_gb:
                     self.last_errors["storage"] = f"EMERGENZA disco: {state.free_gb:.2f} GB liberi; arresto controllato recorder"
-                    await self.stop_all_recordings()
+                    await self.stop_all_recordings("disco in emergenza")
                 elif over_buffer:
                     self.last_errors["buffer"] = f"Buffer oltre limite: {human_bytes(buffer_bytes)} / {cfg.buffer_max_gb:.1f} GB"
                     if cfg.buffer_hard_stop:
-                        await self.stop_all_recordings()
+                        await self.stop_all_recordings("buffer oltre limite")
                 else:
                     self.last_errors.pop("buffer", None)
                     if state.free_gb > cfg.min_free_gb:

@@ -188,3 +188,49 @@ def test_sampler_ignores_the_load_but_the_verifier_waits(env, monkeypatch):
     assert manager.nsfw_verify_state == "busy"
     with env.scope() as db:
         assert db.scalar(select(NsfwMark)).state == "pending"  # verified later, not dropped
+
+
+def test_queued_full_scan_keeps_the_live_coverage_measured_at_stitch(tmp_path, env):
+    """3.4.14: the 3.4.10 re-match ran on the stitched name, found nothing and reset 0.732 to 0."""
+    import sys
+    video = tmp_path / "001_wasianbby_2026-09-25_11-24-51.mp4"
+    video.write_bytes(b"media")
+    with env.scope() as db:
+        rec = Recording(source_id=32, source_name="wasianbby", session_id="s1", local_path=str(video),
+                        filename=video.name, started_at=BASE, duration_seconds=2269.0, integrity_status="passed",
+                        upload_status="uploaded", nsfw_status="pending", nsfw_live_coverage=0.732)
+        db.add(rec)
+        db.flush()
+        db.expunge(rec)
+    manager = workers.WorkerManager()
+    manager.nsfw_attach_parts = lambda *_a: pytest.fail("coverage already measured at stitch")
+    manager._nsfw_command = lambda _rec: [sys.executable, "-c", 'print(\'{"type": "error", "error": "stop"}\')']
+    asyncio.run(manager._run_nsfw_job(rec))
+    with env.scope() as db:
+        assert db.get(Recording, rec.id).nsfw_live_coverage == pytest.approx(0.732)
+
+
+def test_full_scan_waits_for_the_captures_to_resume_after_a_restart(env, monkeypatch):
+    import time
+    monkeypatch.setattr(nsfw_worker, "models_ready", lambda _cfg=None: (True, ""))
+    manager = workers.WorkerManager()
+    manager._nsfw_ready_at = time.monotonic() + 60  # set by _nsfw_loop at start
+    assert manager._nsfw_gate() == "waiting_idle"  # no capture yet: the poller is still resuming them
+    env.cfg.nsfw_live_enabled = False
+    assert manager._nsfw_gate() == ""  # no live analysis and "only when idle" off: nothing to protect
+
+
+def test_a_capture_stopped_by_the_user_is_logged_as_such(monkeypatch):
+    manager = workers.WorkerManager()
+    session = SimpleNamespace(stop_reason="", process=SimpleNamespace(returncode=None))
+    manager.active = {32: session}
+
+    async def fake_stop(target):
+        target.process.returncode = 255
+
+    monkeypatch.setattr(legacy, "stop_recorder", fake_stop)
+    asyncio.run(manager.stop_source(32))
+    assert session.stop_reason == "fermata manuale"
+    session.stop_reason = ""
+    asyncio.run(manager.stop_all_recordings("cambio storage"))
+    assert session.stop_reason == "cambio storage"
