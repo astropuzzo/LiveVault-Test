@@ -24,7 +24,7 @@ from sqlalchemy import case, select
 from . import storage_handoff
 from .config import settings
 from .db import Recording, db_session
-from .nsfw_scan import Verdict, merge_moments, overall
+from .nsfw_scan import Verdict, helper_env, merge_moments, overall
 from .settings_store import runtime
 from .utils import utcnow
 
@@ -211,7 +211,7 @@ class NsfwWorkerMixin:
                              "speed": None, "started_at": utcnow().isoformat(), "resumed_from": resume_at}
         proc = await asyncio.create_subprocess_exec(
             *self._nsfw_command(rec), cwd=str(Path(__file__).resolve().parents[1]),
-            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL, env=helper_env())
         result: dict | None = None
         stopped = ""
         last_saved = 0.0

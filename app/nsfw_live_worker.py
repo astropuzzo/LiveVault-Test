@@ -36,7 +36,7 @@ from sqlalchemy import func, select
 from . import storage_handoff
 from .db import NsfwCoverage, NsfwMark, Recording, db_session
 from .mp4_index import GrowingIndex, LiveFragment, NotFragmented
-from .nsfw_scan import Verdict, combine_classes, merge_moments, overall
+from .nsfw_scan import Verdict, combine_classes, helper_env, merge_moments, overall
 from .nsfw_worker import file_signature, nsfw_dir
 from .settings_store import runtime
 from .utils import utcnow
@@ -91,7 +91,7 @@ class HelperProcess:
             prefix += ["ionice", "-c3"]
         self.proc = await asyncio.create_subprocess_exec(
             *prefix, *command, cwd=str(Path(__file__).resolve().parents[1]),
-            stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
+            stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL, env=helper_env())
         try:
             line = await asyncio.wait_for(self.proc.stdout.readline(), timeout=90)  # type: ignore[union-attr]
             hello = json.loads(line or b"{}")

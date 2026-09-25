@@ -187,7 +187,7 @@ def save_preview(frame, target: str, box: tuple[int, int, int, int]) -> bool:
     """JPEG of the analysed frame (letterbox removed) via ffmpeg, no extra decode."""
     w, h, x, y = box
     try:
-        subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{FRAME}x{FRAME}",
+        subprocess.run(["ffmpeg", "-v", "error", "-threads", "1", "-y", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{FRAME}x{FRAME}",
                         "-i", "pipe:0", "-vf", f"crop={w}:{h}:{x}:{y},scale=480:-2", "-frames:v", "1", "-q:v", "5", target],
                        input=frame.tobytes(), timeout=30, check=True, capture_output=True)
         return True
@@ -195,11 +195,24 @@ def save_preview(frame, target: str, box: tuple[int, int, int, int]) -> bool:
         return False
 
 
+def helper_env() -> dict:
+    """Environment for NSFW helpers: one math thread, no hidden thread pools."""
+    import os
+    env = dict(os.environ)
+    for key in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS"):
+        env[key] = "1"
+    return env
+
+
 def _session(model: str, threads: int):
     import onnxruntime as ort
     options = ort.SessionOptions()
     options.intra_op_num_threads = max(1, threads)
     options.inter_op_num_threads = 1
+    # Idle worker threads must sleep, not spin: on the 4-core node spinning
+    # burned 2+ cores at nice 19 and starved the recorder of CPU time.
+    options.add_session_config_entry("session.intra_op.allow_spinning", "0")
+    options.add_session_config_entry("session.inter_op.allow_spinning", "0")
     session = ort.InferenceSession(model, sess_options=options, providers=["CPUExecutionProvider"])
     shape = session.get_inputs()[0].shape
     size = shape[2] if isinstance(shape[2], int) else 320
@@ -234,7 +247,7 @@ class Scanner:
                   f"scale={FRAME}:{FRAME}:force_original_aspect_ratio=decrease,"
                   f"pad={FRAME}:{FRAME}:(ow-iw)/2:(oh-ih)/2:black,showinfo")
         proc = subprocess.Popen(
-            ["ffmpeg", "-hide_banner", "-nostats", "-loglevel", "info", "-skip_frame", "nokey", "-copyts", *seek, "-i", path,
+            ["ffmpeg", "-hide_banner", "-nostats", "-loglevel", "info", "-threads", "1", "-skip_frame", "nokey", "-copyts", *seek, "-i", path,
              "-an", "-sn", "-vf", select, "-fps_mode", "passthrough", "-pix_fmt", "rgb24", "-f", "rawvideo", "pipe:1"],
             stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         pts: queue.Queue[float | None] = queue.Queue()

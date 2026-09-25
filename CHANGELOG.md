@@ -1,5 +1,9 @@
 # Changelog
 
+## 3.4.11 — Analisi NSFW più leggera sulla CPU
+
+- Sul nodo l'analisi usava oltre 3 core su 4 (python 233% + ffmpeg 92%, load ~6,5) pur a nice 19: i thread di onnxruntime giravano a vuoto (spinning) e ffmpeg decodificava con un thread per core. Ora spinning disattivato, ffmpeg `-threads 1`, OMP/OpenBLAS/MKL a un thread per gli helper.
+
 ## 3.4.10 — Niente doppia analisi dopo il live
 
 - Bug: l'analisi dal vivo delle live Stripchat registrava i risultati sul file grezzo `.capture.mp4`, ma il file finale è il `.mp4` rimuxato; i nomi non combaciavano, la copertura risultava 0 e ogni registrazione veniva rianalizzata da capo. Ora i due nomi sono collegati: con copertura ≥ 85% basta il live.

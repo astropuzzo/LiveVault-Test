@@ -221,6 +221,11 @@ Code: `app/nsfw_live_worker.py` (tasks `nsfw-live`, `nsfw-verify` in
   `app/nsfw_worker.py` re-tries the match before starting a queued full scan
   (rescues single-part files queued earlier). Stitched sessions finalized
   before the fix lost their part offsets and are still fully scanned once.
+  CPU (3.4.11, measured 2026-09-25 on the node: load ~6.5, scan helper
+  233% + its ffmpeg 92% at nice 19): `_session` in `app/nsfw_scan.py`
+  disables onnxruntime spinning, every NSFW ffmpeg runs `-threads 1`, helpers
+  start with `helper_env()` (OMP/OpenBLAS/MKL = 1). Check with
+  `top -o %CPU`: the helper should stay near 100% of one core.
   Orphan live marks from before the fix stay in `nsfw_marks` with
   `recording_id` NULL (harmless). Rollback: revert the commit.
 

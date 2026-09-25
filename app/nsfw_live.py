@@ -29,7 +29,7 @@ LETTERBOX = (f"scale={FRAME}:{FRAME}:force_original_aspect_ratio=decrease,"
 
 def _decode(data: bytes, input_format: str | None = None):
     import numpy as np
-    command = ["ffmpeg", "-v", "error", "-nostdin"]
+    command = ["ffmpeg", "-v", "error", "-nostdin", "-threads", "1"]
     if input_format:
         command += ["-f", input_format]
     command += ["-i", "pipe:0", "-map", "0:v:0", "-frames:v", "1", "-vf", LETTERBOX,
@@ -89,7 +89,7 @@ class Helper:
             os.makedirs(verify_dir, exist_ok=True)
             verify_path = os.path.join(verify_dir, name)
             # Full letterboxed frame, high quality: the large model reads this later.
-            subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "rgb24",
+            subprocess.run(["ffmpeg", "-v", "error", "-threads", "1", "-y", "-f", "rawvideo", "-pix_fmt", "rgb24",
                             "-s", f"{FRAME}x{FRAME}", "-i", "pipe:0", "-frames:v", "1", "-q:v", "2", verify_path],
                            input=frame.tobytes(), capture_output=True, timeout=30, check=True)
             reply["verify_image"] = verify_path
