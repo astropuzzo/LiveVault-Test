@@ -10,7 +10,7 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from app import nsfw_worker, storage_handoff
+from app import nsfw_live_worker, nsfw_worker, storage_handoff
 from app.db import Base, Recording
 from app.settings_store import RuntimeSettings
 from app.workers import WorkerManager
@@ -39,7 +39,9 @@ def isolated_db(tmp_path, monkeypatch):
         finally:
             session.close()
 
-    monkeypatch.setattr(nsfw_worker, "db_session", session_scope)
+    # _run_nsfw_job first retries the live-mark match (nsfw_live_worker).
+    for module in (nsfw_worker, nsfw_live_worker):
+        monkeypatch.setattr(module, "db_session", session_scope)
     yield factory
     engine.dispose()
 
