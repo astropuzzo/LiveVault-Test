@@ -38,6 +38,48 @@ the host Control Center is unaffected.
   with originals preserved. Genuine short sessions and size-limited tails remain
   possible. Existing uploaded files are not rewritten or removed.
 
+## Short captures in Cronologia (checked 2026-09-25, 3.4.12)
+
+Symptom: rows alternating quickly between NON REC and IN ELABORAZIONE. The
+Pulse draws every unstitched `recording_fragments` row as IN ELABORAZIONE at
+`[mtime - duration, mtime]` and every hole > 12 s as NON REC, so a capture
+that stops and restarts every minute looks exactly like this until the
+15-minute batch is stitched. Evidence on the node (read-only queries on
+`/data/livevault/livevault.db`, Control Center telemetry
+`/var/lib/openastro-control/history.sqlite3`, capture ids in
+`nsfw_coverage`/`nsfw_marks` part paths):
+- Media lost inside stitched files (wall span minus duration) since
+  2026-09-15 is < 2% for every source. The worst files all fall on
+  2026-09-25 07:06–07:51 UTC, when telemetry shows CPU 91–99% for 42 minutes
+  of back-to-back full NSFW scans (3.4.10 spinning helpers, 3 cores, every
+  file queued because of the attach bug above): Top Twins lost 1084 of
+  2027 s, youandi 171 of 1449 s. Outside that window losses match source-side
+  stalls (network intake near 0, e.g. lodemure_ 2026-09-24 21:48) or private
+  shows (AliciaBrooks 07:52–08:01, `live_sessions.access_status=private`).
+- Top Twins (Chaturbate split LL-HLS, `transport_guard`) restarted its
+  capture 26 times in 06:38–07:53 UTC (22 restarts < 3 minutes apart); every
+  other session since 2026-09-24 has 1–3 captures. 06:48–07:05 ran at 45–55%
+  CPU with steady network, so load alone does not explain that storm. The
+  restart reason (`stream_transport_fault`, 35 s without growth) was only in
+  memory and cleared by the next start: not recoverable.
+- Excluded: storage switch (`storage-state.json` = `nvme` since 2026-09-23),
+  buffer gate (`capture_allowed`, 178 GB free, no `.storage-buffer-full`),
+  container CPU limits (`cpu.max` = max, `nr_throttled` 0), deploys (one,
+  07:39 UTC).
+
+Changes (3.4.12): the CPU fix in the NSFW section (no full scan beside
+captures when live analysis is on, one core for every helper next to a
+capture), and one container-log line per closed capture from
+`capture_end_line()` in `app/workers.py`:
+`[recorder] capture chiusa: <source> · <reason> · <seconds> s · <bytes> · exit <code> · <last stderr lines>`
+(reason `riavvio: <transport fault>`, `cambio parte`, `arresto servizio` or
+`fine stream o errore`; URL query strings are cut). Next storm:
+`docker logs --since 2h <container> 2>&1 | grep 'capture chiusa'` with the
+container from `docker ps --format '{{.Names}}'` (name starts with the
+Coolify UUID). Also fixed: `/api/status` could fail with "dictionary changed
+size during iteration" (`local_buffer_bytes`/`snapshot` now iterate a copy).
+Rollback: revert the 3.4.12 commit and redeploy.
+
 ## Interface 3.1 (2026-09-24)
 
 Source only, LiveVault 3.1.0: `app/static/style.css` (the only stylesheet),
@@ -173,16 +215,22 @@ Code: `app/nsfw_live_worker.py` (tasks `nsfw-live`, `nsfw-verify` in
 `WorkerManager`), `app/nsfw_live.py` (persistent helper processes),
 `GrowingIndex` in `app/mp4_index.py`, tables `nsfw_marks` and `nsfw_coverage`
 (created by `create_all`), columns `recordings.nsfw_source` and
-`recordings.nsfw_live_coverage`, hooks in `_stitch_fragment_group` and
-`_index_file` (`app/workers.py`), `nsfw_moments` per session in
+`recordings.nsfw_live_coverage`, hooks in `_stitch_fragment_group` (the
+production one is the override in `app/workers/__init__.py`, wrapped by
+`size_policy` and `app/main/__init__.py`; the legacy copy in `app/workers.py`)
+and `_index_file` (`app/workers.py`), both through `nsfw_attach_stitched` /
+`nsfw_attach_parts`, `nsfw_moments` per session in
 `GET /api/control-room/pulse`, `live` block in `GET /api/nsfw`.
 
 - Sampling: round-robin over active captures, `nsfw_live_fps` frames/s in
   total (default 0.5), one keyframe every `nsfw_step_seconds` of each capture.
   Only the fragments appended since the previous pass are parsed; one fragment
   (init + moof/mdat) is piped to ffmpeg and the small model in a `nice 19` /
-  `ionice -c3` helper that stays loaded (~100 MB). It waits while the 1-minute
-  load average exceeds `nsfw_live_max_load` (default 3.0 on 4 cores). Only
+  `ionice -c3` helper that stays loaded (~100 MB) and, like the verifier, runs
+  on one core whatever "Core CPU" says (3.4.12). `ionice -c3` has no effect on
+  the node NVMe (`sdb` uses `mq-deadline`, checked 2026-09-25). It waits while
+  the 1-minute load average exceeds `nsfw_live_max_load` (default 3.0 on 4
+  cores; 3.1 on the node). Only
   fragmented `.mp4` captures are sampled live; other formats fall back to the
   full scan after the session. When sampling falls more than 60 s behind it
   jumps to the newest fragment and the gap is left to the full scan.
@@ -208,26 +256,47 @@ Code: `app/nsfw_live_worker.py` (tasks `nsfw-live`, `nsfw-verify` in
   detached NVMe stay queued.
 - Mapping: at stitching, part offsets are the container durations in concat
   order (same as the concat demuxer), so `file_time = offset + part_time`.
+  Each live sample credits the time since the previous one up to
+  `MOMENT_GAP_FACTOR` (2.5) x step, the tolerance that already merges hits
+  into one moment (3.4.12; before 1.5 x step, so four captures sharing 0.5
+  fps could never reach 85%).
   Coverage >= 85% of the stitched duration → `nsfw_source=live`, status
   `verifying` until every mark is verified, then safe/review/nsfw without a
   full scan; lower coverage keeps `pending` for the full scan. Manual verdicts
   are never overwritten.
-- Since 3.4.10 (fixed 2026-09-24): Stripchat is sampled on the raw
-  `<stem>.capture.mp4` but indexed/stitched as the remuxed `<stem>.mp4`
-  (`_remux` in `app/stripchat_capture.py`, `-start_at_zero`, same timeline).
-  Before 3.4.10 the names never matched, coverage was 0 and every Stripchat
-  recording was fully re-scanned. `live_aliases()` in
-  `app/nsfw_live_worker.py` now matches both names; `_run_nsfw_job` in
-  `app/nsfw_worker.py` re-tries the match before starting a queued full scan
-  (rescues single-part files queued earlier). Stitched sessions finalized
-  before the fix lost their part offsets and are still fully scanned once.
-  CPU (3.4.11, measured 2026-09-25 on the node: load ~6.5, scan helper
-  233% + its ffmpeg 92% at nice 19): `_session` in `app/nsfw_scan.py`
-  disables onnxruntime spinning, every NSFW ffmpeg runs `-threads 1`, helpers
-  start with `helper_env()` (OMP/OpenBLAS/MKL = 1). Check with
-  `top -o %CPU`: the helper should stay near 100% of one core.
-  Orphan live marks from before the fix stay in `nsfw_marks` with
-  `recording_id` NULL (harmless). Rollback: revert the commit.
+- Stripchat is sampled on the raw `<stem>.capture.mp4` but indexed/stitched
+  as the remuxed `<stem>.mp4` (`_remux` in `app/stripchat_capture.py`,
+  `-start_at_zero`, same timeline); `live_aliases()` (3.4.10) matches both
+  names and `_run_nsfw_job` re-tries the match before a queued full scan.
+- Real cause of "every recording is fully re-scanned" (found on the node
+  2026-09-25, fixed in 3.4.12): the production `_stitch_fragment_group`
+  override in `app/workers/__init__.py` never called the attach hook (only the
+  legacy copy did), so from 3.4.0 to 3.4.11 all 1669 live marks kept
+  `recording_id` NULL, every recording had `nsfw_live_coverage` 0 and
+  `nsfw_source=scan`, and `nsfw_coverage` rows were never consumed. 3.4.10
+  alone could not help. The override now measures part durations before the
+  concat and calls `nsfw_attach_stitched` right after inserting the
+  recording, before any await (the full-scan queue cannot grab it first).
+  `tests/test_v3412_nsfw_live_stitch.py` runs that production path.
+  Recordings stitched before 3.4.12 keep their scan results; their live marks
+  and stale `nsfw_coverage` rows stay orphaned (harmless, not backfilled).
+- CPU next to captures. 3.4.11 (no onnxruntime spinning, NSFW ffmpeg
+  `-threads 1`, `helper_env()` with OMP/OpenBLAS/MKL = 1) was live on the node
+  on 2026-09-25 but the scan helper still took 120–207% (runtime setting
+  `nsfw_threads=3`) + 25–70% ffmpeg, load 5–6, with
+  `nsfw_only_when_idle=false`. Every file was queued (bug above), the scan
+  load kept the 1-minute load over `nsfw_live_max_load`, the sampler stopped
+  (15% and 12% coverage on the two parts measured) and the next file was
+  queued again. From 3.4.12 (`_nsfw_waits_for_recorders`, `_nsfw_threads` in
+  `app/nsfw_worker.py`): with live analysis on, the full scan waits while any
+  capture is active (UI "In pausa: registrazione attiva") and resumes from its
+  checkpoint afterwards; without live analysis "only when idle" still decides,
+  and a scan beside a capture runs on one core (a 3-core scan is stopped and
+  restarted on one core when a capture starts). "Core CPU" applies only to
+  full scans with nothing recording. Check with `top -o %CPU` while
+  recording: no `app.nsfw_scan`, `app.nsfw_live` helpers <= ~100%.
+  Rollback: revert the 3.4.12 commit and redeploy (no schema change); the
+  settings are untouched.
 
 Verified locally: unit/integration tests with a real growing fragmented MP4
 (quiesce pause, buffer continuation, verification during a switch, mapping

@@ -105,6 +105,22 @@ class NsfwWorkerMixin:
                 db.expunge(rec)
             return rec
 
+    def _nsfw_waits_for_recorders(self, cfg) -> bool:
+        """Full scans yield to active captures.
+
+        With live analysis on, captures are analysed by the sampler: a full
+        scan running beside them took 2+ cores, pushed the load over
+        ``nsfw_live_max_load`` so the sampler stopped, and left every file
+        uncovered, i.e. queued for yet another full scan.
+        """
+        if not getattr(self, "active", None):
+            return False
+        return bool(cfg.nsfw_only_when_idle or cfg.nsfw_live_enabled)
+
+    def _nsfw_threads(self, cfg) -> int:
+        # The "Core CPU" setting is for idle time; next to a capture one core only.
+        return 1 if getattr(self, "active", None) else max(1, int(cfg.nsfw_threads))
+
     def _nsfw_gate(self) -> str:
         """Why the queue must wait right now ('' = may run)."""
         cfg = runtime()
@@ -112,7 +128,7 @@ class NsfwWorkerMixin:
             return "disabled"
         if not storage_handoff.media_online() and storage_handoff.state()["mode"] != "buffer":
             return "waiting_storage"
-        if cfg.nsfw_only_when_idle and getattr(self, "active", None):
+        if self._nsfw_waits_for_recorders(cfg):
             return "waiting_idle"
         ready, detail = models_ready(cfg)
         if not ready:
@@ -148,7 +164,7 @@ class NsfwWorkerMixin:
         command = [sys.executable, "-m", "app.nsfw_scan", rec.local_path,
                    "--fast-model", cfg.nsfw_fast_model, "--verify-model", cfg.nsfw_verify_model,
                    "--step", str(cfg.nsfw_step_seconds), "--candidate", str(cfg.nsfw_candidate),
-                   "--threshold", str(cfg.nsfw_threshold), "--threads", str(cfg.nsfw_threads),
+                   "--threshold", str(cfg.nsfw_threshold), "--threads", str(self._nsfw_threads(cfg)),
                    "--classes", cfg.nsfw_classes, "--start", f"{float(rec.nsfw_resume_at or 0):.1f}",
                    "--images-dir", str(nsfw_dir()), "--image-prefix", str(rec.id)]
         prefix = ["nice", "-n", "19"] if shutil.which("nice") else []
@@ -156,7 +172,7 @@ class NsfwWorkerMixin:
             prefix += ["ionice", "-c3"]
         return prefix + command
 
-    def _nsfw_should_stop(self) -> str:
+    def _nsfw_should_stop(self, threads: int = 1) -> str:
         cfg = runtime()
         if self._stopping:
             return "shutdown"
@@ -165,7 +181,9 @@ class NsfwWorkerMixin:
             return "storage"
         if not cfg.nsfw_enabled:
             return "disabled"
-        if cfg.nsfw_only_when_idle and getattr(self, "active", None):
+        # A capture started: pause (resumes from the checkpoint), or restart
+        # the helper on a single core when full scans may run beside captures.
+        if self._nsfw_waits_for_recorders(cfg) or threads > self._nsfw_threads(cfg):
             return "recording"
         return self._nsfw_stop_reason
 
@@ -209,6 +227,7 @@ class NsfwWorkerMixin:
                              "t": resume_at, "duration": float(rec.duration_seconds or 0), "progress": 0.0,
                              "frames": 0, "verified": 0, "found": len(hits), "eta_seconds": None,
                              "speed": None, "started_at": utcnow().isoformat(), "resumed_from": resume_at}
+        threads = self._nsfw_threads(runtime())
         proc = await asyncio.create_subprocess_exec(
             *self._nsfw_command(rec), cwd=str(Path(__file__).resolve().parents[1]),
             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL, env=helper_env())
@@ -217,7 +236,7 @@ class NsfwWorkerMixin:
         last_saved = 0.0
         try:
             while True:
-                stopped = self._nsfw_should_stop()
+                stopped = self._nsfw_should_stop(threads)
                 if stopped:
                     break
                 try:

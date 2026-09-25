@@ -9,7 +9,7 @@ import shutil
 import sys
 import time
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -146,6 +146,8 @@ class RecorderSession:
     restart_requested: bool = False
     restart_reason: str = ""
     capture_prefix: str = ""
+    # Last meaningful recorder stderr lines, logged when the capture ends.
+    stderr_tail: list[str] = field(default_factory=list)
 
 
 def _ffmpeg_headers(headers: dict[str, str]) -> str:

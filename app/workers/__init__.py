@@ -308,6 +308,9 @@ class WorkerManager(_legacy.WorkerManager):
         output = paths[0].parent / _legacy.public_recording_filename(display_name, started, sequence, suffix)
         temporary = output.with_name(f".{output.stem}.finalizing{output.suffix}")
         temporary.unlink(missing_ok=True)
+        # Measured before the parts are consumed: the same offsets move the live
+        # NSFW marks of each part onto the stitched file's timeline.
+        part_durations = await asyncio.to_thread(lambda: [_legacy._safe_duration(path) for path in paths])
 
         session_key = str(first.session_id)
         self.processing_current = {
@@ -381,8 +384,9 @@ class WorkerManager(_legacy.WorkerManager):
         finalized = max(item.finalized_at for item in good)
         with _legacy.db_session() as db:
             existing = db.scalar(_legacy.select(_legacy.Recording).where(_legacy.Recording.local_path == str(output)))
+            recording_id = int(existing.id) if existing is not None else None
             if existing is None:
-                db.add(_legacy.Recording(
+                created = _legacy.Recording(
                     source_id=first.source_id,
                     source_name=first.source_name,
                     session_id=first.session_id,
@@ -405,12 +409,19 @@ class WorkerManager(_legacy.WorkerManager):
                     has_audio=integrity.has_audio,
                     video_codec=integrity.codec("video"),
                     audio_codec=integrity.codec("audio"),
-                ))
+                )
+                db.add(created)
+                db.flush()
+                recording_id = int(created.id)
             fragment_ids = [int(fragment.id) for fragment in fragments]
             for fragment in db.scalars(_legacy.select(_legacy.RecordingFragment).where(
                 _legacy.RecordingFragment.id.in_(fragment_ids)
             )).all():
                 db.delete(fragment)
+        # Before any await: the full-scan queue must see the live coverage, or
+        # it would pick the new file up for a redundant complete analysis.
+        if recording_id is not None:
+            self.nsfw_attach_stitched(recording_id, paths, part_durations)
 
         for path in paths:
             if path != output:

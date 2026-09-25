@@ -4,7 +4,9 @@ import asyncio
 from dataclasses import replace
 import contextlib
 import json
+import re
 import shutil
+import sys
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -73,6 +75,24 @@ def _safe_duration(path: Path) -> float:
         return float(_probe_full(str(path))[1])
     except Exception:
         return 0.0
+
+
+def capture_end_line(session: RecorderSession, reason: str, total_bytes: int, now: datetime) -> str:
+    """One container-log line per closed capture: why it stopped and what it wrote.
+
+    Short captures that follow each other are what the Cronologia shows as
+    alternating NON REC / IN ELABORAZIONE; without this line the reason was
+    only kept in memory and lost at the next start or deploy.
+    """
+    started = session.started_at if session.started_at.tzinfo else session.started_at.replace(tzinfo=timezone.utc)
+    seconds = max(0.0, (now - started).total_seconds())
+    line = (f"[recorder] capture chiusa: {session.source_name} · {reason} · {seconds:.0f} s · "
+            f"{human_bytes(total_bytes)} · exit {session.process.returncode}")
+    if session.stderr_tail:
+        # Signed CDN query strings are not useful in a log and may carry tokens.
+        tail = re.sub(r"(https?://[^\s?'\"]+)\?[^\s'\"]*", r"\1?…", " | ".join(session.stderr_tail[-3:]))
+        line += f" · {tail[-600:]}"
+    return line
 
 
 def stitch_gap_open(last_at: datetime, now: datetime, gap_seconds: int = SESSION_STITCH_GAP_SECONDS) -> bool:
@@ -362,7 +382,8 @@ class WorkerManager(NsfwWorkerMixin, LiveNsfwMixin):
                 select(Recording.local_path).where(Recording.local_deleted.is_(False))
             ).all())
             known_paths.update(str(x) for x in db.scalars(select(RecordingFragment.local_path)).all())
-        for session in self.active.values():
+        # Also read from API threadpool threads while the event loop edits it.
+        for session in list(self.active.values()):
             with contextlib.suppress(Exception):
                 for path in session.directory.glob(f"*{session.extension}"):
                     if str(path) not in known_paths and path.is_file():
@@ -372,7 +393,7 @@ class WorkerManager(NsfwWorkerMixin, LiveNsfwMixin):
     def snapshot(self) -> dict:
         now = utcnow()
         active = []
-        for s in self.active.values():
+        for s in list(self.active.values()):
             current_size = 0
             with contextlib.suppress(Exception):
                 current_size = sum(path.stat().st_size for path in capture_output_files(s))
@@ -1254,14 +1275,7 @@ class WorkerManager(NsfwWorkerMixin, LiveNsfwMixin):
             )).all():
                 db.delete(fragment)
         if recording_id is not None:
-            offsets, elapsed = [], 0.0
-            for path, part_duration in zip(paths, part_durations):
-                offsets.append((str(path), elapsed, float(part_duration or 0)))
-                elapsed += float(part_duration or 0)
-            try:
-                self.nsfw_attach_parts(recording_id, offsets)
-            except Exception as exc:
-                self.last_errors[f"nsfw-attach:{recording_id}"] = str(exc)[-600:]
+            self.nsfw_attach_stitched(recording_id, paths, part_durations)
         for path in paths:
             if path != output:
                 path.unlink(missing_ok=True)
@@ -1491,7 +1505,7 @@ class WorkerManager(NsfwWorkerMixin, LiveNsfwMixin):
     async def _drain_stderr(self, session: RecorderSession) -> None:
         if session.process.stderr is None:
             return
-        tail: list[str] = []
+        tail = session.stderr_tail
         try:
             while True:
                 line = await session.process.stderr.readline()
@@ -1506,7 +1520,7 @@ class WorkerManager(NsfwWorkerMixin, LiveNsfwMixin):
                             session.restart_reason = reason
                     if not any(noise in text.lower() for noise in NONFATAL_FFMPEG_NOISE):
                         tail.append(text)
-                        tail = tail[-10:]
+                        del tail[:-10]
         finally:
             if tail and session.process.returncode not in (0, None):
                 self.last_errors[f"ffmpeg:{session.source_id}"] = " | ".join(tail)[-1800:]
@@ -1645,6 +1659,16 @@ class WorkerManager(NsfwWorkerMixin, LiveNsfwMixin):
                     self._observe_live_state(db, source, new_status in {"live", "recording"}, now)
                     if size_rollover or controlled_restart:
                         source.last_error = ""
+            if controlled_restart:
+                reason = f"riavvio: {session.restart_reason or 'richiesto'}"
+            elif size_rollover:
+                reason = "cambio parte"
+            elif self._stopping:
+                reason = "arresto servizio"
+            else:
+                reason = "fine stream o errore"
+            with contextlib.suppress(Exception):
+                print(capture_end_line(session, reason, total_session_bytes, utcnow()), file=sys.stderr, flush=True)
             if not slot_released:
                 self.wake()
 

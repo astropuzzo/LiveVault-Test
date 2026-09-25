@@ -14,39 +14,38 @@ workspace del nodo puntano lì. Aggiornare quella copia insieme ai documenti Git
 SOURCE.txt identifica la revisione. Il vecchio handoff duplicato è stato sostituito
 da un rinvio, con originale conservato nella directory rollback.
 
-## Handoff corrente — 2026-09-25 (LiveVault 3.4.11, main c6b5357+)
-Sessione cloud senza accesso al nodo: tutto ciò che segue è verificato in test/QA
-locale, **non** sul runtime. Primo compito della prossima sessione locale: deploy e
-verifica reale dei punti aperti. Dettagli e rollback per funzione in
-[LIVE-PANEL-20260909.md](docs/LIVE-PANEL-20260909.md) (sezioni NSFW 3.3/3.4) e
-[MP4-HLS-RECOVERY.md](docs/MP4-HLS-RECOVERY.md) (3.4.4); cronologia in CHANGELOG.
+## Handoff corrente — 2026-09-25 (LiveVault 3.4.12)
+Sessione locale con SSH al nodo. Misure, cause, procedure e rollback in
+[LIVE-PANEL-20260909.md](docs/LIVE-PANEL-20260909.md) (sezioni "Short captures
+in Cronologia" e NSFW 3.3/3.4) e [MP4-HLS-RECOVERY.md](docs/MP4-HLS-RECOVERY.md)
+(3.4.4); cronologia in CHANGELOG.
 - Container: gira sotto Coolify (UUID sopra); il nome **non** è `livevault`.
   Trovarlo con `docker ps --format '{{.Names}} {{.Image}}'` prima di `docker logs/exec`.
+  Fuso del container Europe/Rome (nomi file), nodo Europe/London, DB in UTC.
 - NSFW: NudeNet 3.4 ONNX 320n (campionamento) + 640m (verifica), modelli in
   `/data/livevault/models`; analisi dal vivo durante la registrazione (sampler +
-  verifier, helper a nice 19/ionice 3) e scansione completa solo per file non coperti
-  (coperture < 85%) e solo a recorder inattivo. Categorie "A+B", la più esplicita vince.
+  verifier, nice 19, sempre 1 core) e scansione completa solo per file non coperti
+  (copertura < 85%), a registrazioni ferme quando l'analisi dal vivo è attiva.
+  Impostazioni runtime sul nodo (tabella `app_settings`, non toccate):
+  `nsfw_threads=3`, `nsfw_only_when_idle=false`, `nsfw_live_max_load=3.1`,
+  `nsfw_step_seconds=4`, `nsfw_live_fps=0.5`.
+- Trovato e corretto in 3.4.12 (verifica su nodo 2026-09-25): l'unione usata in
+  produzione (`app/workers/__init__.py`) non collegava mai i segni live (1669
+  segni orfani, copertura 0, ogni file rianalizzato); le scansioni complete a 3 core
+  giravano accanto alle live (CPU 91–99% 07:06–07:48 UTC, capture con fino al 53%
+  di video perso nello stesso intervallo). I motivi dei riavvii capture ora finiscono
+  nei log del container (`grep 'capture chiusa'`).
 - Aperti, in ordine:
-  1. **Carico CPU**: il 2026-09-25 load ~6,5 con helper scan 233% + ffmpeg 92% e
-     RAM libera 62 MB/swap 480 MB. 3.4.11 (no spinning onnxruntime, ffmpeg
-     `-threads 1`, OMP=1) non ancora verificata: dopo deploy `top -o %CPU`, atteso
-     helper ~100% e load < 4. Se resta alto: mettere in pausa anche verifier/live con
-     recorder attivi o ridurre `nsfw_live_fps`.
-  2. **Registrazioni micro-frammentate** (Cronologia: alternanza rapida NON REC /
-     IN ELABORAZIONE su alcune live). Causa non accertata: `grep stalled|restart` nei
-     log (comando lanciato sul nome container sbagliato) non conclusivo. Ipotesi:
-     starvation CPU/RAM (punto 1), stalli HLS Stripchat (`app/stripchat_capture.py`,
-     45 s senza frammenti), gate buffer/quiesce (`storage_handoff.capture_allowed`).
-     Correlare orari dei buchi con log del container giusto e con `uptime`.
-  3. **Doppia analisi** corretta in 3.4.10 (`live_aliases`: marks su
-     `<stem>.capture.mp4`, file finale `<stem>.mp4`). Verificare che le nuove
-     registrazioni Stripchat finiscano con `nsfw_source=live` senza entrare in coda.
-     Sessioni già unite prima del fix vengono scansionate una volta (atteso).
-  4. Qualità modello: confronto utente su 171 frame (`F:\erax\confronto.py` sul PC):
+  1. Verifica post-deploy 3.4.12 sul nodo: CPU con live attive, prima
+     registrazione con `nsfw_source=live`.
+  2. **Registrazioni micro-frammentate**: la raffica di Top Twins (26 capture in
+     75 min, 06:38–07:53 UTC) è iniziata a CPU 45–55%: il motivo del riavvio non era
+     registrato. Alla prossima raffica leggere `capture chiusa` nei log.
+  3. Qualità modello: confronto utente su 171 frame (`F:\erax\confronto.py` sul PC):
      NudeNet con BUTTOCKS a 0.5 = 43 FP, a 0.8 = 0 FP/21 FN; EraX/Felldude ~0 FP e
      ~27 FN ma 3–8× più lenti. Manca il confronto per categoria. Nessun cambio di
      modello deciso; eventuale ritaratura soglie (`nsfw_candidate`/`nsfw_threshold`).
-  5. Pulizia bench sul nodo quando NSFW in app è confermato:
+  4. Pulizia bench sul nodo quando NSFW in app è confermato:
      `/opt/nsfw-bench`, `/tmp/erax-cmp`, file ONNX EraX, video di prova su NVMe.
 - Preferenze utente: italiano, push diretto su `main` consentito, nessun trailer
   co-autore nei commit, agire senza chiedere conferme per ogni passo.

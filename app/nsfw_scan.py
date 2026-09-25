@@ -40,6 +40,9 @@ LABELS = (
 DEFAULT_CLASSES = ("FEMALE_BREAST_EXPOSED", "FEMALE_GENITALIA_EXPOSED", "MALE_GENITALIA_EXPOSED", "ANUS_EXPOSED")
 FRAME = 640
 SEVERITY = {"review": 1, "nsfw": 2}
+# Hits up to this many steps apart belong to one moment (and count as
+# continuously watched in the live coverage).
+MOMENT_GAP_FACTOR = 2.5
 
 
 @dataclass
@@ -125,7 +128,7 @@ def judge(t: float, fast: tuple[float, str], verified: tuple[float, str] | None,
     return Verdict(t, "", fast_score, fast_cls, fast_score, None)
 
 
-def merge_moments(verdicts: list[Verdict], step: float, gap_factor: float = 2.5) -> list[Moment]:
+def merge_moments(verdicts: list[Verdict], step: float, gap_factor: float = MOMENT_GAP_FACTOR) -> list[Moment]:
     moments: list[Moment] = []
     for verdict in sorted((v for v in verdicts if v.label), key=lambda v: v.t):
         last = moments[-1] if moments else None

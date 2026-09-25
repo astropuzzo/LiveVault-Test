@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.4.12 — L'analisi dal vivo arriva davvero sui file, niente scansioni accanto alle live
+
+- Bug vero dietro la doppia analisi: l'unione delle parti usata in produzione non collegava mai i segni NSFW dal vivo al file finale (sul nodo 1669 segni, nessuno collegato; copertura sempre 0). Ogni registrazione veniva quindi rianalizzata da capo. Ora i segni e la copertura passano sul file unito e con copertura ≥ 85% la registrazione si chiude come analizzata dal vivo.
+- Con l'analisi dal vivo attiva, l'analisi completa dei file aspetta che nessuna live sia in registrazione (riprende da dove era); mentre si registra gli helper NSFW usano sempre 1 core. «Core CPU» vale solo per l'analisi completa a registrazioni ferme. Stamattina le scansioni a 3 core accanto alle live tenevano la CPU al 91–99% e nelle stesse ore le capture hanno perso fino a metà del video.
+- La copertura dal vivo conta come continui i campioni distanti fino a 2,5 passi (la stessa tolleranza che unisce i momenti): con quattro live insieme l'85% ora è raggiungibile.
+- Ogni capture chiusa scrive una riga nei log del container con motivo, durata, dati scritti e ultime righe di errore: i riavvii a raffica che in Cronologia alternano NON REC / IN ELABORAZIONE ora si possono diagnosticare.
+- Corretto un errore saltuario di `/api/status` («dictionary changed size during iteration»).
+
 ## 3.4.11 — Analisi NSFW più leggera sulla CPU
 
 - Sul nodo l'analisi usava oltre 3 core su 4 (python 233% + ffmpeg 92%, load ~6,5) pur a nice 19: i thread di onnxruntime giravano a vuoto (spinning) e ffmpeg decodificava con un thread per core. Ora spinning disattivato, ffmpeg `-threads 1`, OMP/OpenBLAS/MKL a un thread per gli helper.

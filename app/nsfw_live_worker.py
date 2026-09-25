@@ -36,7 +36,7 @@ from sqlalchemy import func, select
 from . import storage_handoff
 from .db import NsfwCoverage, NsfwMark, Recording, db_session
 from .mp4_index import GrowingIndex, LiveFragment, NotFragmented
-from .nsfw_scan import Verdict, combine_classes, helper_env, merge_moments, overall
+from .nsfw_scan import MOMENT_GAP_FACTOR, Verdict, combine_classes, helper_env, merge_moments, overall
 from .nsfw_worker import file_signature, nsfw_dir
 from .settings_store import runtime
 from .utils import utcnow
@@ -79,13 +79,15 @@ class HelperProcess:
 
     async def ensure(self) -> bool:
         cfg = runtime()
-        signature = (cfg.nsfw_fast_model, cfg.nsfw_verify_model, int(cfg.nsfw_threads), cfg.nsfw_classes)
+        signature = (cfg.nsfw_fast_model, cfg.nsfw_verify_model, cfg.nsfw_classes)
         if self.alive and signature == self.signature:
             return True
         await self.close()
+        # One core: these helpers run beside the captures ("Core CPU" is for
+        # the full scan when nothing is recording).
         command = [sys.executable, "-m", "app.nsfw_live", "--mode", self.mode,
                    "--fast-model", cfg.nsfw_fast_model, "--verify-model", cfg.nsfw_verify_model,
-                   "--threads", str(max(1, int(cfg.nsfw_threads))), "--classes", cfg.nsfw_classes]
+                   "--threads", "1", "--classes", cfg.nsfw_classes]
         prefix = ["nice", "-n", "19"] if shutil.which("nice") else []
         if shutil.which("ionice"):
             prefix += ["ionice", "-c3"]
@@ -376,8 +378,10 @@ class LiveNsfwMixin:
                 db.add(NsfwCoverage(part_path=str(track.path), source_id=track.source_id, samples=1,
                                     first_time=at, last_time=at, covered_seconds=step, updated_at=utcnow()))
                 return
+            # Samples closer than the moment-merge tolerance count as continuous,
+            # so a few captures sharing nsfw_live_fps can still reach LIVE_COVERAGE_OK.
             gap = max(0.0, at - row.last_time)
-            row.covered_seconds += min(gap, 1.5 * step)
+            row.covered_seconds += min(gap, MOMENT_GAP_FACTOR * step)
             row.samples += 1
             row.last_time = max(row.last_time, at)
             row.updated_at = utcnow()
@@ -477,6 +481,21 @@ class LiveNsfwMixin:
         _remove_images(image, None)
 
     # ---------- mapping onto the uploaded file ----------
+    def nsfw_attach_stitched(self, recording_id: int, paths: list[Path], durations: list[float]) -> None:
+        """Map the live marks of every stitched part onto the final file.
+
+        The concat demuxer lays parts back-to-back by container duration, so
+        the same running offsets place each part's marks on the file timeline.
+        """
+        offsets, elapsed = [], 0.0
+        for path, duration in zip(paths, durations):
+            offsets.append((str(path), elapsed, float(duration or 0)))
+            elapsed += float(duration or 0)
+        try:
+            self.nsfw_attach_parts(recording_id, offsets)
+        except Exception as exc:
+            self.last_errors[f"nsfw-attach:{recording_id}"] = str(exc)[-600:]
+
     def nsfw_attach_parts(self, recording_id: int, parts: list[tuple[str, float, float]]) -> None:
         """parts: (capture part path, offset in the final file, duration) in file order."""
         cfg = runtime()
