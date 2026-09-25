@@ -11,7 +11,8 @@ Intervento prestazioni in corso: leggere [stato e ripresa](docs/OTTIMIZZAZIONE-S
 prima di continuare il [piano](docs/PIANO-OTTIMIZZAZIONE.md).
 Una copia distribuita su eMMC è in /opt/openastro-ops; gli ingressi AGENTS.md dei
 workspace del nodo puntano lì. Aggiornare quella copia insieme ai documenti Git;
-SOURCE.txt identifica la revisione. Il vecchio handoff duplicato è stato sostituito
+SOURCE.txt identifica la revisione (ultimo allineamento completo: 2026-09-25,
+incluse le guide collegate da questo file). Il vecchio handoff duplicato è stato sostituito
 da un rinvio, con originale conservato nella directory rollback.
 
 ## Handoff corrente — 2026-09-25 (LiveVault 3.4.12)
@@ -35,9 +36,21 @@ in Cronologia" e NSFW 3.3/3.4) e [MP4-HLS-RECOVERY.md](docs/MP4-HLS-RECOVERY.md)
   giravano accanto alle live (CPU 91–99% 07:06–07:48 UTC, capture con fino al 53%
   di video perso nello stesso intervallo). I motivi dei riavvii capture ora finiscono
   nei log del container (`grep 'capture chiusa'`).
+- Deploy 3.4.12: `main` bd9f744 (CI verde, anche la CI di `main` era rossa dalla
+  3.4.10 per un test non isolato), Coolify auto-deploy 2026-09-25 09:10 UTC,
+  container `ahul2vdjkyvjiwgzpcrmxzfe-090948731340` healthy, backup DB
+  `openastro-action backup_now` prima del deploy. Rollback: redeploy da Coolify
+  dell'immagine `ahul2vdjkyvjiwgzpcrmxzfe:c6b53572…` o revert di bd9f744/d62209a.
+- Pulizia bench NSFW (2026-09-25, dopo risultati NSFW in app 1102–1105): rimossi
+  `/opt/nsfw-bench` (venv 240 MB, copia `640m.onnx` con SHA-256 identico al modello
+  in uso, script), `/tmp/nsfw-check`, `/tmp/nsfw-hits`; script archiviati con
+  manifest in `/home/astro/archive/nsfw-bench-scripts-20260925.tar.gz`. ONNX EraX,
+  video di prova su NVMe, `/tmp/erax-cmp` e `/opt/erax-export` erano già stati
+  rimossi a mano dall'utente (history shell di astro).
 - Aperti, in ordine:
-  1. Verifica post-deploy 3.4.12 sul nodo: CPU con live attive, prima
-     registrazione con `nsfw_source=live`.
+  1. Verifica post-deploy 3.4.12 con live attive: CPU (`top -o %CPU`, nessun
+     `app.nsfw_scan` accanto alle capture) e prima registrazione Stripchat unita con
+     `nsfw_source=live`. Al deploy nessuna live era in registrazione.
   2. **Registrazioni micro-frammentate**: la raffica di Top Twins (26 capture in
      75 min, 06:38–07:53 UTC) è iniziata a CPU 45–55%: il motivo del riavvio non era
      registrato. Alla prossima raffica leggere `capture chiusa` nei log.
@@ -45,8 +58,8 @@ in Cronologia" e NSFW 3.3/3.4) e [MP4-HLS-RECOVERY.md](docs/MP4-HLS-RECOVERY.md)
      NudeNet con BUTTOCKS a 0.5 = 43 FP, a 0.8 = 0 FP/21 FN; EraX/Felldude ~0 FP e
      ~27 FN ma 3–8× più lenti. Manca il confronto per categoria. Nessun cambio di
      modello deciso; eventuale ritaratura soglie (`nsfw_candidate`/`nsfw_threshold`).
-  4. Pulizia bench sul nodo quando NSFW in app è confermato:
-     `/opt/nsfw-bench`, `/tmp/erax-cmp`, file ONNX EraX, video di prova su NVMe.
+  4. La CPU del nodo è 4 core: anche senza NSFW il carico a riposo misurato era ~1,6–2.
+     Se le live restano lente con 3.4.12, valutare `nsfw_live_fps` e il verifier.
 - Preferenze utente: italiano, push diretto su `main` consentito, nessun trailer
   co-autore nei commit, agire senza chiedere conferme per ogni passo.
 
@@ -68,6 +81,11 @@ in Cronologia" e NSFW 3.3/3.4) e [MP4-HLS-RECOVERY.md](docs/MP4-HLS-RECOVERY.md)
   servizio `gpt-harness-root.service`. L'utente SSH astro non accede direttamente
   al socket; il suo sudo senza password copre wrapper storage e openastro-action.
 - Il namespace Harness è privato: controlli host tramite gpt-root.
+- Da SSH `astro` (gruppo docker, sudo solo per i wrapper sopra) i percorsi root-only
+  come `/opt/openastro-ops` sono stati letti/aggiornati il 2026-09-25 con un
+  container usa-e-getta dell'immagine LiveVault già presente (`--network none`,
+  bind del solo percorso interessato, `cat` sui file esistenti per conservare
+  owner/permessi). Rollback nella sottocartella `.rollback-<data>-docs`.
   Non esporre Docker socket, /share o storage indiscriminato al gateway.
 - Espulsione/attach riavviano Harness. Eseguirli come job systemd host indipendenti,
   con cwd interno; seguirli via SSH o riconnettersi. Non usare cwd sul disco da espellere.
