@@ -14,6 +14,43 @@ workspace del nodo puntano lì. Aggiornare quella copia insieme ai documenti Git
 SOURCE.txt identifica la revisione. Il vecchio handoff duplicato è stato sostituito
 da un rinvio, con originale conservato nella directory rollback.
 
+## Handoff corrente — 2026-09-25 (LiveVault 3.4.11, main c6b5357+)
+Sessione cloud senza accesso al nodo: tutto ciò che segue è verificato in test/QA
+locale, **non** sul runtime. Primo compito della prossima sessione locale: deploy e
+verifica reale dei punti aperti. Dettagli e rollback per funzione in
+[LIVE-PANEL-20260909.md](docs/LIVE-PANEL-20260909.md) (sezioni NSFW 3.3/3.4) e
+[MP4-HLS-RECOVERY.md](docs/MP4-HLS-RECOVERY.md) (3.4.4); cronologia in CHANGELOG.
+- Container: gira sotto Coolify (UUID sopra); il nome **non** è `livevault`.
+  Trovarlo con `docker ps --format '{{.Names}} {{.Image}}'` prima di `docker logs/exec`.
+- NSFW: NudeNet 3.4 ONNX 320n (campionamento) + 640m (verifica), modelli in
+  `/data/livevault/models`; analisi dal vivo durante la registrazione (sampler +
+  verifier, helper a nice 19/ionice 3) e scansione completa solo per file non coperti
+  (coperture < 85%) e solo a recorder inattivo. Categorie "A+B", la più esplicita vince.
+- Aperti, in ordine:
+  1. **Carico CPU**: il 2026-09-25 load ~6,5 con helper scan 233% + ffmpeg 92% e
+     RAM libera 62 MB/swap 480 MB. 3.4.11 (no spinning onnxruntime, ffmpeg
+     `-threads 1`, OMP=1) non ancora verificata: dopo deploy `top -o %CPU`, atteso
+     helper ~100% e load < 4. Se resta alto: mettere in pausa anche verifier/live con
+     recorder attivi o ridurre `nsfw_live_fps`.
+  2. **Registrazioni micro-frammentate** (Cronologia: alternanza rapida NON REC /
+     IN ELABORAZIONE su alcune live). Causa non accertata: `grep stalled|restart` nei
+     log (comando lanciato sul nome container sbagliato) non conclusivo. Ipotesi:
+     starvation CPU/RAM (punto 1), stalli HLS Stripchat (`app/stripchat_capture.py`,
+     45 s senza frammenti), gate buffer/quiesce (`storage_handoff.capture_allowed`).
+     Correlare orari dei buchi con log del container giusto e con `uptime`.
+  3. **Doppia analisi** corretta in 3.4.10 (`live_aliases`: marks su
+     `<stem>.capture.mp4`, file finale `<stem>.mp4`). Verificare che le nuove
+     registrazioni Stripchat finiscano con `nsfw_source=live` senza entrare in coda.
+     Sessioni già unite prima del fix vengono scansionate una volta (atteso).
+  4. Qualità modello: confronto utente su 171 frame (`F:\erax\confronto.py` sul PC):
+     NudeNet con BUTTOCKS a 0.5 = 43 FP, a 0.8 = 0 FP/21 FN; EraX/Felldude ~0 FP e
+     ~27 FN ma 3–8× più lenti. Manca il confronto per categoria. Nessun cambio di
+     modello deciso; eventuale ritaratura soglie (`nsfw_candidate`/`nsfw_threshold`).
+  5. Pulizia bench sul nodo quando NSFW in app è confermato:
+     `/opt/nsfw-bench`, `/tmp/erax-cmp`, file ONNX EraX, video di prova su NVMe.
+- Preferenze utente: italiano, push diretto su `main` consentito, nessun trailer
+  co-autore nei commit, agire senza chiedere conferme per ogni passo.
+
 ## Accesso e repository
 - Nodo attivo: ASIAIR Plus / Raspberry Pi CM4, Debian, 4 core, 4 GiB RAM,
   eMMC interna da 32 GB. È il server domestico; il vecchio VPS è dismesso.
