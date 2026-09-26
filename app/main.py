@@ -63,7 +63,7 @@ BASE = Path(__file__).parent
 LOGIN_FAILURES: dict[str, deque[float]] = defaultdict(deque)
 LOGIN_WINDOW = 10 * 60
 LOGIN_MAX_FAILURES = 6
-VERSION = "3.4.15"
+VERSION = "3.4.16"
 
 
 class LoginBody(BaseModel):
@@ -1679,7 +1679,8 @@ def control_room_pulse(request: Request, hours: int = 12):
             for mark in db.scalars(select(NsfwMark).where(
                 NsfwMark.source_id.in_(source_ids),
                 NsfwMark.wall_at >= window_start,
-                NsfwMark.state.in_(["pending", "confirmed", "inherited", "review"]),
+                # clear/rejected marks end the bands (3.4.16).
+                NsfwMark.state.in_(["pending", "confirmed", "inherited", "review", "clear", "rejected"]),
             ).order_by(NsfwMark.wall_at)).all():
                 marks_by_source[int(mark.source_id)].append(mark)
 
@@ -1868,7 +1869,8 @@ def control_room_pulse(request: Request, hours: int = 12):
                     if started <= _pulse_aware(mark.wall_at) <= ended + timedelta(seconds=5)
                 ]
                 nsfw_moments = cluster_marks(session_marks, step=float(runtime().nsfw_step_seconds))
-                live_recordings = {int(m.recording_id) for m in session_marks if m.recording_id}
+                live_recordings = {int(m.recording_id) for m in session_marks
+                                   if m.recording_id and m.state not in ("clear", "rejected")}
                 for recording, rec_start, _rec_end in overlapping:
                     # Files scanned after the fact have no wall-clock marks: place their
                     # moments from the file start (approximate across capture gaps).

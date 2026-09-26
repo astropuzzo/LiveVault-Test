@@ -10,13 +10,19 @@ import pytest
 from app.nsfw_scan import LABELS, Moment, Verdict, judge, merge_moments, overall
 
 
-def test_judge_needs_large_model_to_confirm():
-    assert judge(10, (0.9, "FEMALE_BREAST_EXPOSED"), (0.7, "FEMALE_BREAST_EXPOSED"), 0.6).label == "nsfw"
-    # Leggings case: small model fairly sure, large model not → only "review".
-    assert judge(10, (0.61, "FEMALE_BREAST_EXPOSED"), (0.2, ""), 0.6).label == "review"
-    assert judge(10, (0.5, "FEMALE_BREAST_EXPOSED"), (0.2, ""), 0.6).label == ""
-    # Without a verification model nothing is ever final.
-    assert judge(10, (0.95, "ANUS_EXPOSED"), None, 0.6).label == "review"
+def test_small_model_decides_alone_above_threshold_and_large_model_only_in_the_band():
+    from app.nsfw_scan import needs_verify
+    # Sure small-model hit: final, no re-check, never "review" (3.4.16).
+    assert judge(10, (0.9, "FEMALE_BREAST_EXPOSED"), None, 0.8).label == "nsfw"
+    assert not needs_verify(0.9, 0.6, 0.8)
+    # Uncertain band: the large model confirms or discards.
+    assert needs_verify(0.7, 0.6, 0.8)
+    assert judge(10, (0.7, "FEMALE_BREAST_EXPOSED"), (0.85, "FEMALE_BREAST_EXPOSED"), 0.8).label == "nsfw"
+    assert judge(10, (0.7, "FEMALE_BREAST_EXPOSED"), (0.2, ""), 0.8).label == ""
+    assert judge(10, (0.7, "FEMALE_BREAST_EXPOSED"), None, 0.8).label == ""
+    # Below the suspect threshold: ignored; suspect >= NSFW threshold: never re-checked.
+    assert not needs_verify(0.5, 0.6, 0.8)
+    assert not needs_verify(0.7, 0.8, 0.65)
 
 
 def test_merge_moments_joins_nearby_hits_and_keeps_worst_label():
@@ -120,3 +126,12 @@ def test_class_scores_reports_every_clear_class_most_explicit_first():
     score, cls = class_scores(output, [2, 3, 4])
     assert score == pytest.approx(0.85)
     assert cls == "FEMALE_GENITALIA_EXPOSED+FEMALE_BREAST_EXPOSED"
+
+
+def test_stretches_end_at_the_first_clean_frame_or_at_a_sampling_gap():
+    from app.nsfw_scan import stretches
+    samples = [Verdict(t, "nsfw", 0.9, "FEMALE_BREAST_EXPOSED") for t in (0, 4, 8, 12)]
+    samples += [Verdict(16, "", 0.1, ""), Verdict(20, "nsfw", 0.95, "ANUS_EXPOSED"), Verdict(200, "nsfw", 0.9, "X")]
+    moments = stretches(samples, step=4, max_gap=10)
+    assert [(m.start, m.end) for m in moments] == [(0, 16), (20, 24), (200, 204)]
+    assert moments[1].cls == "ANUS_EXPOSED"

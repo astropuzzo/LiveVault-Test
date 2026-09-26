@@ -24,7 +24,7 @@ from sqlalchemy import case, select
 from . import storage_handoff
 from .config import settings
 from .db import Recording, db_session
-from .nsfw_scan import Verdict, helper_env, merge_moments, overall
+from .nsfw_scan import MOMENT_GAP_FACTOR, Verdict, helper_env, overall, stretches
 from .settings_store import runtime
 from .utils import utcnow
 
@@ -236,7 +236,7 @@ class NsfwWorkerMixin:
         began = time.monotonic()
         self.nsfw_current = {"recording_id": rec.id, "name": rec.source_name, "filename": rec.filename,
                              "t": resume_at, "duration": float(rec.duration_seconds or 0), "progress": 0.0,
-                             "frames": 0, "verified": 0, "found": len(hits), "eta_seconds": None,
+                             "frames": 0, "verified": 0, "found": sum(1 for h in hits if h.get("label")), "eta_seconds": None,
                              "speed": None, "started_at": utcnow().isoformat(), "resumed_from": resume_at}
         threads = self._nsfw_threads(runtime())
         proc = await asyncio.create_subprocess_exec(
@@ -267,7 +267,7 @@ class NsfwWorkerMixin:
                     elif kind == "moment":
                         hits.append({k: event[k] for k in ("t", "label", "score", "class", "image") if k in event})
                         if self.nsfw_current:
-                            self.nsfw_current["found"] = len(hits)
+                            self.nsfw_current["found"] = sum(1 for h in hits if h.get("label"))
                     elif kind in ("done", "error"):
                         result = event
         finally:
@@ -296,7 +296,9 @@ class NsfwWorkerMixin:
             return
         cfg = runtime()
         verdicts = [Verdict(float(h["t"]), h["label"], float(h["score"]), h.get("class", "")) for h in hits]
-        moments = merge_moments(verdicts, float(cfg.nsfw_step_seconds))
+        step = float(cfg.nsfw_step_seconds)
+        # Hits also hold the first clean frame after each moment (its end).
+        moments = stretches(verdicts, step, MOMENT_GAP_FACTOR * step)
         images = moment_images(moments, hits)
         payload = [dict(m.as_dict(), image=images[i]) for i, m in enumerate(moments)]
         with db_session() as db:

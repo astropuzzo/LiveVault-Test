@@ -1,5 +1,10 @@
 # Changelog
 
+## 3.4.16 — Si fida del modello veloce, fasce NSFW continue
+
+- Sopra la «Soglia NSFW» basta il modello veloce: il momento è NSFW senza ricontrollo. Il modello grande ricontrolla solo i fotogrammi nella fascia incerta tra «Soglia sospetto» e «Soglia NSFW», e conferma o scarta. Niente più «Da controllare» nuovi, niente ricontrollo dei fotogrammi vicini. Sospetto uguale o più alto della soglia NSFW = nessun ricontrollo.
+- Le fasce NSFW in Cronologia e nei file durano finché i fotogrammi controllati restano NSFW e finiscono al primo fotogramma pulito, invece di spezzarsi in tanti trattini corti. Dal vivo si salva un segno «pulito» solo quando la sequenza si interrompe (una riga per cambio, non per campione).
+
 ## 3.4.15 — Niente falsi riavvii con i segmenti da 15 minuti
 
 - Con il segmento a 15 minuti la parte chiusa viene unita e cancellata mentre la live continua: il controllo «nessun dato HLS scritto» sommava solo i file rimasti, vedeva il totale calare e dopo 35 s riavviava una capture sana (tinnydoll alle 10:26 UTC, subito dopo la prima parte unita). Ora conta tutto ciò che la capture ha scritto, parti già unite comprese.

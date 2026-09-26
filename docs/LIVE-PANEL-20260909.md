@@ -298,6 +298,22 @@ and `_index_file` (`app/workers.py`), both through `nsfw_attach_stitched` /
   `verifying` until every mark is verified, then safe/review/nsfw without a
   full scan; lower coverage keeps `pending` for the full scan. Manual verdicts
   are never overwritten.
+- Decision rule since 3.4.16 (user request 2026-09-26: the small model is
+  usually right and re-checks were far too many): small-model score >=
+  `nsfw_threshold` is final (`judge`, live mark `confirmed` at once); only
+  [`nsfw_candidate`, `nsfw_threshold`) goes to the 640m (`needs_verify`, live
+  mark `pending`), which confirms or discards; candidate >= threshold means no
+  re-check at all. No neighbour re-checks, no new `review` verdicts (old ones
+  stay). Inside an NSFW stretch uncertain frames continue it without the 640m.
+- Bands since 3.4.16 (`stretches` in `app/nsfw_scan.py`, `cluster_marks`): a
+  band lasts while checked frames stay NSFW and ends at the first clean one;
+  after a sampling hole (`MOMENT_GAP_FACTOR` x step for scans,
+  `LIVE_MAX_GAP_SECONDS` = 60 live) it ends one step after its last frame. The
+  full scan stores the first clean frame after each moment in `nsfw_hits`
+  (label ""); the live sampler writes one `clear` mark per NSFW→clean
+  transition (`LiveTrack.last_nsfw`), and `rejected` marks also end bands. The
+  Pulse query reads `clear`/`rejected` too. Rollback: revert 3.4.16; `clear`
+  marks are ignored by older code.
 - Stripchat is sampled on the raw `<stem>.capture.mp4` but indexed/stitched
   as the remuxed `<stem>.mp4` (`_remux` in `app/stripchat_capture.py`,
   `-start_at_zero`, same timeline); `live_aliases()` (3.4.10) matches both

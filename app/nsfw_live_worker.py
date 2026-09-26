@@ -36,7 +36,7 @@ from sqlalchemy import func, select
 from . import storage_handoff
 from .db import NsfwCoverage, NsfwMark, Recording, db_session
 from .mp4_index import GrowingIndex, LiveFragment, NotFragmented
-from .nsfw_scan import MOMENT_GAP_FACTOR, Verdict, combine_classes, helper_env, merge_moments, overall
+from .nsfw_scan import MOMENT_GAP_FACTOR, Verdict, combine_classes, helper_env, overall, stretches
 from .nsfw_worker import file_signature, nsfw_dir
 from .settings_store import runtime
 from .utils import utcnow
@@ -45,6 +45,9 @@ LIVE_COVERAGE_OK = 0.85
 INHERIT_SECONDS = 60
 BACKLOG_JUMP_SECONDS = 60
 PREVIEW_GAP_SECONDS = 30  # at most one kept preview per 30 s of a moment
+# A band ends at the first clean sample; with no sample for this long (sampler
+# pause, reconnect) it ends one step after its last NSFW sample instead.
+LIVE_MAX_GAP_SECONDS = 60
 ACTIVE_MARK_STATES = ("pending", "confirmed", "inherited", "review")
 NSFW_LABEL = {"confirmed": "nsfw", "inherited": "nsfw", "review": "review", "pending": "review"}
 
@@ -152,33 +155,50 @@ class LiveTrack:
     samples: int = 0
     marks: int = 0
     errors: int = 0
+    last_nsfw: bool = False  # previous sample was a suspect: the next clean one ends the band
 
 
-def cluster_marks(marks: list, gap_seconds: float = 30.0, step: float = 5.0) -> list[dict]:
-    """Group live marks (wall clock) into timeline moments for the Monitor."""
+def cluster_marks(marks: list, gap_seconds: float = LIVE_MAX_GAP_SECONDS, step: float = 5.0) -> list[dict]:
+    """Group live marks (wall clock) into timeline bands for the Monitor.
+
+    Same rule as ``stretches``: a band lasts while samples keep being suspect
+    and ends at the first clean one (``clear``/``rejected`` marks), not after
+    a fixed gap, so a continuously explicit stretch is one band.
+    """
     moments: list[dict] = []
+    current: dict | None = None
+    last_at: datetime | None = None
+    rank = {"pending": 0, "review": 1, "nsfw": 2}
     for mark in sorted(marks, key=lambda m: _aware(m.wall_at)):
-        label = NSFW_LABEL.get(mark.state)
-        if not label:
-            continue
         at = _aware(mark.wall_at)
-        state = "pending" if mark.state == "pending" else label
-        last = moments[-1] if moments else None
-        if last and (at - last["_end"]).total_seconds() <= gap_seconds:
-            last["_end"] = at + timedelta(seconds=step)
-            last["count"] += 1
-            last["cls"] = combine_classes(last["cls"], mark.verified_cls, mark.cls)
-            rank = {"pending": 0, "review": 1, "nsfw": 2}
-            if rank[state] > rank[last["label"]]:
-                last["label"] = state
-            if not last["image"] and mark.image:
-                last["image"] = mark.image
-            continue
-        moments.append({
-            "_start": at, "_end": at + timedelta(seconds=step), "label": state, "count": 1,
-            "cls": combine_classes(mark.verified_cls, mark.cls), "image": mark.image or "",
-            "recording_id": mark.recording_id, "file_time": mark.file_time, "mark_id": mark.id,
-        })
+        label = NSFW_LABEL.get(mark.state)
+        if current is not None and last_at is not None and (at - last_at).total_seconds() > gap_seconds:
+            current["_end"] = last_at + timedelta(seconds=step)
+            moments.append(current)
+            current = None
+        if label:
+            state = "pending" if mark.state == "pending" else label
+            if current is None:
+                current = {
+                    "_start": at, "_end": at + timedelta(seconds=step), "label": state, "count": 1,
+                    "cls": combine_classes(mark.verified_cls, mark.cls), "image": mark.image or "",
+                    "recording_id": mark.recording_id, "file_time": mark.file_time, "mark_id": mark.id,
+                }
+            else:
+                current["_end"] = at + timedelta(seconds=step)
+                current["count"] += 1
+                current["cls"] = combine_classes(current["cls"], mark.verified_cls, mark.cls)
+                if rank[state] > rank[current["label"]]:
+                    current["label"] = state
+                if not current["image"] and mark.image:
+                    current["image"] = mark.image
+        elif current is not None:
+            current["_end"] = max(current["_start"], at)
+            moments.append(current)
+            current = None
+        last_at = at
+    if current is not None:
+        moments.append(current)
     out = []
     for moment in moments:
         cls = moment["cls"]
@@ -333,7 +353,7 @@ class LiveNsfwMixin:
         try:
             reply = await self._nsfw_sampler.request({
                 "path": str(track.path), "init": track.reader.init_length, "offset": fragment.offset,
-                "length": fragment.length, "candidate": float(cfg.nsfw_candidate),
+                "length": fragment.length, "candidate": min(float(cfg.nsfw_candidate), float(cfg.nsfw_threshold)),
                 "images_dir": str(folder), "prefix": prefix,
                 # Every suspect keeps a preview until verified; duplicates inside
                 # a moment are pruned afterwards (_prune_preview), so a moment
@@ -351,21 +371,35 @@ class LiveNsfwMixin:
         track.samples += 1
         self._nsfw_live_cover(track, fragment.time, float(cfg.nsfw_step_seconds))
         score = float(reply.get("score") or 0)
-        if score < float(cfg.nsfw_candidate):
-            return
+        threshold = float(cfg.nsfw_threshold)
         verifier = bool(cfg.nsfw_verify_model) and Path(cfg.nsfw_verify_model).is_file()
-        state = "pending" if verifier else ("review" if score >= float(cfg.nsfw_threshold) else "rejected")
-        if state == "rejected":
+        # The small model decides alone at or above the threshold; only the
+        # uncertain band waits for the large model (3.4.16).
+        if score >= threshold:
+            state = "confirmed"
+        elif score >= min(float(cfg.nsfw_candidate), threshold) and verifier:
+            state = "pending"
+        else:
+            state = "clear"
+        if state == "clear":
             _remove_images(reply.get("image"), reply.get("verify_image"))
+            if track.last_nsfw:
+                # One row per transition, not per sample: where the band ends.
+                with db_session() as db:
+                    db.add(NsfwMark(source_id=track.source_id, session_id=track.session_id,
+                                    part_path=str(track.path), part_time=fragment.time, wall_at=wall,
+                                    fast_score=score, cls="", state="clear"))
+                track.last_nsfw = False
             return
+        track.last_nsfw = True
         with db_session() as db:
             db.add(NsfwMark(
                 source_id=track.source_id, session_id=track.session_id, part_path=str(track.path),
                 part_time=fragment.time, wall_at=wall, fast_score=score, cls=str(reply.get("class") or ""),
                 state=state, image=str(reply.get("image") or ""),
-                verify_image=str(reply.get("verify_image") or "") if verifier else "",
+                verify_image=str(reply.get("verify_image") or "") if state == "pending" else "",
             ))
-        if not verifier:
+        if state != "pending":
             _remove_images(None, reply.get("verify_image"))
             with db_session() as db:
                 latest = db.scalar(select(NsfwMark.id).where(NsfwMark.source_id == track.source_id)
@@ -439,7 +473,7 @@ class LiveNsfwMixin:
         if anchor is not None:
             state = "inherited"  # inside a confirmed stretch: re-checked once a minute
         elif not mark.verify_image or not Path(mark.verify_image).is_file():
-            state = "review" if mark.fast_score >= threshold else "rejected"
+            state = "rejected"
         else:
             if not await self._nsfw_verifier.ensure():
                 self.nsfw_verify_state = "error"
@@ -448,10 +482,10 @@ class LiveNsfwMixin:
                 return
             reply = await self._nsfw_verifier.request({"image": mark.verify_image}, timeout=180)
             if "error" in reply:
-                state = "review" if mark.fast_score >= threshold else "rejected"
+                state = "rejected"
             else:
                 score, cls = float(reply.get("score") or 0), str(reply.get("class") or "")
-                state = "confirmed" if score >= threshold else ("review" if mark.fast_score >= threshold else "rejected")
+                state = "confirmed" if score >= threshold else "rejected"
         with db_session() as db:
             current = db.get(NsfwMark, mark.id)
             if current is None:
@@ -537,12 +571,14 @@ class LiveNsfwMixin:
             pending = [m for m in marks if m.state == "pending"]
             verdicts = []
             for mark in marks:
-                label = NSFW_LABEL.get(mark.state)
-                if label and mark.file_time is not None:
-                    score = mark.verified_score if mark.verified_score is not None else mark.fast_score
-                    verdicts.append(Verdict(float(mark.file_time), label, float(score or 0), combine_classes(mark.verified_cls, mark.cls)))
-            step = max(5.0, float(cfg.nsfw_step_seconds)) * 1.5
-            moments = merge_moments(verdicts, step)
+                if mark.file_time is None:
+                    continue
+                # clear/rejected marks are the clean samples that end a band.
+                label = NSFW_LABEL.get(mark.state) or ""
+                score = mark.verified_score if mark.verified_score is not None else mark.fast_score
+                verdicts.append(Verdict(float(mark.file_time), label, float(score or 0),
+                                        combine_classes(mark.verified_cls, mark.cls) if label else ""))
+            moments = stretches(verdicts, float(cfg.nsfw_step_seconds), LIVE_MAX_GAP_SECONDS)
             payload = []
             for moment in moments:
                 image = next((m.image for m in marks if m.image and m.file_time is not None

@@ -8,11 +8,11 @@ Pipeline, no temporary files:
   ``step`` seconds of *real* presentation time, letterboxes to 640x640 and
   streams raw RGB on stdout; ``showinfo`` on stderr gives each frame's pts, so
   timestamps stay correct across capture gaps.
-- Pass 1: the small model (320n) scores every sampled frame.
-- Pass 2: frames scoring above ``candidate`` are re-checked with the large
-  model (640m) together with their neighbours. Only the large model can mark a
-  moment NSFW; a confident small-model hit that the large model does not
-  confirm becomes "review" (da controllare).
+- The small model (320n) scores every sampled frame. At or above
+  ``threshold`` its hit is final. Only frames in the uncertain band
+  [``candidate``, ``threshold``) are re-checked with the large model (640m),
+  which confirms or discards them; inside an NSFW stretch they simply continue
+  it. No "review" (da controllare) verdicts are produced since 3.4.16.
 
 Progress is emitted as JSON lines on stdout: ``progress``, ``moment``, ``done``.
 """
@@ -27,7 +27,6 @@ import subprocess
 import sys
 import threading
 import time
-from collections import deque
 from dataclasses import dataclass, field
 
 LABELS = (
@@ -113,18 +112,24 @@ def downsample(frame, size: int):
     return (image / 255.0).transpose(2, 0, 1)[None, ...]
 
 
+def needs_verify(score: float, candidate: float, threshold: float) -> bool:
+    """Only the uncertain band goes to the large model (none when candidate >= threshold)."""
+    return candidate <= score < threshold
+
+
 def judge(t: float, fast: tuple[float, str], verified: tuple[float, str] | None, threshold: float) -> Verdict:
+    """The small model decides on its own at or above ``threshold``; below it only
+    a large-model confirmation counts. No "review" verdicts are produced (3.4.16):
+    the small model was usually right and re-checking its sure hits only added
+    work and "da controllare" moments."""
     fast_score, fast_cls = fast
+    if fast_score >= threshold:
+        return Verdict(t, "nsfw", fast_score, fast_cls, fast_score, None)
     if verified is not None:
         big_score, big_cls = verified
         if big_score >= threshold:
             return Verdict(t, "nsfw", big_score, big_cls, fast_score, big_score)
-        if fast_score >= threshold:
-            return Verdict(t, "review", fast_score, fast_cls, fast_score, big_score)
         return Verdict(t, "", max(fast_score, big_score), fast_cls, fast_score, big_score)
-    if fast_score >= threshold:
-        # Without a verification model a single small-model hit is never final.
-        return Verdict(t, "review", fast_score, fast_cls, fast_score, None)
     return Verdict(t, "", fast_score, fast_cls, fast_score, None)
 
 
@@ -139,6 +144,42 @@ def merge_moments(verdicts: list[Verdict], step: float, gap_factor: float = MOME
             last.cls = combine_classes(last.cls, verdict.cls)
             continue
         moments.append(Moment(verdict.t, verdict.t + step, verdict.label, verdict.score, verdict.cls))
+    return moments
+
+
+def stretches(samples: list[Verdict], step: float, max_gap: float) -> list[Moment]:
+    """Moments from every checked frame, labelled or not (3.4.16).
+
+    A moment starts at the first NSFW frame and lasts until the next checked
+    frame that is not NSFW. It closes one ``step`` after its last frame when
+    nothing was checked for more than ``max_gap`` seconds (capture gap,
+    sampler pause) or at the end. Frames without a label are the boundaries,
+    so a stretch sampled as NSFW every time is one band, not many dashes.
+    """
+    moments: list[Moment] = []
+    current: Moment | None = None
+    last_t: float | None = None
+    for sample in sorted(samples, key=lambda v: v.t):
+        if current is not None and last_t is not None and sample.t - last_t > max_gap:
+            current.end = last_t + step
+            moments.append(current)
+            current = None
+        if sample.label:
+            if current is None:
+                current = Moment(sample.t, sample.t + step, sample.label, sample.score, sample.cls)
+            else:
+                current.end = sample.t + step
+                if SEVERITY[sample.label] > SEVERITY[current.label] or (
+                        sample.label == current.label and sample.score > current.score):
+                    current.label, current.score = sample.label, sample.score
+                current.cls = combine_classes(current.cls, sample.cls)
+        elif current is not None:
+            current.end = max(current.start, sample.t)
+            moments.append(current)
+            current = None
+        last_t = sample.t
+    if current is not None:
+        moments.append(current)
     return moments
 
 
@@ -267,17 +308,20 @@ class Scanner:
         frame_bytes = FRAME * FRAME * 3
         began = time.monotonic()
         frames = verified = 0
-        history: deque = deque(maxlen=2)  # (t, frame, fast) of previous frames
-        verify_next = False
-        verified_at: set[float] = set()
         by_time: dict[float, Verdict] = {}
-        last_confirmed = -1.0  # time of the last large-model NSFW confirmation
+        last_confirmed = -1.0  # time of the last NSFW frame
         last_emit = 0.0
 
         def record(verdict: Verdict, frame=None) -> None:
-            nonlocal last_labelled
+            nonlocal last_labelled, last_confirmed
+            previous = by_time[max(by_time)] if by_time else None
             by_time[verdict.t] = verdict
+            if not verdict.label and previous is not None and previous.label:
+                # First clean frame after a moment: its end, kept with the hits.
+                _emit({"type": "moment", "t": round(verdict.t, 1), "label": "", "score": round(verdict.score, 3),
+                       "class": ""})
             if verdict.label:
+                last_confirmed = verdict.t
                 event = {"type": "moment", "t": round(verdict.t, 1), "label": verdict.label,
                          "score": round(verdict.score, 3), "class": verdict.cls}
                 # One preview per moment, taken from the frame already in memory:
@@ -290,21 +334,6 @@ class Scanner:
                         event["image"] = name
                 _emit(event)
 
-        def verify(t: float, frame, fast_result) -> None:
-            nonlocal verified, last_confirmed
-            result = None
-            if big is not None and verified < self.max_verify:
-                if t in verified_at:
-                    return
-                session, name, size = big
-                result = class_scores(session.run(None, {name: downsample(frame, size)})[0], hot)
-                verified += 1
-                verified_at.add(t)
-            verdict = judge(t, fast_result, result, self.threshold)
-            if result is not None:
-                last_confirmed = t if verdict.label == "nsfw" else -1.0
-            record(verdict, frame)
-
         while True:
             raw = proc.stdout.read(frame_bytes)  # type: ignore[union-attr]
             if len(raw) < frame_bytes:
@@ -316,27 +345,21 @@ class Scanner:
             frame = np.frombuffer(raw, dtype=np.uint8).reshape(FRAME, FRAME, 3)
             frames += 1
             fast_result = class_scores(fast.run(None, {fast_input: downsample(frame, fast_size)})[0], hot)
-            candidate = fast_result[0] >= self.candidate
+            score = fast_result[0]
             in_streak = last_confirmed >= 0 and t - last_confirmed < self.reverify_seconds
-            if candidate and in_streak:
-                # Long NSFW stretches: trust the small model inside a confirmed
-                # streak and re-check with the large one only every
-                # reverify_seconds, so a fully explicit video costs minutes, not hours.
-                record(Verdict(t, "nsfw", fast_result[0], fast_result[1], fast_result[0], None), frame)
-                flagged, verify_next = True, False
-                history.append((t, frame, fast_result))
-                continue
-            renewing = last_confirmed >= 0  # streak expired: a plain re-check
-            if candidate or verify_next or (big is None and fast_result[0] >= self.threshold):
-                verify(t, frame, fast_result)
-            # The large model costs ~5 s/frame on the node: look at the
-            # neighbours only around a newly flagged moment.
-            flagged = bool(by_time.get(t) and by_time[t].label)
-            if flagged and not renewing:
-                for prev_t, prev_frame, prev_fast in history:
-                    verify(prev_t, prev_frame, prev_fast)
-            verify_next = flagged and not renewing
-            history.append((t, frame, fast_result))
+            uncertain = needs_verify(score, self.candidate, self.threshold)
+            big_result = None
+            if uncertain and not in_streak and big is not None and verified < self.max_verify:
+                # Uncertain band only (~5 s/frame on the node). Inside an NSFW
+                # stretch a suspect frame simply continues it.
+                session, name, size = big
+                big_result = class_scores(session.run(None, {name: downsample(frame, size)})[0], hot)
+                verified += 1
+            if uncertain and in_streak:
+                verdict = Verdict(t, "nsfw", score, fast_result[1], score, None)
+            else:
+                verdict = judge(t, fast_result, big_result, self.threshold)
+            record(verdict, frame)
             now = time.monotonic()
             if now - last_emit >= 1.0:
                 last_emit = now
@@ -345,7 +368,7 @@ class Scanner:
                        "found": sum(1 for v in by_time.values() if v.label)})
         proc.wait(timeout=30)
         self.verdicts = list(by_time.values())
-        moments = merge_moments(self.verdicts, self.step)
+        moments = stretches(self.verdicts, self.step, MOMENT_GAP_FACTOR * self.step)
         result = {"type": "done", "status": overall(moments), "moments": [m.as_dict() for m in moments],
                   "frames": frames, "verified": verified, "duration": round(duration, 1),
                   "elapsed": round(time.monotonic() - began, 1), "verify_model": bool(big),

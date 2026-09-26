@@ -117,11 +117,15 @@ def test_live_capture_is_marked_while_growing_then_mapped_onto_the_stitched_file
     track = manager._nsfw_live_tracks[7]
     assert 0 < first_pass < track.samples
     with live_env() as db:
-        marks = db.scalars(select(NsfwMark).order_by(NsfwMark.part_time)).all()
+        every = db.scalars(select(NsfwMark).order_by(NsfwMark.part_time)).all()
+        marks = [m for m in every if m.state != "clear"]
         times = [round(m.part_time) for m in marks]
         assert times and min(times) >= 9 and max(times) <= 20
         states = {m.state for m in marks}
         assert "confirmed" in states and states <= {"confirmed", "inherited"}
+        # The first clean sample after the red stretch is kept as the band's end.
+        clears = [m for m in every if m.state == "clear"]
+        assert len(clears) == 1 and 19 <= clears[0].part_time <= 24
         assert all(m.verify_image == "" for m in marks)  # verification copies cleaned up
         assert (tmp_path / "nsfw" / marks[0].image).is_file()
         coverage = db.get(NsfwCoverage, str(capture))
@@ -139,7 +143,7 @@ def test_live_capture_is_marked_while_growing_then_mapped_onto_the_stitched_file
         rec = db.get(Recording, rec_id)
         # Part 1 was never sampled: coverage 40/140 < 85% → a full scan is still queued.
         assert rec.nsfw_status == "pending" and rec.nsfw_live_coverage == pytest.approx(40 / 140, abs=0.05)
-        assert all(m.recording_id == rec_id and 109 <= m.file_time <= 120 for m in db.scalars(select(NsfwMark)).all())
+        assert all(m.recording_id == rec_id and 109 <= m.file_time <= 124 for m in db.scalars(select(NsfwMark)).all())
         rec.nsfw_status = "pending"
         other = Recording(source_id=7, source_name="demo", session_id="s1", local_path=str(tmp_path / "solo.mp4"),
                           filename="solo.mp4", started_at=datetime.now(timezone.utc), integrity_status="passed",
@@ -229,3 +233,11 @@ def test_queued_full_scan_is_skipped_when_live_marks_cover_the_file(tmp_path, li
     with live_env() as db:
         done = db.get(Recording, rec.id)
         assert done.nsfw_source == "live" and done.nsfw_status == "safe"
+
+
+def test_band_lasts_until_a_clean_sample_not_a_fixed_gap():
+    """3.4.16: every sample NSFW for 3 minutes = one band, ended by the first clean sample."""
+    marks = [_mark(t) for t in range(0, 181, 8)] + [_mark(189, "clear"), _mark(300), _mark(305, "rejected")]
+    bands = cluster_marks(marks, step=4)
+    assert [(b["started_at"][11:19], b["ended_at"][11:19], b["count"]) for b in bands] == [
+        ("20:00:00", "20:03:09", 23), ("20:05:00", "20:05:05", 1)]
