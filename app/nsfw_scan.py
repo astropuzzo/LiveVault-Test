@@ -147,24 +147,40 @@ def merge_moments(verdicts: list[Verdict], step: float, gap_factor: float = MOME
     return moments
 
 
-def stretches(samples: list[Verdict], step: float, max_gap: float) -> list[Moment]:
-    """Moments from every checked frame, labelled or not (3.4.16).
+# A band only ends once the picture has stayed clean this long: the small
+# model flickers on single frames (pose, framing) inside an explicit stretch.
+BAND_HOLD_SECONDS = 60.0
 
-    A moment starts at the first NSFW frame and lasts until the next checked
-    frame that is not NSFW. It closes one ``step`` after its last frame when
-    nothing was checked for more than ``max_gap`` seconds (capture gap,
-    sampler pause) or at the end. Frames without a label are the boundaries,
-    so a stretch sampled as NSFW every time is one band, not many dashes.
+
+def stretches(samples: list[Verdict], step: float, max_gap: float, hold: float = BAND_HOLD_SECONDS) -> list[Moment]:
+    """Moments from every checked frame, labelled or not.
+
+    A moment starts at the first NSFW frame and lasts while the checked frames
+    stay NSFW. It ends at the first clean frame, but only if no NSFW frame
+    follows within ``hold`` seconds (3.4.17: one clean sample in the middle
+    of an explicit stretch no longer splits it into dashes). With nothing
+    checked for more than ``max_gap`` seconds (capture gap, sampler pause) it
+    closes one ``step`` after its last NSFW frame.
     """
     moments: list[Moment] = []
     current: Moment | None = None
+    clean_since: float | None = None  # first clean frame after the last NSFW one
     last_t: float | None = None
+    last_hit = 0.0
+
+    def close() -> None:
+        nonlocal current, clean_since
+        if current is not None:
+            current.end = max(current.start, clean_since) if clean_since is not None else last_hit + step
+            moments.append(current)
+        current, clean_since = None, None
+
     for sample in sorted(samples, key=lambda v: v.t):
         if current is not None and last_t is not None and sample.t - last_t > max_gap:
-            current.end = last_t + step
-            moments.append(current)
-            current = None
+            close()
         if sample.label:
+            if current is not None and clean_since is not None and sample.t - clean_since > hold:
+                close()
             if current is None:
                 current = Moment(sample.t, sample.t + step, sample.label, sample.score, sample.cls)
             else:
@@ -173,13 +189,14 @@ def stretches(samples: list[Verdict], step: float, max_gap: float) -> list[Momen
                         sample.label == current.label and sample.score > current.score):
                     current.label, current.score = sample.label, sample.score
                 current.cls = combine_classes(current.cls, sample.cls)
+            clean_since, last_hit = None, sample.t
         elif current is not None:
-            current.end = max(current.start, sample.t)
-            moments.append(current)
-            current = None
+            if clean_since is None:
+                clean_since = sample.t
+            if sample.t - clean_since >= hold:
+                close()
         last_t = sample.t
-    if current is not None:
-        moments.append(current)
+    close()
     return moments
 
 
@@ -368,7 +385,7 @@ class Scanner:
                        "found": sum(1 for v in by_time.values() if v.label)})
         proc.wait(timeout=30)
         self.verdicts = list(by_time.values())
-        moments = stretches(self.verdicts, self.step, MOMENT_GAP_FACTOR * self.step)
+        moments = stretches(self.verdicts, self.step, BAND_HOLD_SECONDS)
         result = {"type": "done", "status": overall(moments), "moments": [m.as_dict() for m in moments],
                   "frames": frames, "verified": verified, "duration": round(duration, 1),
                   "elapsed": round(time.monotonic() - began, 1), "verify_model": bool(big),

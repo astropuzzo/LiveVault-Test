@@ -241,3 +241,10 @@ def test_band_lasts_until_a_clean_sample_not_a_fixed_gap():
     bands = cluster_marks(marks, step=4)
     assert [(b["started_at"][11:19], b["ended_at"][11:19], b["count"]) for b in bands] == [
         ("20:00:00", "20:03:09", 23), ("20:05:00", "20:05:05", 1)]
+
+
+def test_live_band_bridges_a_short_clean_pause():
+    marks = [_mark(t) for t in (0, 8, 16)] + [_mark(24, "clear"), _mark(50), _mark(58, "rejected"), _mark(300)]
+    bands = cluster_marks(marks, step=4)
+    assert [(b["started_at"][11:19], b["ended_at"][11:19], b["count"]) for b in bands] == [
+        ("20:00:00", "20:00:58", 4), ("20:05:00", "20:05:04", 1)]

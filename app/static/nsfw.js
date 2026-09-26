@@ -229,20 +229,28 @@
     const perHour = typeof window.pulsePixelsPerHour === 'function' ? window.pulsePixelsPerHour() : 0;
     const trackPx = perHour ? hours * perHour : Math.max(500, window.innerWidth - 420);
     const minGap = (perHour ? 46 : 32) / trackPx * 100;  // pin + count badge never touch the next one
-    const bands = [];
+    // Bands closer than a few pixels at this scale read as one stretch: draw
+    // them joined instead of as dashes (the moments themselves stay separate).
+    const bandJoin = 6 / trackPx * 100;
+    const spans = [];
     const groups = [];
     for (const m of moments) {
       const start = timestamp(m.started_at);
       const end = Math.max(start, timestamp(m.ended_at) || start);
       const left = xFor(start) / 10;
-      const width = Math.max(0.3, (xFor(end) - xFor(start)) / 10);
+      const right = Math.max(left + 0.3, xFor(end) / 10);
       m.key = `${m.started_at}|${m.recording_id || ''}|${m.mark_id || ''}`;
       pulseMarks.set(m.key, m);
-      bands.push(`<i class="nsfw-pulse-band ${esc(m.label)}" data-dynamic-left="${left.toFixed(3)}" data-dynamic-width="${Math.min(100 - left, width).toFixed(3)}"></i>`);
+      const span = spans[spans.length - 1];
+      if (span && left - span.right < bandJoin) {
+        span.right = Math.max(span.right, right);
+        if (RANK[m.label] > RANK[span.label]) span.label = m.label;
+      } else spans.push({left, right, label: m.label});
       const last = groups[groups.length - 1];
       if (last && left - last.left < minGap) last.items.push(m);
       else groups.push({left, items: [m]});
     }
+    const bands = spans.map(span => `<i class="nsfw-pulse-band ${esc(span.label)}" data-dynamic-left="${span.left.toFixed(3)}" data-dynamic-width="${Math.min(100 - span.left, span.right - span.left).toFixed(3)}"></i>`);
     const pins = groups.map(group => {
       const {items} = group;
       const top = items.reduce((best, m) => (RANK[m.label] > RANK[best.label] ? m : best), items[0]);

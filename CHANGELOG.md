@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.4.17 — Fasce NSFW leggibili, anche da telefono
+
+- Un singolo fotogramma pulito in mezzo a una sequenza NSFW non la spezza più: la fascia finisce solo se il contenuto resta pulito per almeno 60 secondi. Sui dati reali del nodo del 26/09: tinnydoll da 102 a 17 fasce, mollybabyx da 51 a 6.
+- Fasce distanti pochi pixel alla scala visualizzata vengono disegnate unite, come già le icone.
+- Da telefono le fasce si vedono: prima erano nascoste perché disegnate sotto la traccia, che lì viene tagliata. Ora le righe con momenti NSFW hanno la traccia un po' più alta e la fascia sta dentro.
+- Da telefono la legenda della Cronologia torna su una riga: le categorie NSFW andavano a capo in colonna e lasciavano grandi spazi vuoti.
+
 ## 3.4.16 — Si fida del modello veloce, fasce NSFW continue
 
 - Sopra la «Soglia NSFW» basta il modello veloce: il momento è NSFW senza ricontrollo. Il modello grande ricontrolla solo i fotogrammi nella fascia incerta tra «Soglia sospetto» e «Soglia NSFW», e conferma o scarta. Niente più «Da controllare» nuovi, niente ricontrollo dei fotogrammi vicini. Sospetto uguale o più alto della soglia NSFW = nessun ricontrollo.

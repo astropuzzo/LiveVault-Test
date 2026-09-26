@@ -5604,10 +5604,15 @@ textarea:focus,
   transform: translateX(-100%);
 }
 
-/* Monitor Cronologia: marks over the session track */
+/* Monitor Cronologia: marks over the session track. Rows with NSFW moments
+   get 6px more track so the band sits inside it: phones clip the track
+   (overflow: hidden) and used to hide the bands entirely. */
+.cr-pulse-track:has(> .nsfw-pulse-layer) {
+  height: 28px;
+}
 .nsfw-pulse-layer {
   position: absolute;
-  inset: 0;
+  inset: 0 0 6px 0;
   z-index: 3;
   pointer-events: none;
 }
@@ -5810,7 +5815,7 @@ textarea:focus,
     display: none;
   }
   .nsfw-pulse-band {
-    display: none;
+    height: 4px;
   }
   .nsfw-pulse-mark {
     width: 24px;
@@ -6846,4 +6851,12 @@ textarea:focus,
 .cr-pulse-legend-item.nsfw-legend {
   flex-wrap: wrap;
   gap: 6px;
+}
+@media (max-width: 620px) {
+  /* The phone legend scrolls sideways on one line; wrapping here stacked the
+     five categories in a 103px column and made the whole legend 117px tall. */
+  .cr-pulse-legend-item.nsfw-legend {
+    flex: none;
+    flex-wrap: nowrap;
+  }
 }

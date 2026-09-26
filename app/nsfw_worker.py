@@ -24,7 +24,7 @@ from sqlalchemy import case, select
 from . import storage_handoff
 from .config import settings
 from .db import Recording, db_session
-from .nsfw_scan import MOMENT_GAP_FACTOR, Verdict, helper_env, overall, stretches
+from .nsfw_scan import BAND_HOLD_SECONDS, Verdict, helper_env, overall, stretches
 from .settings_store import runtime
 from .utils import utcnow
 
@@ -298,7 +298,9 @@ class NsfwWorkerMixin:
         verdicts = [Verdict(float(h["t"]), h["label"], float(h["score"]), h.get("class", "")) for h in hits]
         step = float(cfg.nsfw_step_seconds)
         # Hits also hold the first clean frame after each moment (its end).
-        moments = stretches(verdicts, step, MOMENT_GAP_FACTOR * step)
+        # Only the first clean frame after a moment is kept, so the sampling-gap
+        # limit must not be shorter than the clean hold.
+        moments = stretches(verdicts, step, BAND_HOLD_SECONDS)
         images = moment_images(moments, hits)
         payload = [dict(m.as_dict(), image=images[i]) for i, m in enumerate(moments)]
         with db_session() as db:

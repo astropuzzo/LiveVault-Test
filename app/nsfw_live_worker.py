@@ -36,7 +36,7 @@ from sqlalchemy import func, select
 from . import storage_handoff
 from .db import NsfwCoverage, NsfwMark, Recording, db_session
 from .mp4_index import GrowingIndex, LiveFragment, NotFragmented
-from .nsfw_scan import MOMENT_GAP_FACTOR, Verdict, combine_classes, helper_env, overall, stretches
+from .nsfw_scan import BAND_HOLD_SECONDS, MOMENT_GAP_FACTOR, Verdict, combine_classes, helper_env, overall, stretches
 from .nsfw_worker import file_signature, nsfw_dir
 from .settings_store import runtime
 from .utils import utcnow
@@ -45,9 +45,9 @@ LIVE_COVERAGE_OK = 0.85
 INHERIT_SECONDS = 60
 BACKLOG_JUMP_SECONDS = 60
 PREVIEW_GAP_SECONDS = 30  # at most one kept preview per 30 s of a moment
-# A band ends at the first clean sample; with no sample for this long (sampler
-# pause, reconnect) it ends one step after its last NSFW sample instead.
-LIVE_MAX_GAP_SECONDS = 60
+# With no sample for this long (sampler pause, reconnect) a band ends one step
+# after its last NSFW sample; longer than BAND_HOLD_SECONDS (clean hold).
+LIVE_MAX_GAP_SECONDS = 90
 ACTIVE_MARK_STATES = ("pending", "confirmed", "inherited", "review")
 NSFW_LABEL = {"confirmed": "nsfw", "inherited": "nsfw", "review": "review", "pending": "review"}
 
@@ -158,25 +158,39 @@ class LiveTrack:
     last_nsfw: bool = False  # previous sample was a suspect: the next clean one ends the band
 
 
-def cluster_marks(marks: list, gap_seconds: float = LIVE_MAX_GAP_SECONDS, step: float = 5.0) -> list[dict]:
+def cluster_marks(marks: list, gap_seconds: float = LIVE_MAX_GAP_SECONDS, step: float = 5.0,
+                  hold: float = BAND_HOLD_SECONDS) -> list[dict]:
     """Group live marks (wall clock) into timeline bands for the Monitor.
 
-    Same rule as ``stretches``: a band lasts while samples keep being suspect
-    and ends at the first clean one (``clear``/``rejected`` marks), not after
-    a fixed gap, so a continuously explicit stretch is one band.
+    Same rule as ``stretches``: a band lasts while samples stay suspect and
+    ends at the first clean one (``clear``/``rejected`` marks) only if no
+    suspect sample follows within ``hold`` seconds.
     """
     moments: list[dict] = []
     current: dict | None = None
+    clean_since: datetime | None = None
     last_at: datetime | None = None
+    last_hit: datetime | None = None
     rank = {"pending": 0, "review": 1, "nsfw": 2}
+
+    def close() -> None:
+        nonlocal current, clean_since
+        if current is not None:
+            if clean_since is not None:
+                current["_end"] = max(current["_start"], clean_since)
+            else:
+                current["_end"] = last_hit + timedelta(seconds=step)
+            moments.append(current)
+        current, clean_since = None, None
+
     for mark in sorted(marks, key=lambda m: _aware(m.wall_at)):
         at = _aware(mark.wall_at)
         label = NSFW_LABEL.get(mark.state)
         if current is not None and last_at is not None and (at - last_at).total_seconds() > gap_seconds:
-            current["_end"] = last_at + timedelta(seconds=step)
-            moments.append(current)
-            current = None
+            close()
         if label:
+            if current is not None and clean_since is not None and (at - clean_since).total_seconds() > hold:
+                close()
             state = "pending" if mark.state == "pending" else label
             if current is None:
                 current = {
@@ -192,13 +206,14 @@ def cluster_marks(marks: list, gap_seconds: float = LIVE_MAX_GAP_SECONDS, step: 
                     current["label"] = state
                 if not current["image"] and mark.image:
                     current["image"] = mark.image
+            clean_since, last_hit = None, at
         elif current is not None:
-            current["_end"] = max(current["_start"], at)
-            moments.append(current)
-            current = None
+            if clean_since is None:
+                clean_since = at
+            if (at - clean_since).total_seconds() >= hold:
+                close()
         last_at = at
-    if current is not None:
-        moments.append(current)
+    close()
     out = []
     for moment in moments:
         cls = moment["cls"]

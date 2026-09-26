@@ -305,15 +305,27 @@ and `_index_file` (`app/workers.py`), both through `nsfw_attach_stitched` /
   mark `pending`), which confirms or discards; candidate >= threshold means no
   re-check at all. No neighbour re-checks, no new `review` verdicts (old ones
   stay). Inside an NSFW stretch uncertain frames continue it without the 640m.
-- Bands since 3.4.16 (`stretches` in `app/nsfw_scan.py`, `cluster_marks`): a
-  band lasts while checked frames stay NSFW and ends at the first clean one;
-  after a sampling hole (`MOMENT_GAP_FACTOR` x step for scans,
-  `LIVE_MAX_GAP_SECONDS` = 60 live) it ends one step after its last frame. The
-  full scan stores the first clean frame after each moment in `nsfw_hits`
-  (label ""); the live sampler writes one `clear` mark per NSFW→clean
-  transition (`LiveTrack.last_nsfw`), and `rejected` marks also end bands. The
-  Pulse query reads `clear`/`rejected` too. Rollback: revert 3.4.16; `clear`
-  marks are ignored by older code.
+- Bands (`stretches` in `app/nsfw_scan.py`, `cluster_marks`), since 3.4.16:
+  a band lasts while checked frames stay NSFW; since 3.4.17 it ends at the
+  first clean frame only when no NSFW frame follows within
+  `BAND_HOLD_SECONDS` (60 s): single clean samples inside an explicit stretch
+  (pose, framing) had split it into dashes. Replayed on the node marks of
+  2026-09-26: tinnydoll 102 → 17 bands, mollybabyx 51 → 6 (30 s gave 37 and
+  9). With nothing checked for longer than the sampling-gap limit (60 s for
+  scans, whose hits only keep the first clean frame after a moment;
+  `LIVE_MAX_GAP_SECONDS` = 90 live) a band ends one step after its last NSFW
+  frame. The full scan stores that first clean frame in `nsfw_hits` (label
+  ""); the live sampler writes one `clear` mark per NSFW→clean transition
+  (`LiveTrack.last_nsfw`), and `rejected` marks also end bands. The Pulse
+  query reads `clear`/`rejected` too. Drawing (`pulseNsfwLayer` in
+  `app/static/nsfw.js`): bands less than 6 px apart at the current scale are
+  drawn joined; rows with NSFW moments get a 28 px track
+  (`.cr-pulse-track:has(> .nsfw-pulse-layer)`) and the band sits inside it, so
+  phones (track `overflow: hidden`, bands `display: none` since 3.4.3) show
+  it too. Phone legend: `.nsfw-legend` no longer wraps into a 117 px column.
+  QA 2026-09-26 on a local instance seeded with the node marks: desktop
+  1440 px and phone 375 px, pins centred on the bar, 16 bands drawn from 23.
+  Rollback: revert 3.4.17 (and 3.4.16); `clear` marks are ignored by older code.
 - Stripchat is sampled on the raw `<stem>.capture.mp4` but indexed/stitched
   as the remuxed `<stem>.mp4` (`_remux` in `app/stripchat_capture.py`,
   `-start_at_zero`, same timeline); `live_aliases()` (3.4.10) matches both

@@ -132,6 +132,16 @@ def test_stretches_end_at_the_first_clean_frame_or_at_a_sampling_gap():
     from app.nsfw_scan import stretches
     samples = [Verdict(t, "nsfw", 0.9, "FEMALE_BREAST_EXPOSED") for t in (0, 4, 8, 12)]
     samples += [Verdict(16, "", 0.1, ""), Verdict(20, "nsfw", 0.95, "ANUS_EXPOSED"), Verdict(200, "nsfw", 0.9, "X")]
-    moments = stretches(samples, step=4, max_gap=10)
+    moments = stretches(samples, step=4, max_gap=10, hold=0)
     assert [(m.start, m.end) for m in moments] == [(0, 16), (20, 24), (200, 204)]
     assert moments[1].cls == "ANUS_EXPOSED"
+
+
+def test_one_clean_frame_inside_an_explicit_stretch_does_not_split_it():
+    """3.4.17: the band ends only after the picture stayed clean for BAND_HOLD_SECONDS."""
+    from app.nsfw_scan import BAND_HOLD_SECONDS, stretches
+    assert BAND_HOLD_SECONDS == 60
+    samples = [Verdict(t, "nsfw", 0.9, "A") for t in (0, 4, 8)] + [Verdict(12, "", 0.1, "")]
+    samples += [Verdict(t, "nsfw", 0.9, "A") for t in (40, 44)] + [Verdict(48, "", 0.1, "")]
+    samples += [Verdict(200, "nsfw", 0.9, "A")]
+    assert [(m.start, m.end) for m in stretches(samples, step=4, max_gap=60)] == [(0, 48), (200, 204)]
