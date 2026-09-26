@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.4.19 — Cronologia NSFW: una striscia sola, attaccata alla sua riga
+
+- La 3.4.18 disegnava lo stesso dato due volte con raggruppamenti diversi (segnaposto ogni ~13 minuti, fasce ogni ~2): colori e posizioni non coincidevano, i segnaposto sembravano appartenere alla riga sotto e i momenti brevi diventavano puntini sotto ogni segnaposto. Ora c'è un solo segno: una striscia sottile sotto la barra della sessione, nel colore della parte più esplicita, con l'icona della categoria solo sui tratti lunghi e mai sovrapposta. Niente contatori.
+- Passando col mouse, una linea sottile attraversa la riga e un'etichetta sopra la riga mostra ora e parti viste. Cliccando o toccando la striscia si apre il momento sotto il puntatore (o l'elenco se sono più d'uno); da tastiera si apre l'elenco della riga.
+- Tutte le righe hanno la barra alla stessa altezza, con o senza momenti NSFW.
+- Motion: alla prima comparsa la striscia si apre da sinistra e le icone compaiono quando la tendina le raggiunge; un tratto ancora in corso ha un piccolo impulso in testa. Le animazioni non si ripetono ai refresh e non vengono più interrotte dal refresh successivo. Con «riduci movimento» tutto è statico.
+
 ## 3.4.18 — Cronologia NSFW leggibile: corsia dedicata e motion
 
 - I momenti NSFW hanno una corsia sotto la barra della sessione: non coprono più REC, ONLINE e buchi. Segnaposto sopra, con una punta che indica l'inizio del momento; fasce sotto, sempre visibili anche quando durano pochi pixel.

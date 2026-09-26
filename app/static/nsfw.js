@@ -218,11 +218,17 @@
   const pulseMarks = new Map();
   const pulseGroups = new Map();
   const RANK = {pending: 0, review: 1, nsfw: 2};
-  // Only what appears for the first time animates: the dashboard re-renders
-  // every few seconds and must stay still.
-  const seenBands = new Set();
-  const seenPins = new Set();
-  // Second body part of a moment: a two-colour ring instead of a stacked mini icon.
+  // One mark per fact (3.4.19): a thin NSFW strip under each session bar,
+  // category colour, icons only on long stretches. The Pulse re-renders every
+  // few seconds, so only what is shown for the first time animates.
+  const pulseRows = new Map();
+  const seenRows = new Set();
+  const seenBadges = new Set();
+  const JOIN_PX = 6;       // same-category pieces closer than this draw as one
+  const BADGE_MIN_PX = 44; // a stretch this long gets its category icon
+  const BADGE_GAP_PX = 26; // icons never touch
+  const HIT_PX = 8;        // pointer tolerance when opening moments
+  // Second body part of a moment: a two-colour ring on its icon.
   const cat2Class = cls => {
     const parts = classParts(cls);
     const second = parts.slice(1).find(c => CLASS_CAT[c] && CLASS_CAT[c] !== CLASS_CAT[parts[0]]);
@@ -234,86 +240,135 @@
       .sort((a, b) => timestamp(a.started_at) - timestamp(b.started_at));
     if (!moments.length) return '';
     if (pulseMarks.size > 3000) { pulseMarks.clear(); pulseGroups.clear(); }
-    if (seenBands.size > 5000) { seenBands.clear(); seenPins.clear(); }
-    // Group pins that would overlap at the real on-screen width (phones
-    // scroll a wide track; desktop uses the visible one): one pin + count.
+    if (seenBadges.size > 5000) { seenBadges.clear(); seenRows.clear(); }
     const hours = Math.max(1, Number(controlRoomPulseData?.hours) || 6);
     const perHour = typeof window.pulsePixelsPerHour === 'function' ? window.pulsePixelsPerHour() : 0;
     const trackPx = perHour ? hours * perHour : Math.max(500, window.innerWidth - 420);
-    const minGap = (perHour ? 46 : 32) / trackPx * 100;  // pin + count badge never touch the next one
-    // Bands closer than a few pixels at this scale read as one stretch: draw
-    // them joined instead of as dashes (the moments themselves stay separate).
-    const bandJoin = 6 / trackPx * 100;
-    const liveEdge = generated - 120000;  // a band still growing at the live edge
-    const spans = [];
-    const groups = [];
+    const pct = px => px / trackPx * 100;
+    const liveEdge = generated - 120000;  // still growing at the live edge
+    const row = String(sessions[0]?.profile_id ?? '');
+    const runs = [];
+    const hits = [];
     for (const m of moments) {
       const start = timestamp(m.started_at);
       const end = Math.max(start, timestamp(m.ended_at) || start);
       const left = xFor(start) / 10;
-      const right = Math.max(left + 0.3, xFor(end) / 10);
+      const right = Math.max(left + pct(3), xFor(end) / 10);
       m.key = `${m.started_at}|${m.recording_id || ''}|${m.mark_id || ''}`;
       pulseMarks.set(m.key, m);
-      const last = groups[groups.length - 1];
-      if (last && left - last.left < minGap) last.items.push(m);
-      else groups.push({left, items: [m]});
-      const g = groups.length - 1;
+      hits.push({m, left, right});
+      const cat = CLASS_CAT[classParts(m.class)[0]] || 'other';
       const live = m.open && end >= liveEdge;
-      const span = spans[spans.length - 1];
-      if (span && left - span.right < bandJoin) {
-        span.right = Math.max(span.right, right);
-        span.cls = `${span.cls}+${m.class || ''}`;
-        span.live = span.live || live;
-        if (RANK[m.label] > RANK[span.label]) span.label = m.label;
-      } else spans.push({left, right, start, label: m.label, cls: m.class || '', g, live});
+      const run = runs[runs.length - 1];
+      if (run && run.cat === cat && left - run.right < pct(JOIN_PX)) {
+        run.right = Math.max(run.right, right);
+        run.items.push(m);
+        run.live = run.live || live;
+        if (RANK[m.label] > RANK[run.label]) run.label = m.label;
+      } else runs.push({left, right, cat, label: m.label, items: [m], live});
     }
-    const row = sessions[0]?.profile_id ?? '';
-    let fresh = 0;
-    const bands = spans.map(span => {
-      const key = `${row}|${Math.round(span.start / 1000)}`;
-      const enter = seenBands.has(key) ? '' : ` enter d${Math.min(8, fresh++)}`;
-      seenBands.add(key);
-      return `<i class="nsfw-pulse-band ${esc(span.label)} ${catClass(span.cls)}${span.live ? ' live' : ''}${enter}" data-g="${span.g}" data-dynamic-left="${span.left.toFixed(3)}" data-dynamic-width="${Math.min(100 - span.left, span.right - span.left).toFixed(3)}"></i>`;
-    });
-    fresh = 0;
-    const pins = groups.map((group, g) => {
-      const {items} = group;
-      const top = items.reduce((best, m) => (RANK[m.label] > RANK[best.label] ? m : best), items[0]);
-      const cls = classParts(items.map(m => m.class).join('+')).join('+');
-      const first = timestamp(items[0].started_at);
-      const lastEnd = timestamp(items[items.length - 1].ended_at) || first;
-      const title = items.length > 1
-        ? `${items.length} momenti · ${wallClock(first)}–${wallClock(lastEnd)} · tocca per l'elenco`
-        : `${wallClock(first)}–${wallClock(lastEnd)} · ${classText(cls) || 'Nudità'} · ${MARK_TEXT[top.label] || top.label}${top.count > 1 ? ` · ${top.count} fotogrammi` : ''}${top.approx ? ' · posizione stimata' : ''}`;
-      let attr = `data-nsfw-pulse="${esc(items[0].key)}"`;
-      if (items.length > 1) {
-        const groupKey = `g:${items.map(m => m.key).join(',')}`;
-        pulseGroups.set(groupKey, items);
-        attr = `data-nsfw-pulse-group="${esc(groupKey)}"`;
-      }
-      const pinKey = `${row}|${items[0].key}`;
-      const enter = seenPins.has(pinKey) ? '' : ` enter d${Math.min(8, fresh++)}`;
-      seenPins.add(pinKey);
-      const left = Math.min(98.6, Math.max(1.4, group.left));
-      return `<button type="button" class="nsfw-pulse-mark ${esc(top.label)} ${catClass(cls)}${cat2Class(cls)}${enter}" data-g="${g}" data-dynamic-left="${left.toFixed(3)}" ${attr} title="${esc(title)}" aria-label="${esc(title)}">${icon(classIcon(cls), 'mini-icon')}${items.length > 1 ? `<b class="nsfw-pin-count">${items.length}</b>` : ''}</button>`;
-    });
-    return `<div class="nsfw-pulse-layer"><i class="nsfw-pulse-rail"></i>${bands.join('')}${pins.join('')}</div>`;
+    // x (0..1000) -> wall clock for the hover cursor.
+    const x1 = xFor(generated);
+    const perMs = (x1 - xFor(generated - 600000)) / 600000;
+    pulseRows.set(row, {hits, t1: generated, x1, perMs});
+    const strip = runs.map(run => `<i class="nsfw-run cat-${run.cat}${run.label === 'pending' ? ' pending' : ''}${run.live ? ' live' : ''}" data-dynamic-left="${run.left.toFixed(3)}" data-dynamic-width="${Math.min(100 - run.left, run.right - run.left).toFixed(3)}"></i>`).join('');
+    const badges = [];
+    let lastBadge = -Infinity;
+    for (const run of runs) {
+      if (run.right - run.left < pct(BADGE_MIN_PX) || run.left - lastBadge < pct(BADGE_GAP_PX)) continue;
+      lastBadge = run.left;
+      const cls = classParts(run.items.map(m => m.class).join('+')).join('+');
+      badges.push(`<span class="nsfw-strip-icon cat-${run.cat}${cat2Class(cls)}" data-icon="${esc(`${row}|${run.items[0].key}`)}" data-tenth="${Math.min(9, Math.floor(run.left / 10))}" data-dynamic-left="${(run.left + pct(10)).toFixed(3)}">${icon(classIcon(cls), 'mini-icon')}</span>`);
+    }
+    const name = sessions[0]?.display_name || '';
+    const label = `${name}: ${moments.length} ${moments.length === 1 ? 'momento' : 'momenti'} NSFW, apri l'elenco`;
+    return `<div class="nsfw-pulse-layer"><i class="nsfw-scrub"></i><div class="nsfw-strip" data-row="${esc(row)}">${strip}</div><div class="nsfw-strip-icons" aria-hidden="true">${badges.join('')}</div><button type="button" class="nsfw-strip-hit" data-nsfw-row="${esc(row)}" aria-label="${esc(label)}"></button></div>`;
   };
 
-  // Focus + context: pointing at a pin lights up its bands and dims the rest.
-  const lightBands = (mark, on) => {
-    const layer = mark.closest('.nsfw-pulse-layer');
-    if (!layer) return;
-    layer.classList.toggle('focusing', on);
-    for (const band of layer.querySelectorAll(`.nsfw-pulse-band[data-g="${mark.dataset.g}"]`)) band.classList.toggle('hot', on);
+  // Entrances are added after rendering, never in the markup: identical
+  // markup lets setMarkup skip unchanged re-renders, so an entrance is not cut
+  // short by the next refresh. Icons pop when the strip's wipe reaches them.
+  const animateNewPulseItems = root => {
+    const entering = new Set();
+    for (const strip of root.querySelectorAll('.nsfw-strip[data-row]')) {
+      if (seenRows.has(strip.dataset.row)) continue;
+      seenRows.add(strip.dataset.row);
+      entering.add(strip.dataset.row);
+      strip.classList.add('enter');
+    }
+    for (const item of root.querySelectorAll('.nsfw-strip-icon[data-icon]')) {
+      const key = item.dataset.icon;
+      if (seenBadges.has(key)) continue;
+      seenBadges.add(key);
+      item.classList.add('enter', `w${entering.has(key.split('|')[0]) ? item.dataset.tenth : 0}`);
+    }
   };
-  for (const [type, on] of [['pointerover', true], ['focusin', true], ['pointerout', false], ['focusout', false]]) {
-    document.addEventListener(type, event => {
-      const mark = event.target instanceof Element ? event.target.closest('.nsfw-pulse-mark') : null;
-      if (!mark || (!on && event.relatedTarget instanceof Node && mark.contains(event.relatedTarget))) return;
-      lightBands(mark, on);
-    });
+
+  // Moments under the pointer (x in % of the track), nearest first.
+  const momentsAt = (row, x, width) => {
+    const tol = HIT_PX / Math.max(1, width) * 100;
+    const distance = h => (x < h.left ? h.left - x : x > h.right ? x - h.right : 0);
+    return row.hits.filter(h => distance(h) <= tol).sort((a, b) => distance(a) - distance(b)).map(h => h.m);
+  };
+
+  function openPulseRow(hit, event) {
+    const row = pulseRows.get(hit.dataset.nsfwRow);
+    if (!row) return;
+    const rect = hit.getBoundingClientRect();
+    // Keyboard (detail 0): every moment of the row; pointer: the ones under it.
+    const items = event.detail === 0 || !rect.width
+      ? row.hits.map(h => h.m)
+      : momentsAt(row, (event.clientX - rect.left) / rect.width * 100, rect.width);
+    if (!items.length) return;
+    if (items.length === 1) { openPulseMark(items[0].key); return; }
+    items.sort((a, b) => timestamp(a.started_at) - timestamp(b.started_at));
+    const groupKey = `g:${items.map(m => m.key).join(',')}`;
+    pulseGroups.set(groupKey, items);
+    openPulseGroup(groupKey);
   }
+
+  // Hover cursor (mouse only): a line across the row and "time + parts".
+  let scrubTip = null;
+  let scrubLayer = null;
+  let scrubFrame = 0;
+  const hideScrub = () => {
+    if (scrubLayer) scrubLayer.classList.remove('scrubbing', 'near');
+    scrubLayer = null;
+    if (scrubTip) scrubTip.hidden = true;
+  };
+  const moveScrub = event => {
+    const hit = event.target instanceof Element ? event.target.closest('.nsfw-strip-hit') : null;
+    const row = hit && pulseRows.get(hit.dataset.nsfwRow);
+    if (!row) { hideScrub(); return; }
+    const layer = hit.parentElement;
+    if (scrubLayer !== layer) { hideScrub(); scrubLayer = layer; }
+    const rect = hit.getBoundingClientRect();
+    const x = Math.max(0, Math.min(100, (event.clientX - rect.left) / rect.width * 100));
+    const at = momentsAt(row, x, rect.width);
+    layer.querySelector('.nsfw-scrub').style.left = `${x}%`;
+    layer.classList.add('scrubbing');
+    layer.classList.toggle('near', at.length > 0);
+    if (!scrubTip) {
+      scrubTip = document.createElement('div');
+      scrubTip.className = 'nsfw-scrub-tip';
+      scrubTip.setAttribute('role', 'presentation');
+      document.body.append(scrubTip);
+    }
+    const when = wallClock(row.t1 + (x * 10 - row.x1) / row.perMs).slice(0, 5);
+    const cls = classParts(at.map(m => m.class).join('+')).join('+');
+    setMarkup(scrubTip, at.length ? `<b>${esc(when)}</b>${classChips(cls)}` : `<b>${esc(when)}</b>`);
+    // Above the whole track, so the label never covers the session bar.
+    const top = layer.getBoundingClientRect().top;
+    scrubTip.style.transform = `translate(${Math.round(event.clientX)}px, ${Math.round(top - 4)}px) translate(-50%, -100%)`;
+    scrubTip.hidden = false;
+  };
+  document.addEventListener('pointermove', event => {
+    if (event.pointerType !== 'mouse') return;
+    cancelAnimationFrame(scrubFrame);
+    scrubFrame = requestAnimationFrame(() => moveScrub(event));
+  }, {passive: true});
+  document.addEventListener('pointerleave', hideScrub);
+  window.addEventListener('scroll', hideScrub, {passive: true, capture: true});
 
   function openPulseGroup(groupKey) {
     const items = pulseGroups.get(groupKey);
@@ -476,6 +531,8 @@
     if (open && !action) { event.preventDefault(); openDialog(open.dataset.nsfwOpen); return; }
     if (action) { event.preventDefault(); runAction(action.dataset.nsfwAction, action.dataset.id, action); return; }
     if (play) { event.preventDefault(); playAt(play.dataset.nsfwPlay, play.dataset.at); return; }
+    const stripHit = event.target.closest('.nsfw-strip-hit');
+    if (stripHit) { event.preventDefault(); hideScrub(); openPulseRow(stripHit, event); return; }
     const pulseGroup = event.target.closest('[data-nsfw-pulse-group]');
     if (pulseGroup) { event.preventDefault(); openPulseGroup(pulseGroup.dataset.nsfwPulseGroup); return; }
     const pulseMark = event.target.closest('[data-nsfw-pulse]');
@@ -519,9 +576,9 @@
   renderSources = function renderSourcesWithNsfw(...args) {
     const result = baseRenderSourcesNsfw.apply(this, args);
     const pulse = document.querySelector('.cr-pulse');
-    if (pulse) applyDynamicStyles(pulse);
+    if (pulse) { applyDynamicStyles(pulse); animateNewPulseItems(pulse); }
     // After the pulse legend is rebuilt (pulse-tuning, next frame), add the NSFW key.
-    if (pulse?.querySelector('.nsfw-pulse-mark')) requestAnimationFrame(() => requestAnimationFrame(() => {
+    if (pulse?.querySelector('.nsfw-run')) requestAnimationFrame(() => requestAnimationFrame(() => {
       const legend = document.querySelector('.cr-pulse-legend');
       if (legend && !legend.querySelector('.nsfw-legend')) legend.insertAdjacentHTML('beforeend', `<span class="cr-pulse-legend-item nsfw-legend">${['FEMALE_GENITALIA_EXPOSED', 'MALE_GENITALIA_EXPOSED', 'ANUS_EXPOSED', 'FEMALE_BREAST_EXPOSED', 'BUTTOCKS_EXPOSED'].map(c => `<span class="nsfw-legend-cat cat-${CLASS_CAT[c]}">${icon(CLASS_ICON[c], 'mini-icon')}${esc(CLASS_TEXT[c])}</span>`).join('')}</span>`);
     }));

@@ -23,21 +23,24 @@ def test_phone_timeline_scrolls_and_groups_pins():
     tuning = (STATIC / "pulse-tuning.js").read_text(encoding="utf-8")
     assert "window.pulsePixelsPerHour" in tuning and "cr-pulse-scroll" in tuning and "cr-pulse-now" in tuning
     nsfw = (STATIC / "nsfw.js").read_text(encoding="utf-8")
-    assert "data-nsfw-pulse-group" in nsfw and "nsfw-pin-count" in nsfw
+    assert "data-nsfw-pulse-group" in nsfw and "openPulseRow" in nsfw
 
 
-def test_cronologia_nsfw_lane_is_readable_and_animates_only_new_items():
-    """3.4.18: pins above a lane, bands under them, never over the session bar."""
+def test_cronologia_nsfw_strip_is_one_mark_per_fact():
+    """3.4.19: a strip under each session bar, icons only on long stretches."""
     nsfw = (STATIC / "nsfw.js").read_text(encoding="utf-8")
     css = (STATIC / "style.css").read_text(encoding="utf-8")
-    # Only first appearances animate; the dashboard re-renders every few seconds.
-    assert "seenBands" in nsfw and "seenPins" in nsfw and " enter d${" in nsfw
-    # Multi-part moments: two-colour ring, no stacked mini icon on the timeline pins.
-    assert "cat2Class(cls)" in nsfw and "nsfw-pulse-rail" in nsfw
-    assert ".cr-pulse-track:has(> .nsfw-pulse-layer)" in css and "--pin:" in css
-    for name in ("nsfw-band-draw", "nsfw-pin-pop", "nsfw-band-flow", "nsfw-comet"):
+    # No floating pins or count badges in the Cronologia any more.
+    assert "nsfw-pulse-mark" not in nsfw and "nsfw-pulse-band" not in nsfw
+    assert "BADGE_MIN_PX = 44" in nsfw and "JOIN_PX = 6" in nsfw and "nsfw-strip-hit" in nsfw
+    # Entrances are added after rendering, never in the markup (setMarkup skips identical
+    # re-renders, so a refresh cannot cut an entrance short).
+    assert "animateNewPulseItems(pulse)" in nsfw and " enter" not in nsfw.split("window.pulseNsfwLayer")[1].split("};")[0]
+    # The legend follows the strip, not the old pins.
+    assert "pulse?.querySelector('.nsfw-run')" in nsfw
+    # Uniform 36px tracks: bars stay aligned across rows.
+    assert ".cr-pulse-track {\n  position: relative;\n  isolation: isolate;\n  height: 36px;" in css
+    for name in ("nsfw-wipe", "nsfw-icon-in", "nsfw-ping"):
         assert f"@keyframes {name}" in css
-    # Phones no longer hide the bands, and reduced motion stops every animation.
-    assert ".nsfw-pulse-band {\n    display: none;" not in css
-    guard = css.index("@media (prefers-reduced-motion: reduce) {\n  .nsfw-pulse-band,")
+    guard = css.index("@media (prefers-reduced-motion: reduce) {\n  .nsfw-strip,")
     assert "animation: none !important" in css[guard:guard + 200]
