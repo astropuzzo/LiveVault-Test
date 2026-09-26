@@ -319,12 +319,25 @@ and `_index_file` (`app/workers.py`), both through `nsfw_attach_stitched` /
   (`LiveTrack.last_nsfw`), and `rejected` marks also end bands. The Pulse
   query reads `clear`/`rejected` too. Drawing (`pulseNsfwLayer` in
   `app/static/nsfw.js`): bands less than 6 px apart at the current scale are
-  drawn joined; rows with NSFW moments get a 28 px track
-  (`.cr-pulse-track:has(> .nsfw-pulse-layer)`) and the band sits inside it, so
-  phones (track `overflow: hidden`, bands `display: none` since 3.4.3) show
-  it too. Phone legend: `.nsfw-legend` no longer wraps into a 117 px column.
-  QA 2026-09-26 on a local instance seeded with the node marks: desktop
-  1440 px and phone 375 px, pins centred on the bar, 16 bands drawn from 23.
+  drawn joined. Phone legend: `.nsfw-legend` no longer wraps into a 117 px
+  column. Layout since 3.4.18 (user: "compressed, not readable"): rows with
+  NSFW moments get a lane under the session bar
+  (`.cr-pulse-track:has(> .nsfw-pulse-layer)`, height `32px + --pin`, `--pin`
+  18 px desktop / 20 px phone) so nothing covers REC/ONLINE and phones
+  (track `overflow: hidden`, bands hidden 3.4.3–3.4.16) show it. Map-pin
+  layout: pins on top with a tip (`::after`) at the group's first moment,
+  bands below on a faint rail, coloured by the most explicit part (`cat-*`);
+  a second part is a two-colour conic ring (`multi cat2-*`) instead of the
+  stacked `nsfw-pin-extra` icon (still used by the file timeline). Motion
+  (CSS only, CSP `style-src 'self'`): `enter d0..d8` classes on first
+  appearance only (`seenBands`/`seenPins` in `nsfw.js`, the dashboard
+  re-renders every 8 s): bands `nsfw-band-draw` (scaleX, expo-out), pins
+  `nsfw-pin-pop` (drop with bounce, `animation-fill-mode: backwards` so hover
+  scale still works); a band ending within 2 min of the Pulse time in an open
+  session is `live` (`nsfw-band-flow` light flow + `nsfw-comet` head);
+  hovering/focusing a pin adds `.hot` to its bands and `.focusing` dims the
+  rest. `prefers-reduced-motion` disables all of it. QA 2026-09-26 on a local
+  instance seeded with the node marks (desktop 1024/1440 px, phone 375 px).
   Rollback: revert 3.4.17 (and 3.4.16); `clear` marks are ignored by older code.
 - Stripchat is sampled on the raw `<stem>.capture.mp4` but indexed/stitched
   as the remuxed `<stem>.mp4` (`_remux` in `app/stripchat_capture.py`,

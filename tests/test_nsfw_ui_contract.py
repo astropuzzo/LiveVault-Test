@@ -24,3 +24,20 @@ def test_phone_timeline_scrolls_and_groups_pins():
     assert "window.pulsePixelsPerHour" in tuning and "cr-pulse-scroll" in tuning and "cr-pulse-now" in tuning
     nsfw = (STATIC / "nsfw.js").read_text(encoding="utf-8")
     assert "data-nsfw-pulse-group" in nsfw and "nsfw-pin-count" in nsfw
+
+
+def test_cronologia_nsfw_lane_is_readable_and_animates_only_new_items():
+    """3.4.18: pins above a lane, bands under them, never over the session bar."""
+    nsfw = (STATIC / "nsfw.js").read_text(encoding="utf-8")
+    css = (STATIC / "style.css").read_text(encoding="utf-8")
+    # Only first appearances animate; the dashboard re-renders every few seconds.
+    assert "seenBands" in nsfw and "seenPins" in nsfw and " enter d${" in nsfw
+    # Multi-part moments: two-colour ring, no stacked mini icon on the timeline pins.
+    assert "cat2Class(cls)" in nsfw and "nsfw-pulse-rail" in nsfw
+    assert ".cr-pulse-track:has(> .nsfw-pulse-layer)" in css and "--pin:" in css
+    for name in ("nsfw-band-draw", "nsfw-pin-pop", "nsfw-band-flow", "nsfw-comet"):
+        assert f"@keyframes {name}" in css
+    # Phones no longer hide the bands, and reduced motion stops every animation.
+    assert ".nsfw-pulse-band {\n    display: none;" not in css
+    guard = css.index("@media (prefers-reduced-motion: reduce) {\n  .nsfw-pulse-band,")
+    assert "animation: none !important" in css[guard:guard + 200]

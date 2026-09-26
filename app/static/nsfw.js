@@ -218,11 +218,23 @@
   const pulseMarks = new Map();
   const pulseGroups = new Map();
   const RANK = {pending: 0, review: 1, nsfw: 2};
+  // Only what appears for the first time animates: the dashboard re-renders
+  // every few seconds and must stay still.
+  const seenBands = new Set();
+  const seenPins = new Set();
+  // Second body part of a moment: a two-colour ring instead of a stacked mini icon.
+  const cat2Class = cls => {
+    const parts = classParts(cls);
+    const second = parts.slice(1).find(c => CLASS_CAT[c] && CLASS_CAT[c] !== CLASS_CAT[parts[0]]);
+    return second ? ` multi cat2-${CLASS_CAT[second]}` : '';
+  };
   window.pulseNsfwLayer = (sessions, xFor) => {
-    const moments = sessions.flatMap(session => (session.nsfw_moments || []).map(m => ({...m, name: session.display_name})))
+    const generated = timestamp(controlRoomPulseData?.generated_at) || Date.now();
+    const moments = sessions.flatMap(session => (session.nsfw_moments || []).map(m => ({...m, name: session.display_name, open: !session.ended_at})))
       .sort((a, b) => timestamp(a.started_at) - timestamp(b.started_at));
     if (!moments.length) return '';
     if (pulseMarks.size > 3000) { pulseMarks.clear(); pulseGroups.clear(); }
+    if (seenBands.size > 5000) { seenBands.clear(); seenPins.clear(); }
     // Group pins that would overlap at the real on-screen width (phones
     // scroll a wide track; desktop uses the visible one): one pin + count.
     const hours = Math.max(1, Number(controlRoomPulseData?.hours) || 6);
@@ -232,6 +244,7 @@
     // Bands closer than a few pixels at this scale read as one stretch: draw
     // them joined instead of as dashes (the moments themselves stay separate).
     const bandJoin = 6 / trackPx * 100;
+    const liveEdge = generated - 120000;  // a band still growing at the live edge
     const spans = [];
     const groups = [];
     for (const m of moments) {
@@ -241,17 +254,29 @@
       const right = Math.max(left + 0.3, xFor(end) / 10);
       m.key = `${m.started_at}|${m.recording_id || ''}|${m.mark_id || ''}`;
       pulseMarks.set(m.key, m);
-      const span = spans[spans.length - 1];
-      if (span && left - span.right < bandJoin) {
-        span.right = Math.max(span.right, right);
-        if (RANK[m.label] > RANK[span.label]) span.label = m.label;
-      } else spans.push({left, right, label: m.label});
       const last = groups[groups.length - 1];
       if (last && left - last.left < minGap) last.items.push(m);
       else groups.push({left, items: [m]});
+      const g = groups.length - 1;
+      const live = m.open && end >= liveEdge;
+      const span = spans[spans.length - 1];
+      if (span && left - span.right < bandJoin) {
+        span.right = Math.max(span.right, right);
+        span.cls = `${span.cls}+${m.class || ''}`;
+        span.live = span.live || live;
+        if (RANK[m.label] > RANK[span.label]) span.label = m.label;
+      } else spans.push({left, right, start, label: m.label, cls: m.class || '', g, live});
     }
-    const bands = spans.map(span => `<i class="nsfw-pulse-band ${esc(span.label)}" data-dynamic-left="${span.left.toFixed(3)}" data-dynamic-width="${Math.min(100 - span.left, span.right - span.left).toFixed(3)}"></i>`);
-    const pins = groups.map(group => {
+    const row = sessions[0]?.profile_id ?? '';
+    let fresh = 0;
+    const bands = spans.map(span => {
+      const key = `${row}|${Math.round(span.start / 1000)}`;
+      const enter = seenBands.has(key) ? '' : ` enter d${Math.min(8, fresh++)}`;
+      seenBands.add(key);
+      return `<i class="nsfw-pulse-band ${esc(span.label)} ${catClass(span.cls)}${span.live ? ' live' : ''}${enter}" data-g="${span.g}" data-dynamic-left="${span.left.toFixed(3)}" data-dynamic-width="${Math.min(100 - span.left, span.right - span.left).toFixed(3)}"></i>`;
+    });
+    fresh = 0;
+    const pins = groups.map((group, g) => {
       const {items} = group;
       const top = items.reduce((best, m) => (RANK[m.label] > RANK[best.label] ? m : best), items[0]);
       const cls = classParts(items.map(m => m.class).join('+')).join('+');
@@ -259,18 +284,36 @@
       const lastEnd = timestamp(items[items.length - 1].ended_at) || first;
       const title = items.length > 1
         ? `${items.length} momenti · ${wallClock(first)}–${wallClock(lastEnd)} · tocca per l'elenco`
-        : `${wallClock(first)} · ${classText(cls) || 'Nudità'} · ${MARK_TEXT[top.label] || top.label}${top.count > 1 ? ` · ${top.count} fotogrammi` : ''}${top.approx ? ' · posizione stimata' : ''}`;
+        : `${wallClock(first)}–${wallClock(lastEnd)} · ${classText(cls) || 'Nudità'} · ${MARK_TEXT[top.label] || top.label}${top.count > 1 ? ` · ${top.count} fotogrammi` : ''}${top.approx ? ' · posizione stimata' : ''}`;
       let attr = `data-nsfw-pulse="${esc(items[0].key)}"`;
       if (items.length > 1) {
         const groupKey = `g:${items.map(m => m.key).join(',')}`;
         pulseGroups.set(groupKey, items);
         attr = `data-nsfw-pulse-group="${esc(groupKey)}"`;
       }
+      const pinKey = `${row}|${items[0].key}`;
+      const enter = seenPins.has(pinKey) ? '' : ` enter d${Math.min(8, fresh++)}`;
+      seenPins.add(pinKey);
       const left = Math.min(98.6, Math.max(1.4, group.left));
-      return `<button type="button" class="nsfw-pulse-mark ${esc(top.label)} ${catClass(cls)}" data-dynamic-left="${left.toFixed(3)}" ${attr} title="${esc(title)}" aria-label="${esc(title)}">${pinIcons(cls)}${items.length > 1 ? `<b class="nsfw-pin-count">${items.length}</b>` : ''}</button>`;
+      return `<button type="button" class="nsfw-pulse-mark ${esc(top.label)} ${catClass(cls)}${cat2Class(cls)}${enter}" data-g="${g}" data-dynamic-left="${left.toFixed(3)}" ${attr} title="${esc(title)}" aria-label="${esc(title)}">${icon(classIcon(cls), 'mini-icon')}${items.length > 1 ? `<b class="nsfw-pin-count">${items.length}</b>` : ''}</button>`;
     });
-    return `<div class="nsfw-pulse-layer">${bands.join('')}${pins.join('')}</div>`;
+    return `<div class="nsfw-pulse-layer"><i class="nsfw-pulse-rail"></i>${bands.join('')}${pins.join('')}</div>`;
   };
+
+  // Focus + context: pointing at a pin lights up its bands and dims the rest.
+  const lightBands = (mark, on) => {
+    const layer = mark.closest('.nsfw-pulse-layer');
+    if (!layer) return;
+    layer.classList.toggle('focusing', on);
+    for (const band of layer.querySelectorAll(`.nsfw-pulse-band[data-g="${mark.dataset.g}"]`)) band.classList.toggle('hot', on);
+  };
+  for (const [type, on] of [['pointerover', true], ['focusin', true], ['pointerout', false], ['focusout', false]]) {
+    document.addEventListener(type, event => {
+      const mark = event.target instanceof Element ? event.target.closest('.nsfw-pulse-mark') : null;
+      if (!mark || (!on && event.relatedTarget instanceof Node && mark.contains(event.relatedTarget))) return;
+      lightBands(mark, on);
+    });
+  }
 
   function openPulseGroup(groupKey) {
     const items = pulseGroups.get(groupKey);

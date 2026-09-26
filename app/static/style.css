@@ -5604,47 +5604,155 @@ textarea:focus,
   transform: translateX(-100%);
 }
 
-/* Monitor Cronologia: marks over the session track. Rows with NSFW moments
-   get 6px more track so the band sits inside it: phones clip the track
-   (overflow: hidden) and used to hide the bands entirely. */
+/* Monitor Cronologia, NSFW lane (3.4.18). Rows with NSFW moments get a lane
+   under the session bar: pins and bands no longer cover REC/ONLINE, and the
+   band sits inside the track (phones clip it with overflow: hidden). */
 .cr-pulse-track:has(> .nsfw-pulse-layer) {
-  height: 28px;
+  --pin: 18px;
+  height: calc(32px + var(--pin));
 }
+/* Map-pin layout: pins on top pointing down at where a moment starts, bands
+   underneath and never covered, even when they are only a few pixels long. */
 .nsfw-pulse-layer {
   position: absolute;
-  inset: 0 0 6px 0;
+  left: 0;
+  right: 0;
+  top: 22px;
+  height: calc(var(--pin) + 10px);
   z-index: 3;
   pointer-events: none;
 }
-.nsfw-pulse-band {
-  --tone: var(--warning);
+.nsfw-pulse-rail {
   position: absolute;
-  bottom: -5px;
-  height: 3px;
-  min-width: 3px;
-  border-radius: 2px;
-  background: var(--tone);
-  box-shadow: 0 0 8px var(--tone);
+  left: 0;
+  right: 0;
+  top: calc(var(--pin) + 6px);
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.08) 6%, rgba(255, 255, 255, 0.08) 94%, transparent);
 }
-.nsfw-pulse-band.nsfw {
-  --tone: var(--recording);
+.nsfw-pulse-band {
+  --tone: var(--cat, var(--recording));
+  position: absolute;
+  top: calc(var(--pin) + 3px);
+  height: 6px;
+  min-width: 5px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--tone) 45%, transparent), var(--tone) 70%);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--tone) 55%, transparent);
+  transform-origin: left center;
+  transition: opacity 0.2s ease, filter 0.2s ease, top 0.2s ease, height 0.2s ease;
 }
-.nsfw-pulse-band.pending {
-  --tone: var(--accent);
-  opacity: 0.7;
+/* Waiting for the large model: hatched, like an unconfirmed sketch. */
+.nsfw-pulse-band.pending,
+.nsfw-pulse-band.review {
+  background: repeating-linear-gradient(135deg, var(--tone) 0 4px, color-mix(in srgb, var(--tone) 25%, transparent) 4px 8px);
+  box-shadow: none;
+  opacity: 0.85;
+}
+.nsfw-pulse-layer.focusing .nsfw-pulse-band:not(.hot),
+.nsfw-pulse-layer.focusing .nsfw-pulse-mark:not(:hover):not(:focus-visible) {
+  opacity: 0.3;
+  filter: saturate(0.4);
+}
+.nsfw-pulse-band.hot {
+  top: calc(var(--pin) + 1px);
+  height: 10px;
+  filter: brightness(1.25);
+}
+/* Still growing at the live edge: light flows along it, a comet leads. */
+.nsfw-pulse-band.live {
+  background:
+    repeating-linear-gradient(90deg, transparent 0 22px, rgba(255, 255, 255, 0.45) 26px, transparent 30px) 0 0 / 60px 100%,
+    linear-gradient(90deg, color-mix(in srgb, var(--tone) 45%, transparent), var(--tone) 70%);
+  animation: nsfw-band-flow 1.4s linear infinite;
+}
+.nsfw-pulse-band.live::after {
+  content: "";
+  position: absolute;
+  right: -4px;
+  top: 50%;
+  width: 10px;
+  height: 10px;
+  margin-top: -5px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--tone) 60%, transparent), 0 0 14px var(--tone);
+  animation: nsfw-comet 1.4s ease-in-out infinite;
 }
 .nsfw-pulse-mark {
-  top: 50%;
-  width: 20px;
-  height: 20px;
+  top: 0;
+  width: var(--pin);
+  height: var(--pin);
+  border-width: 1.5px;
   pointer-events: auto;
-  transform: translate(-50%, -50%);
+  transform: translateX(-50%);
+  transform-origin: 50% 100%;
+  transition: scale 0.18s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.2s ease, filter 0.2s ease;
+}
+/* The pin's tip: points at the first moment of its group on the band below. */
+.nsfw-pulse-mark::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: calc(100% - 1px);
+  width: 8px;
+  height: 5px;
+  margin-left: -4px;
+  background: var(--cat, var(--tone));
+  clip-path: polygon(0 0, 100% 0, 50% 100%);
 }
 .nsfw-pulse-mark:hover,
 .nsfw-pulse-mark:focus-visible {
   z-index: 2;
-  transform: translate(-50%, -50%) scale(1.2);
+  scale: 1.25;
   outline: none;
+}
+/* Entrances: bands draw from the left, pins pop in, a short cascade. */
+.nsfw-pulse-band.enter {
+  animation: nsfw-band-draw 0.75s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+  animation-delay: calc(var(--d, 0) * 60ms);
+}
+.nsfw-pulse-band.enter.live {
+  animation: nsfw-band-draw 0.75s cubic-bezier(0.16, 1, 0.3, 1) backwards, nsfw-band-flow 1.4s linear infinite;
+  animation-delay: calc(var(--d, 0) * 60ms), 0s;
+}
+.nsfw-pulse-mark.enter {
+  animation: nsfw-pin-pop 0.55s cubic-bezier(0.34, 1.56, 0.64, 1) backwards;
+  animation-delay: calc(var(--d, 0) * 60ms + 220ms);
+}
+.nsfw-pulse-layer .d1 { --d: 1; }
+.nsfw-pulse-layer .d2 { --d: 2; }
+.nsfw-pulse-layer .d3 { --d: 3; }
+.nsfw-pulse-layer .d4 { --d: 4; }
+.nsfw-pulse-layer .d5 { --d: 5; }
+.nsfw-pulse-layer .d6 { --d: 6; }
+.nsfw-pulse-layer .d7 { --d: 7; }
+.nsfw-pulse-layer .d8 { --d: 8; }
+@keyframes nsfw-band-draw {
+  from { transform: scaleX(0); opacity: 0.2; }
+  to { transform: scaleX(1); opacity: 1; }
+}
+@keyframes nsfw-pin-pop {
+  0% { translate: 0 -12px; scale: 0.4; opacity: 0; }
+  60% { translate: 0 1px; scale: 1.12; opacity: 1; }
+  80% { translate: 0 -1px; scale: 0.97; }
+  100% { translate: 0 0; scale: 1; opacity: 1; }
+}
+@keyframes nsfw-band-flow {
+  from { background-position: 0 0, 0 0; }
+  to { background-position: 60px 0, 0 0; }
+}
+@keyframes nsfw-comet {
+  0%, 100% { scale: 0.75; opacity: 0.7; }
+  50% { scale: 1.2; opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .nsfw-pulse-band,
+  .nsfw-pulse-band::after,
+  .nsfw-pulse-mark {
+    animation: none !important;
+    transition: none !important;
+  }
 }
 .cr-pulse-legend-item.nsfw-legend {
   display: inline-flex;
@@ -5814,12 +5922,8 @@ textarea:focus,
   .cr-pulse-legend::-webkit-scrollbar {
     display: none;
   }
-  .nsfw-pulse-band {
-    height: 4px;
-  }
-  .nsfw-pulse-mark {
-    width: 24px;
-    height: 24px;
+  .cr-pulse-track:has(> .nsfw-pulse-layer) {
+    --pin: 20px;
   }
   .nsfw-pin-count {
     top: -6px;
@@ -5830,8 +5934,8 @@ textarea:focus,
     display: none;
   }
   .nsfw-pulse-mark .mini-icon {
-    width: 15px;
-    height: 15px;
+    width: 13px;
+    height: 13px;
   }
 }
 
@@ -6810,14 +6914,25 @@ textarea:focus,
   border-color: var(--warning);
   opacity: 0.85;
 }
-.nsfw-pulse-mark {
-  width: 24px;
-  height: 24px;
-}
-.nsfw-tl-pin .mini-icon,
-.nsfw-pulse-mark .mini-icon {
+.nsfw-tl-pin .mini-icon {
   width: 17px;
   height: 17px;
+}
+.nsfw-pulse-mark .mini-icon {
+  width: 12px;
+  height: 12px;
+}
+/* Two body parts in one moment: a two-colour ring around the main colour. */
+.cat2-vulva { --cat2: #e23fb3; }
+.cat2-phallus { --cat2: #3b82f6; }
+.cat2-anus { --cat2: #8b5cf6; }
+.cat2-breast { --cat2: #fb7185; }
+.cat2-butt { --cat2: #f59e0b; }
+.nsfw-pulse-mark.multi {
+  border-color: transparent;
+  background:
+    radial-gradient(circle, var(--cat) 0 58%, #0f0e1b 60% 66%, transparent 68%),
+    conic-gradient(from -90deg, var(--cat) 0 50%, var(--cat2) 50% 100%);
 }
 .nsfw-pin-extra {
   background: #0f0e1b;

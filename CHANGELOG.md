@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.4.18 — Cronologia NSFW leggibile: corsia dedicata e motion
+
+- I momenti NSFW hanno una corsia sotto la barra della sessione: non coprono più REC, ONLINE e buchi. Segnaposto sopra, con una punta che indica l'inizio del momento; fasce sotto, sempre visibili anche quando durano pochi pixel.
+- Fasce e segnaposto hanno il colore della parte più esplicita. Se nello stesso momento ci sono due parti, il segnaposto ha un anello bicolore invece della mini-icona sovrapposta.
+- Motion: le fasce nuove si disegnano da sinistra e i segnaposto nuovi cadono con un piccolo rimbalzo, a cascata. Anima solo ciò che compare la prima volta, i refresh restano fermi. Una fascia ancora in corso scorre con un flusso di luce e ha una cometa pulsante in testa. Al passaggio su un segnaposto le sue fasce si illuminano e il resto si attenua. Con «riduci movimento» tutto resta statico.
+
 ## 3.4.17 — Fasce NSFW leggibili, anche da telefono
 
 - Un singolo fotogramma pulito in mezzo a una sequenza NSFW non la spezza più: la fascia finisce solo se il contenuto resta pulito per almeno 60 secondi. Sui dati reali del nodo del 26/09: tinnydoll da 102 a 17 fasce, mollybabyx da 51 a 6.

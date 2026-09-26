@@ -15,7 +15,7 @@ SOURCE.txt identifica la revisione (ultimo allineamento completo: 2026-09-25,
 incluse le guide collegate da questo file). Il vecchio handoff duplicato è stato sostituito
 da un rinvio, con originale conservato nella directory rollback.
 
-## Handoff corrente — 2026-09-26 (LiveVault 3.4.17)
+## Handoff corrente — 2026-09-26 (LiveVault 3.4.18)
 Sessione locale con SSH al nodo. Misure, cause, procedure e rollback in
 [LIVE-PANEL-20260909.md](docs/LIVE-PANEL-20260909.md) (sezioni "Short captures
 in Cronologia" e NSFW 3.3/3.4) e [MP4-HLS-RECOVERY.md](docs/MP4-HLS-RECOVERY.md)
@@ -34,8 +34,9 @@ in Cronologia" e NSFW 3.3/3.4) e [MP4-HLS-RECOVERY.md](docs/MP4-HLS-RECOVERY.md)
 - Regola NSFW dalla 3.4.16 (richiesta utente 2026-09-26): sopra `nsfw_threshold` decide
   il modello veloce da solo; il 640m ricontrolla solo tra `nsfw_candidate` e
   `nsfw_threshold`; niente più "da controllare" nuovi. Fasce NSFW continue: finiscono
-  solo dopo 60 s di fotogrammi puliti (3.4.17, segni live `clear`), visibili anche da
-  telefono. Dettagli in LIVE-PANEL, sezione NSFW.
+  solo dopo 60 s di fotogrammi puliti (3.4.17, segni live `clear`). In Cronologia
+  (3.4.18) corsia NSFW sotto la barra, segnaposto a spillo sopra e fasce sotto, motion
+  solo sugli elementi nuovi. Dettagli in LIVE-PANEL, sezione NSFW.
 - `segment_minutes` portato da 120 a 15 il 2026-09-25 09:50 UTC su richiesta
   utente (PATCH `/api/settings`, vale per le capture avviate dopo): ffmpeg taglia
   nello stesso processo senza buchi, ogni parte da 15 min viene unita, collegata ai
