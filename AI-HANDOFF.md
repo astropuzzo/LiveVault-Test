@@ -15,7 +15,7 @@ SOURCE.txt identifica la revisione (ultimo allineamento completo: 2026-09-25,
 incluse le guide collegate da questo file). Il vecchio handoff duplicato è stato sostituito
 da un rinvio, con originale conservato nella directory rollback.
 
-## Handoff corrente — 2026-09-27 (LiveVault 3.4.21)
+## Handoff corrente — 2026-09-27 (LiveVault 3.4.22)
 Sessione locale con SSH al nodo. Misure, cause, procedure e rollback in
 [LIVE-PANEL-20260909.md](docs/LIVE-PANEL-20260909.md) (sezioni "Short captures
 in Cronologia" e NSFW 3.3/3.4) e [MP4-HLS-RECOVERY.md](docs/MP4-HLS-RECOVERY.md)
@@ -49,6 +49,11 @@ in Cronologia" e NSFW 3.3/3.4) e [MP4-HLS-RECOVERY.md](docs/MP4-HLS-RECOVERY.md)
   Dalla 3.4.21 le parti restano in locale e diventano un file unico a ~1,95 GB o 2 h
   (`size_policy.fragments_fill_a_file`, `MERGED_FILE_MAX_SECONDS`) o a fine live dopo
   `session_stitch_gap_minutes` (15 sul nodo); i segni NSFW live vanno sul file unito.
+- 3.4.22: con i file da 1-2 h la copertura dal vivo media era 77% (credito 10 s tra
+  campioni) e i file restavano «Da analizzare» senza momenti pur avendo i segni
+  (tinnydoll 1265/1267/1269). Ora credito 30 s (`COVER_GAP_SECONDS`) e i momenti dal
+  vivo sono pubblicati anche sotto `LIVE_COVERAGE_OK` quando c'è almeno un segno NSFW;
+  quei file (`needs_full_scan`) restano in locale e in coda per l'analisi completa.
   Primo risultato: registrazione 1109 (tinnydoll, 901 s) chiusa `nsfw` con
   `nsfw_source=live`, copertura 0,997, senza analisi completa. Effetto collaterale
   (falso riavvio "nessun dato HLS scritto" quando la parte unita viene cancellata a

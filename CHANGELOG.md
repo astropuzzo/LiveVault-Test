@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.4.22 — I momenti visti dal vivo compaiono sempre sul file
+
+- Segnalazione utente (tinnydoll, 27/09): la Cronologia mostrava i simboli NSFW ma il file unito era «Da analizzare» senza momenti. I segni dal vivo erano già sul file con i minuti giusti, ma un file si chiudeva «visto dal vivo» solo con copertura ≥ 85%, altrimenti restava in attesa dell'analisi completa, che parte solo senza live in registrazione. I tre file di tinnydoll erano coperti al 68%, 83% e 64%.
+- Ora i momenti trovati dal vivo vengono mostrati subito anche se la copertura è parziale; in quel caso la finestra lo dice e l'analisi completa controlla il resto appena possibile (il file locale resta finché non l'ha fatto, entro il limite di attesa impostato), poi sostituisce l'elenco con quello completo. Se dal vivo non è stato visto nulla e la copertura è parziale, il file resta «Da analizzare» come prima: dire «safe» sarebbe un'ipotesi.
+- Copertura misurata in modo realistico: due campioni fino a 30 secondi di distanza contano come copertura continua (prima 10 s). Con più live insieme il CM4 campiona ogni live circa ogni 12 s: i file risultavano coperti al 64-83% anche se erano stati guardati quasi tutti.
+- All'avvio i file rimasti «Da analizzare» (o saltati perché la copia locale era già stata cancellata) con segni dal vivo già collegati mostrano i loro momenti. I file esclusi o annullati a mano restano come sono.
+
 ## 3.4.21 — Un file unico per registrazione sul cloud, minuti NSFW del file unito
 
 - Dal 25/09 (`segment_minutes` = 15 sul nodo) la cattura è divisa in pezzi da 15 minuti (un guasto perde al massimo un pezzo), ma ogni pezzo veniva pubblicato da solo: su Gofile/Pixeldrain finivano file da 15 minuti invece di un file per registrazione. La regola che pubblicava un blocco appena c'erano 15 minuti pronti (pensata per gli spezzoni di riconnessione quando i pezzi erano da 120 minuti) è sostituita: i pezzi della stessa registrazione restano in locale e vengono uniti in un file unico quando arrivano alla dimensione massima (circa 1,95 GB con il limite a 2 GB) o a 2 ore, oppure a fine live dopo la finestra di ricongiungimento. I pezzi restanti iniziano il file successivo.

@@ -374,6 +374,25 @@ and `_index_file` (`app/workers.py`), both through `nsfw_attach_stitched` /
   mid-entrance frame, live ping, phone 390 px with tap. The export was
   deleted after the QA.
   Rollback: revert 3.4.17 (and 3.4.16); `clear` marks are ignored by older code.
+- Partial live coverage (3.4.22, user report on tinnydoll 2026-09-27): joined
+  1 h files covered 64-83% stayed `pending` with no moments although their
+  live marks were attached with the right `file_time`, because
+  `nsfw_attach_parts` closed a file as `live` only at `LIVE_COVERAGE_OK`
+  (0.85) and the full scan only runs with no capture. Two causes, two fixes:
+  the coverage credit per sample gap was 2.5 x step = 10 s while a few lives
+  sharing `nsfw_live_fps` on the CM4 are sampled every ~12 s (average 0.77
+  since 2026-09-25), now `COVER_GAP_SECONDS` = 30 (bands hold 60 s, so a
+  sample every 30 s cannot miss one); and a file with at least one NSFW live
+  mark is closed as `live` whatever its coverage. Below 0.85 it
+  `needs_full_scan` (`app/nsfw_worker.py`): `nsfw_hold_blocks_delete` keeps
+  the local copy (up to `nsfw_max_hold_hours`), `_next_nsfw_job` picks it
+  after the pending files (status back to `pending`, live moments kept until
+  the scan replaces them with `nsfw_source=scan`), and the dialog says the
+  moments come from N% of the file. No NSFW mark and partial coverage: still
+  `pending` (calling it safe would be a guess). `nsfw_publish_live_left_pending`
+  (run once when the verifier loop starts) closes files left `pending`, or
+  `skipped` because the local copy went, that already carry NSFW live marks;
+  user exclusions/cancellations are left alone.
 - Stripchat is sampled on the raw `<stem>.capture.mp4` but indexed/stitched
   as the remuxed `<stem>.mp4` (`_remux` in `app/stripchat_capture.py`,
   `-start_at_zero`, same timeline); `live_aliases()` (3.4.10) matches both

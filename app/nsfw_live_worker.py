@@ -37,11 +37,15 @@ from . import storage_handoff
 from .db import NsfwCoverage, NsfwMark, Recording, db_session
 from .mp4_index import GrowingIndex, LiveFragment, NotFragmented
 from .nsfw_scan import BAND_HOLD_SECONDS, MOMENT_GAP_FACTOR, Verdict, combine_classes, helper_env, overall, stretches
-from .nsfw_worker import file_signature, nsfw_dir
+from .nsfw_worker import LIVE_COVERAGE_OK, file_signature, nsfw_dir
 from .settings_store import runtime
 from .utils import utcnow
 
-LIVE_COVERAGE_OK = 0.85
+# Samples up to this far apart count as continuous coverage: a band holds 60 s
+# of clean frames, so a sample every half minute cannot miss one. Until 3.4.21
+# the credit was 2.5 steps (10 s): a few lives sharing nsfw_live_fps on a busy
+# CM4 are sampled every ~12 s, which scored 64-83% and left files unclosed.
+COVER_GAP_SECONDS = 30.0
 INHERIT_SECONDS = 60
 BACKLOG_JUMP_SECONDS = 60
 PREVIEW_GAP_SECONDS = 30  # at most one kept preview per 30 s of a moment
@@ -430,10 +434,10 @@ class LiveNsfwMixin:
                 db.add(NsfwCoverage(part_path=str(track.path), source_id=track.source_id, samples=1,
                                     first_time=at, last_time=at, covered_seconds=step, updated_at=utcnow()))
                 return
-            # Samples closer than the moment-merge tolerance count as continuous,
-            # so a few captures sharing nsfw_live_fps can still reach LIVE_COVERAGE_OK.
+            # Samples up to COVER_GAP_SECONDS apart count as continuous, so a
+            # few captures sharing nsfw_live_fps can still reach LIVE_COVERAGE_OK.
             gap = max(0.0, at - row.last_time)
-            row.covered_seconds += min(gap, MOMENT_GAP_FACTOR * step)
+            row.covered_seconds += min(gap, max(COVER_GAP_SECONDS, MOMENT_GAP_FACTOR * step))
             row.samples += 1
             row.last_time = max(row.last_time, at)
             row.updated_at = utcnow()
@@ -441,6 +445,8 @@ class LiveNsfwMixin:
     # ---------- verifier ----------
     async def _nsfw_verify_loop(self) -> None:
         self._nsfw_live_init()
+        with contextlib.suppress(Exception):
+            self.nsfw_publish_live_left_pending()
         try:
             while not self._stopping:
                 try:
@@ -555,10 +561,12 @@ class LiveNsfwMixin:
             rec = db.get(Recording, recording_id)
             if rec is None:
                 return
+            found = 0
             for path, offset, _duration in parts:
                 for mark in db.scalars(select(NsfwMark).where(NsfwMark.part_path.in_(live_aliases(path)))).all():
                     mark.recording_id = recording_id
                     mark.file_time = float(offset) + float(mark.part_time)
+                    found += 1 if NSFW_LABEL.get(mark.state) else 0
             covered = total = 0.0
             for path, _offset, duration in parts:
                 total += max(0.0, float(duration))
@@ -569,10 +577,38 @@ class LiveNsfwMixin:
                 covered += min(seen, max(0.0, float(duration)))
             ratio = covered / total if total > 0 else 0.0
             rec.nsfw_live_coverage = round(ratio, 3)
-            if cfg.nsfw_enabled and ratio >= LIVE_COVERAGE_OK and rec.nsfw_status == "pending":
-                # Seen live: no full scan needed, only the pending verifications.
+            if cfg.nsfw_enabled and rec.nsfw_status == "pending" and (ratio >= LIVE_COVERAGE_OK or found):
+                # Seen live: its moments are shown now. Covered enough, no full
+                # scan; partly covered, the full scan fills the gaps later.
                 rec.nsfw_source, rec.nsfw_status = "live", "verifying"
         self.nsfw_finalize_live(recording_id)
+
+    def nsfw_publish_live_left_pending(self) -> int:
+        """Files closed before 3.4.21 below the coverage rule: publish their live moments.
+
+        Their marks were attached with the right file times, but the file stayed
+        "Da analizzare" (or "skipped" once the local copy was deleted) until a
+        full scan that only runs with no live recording.
+        """
+        cfg = runtime()
+        if not cfg.nsfw_enabled:
+            return 0
+        with db_session() as db:
+            ids = list(db.scalars(
+                select(Recording.id)
+                .where(func.coalesce(Recording.nsfw_source, "") == "")
+                # Skipped because the local copy went, not excluded or cancelled by the user.
+                .where((Recording.nsfw_status == "pending")
+                       | ((Recording.nsfw_status == "skipped")
+                          & func.coalesce(Recording.nsfw_error, "").in_(["", "File locale non disponibile"])))
+                .where(select(NsfwMark.id).where(NsfwMark.recording_id == Recording.id,
+                                                NsfwMark.state.in_(list(NSFW_LABEL))).exists())
+            ).all())
+            for rec in db.scalars(select(Recording).where(Recording.id.in_(ids))).all():
+                rec.nsfw_source, rec.nsfw_status = "live", "verifying"
+        for recording_id in ids:
+            self.nsfw_finalize_live(int(recording_id))
+        return len(ids)
 
     def nsfw_finalize_live(self, recording_id: int) -> None:
         cfg = runtime()

@@ -531,6 +531,14 @@
     box.hidden = false;
   }
 
+  // Live moments of a partly covered file are shown at once; the full scan
+  // completes them (same rule as needs_full_scan, LIVE_COVERAGE_OK 0.85).
+  const partialLiveNote = (recording, status) => {
+    const coverage = Number(recording.nsfw_live_coverage || 0);
+    if (recording.nsfw_source !== 'live' || coverage >= 0.85 || !['nsfw', 'review', 'safe', 'verifying'].includes(status)) return '';
+    return `<p class="nsfw-note">Momenti visti dal vivo sul ${Math.round(coverage * 100)}% del file: l'analisi completa controllerà il resto appena nessuna live è in registrazione.</p>`;
+  };
+
   function renderDialog() {
     const dialog = $('#nsfwDialog');
     const recording = findRecording(dialogRecordingId);
@@ -558,6 +566,7 @@
       <div class="nsfw-lightbox" hidden></div>
       ${moments.length ? `<div class="nsfw-moments">${moments.map(moment => momentCard(recording, moment)).join('')}</div>` : `<p class="nsfw-empty">${esc(empty)}</p>`}
       ${recording.nsfw_error && status !== 'error' ? `<p class="nsfw-note">${esc(recording.nsfw_error)}</p>` : ''}
+      ${partialLiveNote(recording, status)}
       ${cloud}
       <footer class="nsfw-dialog-actions">${copy}${menu}</footer>`);
     applyDynamicStyles(dialog);

@@ -14,6 +14,7 @@ from sqlalchemy.orm import sessionmaker
 from app import nsfw_live_worker, nsfw_worker, storage_handoff
 from app.db import Base, NsfwCoverage, NsfwMark, Recording
 from app.nsfw_live_worker import cluster_marks
+from app.nsfw_worker import needs_full_scan
 from app.settings_store import RuntimeSettings
 from app.workers import WorkerManager
 
@@ -141,9 +142,12 @@ def test_live_capture_is_marked_while_growing_then_mapped_onto_the_stitched_file
     manager.nsfw_attach_parts(rec_id, [(str(tmp_path / "earlier.mp4"), 0.0, 100.0), (str(capture), 100.0, 40.0)])
     with live_env() as db:
         rec = db.get(Recording, rec_id)
-        # Part 1 was never sampled: coverage 40/140 < 85% → a full scan is still queued.
-        assert rec.nsfw_status == "pending" and rec.nsfw_live_coverage == pytest.approx(40 / 140, abs=0.05)
+        # Part 1 was never sampled: coverage 40/140 < 85%. The moment seen live is
+        # shown at once (3.4.21) and a full scan is still due for the rest.
+        assert rec.nsfw_live_coverage == pytest.approx(40 / 140, abs=0.05)
+        assert rec.nsfw_source == "live" and rec.nsfw_status == "nsfw" and needs_full_scan(rec)
         assert all(m.recording_id == rec_id and 109 <= m.file_time <= 124 for m in db.scalars(select(NsfwMark)).all())
+        assert 109 <= json.loads(rec.nsfw_moments)[0]["start"] <= 111
         rec.nsfw_status = "pending"
         other = Recording(source_id=7, source_name="demo", session_id="s1", local_path=str(tmp_path / "solo.mp4"),
                           filename="solo.mp4", started_at=datetime.now(timezone.utc), integrity_status="passed",

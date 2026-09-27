@@ -149,13 +149,13 @@ def test_live_helpers_always_run_on_one_core(env, monkeypatch):
 def test_live_coverage_counts_samples_within_the_moment_gap_as_continuous(env):
     manager = workers.WorkerManager()
     track = nsfw_live_worker.LiveTrack(25, "AliciaBrooks", "s1", path=Path("/rec/part001.capture.mp4"))
-    # Four captures sharing 0.5 fps: one sample every ~8 s per capture, step 4 s.
-    for at in (0.0, 8.0, 16.0, 24.0, 60.0):
+    # Captures sharing 0.5 fps on a busy CM4: one sample every ~8-12 s per capture.
+    for at in (0.0, 8.0, 20.0, 32.0, 68.0):
         manager._nsfw_live_cover(track, at, 4.0)
     with env.scope() as db:
         row = db.get(NsfwCoverage, str(track.path))
-        # 4 (first) + 8 + 8 + 8 + 10 (36 s gap capped at 2.5 x step)
-        assert row.covered_seconds == pytest.approx(38.0)
+        # 4 (first) + 8 + 12 + 12 + 30 (36 s gap capped at COVER_GAP_SECONDS; 3.4.20 capped at 10)
+        assert row.covered_seconds == pytest.approx(66.0)
 
 
 def test_capture_end_line_keeps_the_reason_and_hides_signed_urls():
