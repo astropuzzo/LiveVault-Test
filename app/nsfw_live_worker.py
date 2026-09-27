@@ -578,8 +578,8 @@ class LiveNsfwMixin:
             ratio = covered / total if total > 0 else 0.0
             rec.nsfw_live_coverage = round(ratio, 3)
             if cfg.nsfw_enabled and rec.nsfw_status == "pending" and (ratio >= LIVE_COVERAGE_OK or found):
-                # Seen live: its moments are shown now. Covered enough, no full
-                # scan; partly covered, the full scan fills the gaps later.
+                # Seen live: closed from the live marks, no second analysis.
+                # Nothing seen on a barely sampled file stays pending.
                 rec.nsfw_source, rec.nsfw_status = "live", "verifying"
         self.nsfw_finalize_live(recording_id)
 

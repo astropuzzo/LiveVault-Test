@@ -393,6 +393,13 @@ and `_index_file` (`app/workers.py`), both through `nsfw_attach_stitched` /
   (run once when the verifier loop starts) closes files left `pending`, or
   `skipped` because the local copy went, that already carry NSFW live marks;
   user exclusions/cancellations are left alone.
+  3.4.23 (user decision: what was analysed live is not analysed again):
+  `needs_full_scan`, its queue tier in `_next_nsfw_job` and its hold were
+  removed; a file with NSFW live marks is final whatever its coverage, one
+  with none is `safe` from `LIVE_COVERAGE_OK` = 0.5 (the dialog says "visto
+  dal vivo sul N% del file"), below it stays `pending` for a full scan that
+  only happens while a local copy exists. `nsfw_hold_delete` was set to false
+  on the node, so local copies go right after the verified upload.
 - Stripchat is sampled on the raw `<stem>.capture.mp4` but indexed/stitched
   as the remuxed `<stem>.mp4` (`_remux` in `app/stripchat_capture.py`,
   `-start_at_zero`, same timeline); `live_aliases()` (3.4.10) matches both

@@ -1,5 +1,5 @@
-"""3.4.22: moments seen live are shown on the file even when the sampler covered
-only part of it; the full scan completes those files later."""
+"""3.4.22-3.4.23: moments seen live are shown on the file even when the sampler
+covered only part of it, and what was analysed live is not analysed again."""
 import json
 from datetime import timedelta
 
@@ -7,7 +7,6 @@ from sqlalchemy import select
 
 import app.workers as workers
 from app.db import NsfwCoverage, NsfwMark, Recording
-from app.nsfw_worker import needs_full_scan
 from tests.test_v3412_nsfw_live_stitch import BASE, env  # noqa: F401  (fixture)
 
 
@@ -30,7 +29,7 @@ def _mark(db, part: str, at: float, state: str = "confirmed", recording_id=None)
                     recording_id=recording_id, file_time=at if recording_id else None))
 
 
-def test_a_partly_covered_file_shows_its_live_moments_and_queues_the_full_scan(tmp_path, env):  # noqa: F811
+def test_a_partly_covered_file_shows_its_live_moments_and_is_not_analysed_again(tmp_path, env):  # noqa: F811
     """tinnydoll 2026-09-27: three joined files covered 64-83% stayed "Da analizzare", no moments."""
     part = str(tmp_path / "tinnydoll_part001.mp4")
     with env.scope() as db:
@@ -46,25 +45,29 @@ def test_a_partly_covered_file_shows_its_live_moments_and_queues_the_full_scan(t
         rec = db.get(Recording, rec_id)
         assert rec.nsfw_source == "live" and rec.nsfw_status == "nsfw"
         assert json.loads(rec.nsfw_moments)[0]["start"] == 600.0
-        assert needs_full_scan(rec)
-    # The full scan picks it up when it may run, keeping the live moments meanwhile.
-    job = manager._next_nsfw_job()
-    assert job is not None and job.id == rec_id
-    with env.scope() as db:
-        rec = db.get(Recording, rec_id)
-        assert rec.nsfw_status == "pending" and json.loads(rec.nsfw_moments)[0]["start"] == 600.0
+        # User decision 2026-09-27: what was analysed live is not analysed again,
+        # and the local copy is not held for it.
+        assert not manager.nsfw_hold_blocks_delete(rec)
+    assert manager._next_nsfw_job() is None
 
 
-def test_a_partly_covered_file_with_nothing_seen_waits_for_the_full_scan(tmp_path, env):  # noqa: F811
-    part = str(tmp_path / "quiet_part001.mp4")
+def test_nothing_seen_is_safe_only_on_a_file_sampled_for_at_least_half(tmp_path, env):  # noqa: F811
+    manager = workers.WorkerManager()
+    manager._delete_uploaded_local_if_ready = lambda *_a: False
+    ids = {}
     with env.scope() as db:
-        rec_id = _recording(db, tmp_path, "001_quiet.mp4")
-        _mark(db, part, 100.0, "rejected")
-        db.add(NsfwCoverage(part_path=part, source_id=25, samples=100, covered_seconds=1800.0))  # 50%
-    workers.WorkerManager().nsfw_attach_parts(rec_id, [(part, 0.0, 3600.0)])
+        for name, covered in (("001_seen.mp4", 2160.0), ("002_barely.mp4", 1080.0)):  # 60%, 30%
+            part = str(tmp_path / f"{name}.part")
+            ids[name] = (_recording(db, tmp_path, name), part)
+            _mark(db, part, 100.0, "rejected")
+            db.add(NsfwCoverage(part_path=part, source_id=25, samples=100, covered_seconds=covered))
+    for rec_id, part in ids.values():
+        manager.nsfw_attach_parts(rec_id, [(part, 0.0, 3600.0)])
     with env.scope() as db:
-        rec = db.get(Recording, rec_id)
-        assert rec.nsfw_status == "pending" and rec.nsfw_source in ("", None)  # "safe" would be a guess
+        seen = db.get(Recording, ids["001_seen.mp4"][0])
+        assert seen.nsfw_source == "live" and seen.nsfw_status == "safe"
+        barely = db.get(Recording, ids["002_barely.mp4"][0])
+        assert barely.nsfw_status == "pending" and barely.nsfw_source in ("", None)  # "safe" would be a guess
 
 
 def test_files_left_pending_before_the_fix_publish_their_live_moments(tmp_path, env):  # noqa: F811

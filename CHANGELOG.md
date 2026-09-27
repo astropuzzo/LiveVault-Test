@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.4.23 — Niente seconda analisi di ciò che è stato visto dal vivo
+
+- Decisione utente: se i fotogrammi sono già stati analizzati durante la registrazione, il file non si rianalizza. Un file visto dal vivo si chiude con i momenti trovati dal vivo; se dal vivo non è stato visto nulla è «safe» quando il campionatore ha guardato almeno metà del file (la finestra dice quanto: «visto dal vivo sul N% del file»), altrimenti resta da analizzare.
+- Tolte la coda di analisi completa per i file coperti in parte (3.4.22) e la trattenuta del file locale per quella analisi: il file locale si cancella subito dopo l'upload verificato. L'analisi completa resta per i file mai visti dal vivo e per «Analizza ora».
+- Sul nodo tolta anche la spunta «Tieni il file locale finché non è analizzato».
+
 ## 3.4.22 — I momenti visti dal vivo compaiono sempre sul file
 
 - Segnalazione utente (tinnydoll, 27/09): la Cronologia mostrava i simboli NSFW ma il file unito era «Da analizzare» senza momenti. I segni dal vivo erano già sul file con i minuti giusti, ma un file si chiudeva «visto dal vivo» solo con copertura ≥ 85%, altrimenti restava in attesa dell'analisi completa, che parte solo senza live in registrazione. I tre file di tinnydoll erano coperti al 68%, 83% e 64%.

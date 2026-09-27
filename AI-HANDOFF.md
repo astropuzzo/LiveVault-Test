@@ -15,7 +15,7 @@ SOURCE.txt identifica la revisione (ultimo allineamento completo: 2026-09-25,
 incluse le guide collegate da questo file). Il vecchio handoff duplicato è stato sostituito
 da un rinvio, con originale conservato nella directory rollback.
 
-## Handoff corrente — 2026-09-27 (LiveVault 3.4.22)
+## Handoff corrente — 2026-09-27 (LiveVault 3.4.23)
 Sessione locale con SSH al nodo. Misure, cause, procedure e rollback in
 [LIVE-PANEL-20260909.md](docs/LIVE-PANEL-20260909.md) (sezioni "Short captures
 in Cronologia" e NSFW 3.3/3.4) e [MP4-HLS-RECOVERY.md](docs/MP4-HLS-RECOVERY.md)
@@ -54,6 +54,10 @@ in Cronologia" e NSFW 3.3/3.4) e [MP4-HLS-RECOVERY.md](docs/MP4-HLS-RECOVERY.md)
   (tinnydoll 1265/1267/1269). Ora credito 30 s (`COVER_GAP_SECONDS`) e i momenti dal
   vivo sono pubblicati anche sotto `LIVE_COVERAGE_OK` quando c'è almeno un segno NSFW;
   quei file (`needs_full_scan`) restano in locale e in coda per l'analisi completa.
+  3.4.23 (decisione utente: niente seconda analisi di ciò che è visto dal vivo): tolti
+  `needs_full_scan`, la coda e la trattenuta; `LIVE_COVERAGE_OK` = 0,5 vale solo per
+  chiudere «safe» un file senza segni NSFW. `nsfw_hold_delete` messo a false sul nodo
+  (PATCH `/api/settings`): il file locale si cancella subito dopo l'upload verificato.
 - 2026-09-27 16:40 UTC, su richiesta utente: cancellate le copie locali già caricate
   (rec 1264-1269 e la copia orfana della 370, tutte Gofile con stessa dimensione; stato
   NSFW `skipped` per le non analizzate, i momenti dal vivo restano), la cartella

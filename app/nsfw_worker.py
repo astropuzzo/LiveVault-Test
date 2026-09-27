@@ -29,19 +29,14 @@ from .settings_store import runtime
 from .utils import utcnow
 
 OPEN_STATES = ("pending", "scanning", "paused")
-# A file seen live is closed from its live marks alone when the sampler covered
-# at least this share of it. Below it, the moments found live are published
-# anyway and the full scan fills the gaps later (needs_full_scan).
-LIVE_COVERAGE_OK = 0.85
+# A file seen live is closed from its live marks alone (user decision
+# 2026-09-27: no second analysis of what was analysed live). With NSFW marks it
+# is closed whatever its coverage; with none it is "safe" only if the sampler
+# covered at least this share of it, otherwise it waits for a full scan.
+LIVE_COVERAGE_OK = 0.5
 # After a (re)start the poller needs a moment to resume the live captures; a
 # full scan started in that gap competes with them and is stopped at once.
 STARTUP_GRACE_SECONDS = 90
-
-
-def needs_full_scan(rec) -> bool:
-    """Live moments published on a partly covered file: a full scan completes it."""
-    return (getattr(rec, "nsfw_source", "") == "live"
-            and float(getattr(rec, "nsfw_live_coverage", 0) or 0) < LIVE_COVERAGE_OK)
 
 
 def file_signature(path: Path) -> str:
@@ -98,20 +93,6 @@ class NsfwWorkerMixin:
             # NVMe detached: only files written to the internal buffer are reachable.
             buffering = storage_handoff.state()["mode"] == "buffer"
             rec = next((row for row in candidates if not buffering or Path(row.local_path).is_file()), None)
-            if rec is None:
-                # Live moments published on a partly covered file: the full
-                # scan fills the gaps; the live moments stay shown until it ends.
-                partial = db.scalars(
-                    select(Recording)
-                    .where(Recording.local_deleted.is_(False), Recording.integrity_status == "passed",
-                           Recording.nsfw_source == "live", Recording.nsfw_live_coverage < LIVE_COVERAGE_OK,
-                           Recording.nsfw_status.in_(["safe", "review", "nsfw"]))
-                    .order_by(case((Recording.upload_status == "uploaded", 0), else_=1), Recording.started_at.asc())
-                    .limit(50)
-                ).all()
-                rec = next((row for row in partial if not buffering or Path(row.local_path).is_file()), None)
-                if rec is not None:
-                    rec.nsfw_status, rec.nsfw_resume_at, rec.nsfw_progress, rec.nsfw_hits = "pending", 0.0, 0.0, ""
             if rec is None:
                 # Moments must match the file that goes to the cloud: if a
                 # scanned local file was converted or repaired, scan it again.
@@ -378,7 +359,7 @@ class NsfwWorkerMixin:
     def nsfw_hold_blocks_delete(self, rec: Recording) -> bool:
         """True while an uploaded file must stay local to be scanned."""
         cfg = runtime()
-        if getattr(rec, "nsfw_status", "") not in OPEN_STATES and not needs_full_scan(rec):
+        if getattr(rec, "nsfw_status", "") not in OPEN_STATES:
             return False
         if not (getattr(cfg, "nsfw_enabled", False) and cfg.nsfw_hold_delete) or not models_ready(cfg)[0]:
             return False

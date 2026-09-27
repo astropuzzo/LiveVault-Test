@@ -63,7 +63,7 @@ BASE = Path(__file__).parent
 LOGIN_FAILURES: dict[str, deque[float]] = defaultdict(deque)
 LOGIN_WINDOW = 10 * 60
 LOGIN_MAX_FAILURES = 6
-VERSION = "3.4.22"
+VERSION = "3.4.23"
 
 
 class LoginBody(BaseModel):
@@ -1685,7 +1685,7 @@ def control_room_pulse(request: Request, hours: int = 12):
             for mark in db.scalars(select(NsfwMark).where(
                 NsfwMark.source_id.in_(source_ids),
                 NsfwMark.wall_at >= window_start,
-                # clear/rejected marks end the bands (3.4.22).
+                # clear/rejected marks end the bands (3.4.23).
                 NsfwMark.state.in_(["pending", "confirmed", "inherited", "review", "clear", "rejected"]),
             ).order_by(NsfwMark.wall_at)).all():
                 marks_by_source[int(mark.source_id)].append(mark)

@@ -531,14 +531,6 @@
     box.hidden = false;
   }
 
-  // Live moments of a partly covered file are shown at once; the full scan
-  // completes them (same rule as needs_full_scan, LIVE_COVERAGE_OK 0.85).
-  const partialLiveNote = (recording, status) => {
-    const coverage = Number(recording.nsfw_live_coverage || 0);
-    if (recording.nsfw_source !== 'live' || coverage >= 0.85 || !['nsfw', 'review', 'safe', 'verifying'].includes(status)) return '';
-    return `<p class="nsfw-note">Momenti visti dal vivo sul ${Math.round(coverage * 100)}% del file: l'analisi completa controllerà il resto appena nessuna live è in registrazione.</p>`;
-  };
-
   function renderDialog() {
     const dialog = $('#nsfwDialog');
     const recording = findRecording(dialogRecordingId);
@@ -549,7 +541,8 @@
     const pct = Math.round(Number(live?.progress ?? recording.nsfw_progress ?? 0) * 100);
     const progress = live || status === 'paused'
       ? `<div class="nsfw-progress" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100"><i data-dynamic-width="${pct}"></i></div><p class="nsfw-note">${live ? `${clock(live.t)} / ${clock(live.duration)} · ${eta(live.eta_seconds)}` : `Fermata a ${clock(Number(recording.nsfw_progress || 0) * Number(recording.duration_seconds || 0))}: riprende da lì`}</p>` : '';
-    const empty = status === 'safe' ? 'Nessun momento con nudità trovato.'
+    const seenLive = recording.nsfw_source === 'live' && recording.nsfw_live_coverage ? ` dal vivo (sul ${Math.round(recording.nsfw_live_coverage * 100)}% del file)` : '';
+    const empty = status === 'safe' ? `Nessun momento con nudità visto${seenLive || ' nel file'}.`
       : ['pending', 'paused', 'scanning'].includes(status) ? 'I momenti compaiono qui durante l\'analisi.'
       : status === 'error' ? `Errore: ${recording.nsfw_error || 'sconosciuto'}` : 'Nessun momento registrato.';
     const remote = safeUrl(recording.remote_url);
@@ -566,7 +559,6 @@
       <div class="nsfw-lightbox" hidden></div>
       ${moments.length ? `<div class="nsfw-moments">${moments.map(moment => momentCard(recording, moment)).join('')}</div>` : `<p class="nsfw-empty">${esc(empty)}</p>`}
       ${recording.nsfw_error && status !== 'error' ? `<p class="nsfw-note">${esc(recording.nsfw_error)}</p>` : ''}
-      ${partialLiveNote(recording, status)}
       ${cloud}
       <footer class="nsfw-dialog-actions">${copy}${menu}</footer>`);
     applyDynamicStyles(dialog);
