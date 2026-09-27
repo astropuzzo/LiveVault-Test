@@ -2014,10 +2014,9 @@ input[type="search"]::-webkit-search-cancel-button {
 .cr-pulse-track {
   position: relative;
   isolation: isolate;
-  height: 36px;
+  height: 22px;
   border-radius: 6px;
-  /* Tint only the bar area; the NSFW strip lives in the 14px underneath. */
-  background: linear-gradient(rgba(255, 255, 255, 0.025), rgba(255, 255, 255, 0.025)) top / 100% 22px no-repeat;
+  background: rgba(255, 255, 255, 0.025);
 }
 .cr-pulse-hour-grid {
   position: absolute;
@@ -5605,114 +5604,109 @@ textarea:focus,
   transform: translateX(-100%);
 }
 
-/* Monitor Cronologia, NSFW strip (3.4.19). One mark per fact: a 4px strip
-   under the session bar in the colour of the most explicit part, an icon only
-   on stretches of 44px or more. Geometry inside the 36px track: bar 2.75-19.25px
-   (SVG), strip 26-30px, icons 20-36px, hit area 20-36px. */
+/* Monitor Cronologia, NSFW on the session bar (3.4.20). Where moments are,
+   the REC bar is drawn as a chain of body-part symbols (one per slice of time,
+   chosen in nsfw.js) in the colour of the recording underneath (--st): red
+   recording or on disk, green cloud, blue in elaborazione. Each symbol is a
+   CSS mask (data URI, CSP img-src data:) painted in currentColor. The piece
+   covers the full 22px track, above the bar (2.75-19.25px) and the grid. */
 .nsfw-pulse-layer {
   position: absolute;
   inset: 0;
-  z-index: 3;
+  z-index: 4;
   pointer-events: none;
 }
-.nsfw-strip {
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 26px;
-  height: 4px;
-}
-.nsfw-run {
+.nsfw-bar-run {
+  --st: 255 92 92;
   position: absolute;
   top: 0;
-  height: 4px;
-  min-width: 3px;
-  border-radius: 2px;
-  background: var(--cat);
-  box-shadow: 0 0 6px color-mix(in srgb, var(--cat) 45%, transparent);
-}
-.nsfw-run.pending {
-  opacity: 0.45;
-}
-/* Still growing at the live edge: a small sonar ping at its head. */
-.nsfw-run.live::after {
-  content: "";
-  position: absolute;
-  right: -3px;
-  top: 50%;
-  width: 7px;
-  height: 7px;
-  margin-top: -3.5px;
-  border-radius: 50%;
-  background: var(--cat);
-  animation: nsfw-ping 1.8s cubic-bezier(0, 0, 0.2, 1) infinite;
-}
-.nsfw-strip-icons {
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 20px;
-  height: 16px;
-}
-.nsfw-strip-icon {
-  position: absolute;
-  top: 0;
-  display: grid;
-  place-items: center;
-  width: 16px;
-  height: 16px;
-  margin-left: -8px;
-  border-radius: 50%;
-  background: var(--cat);
-  color: #fff;
-  /* Dark ring: the icon reads as sitting on the strip, not merging with it. */
-  box-shadow: 0 0 0 2px #121021, 0 2px 6px rgba(0, 0, 0, 0.45);
-}
-.nsfw-strip-icon .mini-icon {
-  width: 11px;
-  height: 11px;
-}
-.nsfw-strip-icon.multi {
-  background:
-    radial-gradient(circle, var(--cat) 0 54%, #121021 56% 62%, transparent 64%),
-    conic-gradient(from -90deg, var(--cat) 0 50%, var(--cat2) 50% 100%);
-}
-.nsfw-strip-hit {
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 20px;
-  bottom: 0;
-  padding: 0;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: space-evenly;
+  margin: 0;
+  padding: 0 3px;
   border: 0;
-  border-radius: 4px;
-  background: transparent;
+  border-radius: 7px;
+  color: rgb(var(--st));
+  background: linear-gradient(rgb(var(--st) / 0.26), rgb(var(--st) / 0.26)), #15121f;
+  box-shadow: inset 0 0 0 1px rgb(var(--st) / 0.6);
   pointer-events: auto;
-  cursor: default;
-}
-.nsfw-pulse-layer.near .nsfw-strip-hit {
   cursor: pointer;
+  transition: box-shadow 0.15s ease;
 }
-.nsfw-strip-hit:focus-visible {
-  outline: 2px solid var(--accent);
+.nsfw-bar-run .nsfw-glyph {
+  width: 17.6px;
+  height: 16px;
+}
+.nsfw-bar-run.s-cloud { --st: 62 207 142; }
+.nsfw-bar-run.s-processing { --st: 106 166 255; }
+.nsfw-bar-run.s-none { --st: 196 202 216; }
+.nsfw-bar-run.pending .nsfw-glyph {
+  opacity: 0.5;
+}
+.nsfw-bar-run:hover {
+  box-shadow: inset 0 0 0 1px rgb(var(--st)), 0 0 0 2px rgb(var(--st) / 0.35);
+}
+.nsfw-bar-run:focus-visible {
+  outline: 2px solid #fff;
   outline-offset: 1px;
 }
-/* Hover cursor: a hairline across bar and strip, label in .nsfw-scrub-tip. */
+/* Still growing at the live edge: a ping at its end. */
+.nsfw-bar-run.live::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  right: -3px;
+  width: 6px;
+  height: 6px;
+  margin-top: -3px;
+  border-radius: 50%;
+  background: rgb(var(--st));
+  animation: nsfw-ping 1.8s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+.g-vulva { --glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='1 2 22 20'%3E%3Cmask id='m'%3E%3Cpath fill='%23fff' d='M12 2.4c3.6 0 6.2 2.2 6.2 5.4 0 4.6-2.8 9.8-6.2 13.8C8.6 17.6 5.8 12.4 5.8 7.8c0-3.2 2.6-5.4 6.2-5.4z'/%3E%3Cpath fill='%23000' d='M12 7c1.9 1.6 2.7 4.2 2.4 7-.3 2.3-1.2 4.1-2.4 5.4-1.2-1.3-2.1-3.1-2.4-5.4-.3-2.8.5-5.4 2.4-7z'/%3E%3Cpath fill='%23fff' d='M12 7c1.9 1.6 2.7 4.2 2.4 7-.3 2.3-1.2 4.1-2.4 5.4-1.2-1.3-2.1-3.1-2.4-5.4-.3-2.8.5-5.4 2.4-7z' fill-opacity='0.45'/%3E%3Cpath fill='%23000' d='M12 9.2c.9 1.3 1.2 3.1 1 4.9-.2 1.4-.5 2.5-1 3.4-.5-.9-.8-2-1-3.4-.2-1.8.1-3.6 1-4.9z'/%3E%3C/mask%3E%3Crect x='-4' y='-4' width='32' height='32' mask='url(%23m)'/%3E%3C/svg%3E"); }
+.g-phallus { --glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='1 2.2 22 20'%3E%3Cmask id='m'%3E%3Ccircle fill='%23fff' cx='8.8' cy='18.6' r='3.2'/%3E%3Ccircle fill='%23fff' cx='15.2' cy='18.6' r='3.2'/%3E%3Cpath fill='%23fff' d='M9.4 18.4V9.6h5.2v8.8c-.8.5-1.7.8-2.6.8s-1.8-.3-2.6-.8z'/%3E%3Cpath fill='%23fff' d='M8.8 10c0-3.6 1.4-7.4 3.2-7.4s3.2 3.8 3.2 7.4c-.9.6-2 .9-3.2.9s-2.3-.3-3.2-.9z'/%3E%3Cpath fill='none' stroke='%23000' stroke-width='1.1' stroke-linecap='round' d='M8.9 10.1c.9.6 2 .9 3.1.9s2.2-.3 3.1-.9'/%3E%3Cpath fill='none' stroke='%23000' stroke-width='0.9' stroke-linecap='round' d='M12 3.6v1.4'/%3E%3C/mask%3E%3Crect x='-4' y='-4' width='32' height='32' mask='url(%23m)'/%3E%3C/svg%3E"); }
+.g-anus { --glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0.5 1 23 20.9'%3E%3Cmask id='m'%3E%3Cpath fill='%23fff' d='M12 5.4C10.5 3.6 8 2.8 5.7 3.5 2.9 4.4 1.3 7.4 1.5 11c.3 4.6 3.4 8.6 7.2 9 1.4.1 2.5-.3 3.3-1 .8.7 1.9 1.1 3.3 1 3.8-.4 6.9-4.4 7.2-9 .2-3.6-1.4-6.6-4.2-7.5-2.3-.7-4.8.1-6.3 1.9z'/%3E%3Cellipse fill='%23000' cx='12' cy='12.6' rx='3' ry='3.4'/%3E%3Cellipse fill='%23fff' cx='12' cy='12.6' rx='3' ry='3.4' fill-opacity='0.45'/%3E%3Cellipse fill='%23000' cx='12' cy='12.6' rx='1.3' ry='1.5'/%3E%3C/mask%3E%3Crect x='-4' y='-4' width='32' height='32' mask='url(%23m)'/%3E%3C/svg%3E"); }
+.g-breast { --glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0.5 1.55 23 20.9'%3E%3Cmask id='m'%3E%3Ccircle fill='%23fff' cx='6.6' cy='12.2' r='5.3'/%3E%3Ccircle fill='%23fff' cx='17.4' cy='12.2' r='5.3'/%3E%3Ccircle fill='%23000' cx='7.3' cy='13.9' r='2.1'/%3E%3Ccircle fill='%23fff' cx='7.3' cy='13.9' r='2.1' fill-opacity='0.45'/%3E%3Ccircle fill='%23000' cx='16.7' cy='13.9' r='2.1'/%3E%3Ccircle fill='%23fff' cx='16.7' cy='13.9' r='2.1' fill-opacity='0.45'/%3E%3Ccircle fill='%23000' cx='7.3' cy='14.0' r='0.95'/%3E%3Ccircle fill='%23000' cx='16.7' cy='14.0' r='0.95'/%3E%3C/mask%3E%3Crect x='-4' y='-4' width='32' height='32' mask='url(%23m)'/%3E%3C/svg%3E"); }
+.g-butt { --glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0.8 2.1 22.4 20.4'%3E%3Cmask id='m'%3E%3Cpath fill='%23fff' d='M12 7C10.6 5.2 8.3 4.4 6.1 5 3.3 5.8 1.7 8.6 1.9 12.1c.2 4.1 2.8 7.4 6.1 7.7 1.8.2 3.1-.5 4-1.7.9 1.2 2.2 1.9 4 1.7 3.3-.3 5.9-3.6 6.1-7.7.2-3.5-1.4-6.3-4.2-7.1-2.2-.6-4.5.2-6 2z'/%3E%3Cpath fill='none' stroke='%23000' stroke-width='1.4' stroke-linecap='round' d='M12 7.4c-.2 3.3-.1 6.9 0 10.4'/%3E%3Cpath fill='none' stroke='%23000' stroke-width='1.2' stroke-linecap='round' d='M3.6 15.8c1.4 2.1 3.6 3 6 2.4M20.4 15.8c-1.4 2.1-3.6 3-6 2.4'/%3E%3Cpath fill='none' stroke='%23fff' stroke-width='1.2' stroke-linecap='round' d='M3.6 15.8c1.4 2.1 3.6 3 6 2.4M20.4 15.8c-1.4 2.1-3.6 3-6 2.4' stroke-opacity='0.45'/%3E%3C/mask%3E%3Crect x='-4' y='-4' width='32' height='32' mask='url(%23m)'/%3E%3C/svg%3E"); }
+.g-other { --glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='1 2 22 20'%3E%3Cmask id='m'%3E%3Cpath fill='%23fff' d='M12 3.5l6.5 8.5-6.5 8.5-6.5-8.5z'/%3E%3Cpath fill='none' stroke='%23000' stroke-width='1.6' stroke-linecap='round' d='M12 8v5M12 15.6v.4'/%3E%3C/mask%3E%3Crect x='-4' y='-4' width='32' height='32' mask='url(%23m)'/%3E%3C/svg%3E"); }
+/* Symbols outside the bar (legend, hover label): same masks, text colour. */
+.nsfw-glyph {
+  display: inline-block;
+  flex: none;
+  width: 17px;
+  height: 15px;
+  background: currentColor;
+  -webkit-mask-image: var(--glyph);
+  mask-image: var(--glyph);
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+}
+.nsfw-glyph-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  white-space: nowrap;
+}
+/* Hover cursor: a hairline across the bar, label in .nsfw-scrub-tip. */
 .nsfw-scrub {
   position: absolute;
-  top: 0;
-  bottom: 0;
+  z-index: 1;
+  top: -3px;
+  bottom: -3px;
   width: 1px;
   margin-left: -0.5px;
-  background: rgba(255, 255, 255, 0.55);
+  background: rgba(255, 255, 255, 0.8);
   opacity: 0;
   transition: opacity 0.12s ease;
 }
 .nsfw-pulse-layer.scrubbing .nsfw-scrub {
   opacity: 1;
-}
-.nsfw-pulse-layer.near .nsfw-run {
-  filter: brightness(1.15);
 }
 .nsfw-scrub-tip {
   position: fixed;
@@ -5721,7 +5715,7 @@ textarea:focus,
   z-index: 1000;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   padding: 4px 8px;
   border: 1px solid var(--line-3);
   border-radius: 8px;
@@ -5735,42 +5729,23 @@ textarea:focus,
 .nsfw-scrub-tip[hidden] {
   display: none;
 }
-.nsfw-scrub-tip .nsfw-cat-chips {
-  flex-wrap: nowrap;
+/* Entrance on first display only: the symbols are revealed left to right.
+   The delay (sweep across the row, or negative to resume after a re-render)
+   is set by animateNewPulseItems; 0.7s must match WIPE_MS in nsfw.js. */
+.nsfw-bar-run.enter {
+  animation: nsfw-wipe 0.7s cubic-bezier(0.25, 0.8, 0.35, 1) backwards;
 }
-/* Entrance on first display only: one wipe from the left, icons pop as the
-   wipe reaches them (w0..w9 = tenths of the track). */
-.nsfw-strip.enter {
-  animation: nsfw-wipe 0.8s cubic-bezier(0.25, 0.8, 0.35, 1) backwards;
-}
-.nsfw-strip-icon.enter {
-  animation: nsfw-icon-in 0.42s cubic-bezier(0.34, 1.56, 0.64, 1) backwards;
-}
-.nsfw-strip-icon.w1 { animation-delay: 50ms; }
-.nsfw-strip-icon.w2 { animation-delay: 100ms; }
-.nsfw-strip-icon.w3 { animation-delay: 150ms; }
-.nsfw-strip-icon.w4 { animation-delay: 200ms; }
-.nsfw-strip-icon.w5 { animation-delay: 250ms; }
-.nsfw-strip-icon.w6 { animation-delay: 310ms; }
-.nsfw-strip-icon.w7 { animation-delay: 370ms; }
-.nsfw-strip-icon.w8 { animation-delay: 440ms; }
-.nsfw-strip-icon.w9 { animation-delay: 520ms; }
 @keyframes nsfw-wipe {
-  from { clip-path: inset(-6px 100% -6px 0); }
-  to { clip-path: inset(-6px 0 -6px 0); }
-}
-@keyframes nsfw-icon-in {
-  from { scale: 0.3; opacity: 0; }
-  to { scale: 1; opacity: 1; }
+  from { clip-path: inset(-4px 100% -4px 0); }
+  to { clip-path: inset(-4px -8px -4px 0); }
 }
 @keyframes nsfw-ping {
-  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--cat) 70%, transparent); }
-  100% { box-shadow: 0 0 0 7px transparent; }
+  0% { box-shadow: 0 0 0 0 rgb(var(--st) / 0.7); }
+  100% { box-shadow: 0 0 0 7px rgb(var(--st) / 0); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .nsfw-strip,
-  .nsfw-strip-icon,
-  .nsfw-run::after,
+  .nsfw-bar-run,
+  .nsfw-bar-run::after,
   .nsfw-scrub {
     animation: none !important;
     transition: none !important;
@@ -5779,12 +5754,12 @@ textarea:focus,
 .cr-pulse-legend-item.nsfw-legend {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  color: var(--recording);
+  gap: 10px;
+  color: var(--text-2);
 }
-.cr-pulse-legend-item.nsfw-legend .mini-icon {
-  width: 13px;
-  height: 13px;
+.cr-pulse-legend-item.nsfw-legend b {
+  color: var(--text-3);
+  font-weight: 540;
 }
 
 /* Live analysis status in the archive panel */
@@ -6979,7 +6954,6 @@ textarea:focus,
 }
 .cr-pulse-legend-item.nsfw-legend {
   flex-wrap: wrap;
-  gap: 6px;
 }
 @media (max-width: 620px) {
   /* The phone legend scrolls sideways on one line; wrapping here stacked the

@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.4.20 — Cronologia NSFW: i simboli sono la barra
+
+- Richiesta utente: niente più striscia sotto la barra. Dove ci sono momenti NSFW la barra della registrazione diventa una fila di simboli della parte vista (Figa, Cazzo, Buco del culo, Tette, Culo) nel colore dello stato della registrazione sotto: rosso mentre registra o se il file è solo su disco, verde su cloud, blu in elaborazione. Un tratto che attraversa parti con stati diversi cambia colore dove cambia la parte.
+- Ogni simbolo vale per il suo pezzo di tempo e mostra la parte vista più a lungo lì (un momento con più parti conta come la più esplicita): allontanando lo zoom un tratto di Tette con un breve Cazzo resta «Tette, Cazzo, Tette» e non diventa tutto Cazzo. Simboli alti 16 px, sempre interi; un momento breve mostra comunque un simbolo, centrato sul momento. Righe di nuovo alte 22 px.
+- Clic o tocco su un simbolo apre il momento sotto il puntatore (o l'elenco se sono più d'uno); da tastiera Invio apre tutti i momenti di quel tratto. Passando col mouse: linea sottile e ora con le parti viste. Il resto della barra REC resta cliccabile come prima.
+- Legenda: «NSFW» con i cinque simboli, sempre presente anche dopo un ridimensionamento e sul telefono.
+- Motion: alla prima comparsa i simboli si scoprono da sinistra in un'unica passata lungo la riga; l'animazione riprende da dove era se la Cronologia si ridisegna subito dopo (prima veniva tagliata). Un tratto ancora in corso ha un impulso in fondo. Con «riduci movimento» tutto è statico.
+
 ## 3.4.19 — Cronologia NSFW: una striscia sola, attaccata alla sua riga
 
 - La 3.4.18 disegnava lo stesso dato due volte con raggruppamenti diversi (segnaposto ogni ~13 minuti, fasce ogni ~2): colori e posizioni non coincidevano, i segnaposto sembravano appartenere alla riga sotto e i momenti brevi diventavano puntini sotto ogni segnaposto. Ora c'è un solo segno: una striscia sottile sotto la barra della sessione, nel colore della parte più esplicita, con l'icona della categoria solo sui tratti lunghi e mai sovrapposta. Niente contatori.

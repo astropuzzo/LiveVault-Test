@@ -241,9 +241,11 @@
   }
 
   function centeredLegend(legend) {
+    // nsfw.js adds its key here, so a rebuild (render, resize) keeps it.
+    const extra = typeof window.pulseLegendExtra === 'function' ? window.pulseLegendExtra() : '';
     legend.innerHTML = LEGEND.map(([tone, label, fill]) =>
       `<span class="cr-pulse-legend-item">${legendSwatch(tone, fill)}${label}</span>`
-    ).join('');
+    ).join('') + extra;
   }
 
   function decoratePulse() {

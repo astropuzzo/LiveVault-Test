@@ -320,31 +320,50 @@ and `_index_file` (`app/workers.py`), both through `nsfw_attach_stitched` /
   query reads `clear`/`rejected` too. Drawing (`pulseNsfwLayer` in
   `app/static/nsfw.js`): bands less than 6 px apart at the current scale are
   drawn joined. Phone legend: `.nsfw-legend` no longer wraps into a 117 px
-  column. Layout since 3.4.19 (3.4.18's pins + lane was rejected: two
-  encodings of the same data grouped differently, pins every ~32 px, bands
-  joined at 6 px, so colours and positions disagreed, pins floated between
-  rows and short moments became dots): every Pulse track is 36 px (bar SVG
-  0–22 px, tint only there) so bars align in all rows; `pulseNsfwLayer` in
-  `app/static/nsfw.js` draws one 4 px strip at 26–30 px (`.nsfw-run`, colour of
-  the most explicit part, same-category pieces within `JOIN_PX` = 6 px drawn
-  as one, 3 px minimum) and a 16 px category icon (`.nsfw-strip-icon`, two
-  parts = conic ring) only on runs of `BADGE_MIN_PX` = 44 px or more, at least
-  26 px apart; no count badges. `.nsfw-strip-hit` (20–36 px, the bar stays
-  clickable) opens the moments within 8 px of the pointer (one → moment,
-  several → list; keyboard → the whole row). Mouse hover: `.nsfw-scrub`
-  hairline across the track and `.nsfw-scrub-tip` (fixed, above the track)
-  with time and parts. Motion (CSS only, CSP `style-src 'self'`): entrance
-  classes are added after rendering by `animateNewPulseItems` (never in the
-  markup, so `setMarkup` skips unchanged re-renders and does not cut them):
-  `nsfw-wipe` clip-path from the left on a row's first display, icons
-  `nsfw-icon-in` with `w0..w9` delays matching the wipe; a run ending within
-  2 min of the Pulse time in an open session gets a `nsfw-ping` head;
-  `prefers-reduced-motion` disables all of it. QA 2026-09-26 with Playwright
-  (system Chrome, 2x) on a local instance with the Pulse tables exported from
-  the node (profiles, sources, live_sessions, recordings, nsfw_marks of the
-  last 26 h; no settings, secrets or media; consent off so nothing is
-  probed): desktop 1440 px 6 h/12 h, hover, click, a mid-entrance frame and
-  phone 390 px with tap. The export was deleted after the QA.
+  column. Layout since 3.4.20 (user request: "the recording bar becomes the
+  symbols"; 3.4.18 pins + lane and the 3.4.19 strip under the bar were both
+  rejected as unreadable): tracks are 22 px again. `pulseNsfwLayer` in
+  `app/static/nsfw.js` draws, above the bar and the hour grid, one
+  `.nsfw-bar-run` button per stretch and recording state, 22 px tall,
+  holding a row of 16 px symbols (`.nsfw-glyph g-vulva|phallus|anus|breast|
+  butt|other`, data-URI SVG masks with a 1.1 aspect ratio, allowed by CSP
+  `img-src data:`, painted in the colour of the recording underneath:
+  `s-rec` red = recording or on disk, `s-cloud` green, `s-processing` blue;
+  same precedence as the bar in app.js: processing > cloud > red; outside
+  every file the nearest file's colour). Moments closer than `JOIN_PX` = 6 px
+  make one stretch; a stretch is at least `GLYPH_PX` = 24 px (one symbol,
+  centred on the moment) and stretches that then overlap are joined. The
+  stretch is split into slices of `GLYPH_PITCH` = 20.6 px: each symbol shows
+  the part seen longest in its slice (a moment counts as its most explicit
+  part; ties go to the more explicit; a slice between moments takes the
+  nearest), so zooming out keeps "Tette, Cazzo, Tette" instead of turning a
+  whole stretch into its most explicit part (seen on shawtywiththedick at
+  24 h). A piece of another state narrower than one symbol is merged,
+  narrowest first, into its wider neighbour, so the colour covering most of
+  the stretch wins. The glyphs come from the icons in `icons.svg` (shading
+  kept as alpha: full, 45%, cut) via `scripts/nsfw-glyphs.py`; a test checks
+  the stylesheet matches the generator. Click/tap: the moments of that stretch within 8 px
+  of the pointer, else the nearest one (one → moment, several → list);
+  keyboard Enter → all moments of the stretch. Mouse hover: `.nsfw-scrub`
+  hairline and `.nsfw-scrub-tip` (fixed, above the track) with time and
+  parts. The rest of the REC bar keeps its preview and link. Legend: the NSFW
+  key comes from `window.pulseLegendExtra`, called by pulse-tuning every time
+  it rebuilds the legend (before, a resize dropped it, e.g. on phones).
+  Motion: `animateNewPulseItems` adds `enter` after rendering (never in the
+  markup) and stores when each piece first appeared; a piece rebuilt
+  mid-entrance gets a negative `animation-delay` and resumes (the Pulse is
+  often re-rendered ~20 ms after the first render, which cut 3.4.19's
+  entrances). First display of a row: one left-to-right sweep (delay by tenth
+  of the track); a stretch ending within 2 min of the Pulse time in an open
+  session gets a `nsfw-ping` dot at its end; `prefers-reduced-motion`
+  disables all of it. QA 2026-09-27 with Playwright (system Chrome, 2x) on a
+  local instance with the Pulse tables exported from the node (profiles,
+  sources, live_sessions, recordings, fragments, nsfw_marks of the last 26 h;
+  cloud URLs replaced by a placeholder, no settings, secrets or media; one
+  file made local and one fragment added to see red and blue; a live stretch
+  injected client-side): desktop 1440 px 6/12/24 h, hover, click, keyboard,
+  mid-entrance frame, live ping, phone 390 px with tap. The export was
+  deleted after the QA.
   Rollback: revert 3.4.17 (and 3.4.16); `clear` marks are ignored by older code.
 - Stripchat is sampled on the raw `<stem>.capture.mp4` but indexed/stitched
   as the remuxed `<stem>.mp4` (`_remux` in `app/stripchat_capture.py`,

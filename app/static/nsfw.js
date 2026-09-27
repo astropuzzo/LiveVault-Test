@@ -217,108 +217,208 @@
   /* ---------- Monitor timeline (Cronologia) ---------- */
   const pulseMarks = new Map();
   const pulseGroups = new Map();
-  const RANK = {pending: 0, review: 1, nsfw: 2};
-  // One mark per fact (3.4.19): a thin NSFW strip under each session bar,
-  // category colour, icons only on long stretches. The Pulse re-renders every
-  // few seconds, so only what is shown for the first time animates.
+  // The session bar itself says what was seen (3.4.20): where NSFW moments
+  // are, the REC bar becomes a chain of body-part symbols in the colour of the
+  // recording underneath, red while recording or on disk, green in the cloud,
+  // blue in elaborazione. Each symbol stands for its own slice of time and
+  // shows the part seen longest in it (a moment counts as its most explicit
+  // part), so zooming out never turns a stretch of "Tette" into "Cazzo". The
+  // Pulse re-renders every few seconds, so only what is shown first animates.
   const pulseRows = new Map();
-  const seenRows = new Set();
-  const seenBadges = new Set();
-  const JOIN_PX = 6;       // same-category pieces closer than this draw as one
-  const BADGE_MIN_PX = 44; // a stretch this long gets its category icon
-  const BADGE_GAP_PX = 26; // icons never touch
+  const seenRows = new Map();  // row -> first shown (performance.now())
+  const seenRuns = new Map();  // piece -> {at, delay} of its entrance
+  const JOIN_PX = 6;       // moments closer than this draw as one stretch
+  const GLYPH_PX = 24;     // one symbol (16px tall, 1.1 aspect, padding): the shortest stretch
+  const GLYPH_PITCH = 20.6; // symbol width + the smallest gap between two
   const HIT_PX = 8;        // pointer tolerance when opening moments
-  // Second body part of a moment: a two-colour ring on its icon.
-  const cat2Class = cls => {
-    const parts = classParts(cls);
-    const second = parts.slice(1).find(c => CLASS_CAT[c] && CLASS_CAT[c] !== CLASS_CAT[parts[0]]);
-    return second ? ` multi cat2-${CLASS_CAT[second]}` : '';
+  const partRank = cat => Math.max(0, ...Object.keys(CLASS_CAT).filter(c => CLASS_CAT[c] === cat).map(c => EXPLICIT[c] || 0));
+  // Same precedence as the bar drawn underneath in app.js: processing, cloud, red.
+  const barState = rec => (rec.processing ? 'processing' : safeUrl(rec.remote_url || '') ? 'cloud' : 'rec');
+  const trackPixels = () => {
+    const perHour = typeof window.pulsePixelsPerHour === 'function' ? window.pulsePixelsPerHour() : 0;
+    if (perHour) return Math.max(1, Number(controlRoomPulseData?.hours) || 6) * perHour;
+    const width = document.querySelector('.cr-pulse-track')?.getBoundingClientRect().width || 0;
+    return width > 100 ? width : Math.max(500, window.innerWidth - 420);
   };
+  const glyph = cat => `<span class="nsfw-glyph g-${cat}" aria-hidden="true"></span>`;
+  const glyphChips = cls => classParts(cls).map(c => `<span class="nsfw-glyph-chip">${glyph(CLASS_CAT[c] || 'other')}${esc(CLASS_TEXT[c] || c)}</span>`).join('');
+
   window.pulseNsfwLayer = (sessions, xFor) => {
     const generated = timestamp(controlRoomPulseData?.generated_at) || Date.now();
     const moments = sessions.flatMap(session => (session.nsfw_moments || []).map(m => ({...m, name: session.display_name, open: !session.ended_at})))
       .sort((a, b) => timestamp(a.started_at) - timestamp(b.started_at));
     if (!moments.length) return '';
     if (pulseMarks.size > 3000) { pulseMarks.clear(); pulseGroups.clear(); }
-    if (seenBadges.size > 5000) { seenBadges.clear(); seenRows.clear(); }
-    const hours = Math.max(1, Number(controlRoomPulseData?.hours) || 6);
-    const perHour = typeof window.pulsePixelsPerHour === 'function' ? window.pulsePixelsPerHour() : 0;
-    const trackPx = perHour ? hours * perHour : Math.max(500, window.innerWidth - 420);
+    if (seenRuns.size > 5000) { seenRuns.clear(); seenRows.clear(); }
+    const trackPx = trackPixels();
     const pct = px => px / trackPx * 100;
+    const minWidth = pct(GLYPH_PX);
     const liveEdge = generated - 120000;  // still growing at the live edge
     const row = String(sessions[0]?.profile_id ?? '');
-    const runs = [];
     const hits = [];
+    const runs = [];
     for (const m of moments) {
       const start = timestamp(m.started_at);
       const end = Math.max(start, timestamp(m.ended_at) || start);
       const left = xFor(start) / 10;
-      const right = Math.max(left + pct(3), xFor(end) / 10);
+      const right = xFor(end) / 10;
       m.key = `${m.started_at}|${m.recording_id || ''}|${m.mark_id || ''}`;
       pulseMarks.set(m.key, m);
-      hits.push({m, left, right});
-      const cat = CLASS_CAT[classParts(m.class)[0]] || 'other';
+      const hit = {m, left, right, cat: CLASS_CAT[classParts(m.class)[0]] || 'other'};
+      hits.push(hit);
       const live = m.open && end >= liveEdge;
       const run = runs[runs.length - 1];
-      if (run && run.cat === cat && left - run.right < pct(JOIN_PX)) {
+      if (run && left - run.right < pct(JOIN_PX)) {
         run.right = Math.max(run.right, right);
-        run.items.push(m);
+        run.hits.push(hit);
         run.live = run.live || live;
-        if (RANK[m.label] > RANK[run.label]) run.label = m.label;
-      } else runs.push({left, right, cat, label: m.label, items: [m], live});
+      } else runs.push({left, right, hits: [hit], live});
     }
+    // A stretch shorter than one symbol still shows one, centred on it;
+    // stretches that then overlap become one.
+    const placed = [];
+    for (const run of runs) {
+      if (run.right - run.left < minWidth) {
+        const mid = (run.left + run.right) / 2;
+        run.left = Math.max(0, Math.min(100 - minWidth, mid - minWidth / 2));
+        run.right = run.left + minWidth;
+      }
+      const prev = placed[placed.length - 1];
+      if (prev && run.left < prev.right) {
+        prev.right = Math.max(prev.right, run.right);
+        prev.hits.push(...run.hits);
+        prev.live = prev.live || run.live;
+      } else placed.push(run);
+    }
+    // Symbol of one slice of the bar: the part seen longest in it (ties: the
+    // more explicit); a slice between moments shows the nearest one.
+    const sliceCat = (run, from, to) => {
+      const time = new Map();
+      for (const h of run.hits) {
+        const overlap = Math.min(to, Math.max(h.right, h.left + 1e-6)) - Math.max(from, h.left);
+        if (overlap > 0) time.set(h.cat, (time.get(h.cat) || 0) + overlap);
+      }
+      if (time.size) return [...time].sort((a, b) => b[1] - a[1] || partRank(b[0]) - partRank(a[0]))[0][0];
+      const mid = (from + to) / 2;
+      const gap = h => (mid < h.left ? h.left - mid : Math.max(0, mid - h.right));
+      return run.hits.reduce((best, h) => (gap(h) < gap(best) ? h : best)).cat;
+    };
+    const symbols = (run, piece) => {
+      const count = Math.max(1, Math.floor((piece.right - piece.left) / 100 * trackPx / GLYPH_PITCH));
+      const step = (piece.right - piece.left) / count;
+      return Array.from({length: count}, (_, i) => glyph(sliceCat(run, piece.left + i * step, piece.left + (i + 1) * step))).join('');
+    };
+    // Colour = state of the recording under each piece (later files draw on
+    // top, as in the bar). Outside every file: the nearest one's colour.
+    const files = sessions.flatMap(session => pulseRecordingFiles(session).map(rec => ({
+      left: xFor(timestamp(rec.started_at)) / 10, right: xFor(timestamp(rec.ended_at)) / 10, state: barState(rec),
+    }))).filter(file => file.right > file.left);
+    const stateAt = x => {
+      let state = '';
+      let nearest = null;
+      for (const file of files) {
+        if (file.left <= x && x < file.right) state = file.state;
+        const distance = x < file.left ? file.left - x : Math.max(0, x - file.right);
+        if (!nearest || distance < nearest.distance) nearest = {distance, state: file.state};
+      }
+      return state || nearest?.state || 'none';
+    };
+    const pieces = run => {
+      const cuts = [...new Set([run.left, run.right, ...files.flatMap(file => [file.left, file.right]).filter(x => x > run.left && x < run.right)])].sort((a, b) => a - b);
+      let out = [];
+      for (let i = 0; i < cuts.length - 1; i += 1) out.push({left: cuts[i], right: cuts[i + 1], state: stateAt((cuts[i] + cuts[i + 1]) / 2)});
+      // A sliver of another colour cannot hold a symbol: the narrowest joins
+      // its wider neighbour, until every piece holds one (so the colour that
+      // covers most of the stretch wins). Neighbours of one colour become one.
+      const merge = () => {
+        out = out.reduce((list, piece) => {
+          const last = list[list.length - 1];
+          if (last && last.state === piece.state) last.right = piece.right;
+          else list.push({...piece});
+          return list;
+        }, []);
+      };
+      merge();
+      for (;;) {
+        const width = piece => piece.right - piece.left;
+        const i = out.reduce((best, piece, index) => (width(piece) < minWidth && (best < 0 || width(piece) < width(out[best])) ? index : best), -1);
+        if (i < 0 || out.length < 2) break;
+        const before = out[i - 1];
+        const after = out[i + 1];
+        const into = !after || (before && before.right - before.left >= after.right - after.left) ? before : after;
+        out[i].state = into.state;
+        merge();
+      }
+      return out;
+    };
+    const runItems = new Map();
+    const name = sessions[0]?.display_name || '';
+    const bar = placed.map(run => {
+      const items = run.hits.map(h => h.m);
+      const key = `${row}|${items[0].key}`;
+      runItems.set(key, items);
+      const cls = classParts(items.map(m => m.class).join('+')).join('+');
+      const first = timestamp(items[0].started_at);
+      const last = Math.max(...items.map(m => timestamp(m.ended_at) || timestamp(m.started_at)));
+      const label = `${name}: ${classText(cls)}, ${wallClock(first).slice(0, 5)}–${wallClock(last).slice(0, 5)}, ${items.length === 1 ? 'apri il momento' : `${items.length} momenti, apri l'elenco`}`;
+      const pending = items.every(m => m.label === 'pending') ? ' pending' : '';
+      const parts = pieces(run);
+      return parts.map((piece, index) => `<button type="button" class="nsfw-bar-run s-${piece.state}${pending}${run.live && index === parts.length - 1 ? ' live' : ''}" data-nsfw-run="${esc(key)}" data-piece="${index}" data-tenth="${Math.min(9, Math.floor(piece.left / 10))}" data-dynamic-left="${piece.left.toFixed(3)}" data-dynamic-width="${Math.min(100 - piece.left, piece.right - piece.left).toFixed(3)}" aria-label="${esc(label)}"${index ? ' tabindex="-1"' : ''}>${symbols(run, piece)}</button>`).join('');
+    }).join('');
     // x (0..1000) -> wall clock for the hover cursor.
     const x1 = xFor(generated);
     const perMs = (x1 - xFor(generated - 600000)) / 600000;
-    pulseRows.set(row, {hits, t1: generated, x1, perMs});
-    const strip = runs.map(run => `<i class="nsfw-run cat-${run.cat}${run.label === 'pending' ? ' pending' : ''}${run.live ? ' live' : ''}" data-dynamic-left="${run.left.toFixed(3)}" data-dynamic-width="${Math.min(100 - run.left, run.right - run.left).toFixed(3)}"></i>`).join('');
-    const badges = [];
-    let lastBadge = -Infinity;
-    for (const run of runs) {
-      if (run.right - run.left < pct(BADGE_MIN_PX) || run.left - lastBadge < pct(BADGE_GAP_PX)) continue;
-      lastBadge = run.left;
-      const cls = classParts(run.items.map(m => m.class).join('+')).join('+');
-      badges.push(`<span class="nsfw-strip-icon cat-${run.cat}${cat2Class(cls)}" data-icon="${esc(`${row}|${run.items[0].key}`)}" data-tenth="${Math.min(9, Math.floor(run.left / 10))}" data-dynamic-left="${(run.left + pct(10)).toFixed(3)}">${icon(classIcon(cls), 'mini-icon')}</span>`);
-    }
-    const name = sessions[0]?.display_name || '';
-    const label = `${name}: ${moments.length} ${moments.length === 1 ? 'momento' : 'momenti'} NSFW, apri l'elenco`;
-    return `<div class="nsfw-pulse-layer"><i class="nsfw-scrub"></i><div class="nsfw-strip" data-row="${esc(row)}">${strip}</div><div class="nsfw-strip-icons" aria-hidden="true">${badges.join('')}</div><button type="button" class="nsfw-strip-hit" data-nsfw-row="${esc(row)}" aria-label="${esc(label)}"></button></div>`;
+    pulseRows.set(row, {hits, runs: runItems, t1: generated, x1, perMs});
+    return `<div class="nsfw-pulse-layer" data-row="${esc(row)}"><i class="nsfw-scrub"></i>${bar}</div>`;
   };
 
-  // Entrances are added after rendering, never in the markup: identical
-  // markup lets setMarkup skip unchanged re-renders, so an entrance is not cut
-  // short by the next refresh. Icons pop when the strip's wipe reaches them.
+  // Entrances are added after rendering, never in the markup, and survive a
+  // re-render: a piece rebuilt mid-entrance resumes where it was (negative
+  // delay), so the refresh that often follows the first one cannot cut it.
+  // On a row's first display the symbols are revealed left to right, one
+  // sweep across the track (delay by tenth of the track).
+  const WIPE_MS = 700;
+  const SWEEP_MS = [0, 50, 100, 150, 200, 250, 310, 370, 440, 520];
   const animateNewPulseItems = root => {
-    const entering = new Set();
-    for (const strip of root.querySelectorAll('.nsfw-strip[data-row]')) {
-      if (seenRows.has(strip.dataset.row)) continue;
-      seenRows.add(strip.dataset.row);
-      entering.add(strip.dataset.row);
-      strip.classList.add('enter');
-    }
-    for (const item of root.querySelectorAll('.nsfw-strip-icon[data-icon]')) {
-      const key = item.dataset.icon;
-      if (seenBadges.has(key)) continue;
-      seenBadges.add(key);
-      item.classList.add('enter', `w${entering.has(key.split('|')[0]) ? item.dataset.tenth : 0}`);
+    const now = performance.now();
+    for (const layer of root.querySelectorAll('.nsfw-pulse-layer[data-row]')) {
+      if (!seenRows.has(layer.dataset.row)) seenRows.set(layer.dataset.row, now);
+      const rowIsNew = now - seenRows.get(layer.dataset.row) < 50;
+      for (const run of layer.querySelectorAll('.nsfw-bar-run')) {
+        const key = `${run.dataset.nsfwRun}#${run.dataset.piece}`;
+        if (!seenRuns.has(key)) seenRuns.set(key, {at: now, delay: rowIsNew ? SWEEP_MS[Number(run.dataset.tenth) || 0] : 0});
+        const {at, delay} = seenRuns.get(key);
+        const elapsed = now - at;
+        if (elapsed >= delay + WIPE_MS) continue;
+        run.style.animationDelay = `${Math.round(delay - elapsed)}ms`;
+        run.classList.add('enter');
+      }
     }
   };
 
-  // Moments under the pointer (x in % of the track), nearest first.
-  const momentsAt = (row, x, width) => {
+  // Pointer position in % of the track and the moments of that stretch under
+  // it (nearest first); away from every moment, the nearest one.
+  const pointerOnTrack = (layer, event) => {
+    const rect = layer.getBoundingClientRect();
+    return {x: Math.max(0, Math.min(100, (event.clientX - rect.left) / Math.max(1, rect.width) * 100)), width: rect.width};
+  };
+  const momentsUnder = (row, run, x, width) => {
+    const own = new Set(row.runs.get(run.dataset.nsfwRun) || []);
     const tol = HIT_PX / Math.max(1, width) * 100;
     const distance = h => (x < h.left ? h.left - x : x > h.right ? x - h.right : 0);
-    return row.hits.filter(h => distance(h) <= tol).sort((a, b) => distance(a) - distance(b)).map(h => h.m);
+    const mine = row.hits.filter(h => own.has(h.m)).sort((a, b) => distance(a) - distance(b));
+    const near = mine.filter(h => distance(h) <= tol);
+    return (near.length ? near : mine.slice(0, 1)).map(h => h.m);
   };
 
-  function openPulseRow(hit, event) {
-    const row = pulseRows.get(hit.dataset.nsfwRow);
+  function openPulseRun(run, event) {
+    const layer = run.closest('.nsfw-pulse-layer');
+    const row = layer && pulseRows.get(layer.dataset.row);
     if (!row) return;
-    const rect = hit.getBoundingClientRect();
-    // Keyboard (detail 0): every moment of the row; pointer: the ones under it.
-    const items = event.detail === 0 || !rect.width
-      ? row.hits.map(h => h.m)
-      : momentsAt(row, (event.clientX - rect.left) / rect.width * 100, rect.width);
+    // Keyboard (detail 0): every moment of the stretch; pointer: the ones under it.
+    const items = event.detail === 0
+      ? [...(row.runs.get(run.dataset.nsfwRun) || [])]
+      : momentsUnder(row, run, pointerOnTrack(layer, event).x, layer.getBoundingClientRect().width);
     if (!items.length) return;
     if (items.length === 1) { openPulseMark(items[0].key); return; }
     items.sort((a, b) => timestamp(a.started_at) - timestamp(b.started_at));
@@ -327,27 +427,25 @@
     openPulseGroup(groupKey);
   }
 
-  // Hover cursor (mouse only): a line across the row and "time + parts".
+  // Hover cursor (mouse only): a hairline across the bar and "time + parts".
   let scrubTip = null;
   let scrubLayer = null;
   let scrubFrame = 0;
   const hideScrub = () => {
-    if (scrubLayer) scrubLayer.classList.remove('scrubbing', 'near');
+    if (scrubLayer) scrubLayer.classList.remove('scrubbing');
     scrubLayer = null;
     if (scrubTip) scrubTip.hidden = true;
   };
   const moveScrub = event => {
-    const hit = event.target instanceof Element ? event.target.closest('.nsfw-strip-hit') : null;
-    const row = hit && pulseRows.get(hit.dataset.nsfwRow);
+    const run = event.target instanceof Element ? event.target.closest('.nsfw-bar-run') : null;
+    const layer = run?.closest('.nsfw-pulse-layer');
+    const row = layer && pulseRows.get(layer.dataset.row);
     if (!row) { hideScrub(); return; }
-    const layer = hit.parentElement;
     if (scrubLayer !== layer) { hideScrub(); scrubLayer = layer; }
-    const rect = hit.getBoundingClientRect();
-    const x = Math.max(0, Math.min(100, (event.clientX - rect.left) / rect.width * 100));
-    const at = momentsAt(row, x, rect.width);
+    const {x, width} = pointerOnTrack(layer, event);
+    const at = momentsUnder(row, run, x, width);
     layer.querySelector('.nsfw-scrub').style.left = `${x}%`;
     layer.classList.add('scrubbing');
-    layer.classList.toggle('near', at.length > 0);
     if (!scrubTip) {
       scrubTip = document.createElement('div');
       scrubTip.className = 'nsfw-scrub-tip';
@@ -355,11 +453,10 @@
       document.body.append(scrubTip);
     }
     const when = wallClock(row.t1 + (x * 10 - row.x1) / row.perMs).slice(0, 5);
-    const cls = classParts(at.map(m => m.class).join('+')).join('+');
-    setMarkup(scrubTip, at.length ? `<b>${esc(when)}</b>${classChips(cls)}` : `<b>${esc(when)}</b>`);
+    setMarkup(scrubTip, `<b>${esc(when)}</b>${glyphChips(classParts(at.map(m => m.class).join('+')).join('+'))}`);
     // Above the whole track, so the label never covers the session bar.
     const top = layer.getBoundingClientRect().top;
-    scrubTip.style.transform = `translate(${Math.round(event.clientX)}px, ${Math.round(top - 4)}px) translate(-50%, -100%)`;
+    scrubTip.style.transform = `translate(${Math.round(event.clientX)}px, ${Math.round(top - 6)}px) translate(-50%, -100%)`;
     scrubTip.hidden = false;
   };
   document.addEventListener('pointermove', event => {
@@ -531,8 +628,8 @@
     if (open && !action) { event.preventDefault(); openDialog(open.dataset.nsfwOpen); return; }
     if (action) { event.preventDefault(); runAction(action.dataset.nsfwAction, action.dataset.id, action); return; }
     if (play) { event.preventDefault(); playAt(play.dataset.nsfwPlay, play.dataset.at); return; }
-    const stripHit = event.target.closest('.nsfw-strip-hit');
-    if (stripHit) { event.preventDefault(); hideScrub(); openPulseRow(stripHit, event); return; }
+    const barRun = event.target.closest('.nsfw-bar-run');
+    if (barRun) { event.preventDefault(); hideScrub(); openPulseRun(barRun, event); return; }
     const pulseGroup = event.target.closest('[data-nsfw-pulse-group]');
     if (pulseGroup) { event.preventDefault(); openPulseGroup(pulseGroup.dataset.nsfwPulseGroup); return; }
     const pulseMark = event.target.closest('[data-nsfw-pulse]');
@@ -572,16 +669,18 @@
     return result;
   };
 
+  // NSFW key of the Cronologia legend, appended by pulse-tuning every time it
+  // rebuilds the legend (also on resize): the symbols only, their colour is
+  // the bar's (REC, CLOUD, IN ELABORAZIONE).
+  window.pulseLegendExtra = () => (document.querySelector('.cr-pulse .nsfw-bar-run')
+    ? `<span class="cr-pulse-legend-item nsfw-legend"><b>NSFW</b>${glyphChips(['FEMALE_GENITALIA_EXPOSED', 'MALE_GENITALIA_EXPOSED', 'ANUS_EXPOSED', 'FEMALE_BREAST_EXPOSED', 'BUTTOCKS_EXPOSED'].join('+'))}</span>`
+    : '');
+
   const baseRenderSourcesNsfw = renderSources;
   renderSources = function renderSourcesWithNsfw(...args) {
     const result = baseRenderSourcesNsfw.apply(this, args);
     const pulse = document.querySelector('.cr-pulse');
     if (pulse) { applyDynamicStyles(pulse); animateNewPulseItems(pulse); }
-    // After the pulse legend is rebuilt (pulse-tuning, next frame), add the NSFW key.
-    if (pulse?.querySelector('.nsfw-run')) requestAnimationFrame(() => requestAnimationFrame(() => {
-      const legend = document.querySelector('.cr-pulse-legend');
-      if (legend && !legend.querySelector('.nsfw-legend')) legend.insertAdjacentHTML('beforeend', `<span class="cr-pulse-legend-item nsfw-legend">${['FEMALE_GENITALIA_EXPOSED', 'MALE_GENITALIA_EXPOSED', 'ANUS_EXPOSED', 'FEMALE_BREAST_EXPOSED', 'BUTTOCKS_EXPOSED'].map(c => `<span class="nsfw-legend-cat cat-${CLASS_CAT[c]}">${icon(CLASS_ICON[c], 'mini-icon')}${esc(CLASS_TEXT[c])}</span>`).join('')}</span>`);
-    }));
     return result;
   };
 

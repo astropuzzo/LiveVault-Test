@@ -15,7 +15,7 @@ SOURCE.txt identifica la revisione (ultimo allineamento completo: 2026-09-25,
 incluse le guide collegate da questo file). Il vecchio handoff duplicato è stato sostituito
 da un rinvio, con originale conservato nella directory rollback.
 
-## Handoff corrente — 2026-09-26 (LiveVault 3.4.19)
+## Handoff corrente — 2026-09-27 (LiveVault 3.4.20)
 Sessione locale con SSH al nodo. Misure, cause, procedure e rollback in
 [LIVE-PANEL-20260909.md](docs/LIVE-PANEL-20260909.md) (sezioni "Short captures
 in Cronologia" e NSFW 3.3/3.4) e [MP4-HLS-RECOVERY.md](docs/MP4-HLS-RECOVERY.md)
@@ -35,8 +35,9 @@ in Cronologia" e NSFW 3.3/3.4) e [MP4-HLS-RECOVERY.md](docs/MP4-HLS-RECOVERY.md)
   il modello veloce da solo; il 640m ricontrolla solo tra `nsfw_candidate` e
   `nsfw_threshold`; niente più "da controllare" nuovi. Fasce NSFW continue: finiscono
   solo dopo 60 s di fotogrammi puliti (3.4.17, segni live `clear`). In Cronologia
-  (3.4.19) una striscia sottile sotto ogni barra, icona solo sui tratti lunghi, clic e
-  cursore al passaggio; la 3.4.18 a segnaposto è stata scartata. QA visiva con Playwright
+  (3.4.20, richiesta utente) i momenti NSFW sono la barra stessa: fila del simbolo della
+  parte nel colore dello stato (rosso REC/disco, verde cloud, blu in elaborazione); la
+  3.4.18 a segnaposto e la striscia 3.4.19 sono state scartate. QA visiva con Playwright
   su dati esportati dal nodo: procedura in LIVE-PANEL, sezione NSFW.
 - `segment_minutes` portato da 120 a 15 il 2026-09-25 09:50 UTC su richiesta
   utente (PATCH `/api/settings`, vale per le capture avviate dopo): ffmpeg taglia
