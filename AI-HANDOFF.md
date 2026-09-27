@@ -15,7 +15,7 @@ SOURCE.txt identifica la revisione (ultimo allineamento completo: 2026-09-25,
 incluse le guide collegate da questo file). Il vecchio handoff duplicato è stato sostituito
 da un rinvio, con originale conservato nella directory rollback.
 
-## Handoff corrente — 2026-09-27 (LiveVault 3.4.20)
+## Handoff corrente — 2026-09-27 (LiveVault 3.4.21)
 Sessione locale con SSH al nodo. Misure, cause, procedure e rollback in
 [LIVE-PANEL-20260909.md](docs/LIVE-PANEL-20260909.md) (sezioni "Short captures
 in Cronologia" e NSFW 3.3/3.4) e [MP4-HLS-RECOVERY.md](docs/MP4-HLS-RECOVERY.md)
@@ -41,9 +41,14 @@ in Cronologia" e NSFW 3.3/3.4) e [MP4-HLS-RECOVERY.md](docs/MP4-HLS-RECOVERY.md)
   su dati esportati dal nodo: procedura in LIVE-PANEL, sezione NSFW.
 - `segment_minutes` portato da 120 a 15 il 2026-09-25 09:50 UTC su richiesta
   utente (PATCH `/api/settings`, vale per le capture avviate dopo): ffmpeg taglia
-  nello stesso processo senza buchi, ogni parte da 15 min viene unita, collegata ai
-  segni NSFW live e caricata mentre la live continua; niente più riavvio al limite
-  di ~2 GB (circa ogni ora a 1080p). File Chaturbate da ~15 min invece di ~50.
+  nello stesso processo senza buchi; niente più riavvio al limite di ~2 GB (circa
+  ogni ora a 1080p). Fino alla 3.4.20 ogni parte da 15 min era pubblicata da sola
+  (`_stitch_group_ready` rilasciava ogni 15 min pronti): tra il 25/09 09:50 e il
+  27/09 ~08:00 UTC 143 file per 24 sessioni (40,9 h, 91,6 GB) sono finiti spezzati su
+  Gofile/Pixeldrain e non sono stati riuniti (serve riscaricarli: chiedere all'utente).
+  Dalla 3.4.21 le parti restano in locale e diventano un file unico a ~1,95 GB o 2 h
+  (`size_policy.fragments_fill_a_file`, `MERGED_FILE_MAX_SECONDS`) o a fine live dopo
+  `session_stitch_gap_minutes` (15 sul nodo); i segni NSFW live vanno sul file unito.
   Primo risultato: registrazione 1109 (tinnydoll, 901 s) chiusa `nsfw` con
   `nsfw_source=live`, copertura 0,997, senza analisi completa. Effetto collaterale
   (falso riavvio "nessun dato HLS scritto" quando la parte unita viene cancellata a

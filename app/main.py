@@ -63,7 +63,7 @@ BASE = Path(__file__).parent
 LOGIN_FAILURES: dict[str, deque[float]] = defaultdict(deque)
 LOGIN_WINDOW = 10 * 60
 LOGIN_MAX_FAILURES = 6
-VERSION = "3.4.20"
+VERSION = "3.4.21"
 
 
 class LoginBody(BaseModel):
@@ -1643,6 +1643,12 @@ def control_room_pulse(request: Request, hours: int = 12):
         int(source_id): _pulse_aware(session.started_at)
         for source_id, session in list(manager.active.items())
     }
+    # Closed parts of a recording still in progress wait to be joined into one
+    # file (size limit or 2 h): recorded, not in elaborazione.
+    active_sessions = {
+        int(source_id): str(getattr(session, "session_id", "") or "")
+        for source_id, session in list(manager.active.items())
+    }
     with db_session() as db:
         source_rows = list(db.scalars(
             select(Source).where(Source.archived.is_(False)).order_by(Source.id)
@@ -1679,7 +1685,7 @@ def control_room_pulse(request: Request, hours: int = 12):
             for mark in db.scalars(select(NsfwMark).where(
                 NsfwMark.source_id.in_(source_ids),
                 NsfwMark.wall_at >= window_start,
-                # clear/rejected marks end the bands (3.4.20).
+                # clear/rejected marks end the bands (3.4.21).
                 NsfwMark.state.in_(["pending", "confirmed", "inherited", "review", "clear", "rejected"]),
             ).order_by(NsfwMark.wall_at)).all():
                 marks_by_source[int(mark.source_id)].append(mark)
@@ -1815,7 +1821,8 @@ def control_room_pulse(request: Request, hours: int = 12):
                     "thumbnail_url": "",
                     "kind": "fragment",
                     "integrity_status": str(fragment.integrity_status or "checking"),
-                    "processing": True,
+                    "processing": not _fragment_waits_for_join(fragment, active_sessions),
+                    "queued": _fragment_waits_for_join(fragment, active_sessions),
                 } for fragment, rec_start, rec_end in overlapping_fragments)
                 recording_segments.extend({
                     "id": None,
@@ -2243,6 +2250,11 @@ def _recording_json(r: Recording) -> dict:
         "nsfw_source": r.nsfw_source or "",
         "nsfw_live_coverage": round(float(r.nsfw_live_coverage or 0), 3),
     }
+
+
+def _fragment_waits_for_join(fragment, active_sessions: dict[int, str]) -> bool:
+    session_id = active_sessions.get(int(fragment.source_id))
+    return bool(session_id) and str(fragment.session_id or "") == session_id
 
 
 def _nsfw_moments(raw: str) -> list[dict]:

@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.4.21 — Un file unico per registrazione sul cloud, minuti NSFW del file unito
+
+- Dal 25/09 (`segment_minutes` = 15 sul nodo) la cattura è divisa in pezzi da 15 minuti (un guasto perde al massimo un pezzo), ma ogni pezzo veniva pubblicato da solo: su Gofile/Pixeldrain finivano file da 15 minuti invece di un file per registrazione. La regola che pubblicava un blocco appena c'erano 15 minuti pronti (pensata per gli spezzoni di riconnessione quando i pezzi erano da 120 minuti) è sostituita: i pezzi della stessa registrazione restano in locale e vengono uniti in un file unico quando arrivano alla dimensione massima (circa 1,95 GB con il limite a 2 GB) o a 2 ore, oppure a fine live dopo la finestra di ricongiungimento. I pezzi restanti iniziano il file successivo.
+- I momenti NSFW visti dal vivo vengono spostati sul file unito: un momento al minuto 10 del quarto pezzo è il minuto 55 del file da 2 ore, e così li mostrano archivio e link al cloud.
+- Cronologia: i pezzi già chiusi di una registrazione ancora in corso sono «registrato · in attesa di unione» (rosso), non «in elaborazione».
+- Impostazioni: spiegato cosa fa «Segmento (minuti)».
+
 ## 3.4.20 — Cronologia NSFW: i simboli sono la barra
 
 - Richiesta utente: niente più striscia sotto la barra. Dove ci sono momenti NSFW la barra della registrazione diventa una fila di simboli della parte vista (Figa, Cazzo, Buco del culo, Tette, Culo) nel colore dello stato della registrazione sotto: rosso mentre registra o se il file è solo su disco, verde su cloud, blu in elaborazione. Un tratto che attraversa parti con stati diversi cambia colore dove cambia la parte.

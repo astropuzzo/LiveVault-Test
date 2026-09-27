@@ -43,8 +43,14 @@ def test_session_gap_is_exactly_twenty_minutes():
     assert not stitch_gap_open(now - timedelta(minutes=20, seconds=1), now)
 
 
-def test_long_live_session_is_flushed_every_fifteen_minutes():
-    assert SESSION_STITCH_READY_SECONDS == 15 * 60
+def test_long_live_session_is_published_one_full_file_at_a_time():
+    # 3.4.21: the legacy 15-minute rolling batch is gone from the running facade;
+    # a live is published every 2 h (or at the size limit) or when it goes quiet.
+    from app.workers import size_policy
+    assert SESSION_STITCH_READY_SECONDS == 15 * 60  # legacy module constant, unused by the facade
+    assert size_policy.MERGED_FILE_MAX_SECONDS == 2 * 3600
+    facade = Path("app/workers/__init__.py").read_text(encoding="utf-8")
+    assert "SESSION_STITCH_READY_SECONDS" not in facade
 
 
 def test_consolidated_outputs_are_not_seen_as_capture_parts(tmp_path):

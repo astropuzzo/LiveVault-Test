@@ -17,6 +17,13 @@ from app.settings_store import runtime
 
 _legacy = workers_module._legacy
 _ELIGIBLE_OVERSIZE_STATUSES = {"pending", "failed", "waiting_config", "integrity_failed", "converting"}
+# One cloud file per recording up to the size limit or 2 hours (user rule,
+# 2026-09-27): capture parts are short (segment_minutes, 15 on the node) so a
+# failure loses little, but they are joined back before upload. The slack
+# absorbs the ~1 s jitter of segment boundaries: eight 15-minute parts are a
+# full file, not seven plus a straggler.
+MERGED_FILE_MAX_SECONDS = 2 * 3600
+MERGED_FILE_SLACK_SECONDS = 60
 
 
 def configured_max_bytes() -> int:
@@ -46,21 +53,39 @@ def _fragment_bytes(fragment: Any) -> int:
         return max(0, int(getattr(fragment, "size_bytes", 0) or 0))
 
 
+def _fragment_seconds(fragment: Any) -> float:
+    try:
+        return max(0.0, float(getattr(fragment, "duration_seconds", 0) or 0))
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def fragments_fill_a_file(fragments: list[Any]) -> bool:
+    """True once the usable parts make a full cloud file (size target or 2 h)."""
+    usable = [item for item in fragments if _legacy.fragment_usable_for_stitch(item)]
+    size = sum(_fragment_bytes(item) for item in usable)
+    seconds = sum(_fragment_seconds(item) for item in usable)
+    return size >= configured_stitch_target_bytes() or seconds >= MERGED_FILE_MAX_SECONDS - MERGED_FILE_SLACK_SECONDS
+
+
 def bounded_fragment_batch(
     fragments: list[Any],
     *,
     target_bytes: int | None = None,
     maximum_bytes: int | None = None,
+    maximum_seconds: float | None = None,
     join_short_prefix: bool = True,
 ) -> list[Any]:
     """Return the oldest stitchable prefix that fits one physical recording.
 
     The reconnect window defines a logical session, not a single giant file.
-    Fragments stay chronological and are consumed until the configured target
-    is reached; the next fragment is left for the following output.
+    Fragments stay chronological and are consumed until the configured size
+    target or 2 hours is reached; the next fragment is left for the following
+    output.
     """
     maximum = max(1, int(maximum_bytes or configured_max_bytes()))
     target = min(maximum, max(1, int(target_bytes or configured_stitch_target_bytes())))
+    seconds_limit = float(maximum_seconds or MERGED_FILE_MAX_SECONDS) + MERGED_FILE_SLACK_SECONDS
     usable = [
         item
         for item in sorted(fragments, key=lambda row: (row.started_at, row.id))
@@ -68,6 +93,7 @@ def bounded_fragment_batch(
     ]
     selected: list[Any] = []
     total = 0
+    total_seconds = 0.0
     for item in usable:
         size = _fragment_bytes(item)
         if size <= 0:
@@ -78,6 +104,8 @@ def bounded_fragment_batch(
                     f"Frammento singolo oltre il limite ({size / 1024**3:.2f} GB > "
                     f"{maximum / 1024**3:.2f} GB): {Path(item.local_path).name}"
                 )
+            break
+        if selected and total_seconds + _fragment_seconds(item) > seconds_limit:
             break
         if selected and total + size > target:
             # A reconnect stub followed by a nearly full capture used to become
@@ -90,6 +118,7 @@ def bounded_fragment_batch(
                 break
         selected.append(item)
         total += size
+        total_seconds += _fragment_seconds(item)
         if total >= target:
             break
     return selected
@@ -476,8 +505,10 @@ def install_size_policy(manager: Any) -> None:
 
 
 __all__ = [
+    "MERGED_FILE_MAX_SECONDS",
     "configured_max_bytes",
     "configured_stitch_target_bytes",
     "bounded_fragment_batch",
+    "fragments_fill_a_file",
     "install_size_policy",
 ]

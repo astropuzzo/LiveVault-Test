@@ -79,7 +79,7 @@ def test_processing_routes_and_dashboard_controls_are_wired():
 
 def test_automatic_finalization_rolls_long_lives_and_manual_can_bypass():
     source = (ROOT / "app/workers/__init__.py").read_text(encoding="utf-8")
-    assert "ready_seconds >= _legacy.SESSION_STITCH_READY_SECONDS" in source
+    assert "if fragments_fill_a_file(usable):" in source
     assert "if not forced and not self._stitch_group_ready(items, now):" in source
     assert "if forced:" in source
     assert "allow_transcode=not is_active_batch" in source
@@ -97,7 +97,8 @@ def test_facade_stitch_is_published_atomically():
     assert "temporary.replace(output)" in source
 
 
-def test_active_session_batch_becomes_ready_after_fifteen_minutes(tmp_path):
+def test_active_session_parts_wait_for_a_full_file(tmp_path):
+    """3.4.21: 15 minutes of parts no longer make a cloud file; 2 h (or the size limit) does."""
     manager = workers.WorkerManager()
     now = datetime(2026, 9, 4, 12, 0, tzinfo=timezone.utc)
     path = tmp_path / "capture_part000.mp4"
@@ -113,10 +114,13 @@ def test_active_session_batch_becomes_ready_after_fifteen_minutes(tmp_path):
         )
 
     assert not manager._stitch_group_ready(
-        [fragment(10 * 60, now - timedelta(minutes=1))], now
+        [fragment(15 * 60, now - timedelta(minutes=1))], now
+    )
+    assert not manager._stitch_group_ready(
+        [fragment(15 * 60, now - timedelta(minutes=1)) for _ in range(7)], now
     )
     assert manager._stitch_group_ready(
-        [fragment(15 * 60, now - timedelta(minutes=1))], now
+        [fragment(899.6, now - timedelta(minutes=1)) for _ in range(8)], now
     )
     assert manager._stitch_group_ready(
         [fragment(2 * 60, now - timedelta(minutes=21))], now

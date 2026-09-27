@@ -110,12 +110,17 @@ class WorkerManager(_legacy.WorkerManager):
         self._processing_clear_task = asyncio.create_task(clear_later(), name="processing-progress-clear")
 
     def _stitch_group_ready(self, items: list[Any], now: Any) -> bool:
-        """Publish rolling batches, or quiet sessions only when no continuation is active."""
+        """Publish a full file (size limit or 2 h), or a quiet session only when no continuation is active.
+
+        Until 3.4.20 any 15 minutes of parts were published: with 15-minute
+        capture parts every part became its own cloud file. The parts of one
+        recording now wait until they make one file.
+        """
         usable = [item for item in items if _legacy.fragment_usable_for_stitch(item)]
         if not usable:
             return False
-        ready_seconds = sum(float(item.duration_seconds or 0) for item in usable)
-        if ready_seconds >= _legacy.SESSION_STITCH_READY_SECONDS:
+        from app.workers.size_policy import fragments_fill_a_file
+        if fragments_fill_a_file(usable):
             return True
 
         first = usable[0]
@@ -204,7 +209,7 @@ class WorkerManager(_legacy.WorkerManager):
         return super()._pending_recording()
 
     async def _finalize_closed_stitch_sessions(self, force_source_id: int | None = None) -> None:
-        """Publish quiet sessions and rolling 15-minute batches in chronological order."""
+        """Publish quiet sessions and full files (size limit or 2 h) in chronological order."""
         now = _legacy.utcnow()
         with _legacy.db_session() as db:
             query = _legacy.select(_legacy.RecordingFragment).order_by(

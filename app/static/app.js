@@ -2867,7 +2867,7 @@ function controlRoomPulseMarkup() {
         const previewUrl = safeUrl(rec.thumbnail_url || '');
         const provider = String(rec.upload_provider || '').toUpperCase();
         const filename = String(rec.filename || 'REC');
-        const storage = remoteUrl ? `CLOUD ${provider}`.trim() : rec.active ? 'REGISTRAZIONE IN CORSO' : rec.processing ? 'IN ELABORAZIONE' : localUrl ? 'FILE LOCALE' : 'FILE NON DISPONIBILE';
+        const storage = remoteUrl ? `CLOUD ${provider}`.trim() : rec.active ? 'REGISTRAZIONE IN CORSO' : rec.queued ? 'REGISTRATO · IN ATTESA DI UNIONE' : rec.processing ? 'IN ELABORAZIONE' : localUrl ? 'FILE LOCALE' : 'FILE NON DISPONIBILE';
         const meta = `${storage} · ${pulseRangeLabel(rec.started_at, rec.ended_at, !!rec.active)}`;
         const hitWidth = Math.min(1000, Math.max(compact ? 24 : 8, recWidth));
         const hitX = Math.max(0, Math.min(1000 - hitWidth, recX + recWidth / 2 - hitWidth / 2));

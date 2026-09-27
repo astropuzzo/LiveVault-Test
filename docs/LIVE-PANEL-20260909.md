@@ -98,7 +98,16 @@ the end of a capture or when the watcher's size check (`safe_stop_bytes`,
 started afterwards): the segment muxer cuts at a keyframe inside the same
 process (no reconnect, no hole), `_watch_session` indexes every closed part,
 `_stitch_group_ready` publishes each ~15-minute part as a recording, and its
-live NSFW marks are attached then. Cloud files for Chaturbate become ~15
+live NSFW marks are attached then. That made one cloud file per 15 minutes
+(143 files for 24 sessions by 2026-09-27); since 3.4.21 the parts of one
+recording wait until they fill a file (`size_policy.fragments_fill_a_file`:
+the stitch target, ~1.95 GB at `segment_max_gb` 2, or `MERGED_FILE_MAX_SECONDS`
+= 2 h minus 60 s of slack for segment jitter) or the session goes quiet;
+`bounded_fragment_batch` takes at most 2 h + 60 s of parts, the rest starts the
+next file, and `nsfw_attach_stitched` moves every part's marks by the running
+concat offsets (minute 10 of the fourth part = minute 55 of the file). While
+the capture runs, closed parts of its logical session are `queued` in the
+Pulse (red, "REGISTRATO · IN ATTESA DI UNIONE"), not IN ELABORAZIONE. Cloud files for Chaturbate become ~15
 minutes long (Stripchat already was). First result: recording 1109 (tinnydoll,
 901 s, 10:09–10:24 UTC) closed `nsfw` with `nsfw_source=live`, coverage 0.997,
 no full scan. Side effect found at once and fixed in 3.4.15: the stall guard
