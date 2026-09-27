@@ -54,6 +54,14 @@ in Cronologia" e NSFW 3.3/3.4) e [MP4-HLS-RECOVERY.md](docs/MP4-HLS-RECOVERY.md)
   (tinnydoll 1265/1267/1269). Ora credito 30 s (`COVER_GAP_SECONDS`) e i momenti dal
   vivo sono pubblicati anche sotto `LIVE_COVERAGE_OK` quando c'è almeno un segno NSFW;
   quei file (`needs_full_scan`) restano in locale e in coda per l'analisi completa.
+- 2026-09-27 16:40 UTC, su richiesta utente: cancellate le copie locali già caricate
+  (rec 1264-1269 e la copia orfana della 370, tutte Gofile con stessa dimensione; stato
+  NSFW `skipped` per le non analizzate, i momenti dal vivo restano), la cartella
+  `.split-002_mollybabyx_2026-09-04...` (chunk identico alla parte 01 caricata) e la
+  quarantena `.002_soft_katy_2026-09-07_16-43-28.recovery-failed.mp4` (caricata come
+  rec 251): 12,55 GB. Rimasta `miss_hinata_2026-09-07_15-22-09/.001_...recovery-failed.mp4`
+  (0,82 GB, moov mancante, mai caricata): non toccata. L'utente non vuole riunire i
+  143 file spezzati su Gofile (25-27/09).
   Primo risultato: registrazione 1109 (tinnydoll, 901 s) chiusa `nsfw` con
   `nsfw_source=live`, copertura 0,997, senza analisi completa. Effetto collaterale
   (falso riavvio "nessun dato HLS scritto" quando la parte unita viene cancellata a
