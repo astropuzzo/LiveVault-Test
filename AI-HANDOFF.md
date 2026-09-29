@@ -15,7 +15,7 @@ SOURCE.txt identifica la revisione (ultimo allineamento completo: 2026-09-25,
 incluse le guide collegate da questo file). Il vecchio handoff duplicato è stato sostituito
 da un rinvio, con originale conservato nella directory rollback.
 
-## Handoff corrente — 2026-09-29 (LiveVault 3.4.24)
+## Handoff corrente — 2026-09-29 (LiveVault 3.4.25)
 Sessione locale con SSH al nodo. Misure, cause, procedure e rollback in
 [LIVE-PANEL-20260909.md](docs/LIVE-PANEL-20260909.md) (sezioni "Short captures
 in Cronologia" e NSFW 3.3/3.4) e [MP4-HLS-RECOVERY.md](docs/MP4-HLS-RECOVERY.md)
@@ -34,6 +34,10 @@ in Cronologia" e NSFW 3.3/3.4) e [MP4-HLS-RECOVERY.md](docs/MP4-HLS-RECOVERY.md)
   Non fatto (deciso): fusione delle facciate `app/main/`, `app/workers/`, `app/source_providers/`,
   `app/stripchat_capture/` sui file omonimi: non hanno costo a runtime, ma decine di test leggono
   `app/main.py`/`app/workers.py` come testo e monkeypatchano tramite la facciata.
+- 3.4.25: file indicizzati due volte (grezzo `.capture.mp4` + remux) corretti alla radice
+  e scartati per SHA-256 identico; verificato il 2026-09-29 sul DB del nodo: doppioni esistenti
+  id 1037/1038, 678/699, 675/677 (2,5 GB caricati due volte su Gofile, non cancellati: decide
+  l'utente). Rollback: revert del commit e redeploy dell'immagine precedente (3.4.24 `a759b97`).
 - Container: gira sotto Coolify (UUID sopra); il nome **non** è `livevault`.
   Trovarlo con `docker ps --format '{{.Names}} {{.Image}}'` prima di `docker logs/exec`.
   Fuso del container Europe/Rome (nomi file), nodo Europe/London, DB in UTC.

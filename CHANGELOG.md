@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.4.25 — Registrazioni duplicate e avviso SQLAlchemy
+
+- Trovato sui dati del nodo (2026-09-29): 3 coppie di registrazioni con SHA-256 identico (id 1037/1038 del 23/09, 678/699 e 675/677 di inizio mese), cioè lo stesso file indicizzato due volte, come `<nome>.capture.mp4` grezzo Stripchat e come `<nome>.mp4` dopo il remux, e caricato due volte su Gofile (circa 2,5 GB). Il remux scrive prima `.<nome>.finalizing.mp4` e crea `<nome>.mp4` solo alla fine: in quel tempo il recupero orfani vedeva solo il grezzo.
+- `_recover_orphans` non indicizza più un `.capture.mp4` mentre il remux è in corso o una sessione attiva usa la stessa cartella.
+- `_index_file` scarta un file il cui contenuto (SHA-256 e dimensione) è già indicizzato in una registrazione caricata o ancora su disco: niente seconda riga, niente secondo upload; la copia si cancella, tranne i `.capture.mp4` grezzi (li elimina il remux).
+- Le tre coppie già caricate restano su Gofile: cancellare i doppioni dal cloud è una scelta dell'utente.
+- Corretto il `SAWarning` di SQLAlchemy («unary distinct() outside of an aggregate») in `/api/library/meta`, scritto nei log a ogni avvio.
+
 ## 3.4.24 — Percorsi caldi più leggeri (nessun cambio funzionale)
 
 - Misurato sul nodo (2026-09-29, container in produzione, DB 13 MB): `/api/recordings?limit=1000` ~1,0-1,4 s e 1,4 MB a ogni refresh della pagina, Cronologia a 168 h ~2,0 s (a 12 h 0,17 s), container al 74% CPU con 1 capture e il campionatore NSFW attivi. `recordings.nsfw_hits` pesa 786 KB in totale (max 45 KB per riga), `validation_receipt` 483 KB.

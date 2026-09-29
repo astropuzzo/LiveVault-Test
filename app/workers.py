@@ -122,6 +122,18 @@ def is_capture_part(path: Path) -> bool:
     return bool(suffix) and suffix.isdigit()
 
 
+def _identical_recording(db, digest: str, size_bytes: int) -> int | None:
+    """Id of a recording with the same content that is still worth keeping, else None."""
+    if not digest or size_bytes <= 0:
+        return None
+    for row in db.execute(select(Recording.id, Recording.local_path, Recording.local_deleted, Recording.upload_status)
+                          .where(Recording.sha256 == digest, Recording.size_bytes == size_bytes)):
+        # The twin must be safe to rely on: already uploaded, or still on disk.
+        if row.upload_status == "uploaded" or (not row.local_deleted and Path(row.local_path).is_file()):
+            return int(row.id)
+    return None
+
+
 def capture_output_files(session: RecorderSession) -> list[Path]:
     """Return FFmpeg parts only; consolidated outputs must never be re-indexed."""
     def capture_part(path: Path) -> bool:
@@ -883,8 +895,14 @@ class WorkerManager(NsfwWorkerMixin, LiveNsfwMixin):
                     remuxed = path.with_name(path.name[:-len(".capture.mp4")] + ".mp4")
                     with db_session() as db:
                         known = db.scalar(select(Recording.id).where(Recording.filename == remuxed.name).limit(1))
-                    if remuxed.is_file() or known:
-                        continue  # the remuxed part exists or was recorded: the raw one is a duplicate
+                    # ffmpeg remuxes into a hidden .<stem>.finalizing.mp4 and only then
+                    # creates <stem>.mp4: while it runs the raw part is not an orphan.
+                    remuxing = remuxed.with_name(f".{remuxed.stem}.finalizing{remuxed.suffix}").is_file()
+                    owner_running = any(
+                        session.directory.resolve() == path.parent.resolve() for session in self.active.values()
+                    )
+                    if remuxed.is_file() or known or remuxing or owner_running:
+                        continue  # the remuxed part exists, is being made or was recorded: the raw one is a duplicate
                 if not (is_capture_part(path) or raw_part):
                     continue
             source_folder = path.parent.parent.name if path.parent.parent else "recovered"
@@ -1336,9 +1354,26 @@ class WorkerManager(NsfwWorkerMixin, LiveNsfwMixin):
             start = finalized
         thumb_path = ""
         thumbnail_status = "pending" if cfg.generate_thumbnails and integrity and integrity.ok else "disabled"
+        size_bytes = path.stat().st_size
         with db_session() as db:
             if db.scalar(select(Recording).where(Recording.local_path == str(path))):
                 return True
+            twin = _identical_recording(db, digest, size_bytes)
+            if twin is not None:
+                duplicate_of = int(twin)
+            else:
+                duplicate_of = 0
+        if duplicate_of:
+            # The same bytes are already indexed under another name (a raw
+            # <stem>.capture.mp4 and its remuxed <stem>.mp4 were both picked up:
+            # recordings 1037/1038 were uploaded twice). Keep one copy.
+            self.last_errors[f"duplicate:{source_id}"] = f"{path.name}: identico alla registrazione {duplicate_of}, non indicizzato"
+            print(f"[livevault] file duplicato {path.name} = registrazione {duplicate_of}: scartato", file=sys.stderr, flush=True)
+            if ".capture." not in path.name:  # a raw part is still owned by its remux
+                with contextlib.suppress(OSError):
+                    path.unlink(missing_ok=True)
+            return True
+        with db_session() as db:
             created = Recording(
                 source_id=source_id,
                 source_name=source_name,
@@ -1348,7 +1383,7 @@ class WorkerManager(NsfwWorkerMixin, LiveNsfwMixin):
                 started_at=start,
                 finalized_at=finalized,
                 duration_seconds=integrity.duration if integrity else None,
-                size_bytes=path.stat().st_size,
+                size_bytes=size_bytes,
                 sha256=digest,
                 validation_receipt=receipt,
                 upload_status="pending" if integrity and integrity.ok else "integrity_failed",

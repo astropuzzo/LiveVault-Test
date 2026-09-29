@@ -67,7 +67,7 @@ BASE = Path(__file__).parent
 LOGIN_FAILURES: dict[str, deque[float]] = defaultdict(deque)
 LOGIN_WINDOW = 10 * 60
 LOGIN_MAX_FAILURES = 6
-VERSION = "3.4.24"
+VERSION = "3.4.25"
 
 
 class LoginBody(BaseModel):
@@ -513,7 +513,7 @@ def _smart_library_counts(db) -> dict[str, int]:
         ):
             attention.add(int(source.profile_id))
     failed_profile_ids = db.scalars(
-        select(distinct(Source.profile_id))
+        select(Source.profile_id)
         .join(Recording, Recording.source_id == Source.id)
         .where(
             Source.profile_id.is_not(None),
@@ -522,9 +522,10 @@ def _smart_library_counts(db) -> dict[str, int]:
                 Recording.integrity_status.in_(["failed", "integrity_failed"]),
             ),
         )
+        .distinct()
     ).all()
     attention.update(int(item) for item in failed_profile_ids if item is not None)
-    categorized = set(db.scalars(select(distinct(ProfileCategory.profile_id))).all())
+    categorized = set(db.scalars(select(ProfileCategory.profile_id).distinct()).all())
     return {
         "all": len(profiles),
         "favorites": sum(1 for profile in profiles if profile.favorite),

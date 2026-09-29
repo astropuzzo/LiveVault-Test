@@ -84,3 +84,72 @@ def test_thumbnail_url_check_accepts_inside_and_rejects_outside(tmp_path, monkey
     assert main._safe_thumbnail_url(1, str(outside)) == ""
     assert main._safe_thumbnail_url(1, str(tmp_path / "thumbnails" / "missing.jpg")) == ""
     assert main._safe_thumbnail_url(1, "") == ""
+
+
+# ---- the same media indexed twice (raw .capture.mp4 + its remux) ----
+
+def _index(manager, path):
+    import asyncio
+    return asyncio.run(manager._index_file(source_id=1, source_name="Demo", session_id="s1", path=path, started_at=None))
+
+
+def _prepare_indexing(monkeypatch, manager, digest):
+    from types import SimpleNamespace
+    legacy = workers_pkg._legacy
+    monkeypatch.setattr(legacy, "verify_media", lambda *_a: SimpleNamespace(
+        ok=True, duration=75.0, has_video=True, has_audio=True, error="", codec=lambda _kind: "h264"))
+    monkeypatch.setattr(legacy, "sha256_file", lambda _p: digest)
+    monkeypatch.setattr(legacy, "build_validation_receipt", lambda *_a: "{}")
+
+    async def stable(_path, timeout=12.0):
+        return True
+
+    async def prepared(_path):
+        return True
+
+    manager._wait_until_stable = stable
+    manager._prepare_mp4 = prepared
+    manager.nsfw_attach_parts = lambda *a, **k: None
+
+
+def test_identical_content_is_indexed_once_and_the_copy_removed(factory, tmp_path, monkeypatch):
+    manager = WorkerManager()
+    _prepare_indexing(monkeypatch, manager, "a" * 64)
+    first = tmp_path / "x_part001.mp4"
+    first.write_bytes(b"video-bytes")
+    second = tmp_path / "x_part001_copy.mp4"
+    second.write_bytes(b"video-bytes")
+    assert _index(manager, first) is True
+    assert _index(manager, second) is True
+    with factory() as session:
+        rows = list(session.scalars(select(Recording)).all())
+    assert [row.filename for row in rows] == ["x_part001.mp4"]
+    assert first.exists() and not second.exists()
+
+
+def test_duplicate_raw_capture_part_is_left_to_its_remux(factory, tmp_path, monkeypatch):
+    manager = WorkerManager()
+    _prepare_indexing(monkeypatch, manager, "b" * 64)
+    done = tmp_path / "y_part001.mp4"
+    done.write_bytes(b"same")
+    raw = tmp_path / "y_part001.capture.mp4"
+    raw.write_bytes(b"same")
+    _index(manager, done)
+    _index(manager, raw)
+    with factory() as session:
+        assert session.scalars(select(Recording)).all().__len__() == 1
+    assert raw.exists()  # not ours to delete: the remux unlinks it
+
+
+def test_different_content_of_the_same_size_is_kept(factory, tmp_path, monkeypatch):
+    manager = WorkerManager()
+    _prepare_indexing(monkeypatch, manager, "c" * 64)
+    one = tmp_path / "z_part001.mp4"
+    one.write_bytes(b"1111")
+    _index(manager, one)
+    _prepare_indexing(monkeypatch, manager, "d" * 64)
+    two = tmp_path / "z_part002.mp4"
+    two.write_bytes(b"2222")
+    _index(manager, two)
+    with factory() as session:
+        assert session.scalars(select(Recording)).all().__len__() == 2
