@@ -483,3 +483,36 @@ initial inspection; a live preview cannot be sampled without an active capture.
 These changes are not a production deployment. Merge only after green CI and
 review. Rollback is the preceding Coolify image `607a151`; no migration is added.
 Do not reset the dirty checkout at `/mnt/livevault-nvme/gpt-harness/work/LiveVault-Test`.
+
+## Playlist della capture live 3.4.29 (verifica locale 2026-09-29)
+
+Sorgente: `app/mp4_index.py` (`fragment_starts_with_keyframe`, `GrowingIndex`,
+`LivePlaylistIndex`, `build_index`) e `app/main.py` (`stream_active_capture`).
+Runtime verificato: checkout Windows del candidato; produzione CM4 ancora su 3.4.28.
+La release 3.4.29 aggiorna anche la versione del service worker e i parametri
+di cache degli asset in `app/static/index.html`.
+
+La capture Stripchat osservata aveva frammenti di circa 0,5 s, ma solo circa un quarto
+iniziava con un keyframe. La playlist 3.4.28 esponeva ogni frammento come segmento
+indipendente. Il nuovo indice live legge in modo incrementale solo i box completi
+aggiunti al file e pubblica gruppi chiusi di almeno 2 s, ciascuno avviato su
+keyframe. Anche l'indice dei file finiti raggruppa senza iniziare un segmento a
+metà GOP. La parte finale aperta non viene annunciata; la durata disponibile può
+restare indietro fino al keyframe successivo.
+
+Test locale: MP4 generato con ffmpeg a 24 fps, frammenti da 0,5 s e keyframe ogni
+2 s. Ventiquattro frammenti danno sei keyframe e cinque segmenti live chiusi da
+2 s; il test dell'endpoint conferma che tutti i byte range partono sui keyframe.
+Un file da 120 s ha 240 frammenti, 60 keyframe e 59 segmenti live chiusi; su
+questo PC l'aggiornamento senza nuovi byte ha richiesto circa 0,08 ms. Passati
+27 test mirati, inclusi crescita per append, prefisso invariato della playlist
+e ricreazione di un file più corto. La capture AliciaBrooks precedente non era
+più presente in `/data/livevault/recordings` al momento della nuova verifica.
+CI Linux/Python 3.13 sul commit `1da3721`: 468 test passati e controllo della
+documentazione operativa verde (run PR `36542182223`).
+Restano da misurare latenza e seek nel browser sul nodo CM4 dopo il deploy.
+
+Limite: se i keyframe non coincidono con l'inizio di alcun frammento successivo,
+la parte live non produce nuovi segmenti HLS; il player può ricadere sulla
+riproduzione diretta. Rollback: revert del commit 3.4.29 e redeploy 3.4.28;
+nessuna migrazione di database, file o impostazioni.

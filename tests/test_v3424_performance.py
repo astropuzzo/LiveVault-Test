@@ -344,7 +344,7 @@ def test_player_assets_exist_and_use_the_growing_duration():
     assert (static / "player.css").is_file() and (static / "vendor" / "hls.min.js").is_file()
 
 
-# ---- live playlist: append-only, one segment per fragment, whole session ----
+# ---- live playlist: append-only, whole session ----
 
 def _segment_lines(playlist: str) -> list[str]:
     return [line for line in playlist.splitlines() if line.startswith("#EXT-X-BYTERANGE")]
@@ -401,3 +401,75 @@ def test_capture_playlist_includes_earlier_local_parts_of_the_same_live(capture,
     assert f"/api/fragments/{row_id}/view" in playlist and "/api/sources/25/capture" in playlist
     assert playlist.index(f"/api/fragments/{row_id}/view") < playlist.index("#EXT-X-DISCONTINUITY") < playlist.rindex("/api/sources/25/capture")
     assert playlist.count("#EXT-X-MAP:") == 2  # the older live's fragment is not part of this timeline
+
+
+# ---- Stripchat-like parts: 0.5 s fragments, a keyframe every fourth one ----
+
+def _stripchat_like_mp4(path: Path, seconds: int = 12) -> bool:
+    import shutil
+    import subprocess
+    if not shutil.which("ffmpeg"):
+        return False
+    result = subprocess.run(
+        ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i", f"testsrc=size=160x120:rate=24:duration={seconds}",
+         "-c:v", "libx264", "-g", "48", "-keyint_min", "48", "-sc_threshold", "0", "-pix_fmt", "yuv420p",
+         "-frag_duration", "500000", "-movflags", "empty_moov+default_base_moof", str(path)],
+        capture_output=True)
+    return result.returncode == 0 and path.exists()
+
+
+def test_segments_always_start_on_a_keyframe(tmp_path):
+    from app.mp4_index import GrowingIndex, build_index, live_playlist_index
+    path = tmp_path / "stripchat_like.mp4"
+    if not _stripchat_like_mp4(path):
+        pytest.skip("ffmpeg not available")
+    fragments = GrowingIndex(path).poll()
+    keyframes = {fragment.offset for fragment in fragments if fragment.keyframe}
+    assert len(fragments) == 24
+    assert [index for index, fragment in enumerate(fragments) if fragment.keyframe] == list(range(0, 24, 4))
+    assert all(fragment.duration == pytest.approx(0.5, abs=0.05) for fragment in fragments[:-1])
+    finished = build_index(path, target_seconds=2.0)
+    assert all(segment.offset in keyframes for segment in finished.segments)
+    assert all(segment.duration >= 2.0 - 1e-6 for segment in finished.segments[:-1])
+    live = live_playlist_index(path)
+    assert live.segments and all(segment.offset in keyframes for segment in live.segments)
+    assert all(segment.duration >= 2.0 - 1e-6 for segment in live.segments)  # never one request per 0.5 s
+    assert len(live.segments) == 5  # the open final GOP is not published yet
+
+
+def test_capture_endpoint_lists_only_closed_keyframe_segments(capture):
+    from app.mp4_index import GrowingIndex
+    assert _stripchat_like_mp4(capture)
+    keyframes = {fragment.offset for fragment in GrowingIndex(capture).poll() if fragment.keyframe}
+    playlist = main.stream_active_capture(25, _Request()).body.decode()
+    ranges = _segment_lines(playlist)
+    assert len(ranges) == 5
+    assert all(int(line.rsplit("@", 1)[1]) in keyframes for line in ranges)
+    assert playlist.count("#EXTINF:2.000,") == 5
+
+
+def test_live_index_is_incremental_append_only_and_survives_a_recreated_file(tmp_path):
+    from app.mp4_index import LivePlaylistIndex
+    full = tmp_path / "full.mp4"
+    if not _stripchat_like_mp4(full, seconds=20):
+        pytest.skip("ffmpeg not available")
+    data = full.read_bytes()
+    growing = tmp_path / "growing.capture.mp4"
+    index = LivePlaylistIndex(growing)
+    seen: list[tuple[int, int]] = []
+    written = 0
+    for step in range(1, 11):
+        end = min(len(data), len(data) * step // 10 + 11)
+        with growing.open("ab") as output:
+            output.write(data[written:end])  # each poll may encounter an unfinished box
+        written = end
+        segments = [(segment.offset, segment.length) for segment in index.snapshot().segments]
+        assert segments[: len(seen)] == seen  # nothing already listed ever changes
+        seen = segments
+    assert len(seen) >= 6
+    parsed_to = index.reader.position
+    assert parsed_to > 0 and index.snapshot().segments
+    assert index.reader.position == parsed_to  # a repeated request has no new boxes to read
+    growing.write_bytes(data[: len(data) // 4])  # the part was recreated (shorter) under the same name
+    restarted = index.snapshot()
+    assert 0 < len(restarted.segments) < len(seen)
