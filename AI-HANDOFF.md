@@ -15,7 +15,7 @@ SOURCE.txt identifica la revisione (ultimo allineamento completo: 2026-09-25,
 incluse le guide collegate da questo file). Il vecchio handoff duplicato è stato sostituito
 da un rinvio, con originale conservato nella directory rollback.
 
-## Handoff corrente — 2026-09-29 (LiveVault 3.4.25)
+## Handoff corrente — 2026-09-29 (LiveVault 3.4.26)
 Sessione locale con SSH al nodo. Misure, cause, procedure e rollback in
 [LIVE-PANEL-20260909.md](docs/LIVE-PANEL-20260909.md) (sezioni "Short captures
 in Cronologia" e NSFW 3.3/3.4) e [MP4-HLS-RECOVERY.md](docs/MP4-HLS-RECOVERY.md)
@@ -38,6 +38,15 @@ in Cronologia" e NSFW 3.3/3.4) e [MP4-HLS-RECOVERY.md](docs/MP4-HLS-RECOVERY.md)
   e scartati per SHA-256 identico; verificato il 2026-09-29 sul DB del nodo: doppioni esistenti
   id 1037/1038, 678/699, 675/677 (2,5 GB caricati due volte su Gofile, non cancellati: decide
   l'utente). Rollback: revert del commit e redeploy dell'immagine precedente (3.4.24 `a759b97`).
+- 3.4.26 (CPU a riposo): `OPENSSL_CONF=/app/app/openssl-chacha.cnf` nel Dockerfile (ChaCha20
+  per primo, il CM4 non ha AES hardware) e cache dell'elenco estrattori yt-dlp. Serve il
+  rebuild dell'immagine: dopo il deploy verificare nel container
+  `python3 -c "import ssl,socket;c=ssl.create_default_context();s=c.wrap_socket(socket.create_connection(('api.gofile.io',443)),server_hostname='api.gofile.io');print(s.cipher())"`
+  (atteso `TLS_CHACHA20_POLY1305_SHA256`). Rollback: togliere la riga `ENV OPENSSL_CONF`
+  o redeploy dell'immagine 3.4.25 (`38779e4`). Profilare il processo vivo, senza toccare
+  l'immagine: `pip install --target /tmp/pyspy py-spy` nel container, poi
+  `/tmp/pyspy/bin/py-spy record --nonblocking -d 25 -r 50 -f raw -o /tmp/spy.raw -p <pid uvicorn>`
+  (funziona senza SYS_PTRACE); rimuovere `/tmp/pyspy` e `/tmp/spy.raw` a fine misura.
 - Container: gira sotto Coolify (UUID sopra); il nome **non** è `livevault`.
   Trovarlo con `docker ps --format '{{.Names}} {{.Image}}'` prima di `docker logs/exec`.
   Fuso del container Europe/Rome (nomi file), nodo Europe/London, DB in UTC.

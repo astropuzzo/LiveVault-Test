@@ -530,8 +530,41 @@ def source_url(platform: str, slug: str) -> str:
     return spec.url_template.format(slug=value.strip("/"))
 
 
-def _extract(url: str, quality: str, *, quiet: bool = True) -> dict[str, Any]:
+@lru_cache(maxsize=1)
+def _probe_ydl_class():
+    """``YoutubeDL`` that resolves its default extractor list only once.
+
+    Every probe builds a fresh YoutubeDL; ``add_default_info_extractors`` then
+    re-resolved the same ~1750 extractor names each time (measured with py-spy
+    on the node: ~19% of the CPU of an otherwise idle process, ~24 ms per
+    instance on a desktop, roughly 10x on the CM4).
+    """
+    import threading
+
     import yt_dlp
+
+    class ProbeYoutubeDL(yt_dlp.YoutubeDL):
+        _default_ies: list | None = None
+        _default_ies_lock = threading.Lock()
+
+        def add_default_info_extractors(self):
+            if self.params.get("allowed_extractors") is not None:
+                return super().add_default_info_extractors()
+            cls = ProbeYoutubeDL
+            with cls._default_ies_lock:
+                if cls._default_ies is None:
+                    super().add_default_info_extractors()
+                    cls._default_ies = list(self._ies.values())
+                    return
+                cached = cls._default_ies
+            for ie in cached:
+                # Classes are shared; instances (the "end" catch-all) hold the downloader.
+                self.add_info_extractor(ie if isinstance(ie, type) else type(ie)())
+
+    return ProbeYoutubeDL
+
+
+def _extract(url: str, quality: str, *, quiet: bool = True) -> dict[str, Any]:
     params = {
         "quiet": quiet,
         "no_warnings": quiet,
@@ -542,7 +575,7 @@ def _extract(url: str, quality: str, *, quiet: bool = True) -> dict[str, Any]:
         "retries": 2,
         "logger": _QuietLogger(),
     }
-    with yt_dlp.YoutubeDL(params) as ydl:
+    with _probe_ydl_class()(params) as ydl:
         return ydl.extract_info(url, download=False)
 
 
@@ -554,13 +587,13 @@ def _stripchat_snapshot(slug: str) -> dict[str, Any]:
     public room can be misclassified. The model flags are the authoritative
     current state.
     """
-    from yt_dlp import YoutubeDL
     from yt_dlp.extractor.stripchat import StripchatIE
     from yt_dlp.utils import lowercase_escape
 
     username = slug.strip("/")
     url = source_url("stripchat", username)
-    with YoutubeDL({"quiet": True, "no_warnings": True, "socket_timeout": 20}) as ydl:
+    # YoutubeDL is only the HTTP downloader here: no extractor list is needed.
+    with _probe_ydl_class()({"quiet": True, "no_warnings": True, "socket_timeout": 20, "allowed_extractors": []}) as ydl:
         extractor = StripchatIE(ydl)
         webpage = extractor._download_webpage(url, username)
         data = extractor._search_json(

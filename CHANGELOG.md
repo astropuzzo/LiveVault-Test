@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.4.26 — CPU a riposo: yt-dlp e TLS
+
+- Profilo con py-spy sul processo in produzione (2026-09-29, 25 s, 901 campioni): l'uploader Gofile in corso pesava il 68% (invio TLS), yt-dlp il 19%. Il processo usava ~81% di un core con la UI chiusa.
+- yt-dlp: ogni sondaggio creava un `YoutubeDL` nuovo e ne ricalcolava l'elenco di ~1750 estrattori (`orderedSet_from_options`, sempre lo stesso risultato): 22 ms su un PC, circa dieci volte sul CM4. `_probe_ydl_class` calcola l'elenco una volta e lo riusa; le istanze non condivise (l'estrattore «end») restano per downloader. Lo snapshot Stripchat usa `YoutubeDL` solo come downloader e non carica nessun estrattore.
+- TLS: il CM4 non ha le estensioni crittografiche ARM (`Features: fp asimd evtstrm crc32 cpuid`), AES-GCM è software: 62 MB/s contro 279 MB/s di ChaCha20-Poly1305 (misura nel container). `app/openssl-chacha.cnf` (Dockerfile: `OPENSSL_CONF`) offre ChaCha20 per primo; Gofile e Pixeldrain lo negoziano (verificato con handshake reali); gli altri server ricadono su AES. Download di 40 MB dal container: CPU 0,90-1,04 s con AES, 0,38-0,57 s con ChaCha20.
+
 ## 3.4.25 — Registrazioni duplicate e avviso SQLAlchemy
 
 - Trovato sui dati del nodo (2026-09-29): 3 coppie di registrazioni con SHA-256 identico (id 1037/1038 del 23/09, 678/699 e 675/677 di inizio mese), cioè lo stesso file indicizzato due volte, come `<nome>.capture.mp4` grezzo Stripchat e come `<nome>.mp4` dopo il remux, e caricato due volte su Gofile (circa 2,5 GB). Il remux scrive prima `.<nome>.finalizing.mp4` e crea `<nome>.mp4` solo alla fine: in quel tempo il recupero orfani vedeva solo il grezzo.

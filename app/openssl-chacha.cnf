@@ -1,0 +1,16 @@
+# OpenSSL configuration for the LiveVault container (Dockerfile: OPENSSL_CONF).
+# The ASIAIR/CM4 CPU (Cortex-A72) has no ARMv8 crypto extensions, so TLS 1.3
+# AES-GCM is software: 62 MB/s against 279 MB/s for ChaCha20-Poly1305 measured
+# on the node (2026-09-29). Offering ChaCha20 first roughly halves the CPU of an
+# upload (Gofile/Pixeldrain accept it); servers without it still get AES.
+openssl_conf = openssl_init
+
+[openssl_init]
+ssl_conf = ssl_sect
+
+[ssl_sect]
+system_default = system_default_sect
+
+[system_default_sect]
+MinProtocol = TLSv1.2
+Ciphersuites = TLS_CHACHA20_POLY1305_SHA256:TLS_AES_256_GCM_SHA384:TLS_AES_128_GCM_SHA256

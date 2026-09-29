@@ -1,6 +1,8 @@
 # syntax=docker/dockerfile:1.7
 FROM python:3.13-slim
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+# ChaCha20 first for TLS: the CM4 has no AES instructions (see app/openssl-chacha.cnf).
+ENV OPENSSL_CONF=/app/app/openssl-chacha.cnf
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
     apt-get update && apt-get install -y --no-install-recommends ffmpeg ca-certificates curl tini tzdata

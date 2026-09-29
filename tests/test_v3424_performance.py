@@ -153,3 +153,40 @@ def test_different_content_of_the_same_size_is_kept(factory, tmp_path, monkeypat
     _index(manager, two)
     with factory() as session:
         assert session.scalars(select(Recording)).all().__len__() == 2
+
+
+# ---- yt-dlp: default extractor list resolved once ----
+
+def test_probe_ydl_registers_the_same_extractors_as_plain_yt_dlp():
+    yt_dlp = pytest.importorskip("yt_dlp")
+    from app import source_providers as providers
+
+    cls = providers._legacy._probe_ydl_class() if hasattr(providers, "_legacy") else providers._probe_ydl_class()
+    plain = yt_dlp.YoutubeDL({"quiet": True})
+    first = cls({"quiet": True})
+    second = cls({"quiet": True})  # served from the cached list
+    assert list(first._ies) == list(plain._ies) == list(second._ies)
+    # instances (the catch-all) are never shared between downloaders
+    shared = [key for key, ie in first._ies.items() if not isinstance(ie, type) and second._ies[key] is ie]
+    assert shared == []
+    for key, ie in second._ies.items():
+        if not isinstance(ie, type):
+            assert ie._downloader is second
+    # an explicit extractor filter bypasses the cache
+    assert list(cls({"quiet": True, "allowed_extractors": []})._ies) == []
+    first.close(); second.close(); plain.close()
+
+
+# ---- TLS: ChaCha20 first (CM4 has no AES instructions) ----
+
+def test_container_prefers_chacha20_for_tls():
+    root = Path(__file__).resolve().parents[1]
+    dockerfile = (root / "Dockerfile").read_text(encoding="utf-8")
+    config = root / "app" / "openssl-chacha.cnf"
+    assert "ENV OPENSSL_CONF=/app/app/openssl-chacha.cnf" in dockerfile
+    text = config.read_text(encoding="utf-8")
+    suites = next(line for line in text.splitlines() if line.startswith("Ciphersuites"))
+    order = suites.split("=", 1)[1].strip().split(":")
+    assert order[0] == "TLS_CHACHA20_POLY1305_SHA256"
+    assert {"TLS_AES_256_GCM_SHA384", "TLS_AES_128_GCM_SHA256"} <= set(order)  # servers without ChaCha still work
+    assert "MinProtocol = TLSv1.2" in text
