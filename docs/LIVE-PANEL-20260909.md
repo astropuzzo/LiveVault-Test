@@ -489,6 +489,8 @@ Do not reset the dirty checkout at `/mnt/livevault-nvme/gpt-harness/work/LiveVau
 Sorgente: `app/mp4_index.py` (`fragment_starts_with_keyframe`, `GrowingIndex`,
 `LivePlaylistIndex`, `build_index`) e `app/main.py` (`stream_active_capture`).
 Runtime verificato: checkout Windows del candidato; produzione CM4 ancora su 3.4.28.
+La release 3.4.29 aggiorna anche la versione del service worker e i parametri
+di cache degli asset in `app/static/index.html`.
 
 La capture Stripchat osservata aveva frammenti di circa 0,5 s, ma solo circa un quarto
 iniziava con un keyframe. La playlist 3.4.28 esponeva ogni frammento come segmento
