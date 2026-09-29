@@ -150,7 +150,8 @@ class Recording(Base):
     nsfw_progress: Mapped[float] = mapped_column(Float, default=0.0)
     nsfw_resume_at: Mapped[float] = mapped_column(Float, default=0.0)
     nsfw_moments: Mapped[str] = mapped_column(Text, default="")
-    nsfw_hits: Mapped[str] = mapped_column(Text, default="")
+    # Up to ~45 KB per row and read only by the NSFW worker: deferred, undefer it explicitly.
+    nsfw_hits: Mapped[str] = mapped_column(Text, default="", deferred=True)
     nsfw_max_score: Mapped[float] = mapped_column(Float, default=0.0)
     nsfw_error: Mapped[str] = mapped_column(Text, default="")
     nsfw_scanned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

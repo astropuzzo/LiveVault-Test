@@ -198,14 +198,15 @@ class WorkerManager(_legacy.WorkerManager):
                 ), None)
             if candidate is not None:
                 db.expunge(candidate)
-        fragment = self._oldest_eligible_fragment()
-        if (
-            candidate is not None
-            and int(candidate.upload_priority or 0) <= 0
-            and fragment is not None
-            and fragment.started_at <= candidate.started_at
-        ):
+        if candidate is None:
+            # Nothing to upload (the idle case, polled every 2 s): the legacy
+            # method would repeat the same queries and find nothing as well,
+            # and the fragment scan below would load every RecordingFragment.
             return None
+        if int(candidate.upload_priority or 0) <= 0:
+            fragment = self._oldest_eligible_fragment()
+            if fragment is not None and fragment.started_at <= candidate.started_at:
+                return None
         return super()._pending_recording()
 
     async def _finalize_closed_stitch_sessions(self, force_source_id: int | None = None) -> None:

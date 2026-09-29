@@ -15,11 +15,24 @@ SOURCE.txt identifica la revisione (ultimo allineamento completo: 2026-09-25,
 incluse le guide collegate da questo file). Il vecchio handoff duplicato è stato sostituito
 da un rinvio, con originale conservato nella directory rollback.
 
-## Handoff corrente — 2026-09-27 (LiveVault 3.4.23)
+## Handoff corrente — 2026-09-29 (LiveVault 3.4.24)
 Sessione locale con SSH al nodo. Misure, cause, procedure e rollback in
 [LIVE-PANEL-20260909.md](docs/LIVE-PANEL-20260909.md) (sezioni "Short captures
 in Cronologia" e NSFW 3.3/3.4) e [MP4-HLS-RECOVERY.md](docs/MP4-HLS-RECOVERY.md)
 (3.4.4); cronologia in CHANGELOG.
+- 3.4.24 (2026-09-29, audit prestazioni con SSH): misure e modifiche in CHANGELOG. In sintesi:
+  `nsfw_hits` differita, elenco registrazioni e Cronologia più leggeri, uploader a coda vuota
+  senza scansione dei frammenti. Prima: `/api/recordings?limit=1000` ~1,2 s, pulse 168 h ~2,0 s;
+  la verifica dopo il deploy è nella sezione "Aperti". Nessuna modifica di schema né di
+  impostazioni sul nodo. Rollback: revert del commit 3.4.24 e redeploy Coolify (immagine
+  precedente `8b2921198021` = 3.4.23). Lavoro fatto da un clone pulito: il checkout locale
+  Windows dell'utente era fermo in un `git revert` interrotto con conflitti (282 commit
+  indietro) e non è stato toccato. Test locali su Windows: servono `PYTHONUTF8=1`,
+  `PYTHONPATH` con la radice del repo e un `fcntl.py` finto fuori dal repo; 22 test host/storage
+  (`pwd`, mount) falliscono solo su Windows, la CI Linux li esegue.
+  Non fatto (deciso): fusione delle facciate `app/main/`, `app/workers/`, `app/source_providers/`,
+  `app/stripchat_capture/` sui file omonimi: non hanno costo a runtime, ma decine di test leggono
+  `app/main.py`/`app/workers.py` come testo e monkeypatchano tramite la facciata.
 - Container: gira sotto Coolify (UUID sopra); il nome **non** è `livevault`.
   Trovarlo con `docker ps --format '{{.Names}} {{.Image}}'` prima di `docker logs/exec`.
   Fuso del container Europe/Rome (nomi file), nodo Europe/London, DB in UTC.

@@ -2,15 +2,18 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import re
 from struct import error as struct_error
 import time
+from bisect import bisect_left, bisect_right
 from collections import defaultdict, deque
 from contextlib import asynccontextmanager
+from functools import lru_cache
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
-from typing import Literal
+from typing import Any, Literal
 
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
@@ -18,6 +21,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from sqlalchemy import case, delete, distinct, func, or_, select
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import defer, load_only
 
 from .auth import COOKIE_NAME, MAX_AGE, create_session_token, password_ok, require_auth
 from .config import settings
@@ -63,7 +67,7 @@ BASE = Path(__file__).parent
 LOGIN_FAILURES: dict[str, deque[float]] = defaultdict(deque)
 LOGIN_WINDOW = 10 * 60
 LOGIN_MAX_FAILURES = 6
-VERSION = "3.4.23"
+VERSION = "3.4.24"
 
 
 class LoginBody(BaseModel):
@@ -387,13 +391,21 @@ def _profile_json(
     }
 
 
+@lru_cache(maxsize=4)
+def _thumbnail_root_for(data_dir: Path) -> Path:
+    return Path(os.path.realpath(data_dir / "thumbnails"))
+
+
+def _thumbnail_root() -> Path:
+    return _thumbnail_root_for(settings.data_dir)
+
+
 def _safe_thumbnail_url(recording_id: int, thumbnail_path: str) -> str:
     if not thumbnail_path:
         return ""
     try:
-        root = (settings.data_dir / "thumbnails").resolve()
-        candidate = Path(thumbnail_path).resolve()
-        if not candidate.is_file() or not candidate.is_relative_to(root):
+        candidate = Path(os.path.realpath(thumbnail_path))
+        if not candidate.is_relative_to(_thumbnail_root()) or not candidate.is_file():
             return ""
     except (OSError, RuntimeError, ValueError):
         return ""
@@ -1633,6 +1645,39 @@ def _pulse_aware(value: datetime | None) -> datetime | None:
     return value.astimezone(timezone.utc)
 
 
+_PULSE_RECORDING_COLUMNS = (
+    Recording.id, Recording.source_id, Recording.started_at, Recording.finalized_at, Recording.filename,
+    Recording.upload_provider, Recording.upload_status, Recording.remote_url, Recording.local_path,
+    Recording.local_deleted, Recording.thumbnail_path, Recording.size_bytes, Recording.nsfw_source,
+    Recording.nsfw_moments,
+)
+_PULSE_MARK_COLUMNS = (
+    NsfwMark.id, NsfwMark.source_id, NsfwMark.wall_at, NsfwMark.state, NsfwMark.cls, NsfwMark.verified_cls,
+    NsfwMark.image, NsfwMark.recording_id, NsfwMark.file_time,
+)
+
+
+def _pulse_spans(rows, profile_of_source: dict[int, int]) -> dict[int, list[tuple[Any, datetime, datetime]]]:
+    """Group recordings/fragments by profile with their UTC-aware (start, end), once."""
+    grouped: dict[int, list[tuple[Any, datetime, datetime]]] = defaultdict(list)
+    for row in rows:
+        profile_id = profile_of_source.get(int(row.source_id))
+        start, end = _pulse_aware(row.started_at), _pulse_aware(row.finalized_at)
+        if profile_id is not None and start is not None and end is not None:
+            grouped[profile_id].append((row, start, end))
+    return grouped
+
+
+def _pulse_overlaps(spans, started: datetime, ended: datetime) -> list[tuple[Any, datetime, datetime]]:
+    result = []
+    for row, start, end in spans:
+        clipped_start = max(started, start)
+        clipped_end = min(ended, end)
+        if clipped_start < clipped_end:
+            result.append((row, clipped_start, clipped_end))
+    return result
+
+
 @app.get("/api/control-room/pulse")
 def control_room_pulse(request: Request, hours: int = 12):
     require_auth(request)
@@ -1668,7 +1713,7 @@ def control_room_pulse(request: Request, hours: int = 12):
             ).order_by(LiveSession.started_at.asc())
         ).all()) if source_ids else []
         recording_rows = list(db.scalars(
-            select(Recording).where(
+            select(Recording).options(load_only(*_PULSE_RECORDING_COLUMNS)).where(
                 Recording.source_id.in_(source_ids),
                 Recording.finalized_at >= window_start - timedelta(hours=2),
             ).order_by(Recording.started_at.asc())
@@ -1680,21 +1725,32 @@ def control_room_pulse(request: Request, hours: int = 12):
             ).order_by(RecordingFragment.started_at.asc())
         ).all()) if source_ids else []
         fragment_rows = [row for row in fragment_rows if Path(row.local_path).is_file()]
-        marks_by_source: dict[int, list[NsfwMark]] = defaultdict(list)
-        if source_ids:
-            for mark in db.scalars(select(NsfwMark).where(
-                NsfwMark.source_id.in_(source_ids),
-                NsfwMark.wall_at >= window_start,
-                # clear/rejected marks end the bands (3.4.23).
-                NsfwMark.state.in_(["pending", "confirmed", "inherited", "review", "clear", "rejected"]),
-            ).order_by(NsfwMark.wall_at)).all():
-                marks_by_source[int(mark.source_id)].append(mark)
-
         by_profile: dict[int, list[dict]] = defaultdict(list)
         sources_by_profile: dict[int, list[Source]] = defaultdict(list)
         for source in source_rows:
             if source.profile_id is not None:
                 sources_by_profile[int(source.profile_id)].append(source)
+        profile_of_source = {int(row.id): int(row.profile_id) for row in source_rows if row.profile_id is not None}
+        # Marks as light column rows (no ORM entities), sorted once per profile;
+        # each session then takes its slice by bisection.
+        marks_by_profile: dict[int, list[tuple[datetime, Any]]] = defaultdict(list)
+        if source_ids:
+            for mark in db.execute(select(*_PULSE_MARK_COLUMNS).where(
+                NsfwMark.source_id.in_(source_ids),
+                NsfwMark.wall_at >= window_start,
+                # clear/rejected marks end the bands (3.4.23).
+                NsfwMark.state.in_(["pending", "confirmed", "inherited", "review", "clear", "rejected"]),
+            )):
+                profile_id = profile_of_source.get(int(mark.source_id))
+                if profile_id is not None:
+                    marks_by_profile[profile_id].append((_pulse_aware(mark.wall_at), mark))
+        mark_times_by_profile: dict[int, list[datetime]] = {}
+        for profile_id, entries in marks_by_profile.items():
+            entries.sort(key=lambda entry: entry[0])
+            mark_times_by_profile[profile_id] = [entry[0] for entry in entries]
+        recordings_by_profile = _pulse_spans(recording_rows, profile_of_source)
+        fragments_by_profile = _pulse_spans(fragment_rows, profile_of_source)
+        nsfw_step = float(runtime().nsfw_step_seconds)
 
         for session in live_rows:
             source = source_map.get(int(session.source_id))
@@ -1746,31 +1802,10 @@ def control_room_pulse(request: Request, hours: int = 12):
             for interval in intervals:
                 started = interval["started"]
                 ended = interval["ended"]
-                overlapping: list[tuple[Recording, datetime, datetime]] = []
-                for recording in recording_rows:
-                    if int(recording.source_id) not in linked_ids:
-                        continue
-                    rec_start = _pulse_aware(recording.started_at)
-                    rec_end = _pulse_aware(recording.finalized_at)
-                    if rec_start is None or rec_end is None:
-                        continue
-                    clipped_start = max(started, rec_start)
-                    clipped_end = min(ended, rec_end)
-                    if clipped_start < clipped_end:
-                        overlapping.append((recording, clipped_start, clipped_end))
-
-                overlapping_fragments: list[tuple[RecordingFragment, datetime, datetime]] = []
-                for fragment in fragment_rows:
-                    if int(fragment.source_id) not in linked_ids:
-                        continue
-                    rec_start = _pulse_aware(fragment.started_at)
-                    rec_end = _pulse_aware(fragment.finalized_at)
-                    if rec_start is None or rec_end is None:
-                        continue
-                    clipped_start = max(started, rec_start)
-                    clipped_end = min(ended, rec_end)
-                    if clipped_start < clipped_end:
-                        overlapping_fragments.append((fragment, clipped_start, clipped_end))
+                overlapping: list[tuple[Recording, datetime, datetime]] = _pulse_overlaps(
+                    recordings_by_profile.get(profile_id, ()), started, ended)
+                overlapping_fragments: list[tuple[RecordingFragment, datetime, datetime]] = _pulse_overlaps(
+                    fragments_by_profile.get(profile_id, ()), started, ended)
 
                 recording_intervals = [(rec_start, rec_end) for _recording, rec_start, rec_end in overlapping]
                 recording_intervals.extend(
@@ -1871,11 +1906,11 @@ def control_room_pulse(request: Request, hours: int = 12):
                     state = "saved"
                 else:
                     state = "ended"
-                session_marks = [
-                    mark for source_id in linked_ids for mark in marks_by_source.get(source_id, [])
-                    if started <= _pulse_aware(mark.wall_at) <= ended + timedelta(seconds=5)
-                ]
-                nsfw_moments = cluster_marks(session_marks, step=float(runtime().nsfw_step_seconds))
+                mark_times = mark_times_by_profile.get(profile_id, [])
+                session_marks = [entry[1] for entry in marks_by_profile.get(profile_id, ())[
+                    bisect_left(mark_times, started):bisect_right(mark_times, ended + timedelta(seconds=5))
+                ]]
+                nsfw_moments = cluster_marks(session_marks, step=nsfw_step)
                 live_recordings = {int(m.recording_id) for m in session_marks
                                    if m.recording_id and m.state not in ("clear", "rejected")}
                 for recording, rec_start, _rec_end in overlapping:
@@ -2353,7 +2388,7 @@ def recordings(request: Request, limit: int = 500, offset: int = 0):
     limit = max(1, min(limit, 2000))
     offset = max(0, offset)
     with db_session() as db:
-        rows = list(db.scalars(select(Recording).order_by(Recording.finalized_at.desc(), Recording.id.desc()).offset(offset).limit(limit)).all())
+        rows = list(db.scalars(select(Recording).options(defer(Recording.validation_receipt)).order_by(Recording.finalized_at.desc(), Recording.id.desc()).offset(offset).limit(limit)).all())
     return [_recording_json(r) for r in rows]
 
 

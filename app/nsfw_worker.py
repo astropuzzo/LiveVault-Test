@@ -111,6 +111,8 @@ class NsfwWorkerMixin:
                         break
             if rec:
                 db.flush()
+                # nsfw_hits is deferred: load it before the row is detached.
+                db.refresh(rec, ["nsfw_hits"])
                 db.expunge(rec)
             return rec
 
