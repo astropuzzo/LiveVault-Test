@@ -207,21 +207,22 @@ def build_index(path: Path, target_seconds: float = 6.0) -> FragmentIndex:
     return FragmentIndex(init_length=init_length, segments=tuple(segments), complete=complete)
 
 
-_cache: dict[str, tuple[tuple[int, int], FragmentIndex]] = {}
+_cache: dict[tuple[str, float], tuple[tuple[int, int], FragmentIndex]] = {}
 _cache_lock = threading.Lock()
 
 
-def cached_index(path: Path) -> FragmentIndex:
+def cached_index(path: Path, target_seconds: float = 6.0) -> FragmentIndex:
+    """Index of ``path``; ``target_seconds=0`` gives one segment per fragment (live playlists)."""
     stat = os.stat(path)
-    key = str(path)
+    key = (str(path), float(target_seconds))
     signature = (stat.st_size, stat.st_mtime_ns)
     with _cache_lock:
         hit = _cache.get(key)
         if hit and hit[0] == signature:
             return hit[1]
-    index = build_index(path)
+    index = build_index(path, target_seconds)
     with _cache_lock:
-        if len(_cache) > 64:
+        if len(_cache) > 128:
             _cache.clear()
         _cache[key] = (signature, index)
     return index
@@ -242,6 +243,37 @@ def hls_playlist(index: FragmentIndex, media_uri: str, live: bool = False) -> st
         lines.append(f"#EXTINF:{segment.duration:.3f},")
         lines.append(f"#EXT-X-BYTERANGE:{segment.length}@{segment.offset}")
         lines.append(media_uri)
+    if not live:
+        lines.append("#EXT-X-ENDLIST")
+    return "\n".join(lines) + "\n"
+
+
+def hls_session_playlist(parts: list[tuple[FragmentIndex, str]], live: bool = True) -> str:
+    """One playlist over several fragmented MP4 files of the same live, oldest first.
+
+    Every file has its own init section and restarts its timestamps at zero, so each
+    one is announced with EXT-X-DISCONTINUITY and its own EXT-X-MAP. Only the last file
+    grows: already listed segments never change, new fragments are appended, so a
+    player reloading the playlist sees the timeline lengthen as the recording goes on.
+    """
+    segments = [segment for index, _ in parts for segment in index.segments]
+    target = max(1, math.ceil(max((segment.duration for segment in segments), default=1)))
+    lines = [
+        "#EXTM3U",
+        "#EXT-X-VERSION:7",
+        f"#EXT-X-TARGETDURATION:{target}",
+        "#EXT-X-MEDIA-SEQUENCE:0",
+        f"#EXT-X-PLAYLIST-TYPE:{'EVENT' if live else 'VOD'}",
+        "#EXT-X-INDEPENDENT-SEGMENTS",
+    ]
+    for number, (index, media_uri) in enumerate(parts):
+        if number:
+            lines.append("#EXT-X-DISCONTINUITY")
+        lines.append(f'#EXT-X-MAP:URI="{media_uri}",BYTERANGE="{index.init_length}@0"')
+        for segment in index.segments:
+            lines.append(f"#EXTINF:{segment.duration:.3f},")
+            lines.append(f"#EXT-X-BYTERANGE:{segment.length}@{segment.offset}")
+            lines.append(media_uri)
     if not live:
         lines.append("#EXT-X-ENDLIST")
     return "\n".join(lines) + "\n"

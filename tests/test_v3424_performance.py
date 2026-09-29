@@ -263,3 +263,141 @@ def test_recordings_list_gzip_and_rollback(recordings_api, tmp_path):
     session.close()
     assert __import__("app.db", fromlist=["x"]).recordings_generation() == generation
     assert len(_json.loads(_list().body)) == 1
+
+
+# ---- opening a capture URL as a page gives a player with a valid timeline ----
+
+def _fragmented_mp4(path: Path, seconds: int = 6) -> bool:
+    import shutil
+    import subprocess
+    if not shutil.which("ffmpeg"):
+        return False
+    result = subprocess.run(
+        ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i", f"testsrc=size=160x120:rate=25:duration={seconds}",
+         "-c:v", "libx264", "-g", "25", "-pix_fmt", "yuv420p", "-movflags", "frag_keyframe+empty_moov+default_base_moof", str(path)],
+        capture_output=True)
+    return result.returncode == 0 and path.exists()
+
+
+class _Request:
+    def __init__(self, headers=None, query=None):
+        from starlette.datastructures import Headers
+        self.headers = Headers(headers or {})
+        self.query_params = dict(query or {})
+        self.cookies = {}
+
+
+@pytest.fixture()
+def capture(tmp_path, monkeypatch, factory):
+    growing = tmp_path / "AliciaBrooks_part001.capture.mp4"
+    if not _fragmented_mp4(growing):
+        pytest.skip("ffmpeg not available")
+    monkeypatch.setattr(main, "require_auth", lambda _req: None)
+    monkeypatch.setattr(main, "settings", SimpleNamespace(recordings_dir=tmp_path, data_dir=tmp_path, timezone="UTC"))
+    monkeypatch.setattr(main, "db_session", workers_pkg.db_session)
+    monkeypatch.setattr(main.manager, "playable_active_capture_path", lambda source_id: growing)
+    return growing
+
+
+def test_capture_opened_as_a_page_is_a_player_not_the_raw_file(capture):
+    page = main.view_active_capture(25, _Request({"sec-fetch-dest": "document", "accept": "text/html"}))
+    text = page.body.decode()
+    assert page.media_type == "text/html"
+    assert 'data-playlist="/api/sources/25/capture.m3u8"' in text
+    assert 'data-raw="/api/sources/25/capture?raw=1"' in text and 'data-live="1"' in text
+    assert "/static/player.js" in text and "<script>" not in text  # CSP: no inline script
+    assert page.headers["cache-control"] == "no-store"
+    # old browsers without Sec-Fetch-* headers ask for text/html
+    assert main.view_active_capture(25, _Request({"accept": "text/html,application/xhtml+xml"})).media_type == "text/html"
+
+
+def test_capture_still_serves_the_file_to_players_and_on_request(capture):
+    for headers in ({"sec-fetch-dest": "video"}, {"sec-fetch-dest": "empty", "accept": "*/*"}, {"accept": "*/*"}, {}):
+        response = main.view_active_capture(25, _Request(headers))
+        assert Path(response.path) == capture and response.media_type == "video/mp4"
+    forced = main.view_active_capture(25, _Request({"sec-fetch-dest": "document"}, {"raw": "1"}))
+    assert Path(forced.path) == capture
+    playlist = main.stream_active_capture(25, _Request()).body.decode()
+    assert "#EXT-X-PLAYLIST-TYPE:EVENT" in playlist and "#EXT-X-ENDLIST" not in playlist
+    assert "/api/sources/25/capture" in playlist and "#EXTINF" in playlist
+
+
+def test_a_file_without_a_stream_index_is_never_wrapped(tmp_path, monkeypatch, factory):
+    plain = tmp_path / "flat.mp4"
+    if not _fragmented_mp4(plain):
+        pytest.skip("ffmpeg not available")
+    flat = tmp_path / "moov.mp4"
+    import subprocess
+    subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", str(plain), "-c", "copy", "-movflags", "+faststart", str(flat)], check=True)
+    monkeypatch.setattr(main, "require_auth", lambda _req: None)
+    monkeypatch.setattr(main, "settings", SimpleNamespace(recordings_dir=tmp_path, data_dir=tmp_path, timezone="UTC"))
+    monkeypatch.setattr(main, "db_session", workers_pkg.db_session)
+    monkeypatch.setattr(main.manager, "playable_active_capture_path", lambda source_id: flat)
+    response = main.view_active_capture(25, _Request({"sec-fetch-dest": "document"}))
+    assert Path(response.path) == flat  # a finished MP4 already has a valid timeline
+
+
+def test_player_assets_exist_and_use_the_growing_duration():
+    static = Path(__file__).resolve().parents[1] / "app" / "static"
+    script = (static / "player.js").read_text(encoding="utf-8")
+    assert "liveDurationInfinity: false" in script and "Registrato finora" in script
+    assert (static / "player.css").is_file() and (static / "vendor" / "hls.min.js").is_file()
+
+
+# ---- live playlist: append-only, one segment per fragment, whole session ----
+
+def _segment_lines(playlist: str) -> list[str]:
+    return [line for line in playlist.splitlines() if line.startswith("#EXT-X-BYTERANGE")]
+
+
+def test_live_playlist_only_grows_and_lists_every_complete_fragment(tmp_path):
+    from app.mp4_index import cached_index, hls_session_playlist
+    full = tmp_path / "grow.mp4"
+    if not _fragmented_mp4(full, seconds=8):
+        pytest.skip("ffmpeg not available")
+    every = cached_index(full, 0.0)
+    assert len(every.segments) >= 6 and all(s.duration <= 1.5 for s in every.segments)  # one per fragment
+    assert len(cached_index(full).segments) < len(every.segments)  # grouped VOD index is coarser
+    data = full.read_bytes()
+    previous: list[str] = []
+    for count in range(1, len(every.segments) + 1):
+        end = every.segments[count - 1].offset + every.segments[count - 1].length
+        grown = tmp_path / "live.mp4"
+        grown.write_bytes(data[: end + 37])  # 37 bytes of the next fragment: still being written
+        lines = _segment_lines(hls_session_playlist([(cached_index(grown, 0.0), "/media")], live=True))
+        assert len(lines) == count  # the partial fragment is not listed
+        assert lines[: len(previous)] == previous  # nothing already listed ever changes
+        previous = lines
+
+
+def test_session_playlist_spans_parts_with_discontinuities(tmp_path):
+    from app.mp4_index import cached_index, hls_session_playlist
+    first, second = tmp_path / "a.mp4", tmp_path / "b.mp4"
+    if not (_fragmented_mp4(first, seconds=4) and _fragmented_mp4(second, seconds=3)):
+        pytest.skip("ffmpeg not available")
+    playlist = hls_session_playlist([(cached_index(first), "/api/fragments/1/view"),
+                                     (cached_index(second, 0.0), "/api/sources/25/capture")], live=True)
+    assert playlist.count("#EXT-X-MAP:") == 2 and playlist.count("#EXT-X-DISCONTINUITY") == 1
+    assert playlist.index("/api/fragments/1/view") < playlist.index("#EXT-X-DISCONTINUITY") < playlist.rindex("/api/sources/25/capture")
+    assert "#EXT-X-ENDLIST" not in playlist and "#EXT-X-PLAYLIST-TYPE:EVENT" in playlist
+
+
+def test_capture_playlist_includes_earlier_local_parts_of_the_same_live(capture, factory, tmp_path, monkeypatch):
+    closed = tmp_path / "AliciaBrooks_part000.mp4"
+    assert _fragmented_mp4(closed, seconds=4)
+    with factory.begin() as session:
+        from app.db import RecordingFragment
+        row = RecordingFragment(source_id=25, source_name="AliciaBrooks", session_id="live-1", local_path=str(closed),
+                                filename=closed.name, started_at=datetime(2026, 9, 1, tzinfo=timezone.utc),
+                                finalized_at=datetime(2026, 9, 1, 0, 5, tzinfo=timezone.utc))
+        other = RecordingFragment(source_id=25, source_name="AliciaBrooks", session_id="an-older-live", local_path=str(tmp_path / "x.mp4"),
+                                  filename="x.mp4", started_at=datetime(2026, 8, 1, tzinfo=timezone.utc),
+                                  finalized_at=datetime(2026, 8, 1, 0, 5, tzinfo=timezone.utc))
+        session.add_all([row, other])
+        session.flush()
+        row_id = row.id
+    monkeypatch.setattr(main.manager, "active", {25: SimpleNamespace(session_id="live-1")})
+    playlist = main.stream_active_capture(25, _Request()).body.decode()
+    assert f"/api/fragments/{row_id}/view" in playlist and "/api/sources/25/capture" in playlist
+    assert playlist.index(f"/api/fragments/{row_id}/view") < playlist.index("#EXT-X-DISCONTINUITY") < playlist.rindex("/api/sources/25/capture")
+    assert playlist.count("#EXT-X-MAP:") == 2  # the older live's fragment is not part of this timeline

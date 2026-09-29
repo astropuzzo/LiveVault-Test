@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import gzip
+import html as html_lib
 import json
 import os
 import re
@@ -19,7 +20,7 @@ from zoneinfo import ZoneInfo
 from typing import Any, Literal
 
 from fastapi import FastAPI, HTTPException, Request, Response
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from sqlalchemy import case, delete, distinct, func, or_, select
@@ -46,7 +47,7 @@ from .db import (
 )
 from .file_cleanup import cleanup_empty_parents, cleanup_orphan_videos, safe_unlink
 from .media_validation import build_validation_receipt
-from .mp4_index import NotFragmented, cached_index, hls_playlist
+from .mp4_index import NotFragmented, cached_index, hls_playlist, hls_session_playlist
 from .predictions import forecast, rank_upcoming
 from .nsfw_scan import LABELS as NSFW_LABELS
 from .nsfw_live_worker import cluster_marks
@@ -72,7 +73,7 @@ BASE = Path(__file__).parent
 LOGIN_FAILURES: dict[str, deque[float]] = defaultdict(deque)
 LOGIN_WINDOW = 10 * 60
 LOGIN_MAX_FAILURES = 6
-VERSION = "3.4.27"
+VERSION = "3.4.28"
 
 
 class LoginBody(BaseModel):
@@ -2450,6 +2451,44 @@ def recording_thumbnail(recording_id: int, request: Request):
     return FileResponse(path, media_type="image/jpeg")
 
 
+def _wants_player_page(request: Request) -> bool:
+    """True when a browser opens a media URL as a page (address bar, link), not as media.
+
+    Players (<video>, hls.js, VLC, curl) keep getting the file; ``?raw=1`` forces the file.
+    """
+    if request.query_params.get("raw") == "1":
+        return False
+    destination = request.headers.get("sec-fetch-dest", "")
+    if destination:
+        return destination == "document"
+    return "text/html" in request.headers.get("accept", "")
+
+
+def _player_page(title: str, playlist_url: str, raw_url: str, *, live: bool) -> HTMLResponse:
+    """Small page whose player uses the HLS byte-range playlist (valid, growing timeline)."""
+    esc = html_lib.escape
+    body = (
+        '<!doctype html><html lang="it"><head><meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width, initial-scale=1">'
+        f"<title>{esc(title)}</title>"
+        f'<link rel="stylesheet" href="/static/player.css?v={VERSION}"></head>'
+        f'<body data-playlist="{esc(playlist_url, quote=True)}" data-raw="{esc(raw_url, quote=True)}" '
+        f'data-live="{1 if live else 0}"><main><header><h1>{esc(title)}</h1>'
+        '<span id="length"></span><button id="edge" type="button" hidden>Vai al live</button></header>'
+        '<p id="message" hidden></p><video id="player" controls autoplay playsinline></video></main>'
+        '<script src="/static/vendor/hls.min.js?v=1.7.2"></script>'
+        f'<script src="/static/player.js?v={VERSION}"></script></body></html>'
+    )
+    return HTMLResponse(body, headers={"Cache-Control": "no-store"})
+
+
+def _has_stream_index(path: Path) -> bool:
+    try:
+        return bool(cached_index(path).segments)
+    except (NotFragmented, OSError, ValueError, struct_error):
+        return False
+
+
 @app.get("/api/recordings/{recording_id}/view")
 def view_recording(recording_id: int, request: Request):
     require_auth(request)
@@ -2458,6 +2497,10 @@ def view_recording(recording_id: int, request: Request):
         if not rec:
             raise HTTPException(404, "Registrazione non trovata")
         path = _local_media_path(rec.local_path)
+        title = str(rec.filename or f"Registrazione {recording_id}")
+    if _wants_player_page(request) and _has_stream_index(path):
+        return _player_page(title, f"/api/recordings/{recording_id}/stream.m3u8",
+                            f"/api/recordings/{recording_id}/view?raw=1", live=False)
     media_type = _video_media_type(path)
     return StorageFileResponse(path, media_type=media_type)
 
@@ -2470,6 +2513,10 @@ def view_recording_fragment(fragment_id: int, request: Request):
         if not fragment:
             raise HTTPException(404, "Parte locale non trovata")
         path = _local_media_path(fragment.local_path)
+        title = str(fragment.filename or f"Parte {fragment_id}")
+    if _wants_player_page(request) and _has_stream_index(path):
+        return _player_page(title, f"/api/fragments/{fragment_id}/stream.m3u8",
+                            f"/api/fragments/{fragment_id}/view?raw=1", live=False)
     media_type = _video_media_type(path)
     return StorageFileResponse(path, media_type=media_type, headers={"Cache-Control": "private, no-store"})
 
@@ -2481,6 +2528,12 @@ def view_active_capture(source_id: int, request: Request):
     if path is None:
         raise HTTPException(404, "Registrazione attiva non ancora disponibile")
     path = _local_media_path(path)
+    if _wants_player_page(request) and _has_stream_index(path):
+        with db_session() as db:
+            source = db.get(Source, source_id)
+            name = str(source.name) if source else f"Sorgente {source_id}"
+        return _player_page(f"{name} · REC locale", f"/api/sources/{source_id}/capture.m3u8",
+                            f"/api/sources/{source_id}/capture?raw=1", live=True)
     media_type = _video_media_type(path)
     return StorageFileResponse(path, media_type=media_type, headers={"Cache-Control": "private, no-store"})
 
@@ -2519,13 +2572,58 @@ def stream_fragment(fragment_id: int, request: Request):
     return _stream_playlist(path, f"/api/fragments/{fragment_id}/view")
 
 
+def _session_closed_parts(source_id: int, active_path: Path) -> list[tuple[Path, str]]:
+    """Closed local parts of the live being recorded, oldest first (path, media URL)."""
+    session = manager.active.get(int(source_id))
+    session_id = str(getattr(session, "session_id", "") or "")
+    if not session_id:
+        return []
+    with db_session() as db:
+        rows = db.execute(
+            select(RecordingFragment.id, RecordingFragment.local_path)
+            .where(RecordingFragment.source_id == source_id, RecordingFragment.session_id == session_id)
+            .order_by(RecordingFragment.started_at, RecordingFragment.id)
+        ).all()
+    parts: list[tuple[Path, str]] = []
+    for row in rows:
+        try:
+            path = _local_media_path(row.local_path)
+        except HTTPException:
+            continue
+        if path != active_path:
+            parts.append((path, f"/api/fragments/{row.id}/view"))
+    return parts
+
+
 @app.get("/api/sources/{source_id}/capture.m3u8")
 def stream_active_capture(source_id: int, request: Request):
+    """Timeline of the running capture: the closed local parts of this live plus the growing one.
+
+    The growing part is listed one fragment per segment, so the playlist only ever grows and the
+    player's timeline lengthens with the recording; closed parts are immutable and grouped.
+    """
     require_auth(request)
     path = manager.playable_active_capture_path(source_id)
     if path is None:
         raise HTTPException(404, "Registrazione attiva non ancora disponibile")
-    return _stream_playlist(_local_media_path(path), f"/api/sources/{source_id}/capture", live=True)
+    active = _local_media_path(path)
+    try:
+        growing = cached_index(active, 0.0)
+    except (NotFragmented, OSError, ValueError, struct_error) as exc:
+        raise HTTPException(409, f"Riproduzione diretta: {exc}") from None
+    if not growing.segments:
+        raise HTTPException(409, "Nessun frammento completo")
+    parts: list[tuple] = []
+    for closed, media_uri in _session_closed_parts(source_id, active):
+        try:
+            index = cached_index(closed)
+        except (NotFragmented, OSError, ValueError, struct_error):
+            continue  # a finished, non-fragmented part cannot be byte-ranged into HLS
+        if index.segments:
+            parts.append((index, media_uri))
+    parts.append((growing, f"/api/sources/{source_id}/capture"))
+    body = hls_session_playlist(parts, live=True)
+    return Response(body, media_type="application/vnd.apple.mpegurl", headers={"Cache-Control": "private, no-store"})
 
 
 @app.get("/api/recordings/{recording_id}/download")

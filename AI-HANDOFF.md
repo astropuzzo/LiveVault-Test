@@ -15,7 +15,7 @@ SOURCE.txt identifica la revisione (ultimo allineamento completo: 2026-09-25,
 incluse le guide collegate da questo file). Il vecchio handoff duplicato è stato sostituito
 da un rinvio, con originale conservato nella directory rollback.
 
-## Handoff corrente — 2026-09-29 (LiveVault 3.4.27)
+## Handoff corrente — 2026-09-29 (LiveVault 3.4.28)
 Sessione locale con SSH al nodo. Misure, cause, procedure e rollback in
 [LIVE-PANEL-20260909.md](docs/LIVE-PANEL-20260909.md) (sezioni "Short captures
 in Cronologia" e NSFW 3.3/3.4) e [MP4-HLS-RECOVERY.md](docs/MP4-HLS-RECOVERY.md)
@@ -51,6 +51,15 @@ in Cronologia" e NSFW 3.3/3.4) e [MP4-HLS-RECOVERY.md](docs/MP4-HLS-RECOVERY.md)
   `recordings`, modalità storage, 15 s). Se un domani qualcosa scrive su `recordings` fuori da
   SQLAlchemy (SQL grezzo, script), la lista può restare vecchia fino a 15 s: usare `db_session()`.
   Rollback: revert del commit (torna la lista ricostruita a ogni richiesta).
+- 3.4.28: `segment_minutes` è **5** sul nodo dal 2026-09-29 (era 15 dal 25/09; PATCH `/api/settings`,
+  vale per le capture avviate dopo). Motivo: i file erano 30/45/75 min al 71-91% del tetto di 2 GB
+  perché l'unione impacchetta parti intere. Rollback: Impostazioni → Registrazione → Segmento = 15.
+  Effetto collaterale: in Cronologia una live in corso mostra più «parti locali» (una ogni 5 min) finché
+  non si uniscono. Timeline di `/capture`: pagina player per le navigazioni del browser, playlist
+  di sessione con parti chiuse + parte in scrittura (una entry per frammento); il remux Stripchat
+  produce `.mp4` con `moov`, quindi per Stripchat la timeline copre solo la parte in scrittura.
+  QA: ffmpeg `-re` verso un MP4 frammentato e l'app locale con l'autenticazione disattivata
+  (solo test): durata 28 → 34 → 42 s, seek indietro ok, 0 stalli/salti in 40 s.
 - Container: gira sotto Coolify (UUID sopra); il nome **non** è `livevault`.
   Trovarlo con `docker ps --format '{{.Names}} {{.Image}}'` prima di `docker logs/exec`.
   Fuso del container Europe/Rome (nomi file), nodo Europe/London, DB in UTC.

@@ -1,0 +1,10 @@
+:root { color-scheme: dark; }
+html, body { margin: 0; height: 100%; background: #0b0d10; color: #e8ecf1; font: 15px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
+main { display: flex; flex-direction: column; height: 100%; }
+header { display: flex; align-items: center; gap: 12px; padding: 10px 16px; }
+h1 { flex: 1; margin: 0; font-size: 16px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#length { font-variant-numeric: tabular-nums; color: #9fb0c3; }
+#edge { background: #d64545; border: 0; border-radius: 6px; color: #fff; cursor: pointer; font: inherit; padding: 5px 12px; }
+#edge[hidden], #message[hidden] { display: none; }
+#message { margin: 0; padding: 6px 16px; color: #f0b429; }
+video { flex: 1; min-height: 0; width: 100%; background: #000; }
