@@ -149,8 +149,14 @@ camera: una transizione a privata/offline chiude normalmente la capture.
 I manifest continuano a richiedere HTTP 200,
 `#EXTM3U`, variante leggibile e chiave Mouflon valida. Se la camera non è
 pubblica o tutti i domini rispondono 403, nessun video viene fabbricato.
-Test mirati Windows con FFmpeg: vedere la PR 3.4.30 e la CI. Verifica su una
-nuova live Stripchat necessaria dopo il deploy per confermare che i domini
-pubblicati dal provider siano raggiungibili dal nodo. Rollback: immagine
-3.4.29 `a6fbbbc`; una copia già messa in quarantena resta preservata e può
+83 test mirati Windows con FFmpeg e CI `main` run `36597522780` passati.
+PR #40 integrata in `0242aa3`; container Coolify
+`ahul2vdjkyvjiwgzpcrmxzfe-162449552927` healthy. Sul nodo il worker ha
+spostato la copia AngelLeeen in `.recovery-failed.mp4` e creato la nota;
+dimensione invariata di 507573 byte. La pagina Stripchat letta dal nodo
+pubblica `doppiocdn.media`, ora primo dominio tentato dal recorder.
+Non era attiva una nuova live Stripchat durante la verifica: la raggiungibilità
+del manifest e la continuità della capture restano da osservare alla prossima
+live pubblica. Rollback: immagine 3.4.29 `a6fbbbc`; una copia già messa in
+quarantena resta preservata e può
 essere riportata al nome `.finalizing.mp4` solo dopo ispezione manuale.
