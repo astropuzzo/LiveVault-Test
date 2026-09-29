@@ -22,8 +22,9 @@ in Cronologia" e NSFW 3.3/3.4) e [MP4-HLS-RECOVERY.md](docs/MP4-HLS-RECOVERY.md)
 (3.4.4); cronologia in CHANGELOG.
 - 3.4.24 (2026-09-29, audit prestazioni con SSH): misure e modifiche in CHANGELOG. In sintesi:
   `nsfw_hits` differita, elenco registrazioni e Cronologia più leggeri, uploader a coda vuota
-  senza scansione dei frammenti. Prima: `/api/recordings?limit=1000` ~1,2 s, pulse 168 h ~2,0 s;
-  la verifica dopo il deploy è nella sezione "Aperti". Nessuna modifica di schema né di
+  senza scansione dei frammenti, controllo miniature con confronto di prefisso su stringa.
+  Prima → dopo il primo deploy (misura dal container, 4 richieste, minimo): `/api/recordings?limit=1000`
+  996 → 776 ms, pulse 168 h 1858 → 926 ms, pulse 12 h invariato (~80 ms). Nessuna modifica di schema né di
   impostazioni sul nodo. Rollback: revert del commit 3.4.24 e redeploy Coolify (immagine
   precedente `8b2921198021` = 3.4.23). Lavoro fatto da un clone pulito: il checkout locale
   Windows dell'utente era fermo in un `git revert` interrotto con conflitti (282 commit
