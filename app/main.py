@@ -392,11 +392,11 @@ def _profile_json(
 
 
 @lru_cache(maxsize=4)
-def _thumbnail_root_for(data_dir: Path) -> Path:
-    return Path(os.path.realpath(data_dir / "thumbnails"))
+def _thumbnail_root_for(data_dir: Path) -> str:
+    return os.path.realpath(data_dir / "thumbnails") + os.sep
 
 
-def _thumbnail_root() -> Path:
+def _thumbnail_root() -> str:
     return _thumbnail_root_for(settings.data_dir)
 
 
@@ -404,8 +404,9 @@ def _safe_thumbnail_url(recording_id: int, thumbnail_path: str) -> str:
     if not thumbnail_path:
         return ""
     try:
-        candidate = Path(os.path.realpath(thumbnail_path))
-        if not candidate.is_relative_to(_thumbnail_root()) or not candidate.is_file():
+        # String checks on a realpath: this runs once per row of the 1000-row list.
+        candidate = os.path.realpath(thumbnail_path)
+        if not candidate.startswith(_thumbnail_root()) or not os.path.isfile(candidate):
             return ""
     except (OSError, RuntimeError, ValueError):
         return ""

@@ -4,7 +4,7 @@
 
 - Misurato sul nodo (2026-09-29, container in produzione, DB 13 MB): `/api/recordings?limit=1000` ~1,0-1,4 s e 1,4 MB a ogni refresh della pagina, Cronologia a 168 h ~2,0 s (a 12 h 0,17 s), container al 74% CPU con 1 capture e il campionatore NSFW attivi. `recordings.nsfw_hits` pesa 786 KB in totale (max 45 KB per riga), `validation_receipt` 483 KB.
 - `nsfw_hits` è una colonna differita (`deferred=True`): non si legge più con ogni query su `Recording`; `_next_nsfw_job` la carica con `db.refresh` prima di staccare la riga.
-- L'elenco registrazioni non carica più `validation_receipt`; `_safe_thumbnail_url` usa un solo `realpath` per riga e la radice delle miniature in cache (prima due `resolve()`, circa il 60% del tempo di serializzazione).
+- L'elenco registrazioni non carica più `validation_receipt`; `_safe_thumbnail_url` usa un solo `realpath` per riga, confronto di prefisso su stringa e radice delle miniature in cache (prima due `resolve()` e `is_relative_to`, oltre metà del tempo di serializzazione).
 - Cronologia (`/api/control-room/pulse`): i segni NSFW si leggono come colonne (non come 15 mila oggetti ORM), si ordinano una volta per profilo e ogni sessione ne prende la fetta per bisezione; registrazioni e frammenti sono indicizzati per profilo con le date già normalizzate; le registrazioni caricano solo le colonne usate. Risposta identica byte per byte alla precedente sui dati di produzione (12/48/168 h e elenco registrazioni).
 - Uploader a coda vuota (ogni 2 s): la facciata di `_pending_recording` rifaceva le stesse query due volte e caricava tutti i frammenti; ora esce subito se non c'è nulla da caricare.
 - Non toccati (misurati, costo trascurabile): thumbnail loop a vuoto (una query indicizzata senza righe ogni 2 s).
