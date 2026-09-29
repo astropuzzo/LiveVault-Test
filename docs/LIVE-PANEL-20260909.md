@@ -508,6 +508,8 @@ questo PC l'aggiornamento senza nuovi byte ha richiesto circa 0,08 ms. Passati
 27 test mirati, inclusi crescita per append, prefisso invariato della playlist
 e ricreazione di un file più corto. La capture AliciaBrooks precedente non era
 più presente in `/data/livevault/recordings` al momento della nuova verifica.
+CI Linux/Python 3.13 sul commit `1da3721`: 468 test passati e controllo della
+documentazione operativa verde (run PR `36542182223`).
 Restano da misurare latenza e seek nel browser sul nodo CM4 dopo il deploy.
 
 Limite: se i keyframe non coincidono con l'inizio di alcun frammento successivo,
