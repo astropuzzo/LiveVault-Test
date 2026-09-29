@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.4.29 — Seek della capture live Stripchat
+
+- I frammenti Stripchat da circa 0,5 s non iniziano tutti su un keyframe. La playlist live 3.4.28 li esponeva singolarmente come segmenti HLS indipendenti: un seek poteva quindi fermare la riproduzione. L'indice finito e quello live ora iniziano i segmenti sui keyframe; l'indice live pubblica solo gruppi chiusi di almeno 2 s e legge solo i box nuovi a ogni aggiornamento. La playlist resta in sola aggiunta.
+- Test con MP4 frammentato da 24 fps, 0,5 s per frammento e keyframe ogni quattro frammenti: 27 test mirati passati, inclusi endpoint, crescita progressiva e ricreazione del file. In un file di prova da 120 s (240 frammenti), 59 segmenti live chiusi e richiesta ripetuta in circa 0,08 ms sul PC. La capture AliciaBrooks precedente non era più disponibile nel percorso delle registrazioni per una nuova prova diretta; la latenza sul CM4 e il seek nel browser di produzione restano da verificare.
+- Rollback: revert del commit e redeploy dell'immagine 3.4.28; nessuna modifica di schema o dati. Le parti live con keyframe non allineati ai confini dei frammenti potrebbero non produrre segmenti HLS finché non arriva un nuovo frammento indipendente; il player ricade sul file diretto se la playlist non è disponibile.
+
 ## 3.4.28 — Timeline valida della registrazione in corso e file più pieni
 
 - **Timeline.** Aprendo `/api/sources/N/capture` (o `/api/fragments/N/view`, `/api/recordings/N/view`) come pagina, il browser riceveva il MP4 frammentato ancora in scrittura, senza durata né indice: nessuna barra valida. Ora una navigazione del browser (`Sec-Fetch-Dest: document`, oppure `Accept: text/html` nei browser vecchi) riceve una pagina con un player (`static/player.js`, hls.js) sulla playlist HLS; `<video>`, hls.js, VLC e simili ricevono il file come prima e `?raw=1` lo forza. La durata mostrata è quella registrata («Registrato finora»), cresce a ogni aggiornamento della playlist, la barra è scorribile su tutto e «Vai al live» compare quando si è indietro di più di 15 s. Un file MP4 già finito (con `moov`) non viene avvolto.

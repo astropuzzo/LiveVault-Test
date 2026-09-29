@@ -47,7 +47,7 @@ from .db import (
 )
 from .file_cleanup import cleanup_empty_parents, cleanup_orphan_videos, safe_unlink
 from .media_validation import build_validation_receipt
-from .mp4_index import NotFragmented, cached_index, hls_playlist, hls_session_playlist
+from .mp4_index import NotFragmented, cached_index, hls_playlist, hls_session_playlist, live_playlist_index
 from .predictions import forecast, rank_upcoming
 from .nsfw_scan import LABELS as NSFW_LABELS
 from .nsfw_live_worker import cluster_marks
@@ -73,7 +73,7 @@ BASE = Path(__file__).parent
 LOGIN_FAILURES: dict[str, deque[float]] = defaultdict(deque)
 LOGIN_WINDOW = 10 * 60
 LOGIN_MAX_FAILURES = 6
-VERSION = "3.4.28"
+VERSION = "3.4.29"
 
 
 class LoginBody(BaseModel):
@@ -2599,8 +2599,9 @@ def _session_closed_parts(source_id: int, active_path: Path) -> list[tuple[Path,
 def stream_active_capture(source_id: int, request: Request):
     """Timeline of the running capture: the closed local parts of this live plus the growing one.
 
-    The growing part is listed one fragment per segment, so the playlist only ever grows and the
-    player's timeline lengthens with the recording; closed parts are immutable and grouped.
+    The growing part is read incrementally and listed in closed, keyframe-aligned segments of at
+    least 2 s, so the playlist only ever grows and the player's timeline lengthens with the
+    recording; closed parts are immutable and grouped like a finished file.
     """
     require_auth(request)
     path = manager.playable_active_capture_path(source_id)
@@ -2608,7 +2609,7 @@ def stream_active_capture(source_id: int, request: Request):
         raise HTTPException(404, "Registrazione attiva non ancora disponibile")
     active = _local_media_path(path)
     try:
-        growing = cached_index(active, 0.0)
+        growing = live_playlist_index(active)
     except (NotFragmented, OSError, ValueError, struct_error) as exc:
         raise HTTPException(409, f"Riproduzione diretta: {exc}") from None
     if not growing.segments:

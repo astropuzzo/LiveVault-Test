@@ -60,6 +60,12 @@ in Cronologia" e NSFW 3.3/3.4) e [MP4-HLS-RECOVERY.md](docs/MP4-HLS-RECOVERY.md)
   produce `.mp4` con `moov`, quindi per Stripchat la timeline copre solo la parte in scrittura.
   QA: ffmpeg `-re` verso un MP4 frammentato e l'app locale con l'autenticazione disattivata
   (solo test): durata 28 → 34 → 42 s, seek indietro ok, 0 stalli/salti in 40 s.
+- 3.4.29 (2026-09-29, candidato): fix della playlist live Stripchat. I frammenti da 0,5 s
+  espongono un keyframe circa ogni quattro frammenti; 3.4.28 li serviva separatamente e il seek
+  poteva partire a metà GOP. `app/mp4_index.py` raggruppa solo su keyframe e mantiene un indice
+  incrementale per la parte in scrittura; pubblica solo segmenti già chiusi. Test e limiti in
+  [LIVE-PANEL-20260909.md](docs/LIVE-PANEL-20260909.md), sezione 3.4.29. Non ancora distribuito
+  né verificato nel browser sul CM4. Rollback: revert e redeploy 3.4.28; nessuno schema modificato.
 - Container: gira sotto Coolify (UUID sopra); il nome **non** è `livevault`.
   Trovarlo con `docker ps --format '{{.Names}} {{.Image}}'` prima di `docker logs/exec`.
   Fuso del container Europe/Rome (nomi file), nodo Europe/London, DB in UTC.

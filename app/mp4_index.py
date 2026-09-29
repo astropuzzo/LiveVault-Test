@@ -94,6 +94,55 @@ def _parse_moov(moov: bytes) -> tuple[dict[int, tuple[int, bytes]], dict[int, in
     return tracks, defaults, fragmented
 
 
+def _trex_sample_flags(moov: bytes) -> dict[int, int]:
+    """Default sample flags per track from the moov's trex boxes."""
+    flags: dict[int, int] = {}
+    for kind, body, stop in _children(moov, 8, len(moov)):
+        if kind != b"mvex":
+            continue
+        for sub, sbody, _ in _children(moov, body, stop):
+            if sub == b"trex":
+                track_id = struct.unpack_from(">I", moov, sbody + 4)[0]
+                flags[track_id] = struct.unpack_from(">I", moov, sbody + 20)[0]
+    return flags
+
+
+def fragment_starts_with_keyframe(moof: bytes, track_id: int, default_flags: int = 0) -> bool:
+    """True when the first sample of the track's run in this moof is a sync sample.
+
+    Capture parts from some providers (Stripchat: 0.5 s fragments, a keyframe every
+    fourth one) have fragments that do not begin at a keyframe: a player cannot
+    start decoding there. Unreadable flags count as a keyframe, as in a normal
+    ``frag_keyframe`` file.
+    """
+    for kind, body, stop in _children(moof, 8, len(moof)):
+        if kind != b"traf":
+            continue
+        tfhd = _child(moof, body, stop, b"tfhd")
+        if not tfhd or struct.unpack_from(">I", moof, tfhd[0] + 4)[0] != track_id:
+            continue
+        flags = int.from_bytes(moof[tfhd[0] + 1:tfhd[0] + 4], "big")
+        cursor = tfhd[0] + 8
+        for bit, width in ((0x1, 8), (0x2, 4), (0x8, 4), (0x10, 4)):
+            if flags & bit:
+                cursor += width
+        sample_flags = default_flags
+        if flags & 0x20:
+            sample_flags = struct.unpack_from(">I", moof, cursor)[0]
+        for sub, sbody, _ in _children(moof, body, stop):
+            if sub != b"trun":
+                continue
+            tflags = int.from_bytes(moof[sbody + 1:sbody + 4], "big")
+            cursor = sbody + 8 + (4 if tflags & 0x1 else 0)
+            if tflags & 0x4:
+                sample_flags = struct.unpack_from(">I", moof, cursor)[0]
+            elif tflags & 0x400:
+                cursor += 4 * sum(1 for bit in (0x100, 0x200) if tflags & bit)
+                sample_flags = struct.unpack_from(">I", moof, cursor)[0]
+            return not (sample_flags & 0x10000)  # sample_is_non_sync_sample
+    return True
+
+
 def _fragment_ticks(moof: bytes, track_id: int, default_duration: int) -> tuple[int | None, int]:
     """Return (base decode time, summed sample duration) of one track in a moof."""
     for kind, body, stop in _children(moof, 8, len(moof)):
@@ -140,8 +189,9 @@ def build_index(path: Path, target_seconds: float = 6.0) -> FragmentIndex:
     tracks: dict[int, tuple[int, bytes]] = {}
     defaults: dict[int, int] = {}
     init_length = 0
-    fragments: list[tuple[int, int, int | None, int]] = []
-    pending: tuple[int, int | None, int] | None = None
+    fragments: list[tuple[int, int, int | None, int, bool]] = []
+    pending: tuple[int, int | None, int, bool] | None = None
+    trex_flags: dict[int, int] = {}
     complete = True
     with open(path, "rb") as handle:
         position = 0
@@ -158,9 +208,11 @@ def build_index(path: Path, target_seconds: float = 6.0) -> FragmentIndex:
                 break
             if kind == b"moov":
                 handle.seek(position)
-                tracks, defaults, fragmented = _parse_moov(handle.read(box_size))
+                moov = handle.read(box_size)
+                tracks, defaults, fragmented = _parse_moov(moov)
                 if not fragmented:
                     raise NotFragmented("MP4 already has a complete index")
+                trex_flags = _trex_sample_flags(moov)
                 init_length = position + box_size
             elif kind == b"moof" and init_length:
                 if box_size > 4 * 1024 * 1024:
@@ -170,11 +222,12 @@ def build_index(path: Path, target_seconds: float = 6.0) -> FragmentIndex:
                 if track is None:
                     raise NotFragmented("No track in moov")
                 handle.seek(position)
-                base, ticks = _fragment_ticks(handle.read(box_size), track, defaults.get(track, 0))
-                pending = (position, base, ticks)
+                moof = handle.read(box_size)
+                base, ticks = _fragment_ticks(moof, track, defaults.get(track, 0))
+                pending = (position, base, ticks, fragment_starts_with_keyframe(moof, track, trex_flags.get(track, 0)))
             elif kind == b"mdat" and pending:
-                start, base, ticks = pending
-                fragments.append((start, position + box_size - start, base, ticks))
+                start, base, ticks, keyframe = pending
+                fragments.append((start, position + box_size - start, base, ticks, keyframe))
                 pending = None
             position += box_size
     if not init_length:
@@ -183,7 +236,7 @@ def build_index(path: Path, target_seconds: float = 6.0) -> FragmentIndex:
     timescale = tracks[video if video is not None else next(iter(tracks))][0] or 1
 
     durations: list[float] = []
-    for index, (_, _, base, ticks) in enumerate(fragments):
+    for index, (_, _, base, ticks, _key) in enumerate(fragments):
         following = fragments[index + 1][2] if index + 1 < len(fragments) else None
         if base is not None and following is not None and following > base:
             durations.append((following - base) / timescale)
@@ -193,8 +246,9 @@ def build_index(path: Path, target_seconds: float = 6.0) -> FragmentIndex:
     segments: list[Segment] = []
     start = length = 0
     elapsed = 0.0
-    for (offset, size_bytes, _, _), seconds in zip(fragments, durations):
-        if length and (offset != start + length or elapsed >= target_seconds):
+    for (offset, size_bytes, _, _, keyframe), seconds in zip(fragments, durations):
+        # A segment may only begin on a keyframe: players start decoding, and seek, at segment starts.
+        if length and (offset != start + length or (elapsed >= target_seconds and keyframe)):
             segments.append(Segment(start, length, elapsed))
             length = 0
             elapsed = 0.0
@@ -285,6 +339,7 @@ class LiveFragment:
     length: int
     time: float  # seconds from the first fragment (same basis as pts - start_time)
     duration: float
+    keyframe: bool = True
 
 
 class GrowingIndex:
@@ -303,10 +358,11 @@ class GrowingIndex:
         self.track: int | None = None
         self.timescale = 1
         self.default_duration = 0
+        self.default_flags = 0
         self.first_base: int | None = None
         self.running_base = 0
         self.latest_time = 0.0
-        self._pending: tuple[int, int | None, int] | None = None
+        self._pending: tuple[int, int | None, int, bool] | None = None
 
     def poll(self, limit: int = 4096) -> list[LiveFragment]:
         size = os.path.getsize(self.path)
@@ -324,7 +380,8 @@ class GrowingIndex:
                     break  # incomplete box: try again on the next poll
                 if kind == b"moov":
                     handle.seek(self.position)
-                    tracks, defaults, fragmented = _parse_moov(handle.read(box_size))
+                    moov = handle.read(box_size)
+                    tracks, defaults, fragmented = _parse_moov(moov)
                     if not fragmented:
                         raise NotFragmented("MP4 already has a complete index")
                     video = next((tid for tid, (_, handler) in tracks.items() if handler == b"vide"), None)
@@ -333,15 +390,18 @@ class GrowingIndex:
                         raise NotFragmented("No track in moov")
                     self.timescale = tracks[self.track][0] or 1
                     self.default_duration = defaults.get(self.track, 0)
+                    self.default_flags = _trex_sample_flags(moov).get(self.track, 0)
                     self.init_length = self.position + box_size
                 elif kind == b"moof" and self.init_length:
                     if box_size > 4 * 1024 * 1024:
                         raise NotFragmented("Unexpectedly large moof")
                     handle.seek(self.position)
-                    base, ticks = _fragment_ticks(handle.read(box_size), self.track, self.default_duration)
-                    self._pending = (self.position, base, ticks)
+                    moof = handle.read(box_size)
+                    base, ticks = _fragment_ticks(moof, self.track, self.default_duration)
+                    self._pending = (self.position, base, ticks,
+                                     fragment_starts_with_keyframe(moof, self.track, self.default_flags))
                 elif kind == b"mdat" and self._pending:
-                    start, base, ticks = self._pending
+                    start, base, ticks, keyframe = self._pending
                     self._pending = None
                     if base is None:
                         base = self.running_base
@@ -350,8 +410,63 @@ class GrowingIndex:
                     self.running_base = base + ticks
                     time_value = max(0.0, (base - self.first_base) / self.timescale)
                     self.latest_time = max(self.latest_time, time_value + ticks / self.timescale)
-                    found.append(LiveFragment(start, self.position + box_size - start, time_value, ticks / self.timescale))
+                    found.append(LiveFragment(start, self.position + box_size - start, time_value, ticks / self.timescale, keyframe))
                 elif self.position == 0 and kind not in (b"ftyp", b"moov", b"free", b"skip", b"uuid", b"styp"):
                     raise NotFragmented("Not an MP4")
                 self.position += box_size
         return found
+
+
+class LivePlaylistIndex:
+    """Segment list of a fragmented MP4 that is still being written, kept up to date incrementally.
+
+    One ``GrowingIndex`` per file reads only the bytes appended since the last request, so
+    every playlist reload costs a few reads instead of re-parsing the whole part. Segments
+    start on keyframes and are only listed once closed (the next keyframe has arrived): a
+    listed segment never changes, the playlist only ever grows.
+    """
+
+    def __init__(self, path: Path):
+        self.path = Path(path)
+        self.lock = threading.Lock()
+        self._reset()
+
+    def _reset(self) -> None:
+        self.reader = GrowingIndex(self.path)
+        self.fragments: list[LiveFragment] = []
+
+    def snapshot(self, target_seconds: float = 2.0) -> FragmentIndex:
+        with self.lock:
+            if os.path.getsize(self.path) < self.reader.position:
+                self._reset()  # the file was recreated under the same name
+            self.fragments.extend(self.reader.poll())
+            segments: list[Segment] = []
+            start = length = 0
+            elapsed = 0.0
+            for fragment in self.fragments:
+                if length and (fragment.offset != start + length or (elapsed >= target_seconds and fragment.keyframe)):
+                    segments.append(Segment(start, length, elapsed))
+                    length = 0
+                    elapsed = 0.0
+                if not length:
+                    start = fragment.offset
+                length += fragment.length
+                elapsed += fragment.duration
+            # the still open group (no keyframe after it yet) is not listed
+            return FragmentIndex(self.reader.init_length, tuple(segments), complete=False)
+
+
+_live: dict[str, LivePlaylistIndex] = {}
+_live_lock = threading.Lock()
+
+
+def live_playlist_index(path: Path, target_seconds: float = 2.0) -> FragmentIndex:
+    key = str(path)
+    with _live_lock:
+        entry = _live.get(key)
+        if entry is None:
+            if len(_live) >= 8:
+                for stale in [name for name in _live if not os.path.exists(name)] or [next(iter(_live))]:
+                    _live.pop(stale, None)
+            entry = _live[key] = LivePlaylistIndex(path)
+    return entry.snapshot(target_seconds)
