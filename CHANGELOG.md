@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.4.27 — Elenco registrazioni in cache
+
+- `/api/recordings` (Archivio, ogni 30 s per scheda aperta) costava ~0,8-1,0 s sul nodo e 1,4 MB per richiesta. Ora la risposta si ricostruisce solo dopo un commit su `recordings` (`db.recordings_generation()`, agganciato a flush ORM e update/delete di massa), a un cambio di modalità storage o dopo 15 s (i file possono sparire senza scritture nel DB). Il JSON è identico a prima (verificato su una copia del DB di produzione).
+- Header `ETag` debole e `Cache-Control: private, no-cache`: il browser rivalida e riceve `304` senza corpo se nulla è cambiato; il gzip si calcola una volta per versione dell'elenco invece che a ogni richiesta. La pagina non richiede modifiche.
+- Rollback: revert del commit; nessuna modifica di schema.
+
 ## 3.4.26 — CPU a riposo: yt-dlp e TLS
 
 - Profilo con py-spy sul processo in produzione (2026-09-29, 25 s, 901 campioni): l'uploader Gofile in corso pesava il 68% (invio TLS), yt-dlp il 19%. Il processo usava ~81% di un core con la UI chiusa.

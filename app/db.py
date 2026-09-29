@@ -6,6 +6,8 @@ from typing import Iterator
 
 from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text, create_engine, event, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
+import itertools
+import threading
 
 from .config import settings
 
@@ -432,6 +434,52 @@ def init_db() -> None:
     _migrate_sources()
     _migrate_library()
     _migrate_live_sessions()
+
+
+# ---- change tracking for derived caches --------------------------------------
+# ``recordings_generation()`` moves after every committed write to ``recordings``
+# (ORM flushes and bulk update/delete), so an API response built from that table
+# can be reused until then instead of being rebuilt on every request.
+_generation = 0
+_generation_lock = threading.Lock()
+_DIRTY = "recordings_dirty"
+
+
+def recordings_generation() -> int:
+    return _generation
+
+
+def _bump_generation() -> None:
+    global _generation
+    with _generation_lock:
+        _generation += 1
+
+
+@event.listens_for(Session, "after_flush")
+def _mark_recordings_dirty(session, _flush_context) -> None:
+    for obj in itertools.chain(session.new, session.dirty, session.deleted):
+        if isinstance(obj, Recording):
+            session.info[_DIRTY] = True
+            return
+
+
+@event.listens_for(Session, "do_orm_execute")
+def _mark_recordings_bulk_dirty(state) -> None:
+    if (state.is_update or state.is_delete or state.is_insert) and any(
+        mapper.class_ is Recording for mapper in state.all_mappers
+    ):
+        state.session.info[_DIRTY] = True
+
+
+@event.listens_for(Session, "after_commit")
+def _bump_after_commit(session) -> None:
+    if session.info.pop(_DIRTY, False):
+        _bump_generation()
+
+
+@event.listens_for(Session, "after_soft_rollback")
+def _forget_after_rollback(session, _previous_transaction) -> None:
+    session.info.pop(_DIRTY, None)
 
 
 @contextmanager

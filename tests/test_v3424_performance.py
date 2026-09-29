@@ -190,3 +190,76 @@ def test_container_prefers_chacha20_for_tls():
     assert order[0] == "TLS_CHACHA20_POLY1305_SHA256"
     assert {"TLS_AES_256_GCM_SHA384", "TLS_AES_128_GCM_SHA256"} <= set(order)  # servers without ChaCha still work
     assert "MinProtocol = TLSv1.2" in text
+
+
+# ---- /api/recordings: cache, ETag, invalidation ----
+
+class _Req:
+    def __init__(self, headers=None):
+        from starlette.datastructures import Headers
+        self.headers = Headers(headers or {})
+        self.cookies = {}
+
+
+@pytest.fixture()
+def recordings_api(factory, monkeypatch):
+    """main.recordings on an isolated DB, auth bypassed."""
+    import app.db as dbmod
+    monkeypatch.setattr(main, "require_auth", lambda _req: None)
+    monkeypatch.setattr(main, "db_session", workers_pkg.db_session)
+    main._recordings_cache.clear()
+    from sqlalchemy.orm import Session
+    # the change tracking listens on the Session class, so the isolated factory feeds it too
+    assert dbmod.recordings_generation() >= 0
+    return factory
+
+
+def _list(headers=None, limit=500):
+    return main.recordings(_Req(headers), limit=limit, offset=0)
+
+
+def test_recordings_list_is_cached_until_a_recording_changes(recordings_api, tmp_path):
+    import json as _json
+    _recording(recordings_api, tmp_path / "a.mp4")
+    first = _list()
+    assert first.status_code == 200 and len(_json.loads(first.body)) == 1
+    etag = first.headers["etag"]
+    assert etag.startswith('W/"') and first.headers["cache-control"] == "private, no-cache"
+    again = _list()
+    assert again.headers["etag"] == etag and again.body == first.body  # served from cache
+    assert _list({"if-none-match": etag}).status_code == 304
+    _recording(recordings_api, tmp_path / "b.mp4")  # committed write -> new generation
+    changed = _list()
+    assert len(_json.loads(changed.body)) == 2 and changed.headers["etag"] != etag
+    assert _list({"if-none-match": etag}).status_code == 200  # stale validator is not accepted
+
+
+def test_recordings_list_sees_updates_and_bulk_updates(recordings_api, tmp_path):
+    import json as _json
+    from sqlalchemy import update
+    rec_id = _recording(recordings_api, tmp_path / "c.mp4", nsfw_status="pending")
+    before = _json.loads(_list().body)[0]["nsfw_status"]
+    with recordings_api.begin() as session:
+        session.get(Recording, rec_id).nsfw_status = "safe"  # ORM flush path
+    assert _json.loads(_list().body)[0]["nsfw_status"] == "safe" != before
+    with recordings_api.begin() as session:
+        session.execute(update(Recording).where(Recording.id == rec_id).values(nsfw_status="nsfw"))  # bulk path
+    assert _json.loads(_list().body)[0]["nsfw_status"] == "nsfw"
+
+
+def test_recordings_list_gzip_and_rollback(recordings_api, tmp_path):
+    import gzip as _gzip
+    import json as _json
+    _recording(recordings_api, tmp_path / "d.mp4")
+    plain = _list()
+    packed = _list({"accept-encoding": "gzip, br"})
+    assert packed.headers["content-encoding"] == "gzip" and _gzip.decompress(packed.body) == plain.body
+    generation = __import__("app.db", fromlist=["x"]).recordings_generation()
+    session = recordings_api()
+    session.add(Recording(source_id=1, source_name="x", session_id="s", local_path="p", filename="p",
+                          started_at=datetime(2026, 9, 1, tzinfo=timezone.utc)))
+    session.flush()
+    session.rollback()  # nothing committed: the cache stays valid
+    session.close()
+    assert __import__("app.db", fromlist=["x"]).recordings_generation() == generation
+    assert len(_json.loads(_list().body)) == 1

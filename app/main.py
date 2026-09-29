@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import asyncio
+import gzip
 import json
 import os
 import re
 from struct import error as struct_error
+import threading
 import time
+import zlib
 from bisect import bisect_left, bisect_right
 from collections import defaultdict, deque
 from contextlib import asynccontextmanager
@@ -38,6 +41,7 @@ from .db import (
     RecordingFragment,
     Source,
     db_session,
+    recordings_generation,
     init_db,
 )
 from .file_cleanup import cleanup_empty_parents, cleanup_orphan_videos, safe_unlink
@@ -59,6 +63,7 @@ from .settings_store import public_settings, reload_runtime, runtime, set_values
 from .source_providers import audit_inputs, normalize_source, probe, provider_catalog, provider_label, resolve_inputs, source_url
 from .statistics import build_activity_statistics
 from .storage import disk_state
+from . import storage_handoff
 from .uploaders import UploadError, create_gofile_folder, move_gofile_contents, test_provider
 from .utils import human_bytes, sha256_file, utcnow, verify_media
 from .workers import manager
@@ -67,7 +72,7 @@ BASE = Path(__file__).parent
 LOGIN_FAILURES: dict[str, deque[float]] = defaultdict(deque)
 LOGIN_WINDOW = 10 * 60
 LOGIN_MAX_FAILURES = 6
-VERSION = "3.4.26"
+VERSION = "3.4.27"
 
 
 class LoginBody(BaseModel):
@@ -2384,14 +2389,51 @@ def nsfw_image(name: str, request: Request):
     return FileResponse(path, media_type="image/jpeg", headers={"Cache-Control": "private, max-age=86400"})
 
 
+# The list is rebuilt only after a committed change to ``recordings`` (see
+# db.recordings_generation), a storage mode change, or after this many seconds
+# (files can disappear without a DB write). Clients revalidate with the ETag.
+RECORDINGS_CACHE_SECONDS = 15.0
+_recordings_cache: dict[tuple[int, int], dict] = {}
+_recordings_cache_lock = threading.Lock()
+
+
+def _recordings_payload(limit: int, offset: int) -> dict:
+    mode = str(storage_handoff.state().get("mode"))
+    generation = recordings_generation()
+    key = (limit, offset)
+    with _recordings_cache_lock:
+        entry = _recordings_cache.get(key)
+        if (entry and entry["generation"] == generation and entry["mode"] == mode
+                and time.monotonic() < entry["expires"]):
+            return entry
+        # Built under the lock: concurrent requests wait for one build instead of repeating it.
+        with db_session() as db:
+            rows = list(db.scalars(select(Recording).options(defer(Recording.validation_receipt)).order_by(Recording.finalized_at.desc(), Recording.id.desc()).offset(offset).limit(limit)).all())
+        body = json.dumps([_recording_json(r) for r in rows], ensure_ascii=False, allow_nan=False, separators=(",", ":")).encode("utf-8")
+        entry = {
+            "generation": generation, "mode": mode, "expires": time.monotonic() + RECORDINGS_CACHE_SECONDS,
+            "body": body, "gzip": None, "etag": f'W/"{generation}-{zlib.crc32(body):08x}-{len(body)}"',
+        }
+        if len(_recordings_cache) >= 8:
+            _recordings_cache.pop(next(iter(_recordings_cache)))
+        _recordings_cache[key] = entry
+        return entry
+
+
 @app.get("/api/recordings")
 def recordings(request: Request, limit: int = 500, offset: int = 0):
     require_auth(request)
     limit = max(1, min(limit, 2000))
     offset = max(0, offset)
-    with db_session() as db:
-        rows = list(db.scalars(select(Recording).options(defer(Recording.validation_receipt)).order_by(Recording.finalized_at.desc(), Recording.id.desc()).offset(offset).limit(limit)).all())
-    return [_recording_json(r) for r in rows]
+    entry = _recordings_payload(limit, offset)
+    headers = {"ETag": entry["etag"], "Cache-Control": "private, no-cache", "Vary": "Accept-Encoding"}
+    if request.headers.get("if-none-match") == entry["etag"]:
+        return Response(status_code=304, headers=headers)
+    if "gzip" in request.headers.get("accept-encoding", "").lower():
+        if entry["gzip"] is None:  # compressed once per build, not once per request
+            entry["gzip"] = gzip.compress(entry["body"], compresslevel=4, mtime=0)
+        return Response(entry["gzip"], media_type="application/json", headers={**headers, "Content-Encoding": "gzip"})
+    return Response(entry["body"], media_type="application/json", headers=headers)
 
 
 @app.get("/api/recordings/{recording_id}/thumbnail")

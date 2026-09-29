@@ -15,7 +15,7 @@ SOURCE.txt identifica la revisione (ultimo allineamento completo: 2026-09-25,
 incluse le guide collegate da questo file). Il vecchio handoff duplicato è stato sostituito
 da un rinvio, con originale conservato nella directory rollback.
 
-## Handoff corrente — 2026-09-29 (LiveVault 3.4.26)
+## Handoff corrente — 2026-09-29 (LiveVault 3.4.27)
 Sessione locale con SSH al nodo. Misure, cause, procedure e rollback in
 [LIVE-PANEL-20260909.md](docs/LIVE-PANEL-20260909.md) (sezioni "Short captures
 in Cronologia" e NSFW 3.3/3.4) e [MP4-HLS-RECOVERY.md](docs/MP4-HLS-RECOVERY.md)
@@ -47,6 +47,10 @@ in Cronologia" e NSFW 3.3/3.4) e [MP4-HLS-RECOVERY.md](docs/MP4-HLS-RECOVERY.md)
   l'immagine: `pip install --target /tmp/pyspy py-spy` nel container, poi
   `/tmp/pyspy/bin/py-spy record --nonblocking -d 25 -r 50 -f raw -o /tmp/spy.raw -p <pid uvicorn>`
   (funziona senza SYS_PTRACE); rimuovere `/tmp/pyspy` e `/tmp/spy.raw` a fine misura.
+- 3.4.27: `/api/recordings` è in cache per (limit, offset) con ETag; si invalida da solo (commit su
+  `recordings`, modalità storage, 15 s). Se un domani qualcosa scrive su `recordings` fuori da
+  SQLAlchemy (SQL grezzo, script), la lista può restare vecchia fino a 15 s: usare `db_session()`.
+  Rollback: revert del commit (torna la lista ricostruita a ogni richiesta).
 - Container: gira sotto Coolify (UUID sopra); il nome **non** è `livevault`.
   Trovarlo con `docker ps --format '{{.Names}} {{.Image}}'` prima di `docker logs/exec`.
   Fuso del container Europe/Rome (nomi file), nodo Europe/London, DB in UTC.
