@@ -7,6 +7,7 @@ def test_irrecoverable_finalizing_mp4_is_classified_and_quarantined(tmp_path: Pa
     assert finalizing_error_is_unrecoverable('[mov,mp4] moov atom not found')
     assert finalizing_error_is_unrecoverable('Invalid data found when processing input')
     assert finalizing_error_is_unrecoverable('error reading header')
+    assert finalizing_error_is_unrecoverable('Traccia audio assente: il file non verrà caricato come video muto')
     assert not finalizing_error_is_unrecoverable('temporaneo: timeout durante ffprobe')
 
     temporary = tmp_path / '.clip.finalizing.mp4'
@@ -24,6 +25,35 @@ def test_main_installs_non_repeating_finalizing_recovery_wrapper():
     assert 'temporary.replace(quarantine)' in facade
     assert 'self.last_errors.pop(key, None)' in facade
     assert 'recovery-failed.mp4' not in facade  # naming policy stays centralized
+
+
+def test_only_silent_finalizing_copy_is_preserved_once_in_quarantine(tmp_path, monkeypatch):
+    import asyncio
+    import os
+    import time
+    from types import SimpleNamespace
+    import app.main as facade
+
+    _isolated_db(tmp_path, monkeypatch)
+    folder = tmp_path / "recordings" / "AngelLeeen" / "session"
+    folder.mkdir(parents=True)
+    temporary = folder / ".AngelLeeen_part001.finalizing.mp4"
+    temporary.write_bytes(b"video without audio")
+    old = time.time() - 3600
+    os.utime(temporary, (old, old))
+    monkeypatch.setattr(facade, "_recovery_settings", SimpleNamespace(recordings_dir=tmp_path / "recordings"))
+    monkeypatch.setattr(facade._recovery_storage, "media_online", lambda: True)
+    monkeypatch.setattr(facade, "_recovery_verify_media", lambda *_args: SimpleNamespace(
+        ok=False, error="Traccia audio assente: il file non verrà caricato come video muto"))
+    manager = SimpleNamespace(_stopping=False, last_errors={f"recovery-temp:{temporary}": "old"})
+
+    asyncio.run(facade._recover_stale_finalizing_files_safe(manager))
+
+    quarantined = folder / ".AngelLeeen_part001.recovery-failed.mp4"
+    assert not temporary.exists()
+    assert quarantined.read_bytes() == b"video without audio"
+    assert "Traccia audio assente" in (folder / f"{quarantined.name}.txt").read_text(encoding="utf-8")
+    assert not any(key.startswith("recovery-temp:") for key in manager.last_errors)
 
 
 def _isolated_db(tmp_path, monkeypatch):

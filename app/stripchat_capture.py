@@ -34,6 +34,7 @@ MOUFLON_KEYS_FILE = Path(
 HLS_EDGE_HOSTS = (
     "edge-hls.doppiocdn.com",
     "edge-hls.doppiocdn.org",
+    "edge-hls.doppiocdn.live",
     "edge-hls.doppiocdn.net",
 )
 STOP_REQUESTED = False
@@ -324,6 +325,7 @@ def select_master(
     stream_id: str,
     quality: str,
     keys: dict[str, str],
+    hosts: tuple[str, ...] | None = None,
 ) -> tuple[MasterSelection, dict[str, str]]:
     errors: list[str] = []
     master_headers = {
@@ -331,7 +333,7 @@ def select_master(
         "Referer": f"{STRIPCHAT_ROOT}/",
         "Origin": STRIPCHAT_ROOT,
     }
-    for host in HLS_EDGE_HOSTS:
+    for host in hosts or HLS_EDGE_HOSTS:
         master_url = f"https://{host}/hls/{stream_id}/master/{stream_id}_auto.m3u8"
         try:
             response = session.get(master_url, headers=master_headers, timeout=12)
@@ -622,7 +624,7 @@ def capture(args: argparse.Namespace) -> None:
     user_id, state = get_cam_state(session, args.slug)
     stream_id = _public_stream_id(state, user_id)
     keys = _load_key_file()
-    selection, keys = select_master(session, stream_id, args.quality, keys)
+    selection, keys = select_master(session, stream_id, args.quality, keys, getattr(args, "hls_edge_hosts", None))
 
     seen_order: deque[str] = deque()
     seen: set[str] = set()
@@ -673,7 +675,7 @@ def capture(args: argparse.Namespace) -> None:
                 time.sleep(0.5)
                 user_id, state = get_cam_state(session, args.slug, user_id=user_id)
                 stream_id = _public_stream_id(state, user_id)
-                selection, keys = select_master(session, stream_id, args.quality, keys)
+                selection, keys = select_master(session, stream_id, args.quality, keys, getattr(args, "hls_edge_hosts", None))
                 continue
             refreshes = 0
             playlist = parse_media_playlist(selection.media_url, response.text, selection)
@@ -735,7 +737,7 @@ def capture(args: argparse.Namespace) -> None:
                 time.sleep(min(2.0, max(0.5, playlist.target_duration / 2)))
                 user_id, state = get_cam_state(session, args.slug, user_id=user_id)
                 stream_id = _public_stream_id(state, user_id)
-                selection, keys = select_master(session, stream_id, args.quality, keys)
+                selection, keys = select_master(session, stream_id, args.quality, keys, getattr(args, "hls_edge_hosts", None))
                 continue
 
             now = time.monotonic()

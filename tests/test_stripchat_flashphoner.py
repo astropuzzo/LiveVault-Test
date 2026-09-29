@@ -16,6 +16,60 @@ def test_flashphoner_candidates_use_cam_view_server_and_stream_name():
         "master/213430422_auto.m3u8"
     )
     assert any(url.endswith("/213430422/213430422.m3u8") for url in candidates)
+    assert any(url.endswith("/213430422/master_213430422.m3u8") for url in candidates)
+
+
+def test_provider_edge_hosts_precede_static_fallback(monkeypatch):
+    from app import source_providers
+
+    monkeypatch.setattr(source_providers, "_stripchat_snapshot", lambda _slug: {
+        "configV3": {"static": {"features": {"hlsFallback": {
+            "fallbackDomains": ["doppiocdn.media", "doppiocdn.com"]
+        }}}}
+    })
+    hosts = stripchat_capture._provider_edge_hosts("example")
+
+    assert hosts[0] == "edge-hls.doppiocdn.media"
+    assert hosts.count("edge-hls.doppiocdn.com") == 1
+    assert "edge-hls.doppiocdn.live" in hosts
+
+
+def test_capture_passes_provider_hosts_to_mouflon_fallback(monkeypatch):
+    from types import SimpleNamespace
+
+    state = {"cam": {"streamName": "42"}}
+    monkeypatch.setattr(stripchat_capture, "make_session", lambda: object())
+    monkeypatch.setattr(stripchat_capture._legacy, "get_cam_state", lambda *_args: (42, state))
+    monkeypatch.setattr(stripchat_capture, "_public_stream_id", lambda *_args: "42")
+    monkeypatch.setattr(stripchat_capture, "resolve_flashphoner_input", lambda *_args: None)
+    monkeypatch.setattr(stripchat_capture, "_ensure_builtin_mouflon_keys", lambda: None)
+    monkeypatch.setattr(stripchat_capture, "_provider_edge_hosts", lambda _slug: ("edge-hls.doppiocdn.media",))
+    seen = []
+    monkeypatch.setattr(stripchat_capture._legacy, "capture", lambda args: seen.append(args.hls_edge_hosts))
+
+    stripchat_capture.capture(SimpleNamespace(slug="example", quality="best"))
+
+    assert seen == [("edge-hls.doppiocdn.media",)]
+
+
+def test_edge_403_after_room_turns_private_is_normal_transition(monkeypatch):
+    from types import SimpleNamespace
+    import pytest
+    from app.stripchat_state import StripchatCamState, StripchatExpectedState
+
+    monkeypatch.setattr(stripchat_capture, "make_session", lambda: object())
+    monkeypatch.setattr(stripchat_capture._legacy, "get_cam_state", lambda *_args: (42, {"cam": {}}))
+    monkeypatch.setattr(stripchat_capture, "_public_stream_id", lambda *_args: "42")
+    monkeypatch.setattr(stripchat_capture, "resolve_flashphoner_input", lambda *_args: None)
+    monkeypatch.setattr(stripchat_capture, "_ensure_builtin_mouflon_keys", lambda: None)
+    monkeypatch.setattr(stripchat_capture, "_provider_edge_hosts", lambda _slug: ())
+    monkeypatch.setattr(stripchat_capture._legacy, "capture", lambda _args: (_ for _ in ()).throw(
+        RuntimeError("Stripchat HLS master unavailable: HTTP Error 403")))
+    monkeypatch.setattr(stripchat_capture, "_current_expected_state", lambda _slug: StripchatExpectedState(
+        StripchatCamState("private", "private", True, False, "42")))
+
+    with pytest.raises(StripchatExpectedState):
+        stripchat_capture.capture(SimpleNamespace(slug="example", quality="best"))
 
 
 def test_flashphoner_master_resolves_selected_media_playlist():

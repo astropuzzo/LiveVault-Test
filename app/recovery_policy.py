@@ -7,6 +7,7 @@ _UNRECOVERABLE_FINALIZING_MARKERS = (
     "moov atom not found",
     "invalid data found when processing input",
     "error reading header",
+    "traccia audio assente",
 )
 
 
