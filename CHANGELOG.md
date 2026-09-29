@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.4.30 — Segmenti live con box sidx
+
+- La verifica sulla capture AliciaBrooks in produzione dopo il deploy 3.4.29 ha trovato due box `sidx` (104 byte) tra ogni coppia di frammenti. L'indice scambiava il divario per una discontinuità e pubblicava ancora segmenti da 0,5 s, perlopiù senza keyframe iniziale.
+- Il byte range ora comprende i box intermedi all'interno di un gruppo; il taglio avviene solo al keyframe successivo dopo almeno 2 s. Verifica con MP4 audio/video che riproduce il layout `sidx`, compresa decodifica di un segmento estratto dal centro.
+- Rollback: revert del commit e redeploy 3.4.29. Nessuna modifica a schema, dati o impostazioni.
+
 ## 3.4.29 — Seek della capture live Stripchat
 
 - I frammenti Stripchat da circa 0,5 s non iniziano tutti su un keyframe. La playlist live 3.4.28 li esponeva singolarmente come segmenti HLS indipendenti: un seek poteva quindi fermare la riproduzione. L'indice finito e quello live ora iniziano i segmenti sui keyframe; l'indice live pubblica solo gruppi chiusi di almeno 2 s e legge solo i box nuovi a ogni aggiornamento. La playlist resta in sola aggiunta.

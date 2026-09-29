@@ -248,13 +248,15 @@ def build_index(path: Path, target_seconds: float = 6.0) -> FragmentIndex:
     elapsed = 0.0
     for (offset, size_bytes, _, _, keyframe), seconds in zip(fragments, durations):
         # A segment may only begin on a keyframe: players start decoding, and seek, at segment starts.
-        if length and (offset != start + length or (elapsed >= target_seconds and keyframe)):
+        if length and elapsed >= target_seconds and keyframe:
             segments.append(Segment(start, length, elapsed))
             length = 0
             elapsed = 0.0
         if not length:
             start = offset
-        length += size_bytes
+        # A capture may put sidx boxes between moof/mdat pairs. Include those bytes
+        # inside the range instead of starting a non-keyframe segment at each gap.
+        length = offset + size_bytes - start
         elapsed += seconds
     if length:
         segments.append(Segment(start, length, elapsed))
@@ -444,13 +446,13 @@ class LivePlaylistIndex:
             start = length = 0
             elapsed = 0.0
             for fragment in self.fragments:
-                if length and (fragment.offset != start + length or (elapsed >= target_seconds and fragment.keyframe)):
+                if length and elapsed >= target_seconds and fragment.keyframe:
                     segments.append(Segment(start, length, elapsed))
                     length = 0
                     elapsed = 0.0
                 if not length:
                     start = fragment.offset
-                length += fragment.length
+                length = fragment.offset + fragment.length - start
                 elapsed += fragment.duration
             # the still open group (no keyframe after it yet) is not listed
             return FragmentIndex(self.reader.init_length, tuple(segments), complete=False)

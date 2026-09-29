@@ -488,7 +488,9 @@ Do not reset the dirty checkout at `/mnt/livevault-nvme/gpt-harness/work/LiveVau
 
 Sorgente: `app/mp4_index.py` (`fragment_starts_with_keyframe`, `GrowingIndex`,
 `LivePlaylistIndex`, `build_index`) e `app/main.py` (`stream_active_capture`).
-Runtime verificato: checkout Windows del candidato; produzione CM4 ancora su 3.4.28.
+Runtime verificato: checkout Windows del candidato e container Coolify CM4
+`a6fbbbc` healthy dopo il merge; sulla capture reale resta il difetto `sidx`
+descritto nella sezione 3.4.30.
 La release 3.4.29 aggiorna anche la versione del service worker e i parametri
 di cache degli asset in `app/static/index.html`.
 
@@ -510,9 +512,27 @@ e ricreazione di un file più corto. La capture AliciaBrooks precedente non era
 più presente in `/data/livevault/recordings` al momento della nuova verifica.
 CI Linux/Python 3.13 sul commit `1da3721`: 468 test passati e controllo della
 documentazione operativa verde (run PR `36542182223`).
-Restano da misurare latenza e seek nel browser sul nodo CM4 dopo il deploy.
+La misura sul nodo e il seek nel browser richiedono il follow-up 3.4.30.
 
 Limite: se i keyframe non coincidono con l'inizio di alcun frammento successivo,
 la parte live non produce nuovi segmenti HLS; il player può ricadere sulla
 riproduzione diretta. Rollback: revert del commit 3.4.29 e redeploy 3.4.28;
 nessuna migrazione di database, file o impostazioni.
+
+## Box sidx fra frammenti live 3.4.30 (verifica 2026-09-29)
+
+Sorgente: `app/mp4_index.py` (`build_index`, `LivePlaylistIndex.snapshot`),
+`tests/test_v3424_performance.py`. Runtime controllato: container Coolify 3.4.29
+`a6fbbbc` sul CM4, capture attiva AliciaBrooks `part001.capture.mp4` nella
+directory `/data/recordings/AliciaBrooks/AliciaBrooks_2026-09-29_03-28-59/`.
+La prima lettura aveva 192 frammenti da 0,5 s, 48 keyframe e 191 segmenti live:
+il fix 3.4.29 non era efficace per quel file. Fra due coppie `moof`/`mdat` ci
+sono due box `sidx` da 52 byte; il divario di 104 byte attivava il taglio prima
+del controllo keyframe. Il candidato 3.4.30 estende il byte range attraverso
+quei box e taglia solo quando arriva il prossimo keyframe dopo almeno 2 s.
+
+Test locale su MP4 audio/video prodotto con `-frag_duration 500000` e
+`-movflags empty_moov+default_base_moof+dash`: due `sidx` tra frammenti,
+segmenti avviati su keyframe e decodifica ffmpeg di un segmento centrale.
+Passati 28 test mirati su Windows. Restano verifica CI e sul runtime prima
+della distribuzione. Rollback: immagine 3.4.29 `a6fbbbc`, nessuna migrazione.
