@@ -67,7 +67,7 @@ in Cronologia" e NSFW 3.3/3.4) e [MP4-HLS-RECOVERY.md](docs/MP4-HLS-RECOVERY.md)
   [LIVE-PANEL-20260909.md](docs/LIVE-PANEL-20260909.md), sezione 3.4.29. Deploy `a6fbbbc`
   healthy, ma la verifica reale ha trovato il difetto `sidx` corretto nel candidato 3.4.30.
   Rollback: revert e redeploy 3.4.28; nessuno schema modificato.
-- 3.4.30 (2026-09-29, candidato): verifica reale dopo il deploy 3.4.29 sulla capture
+- 3.4.30 (2026-09-29, deploy `0242aa3`): verifica reale dopo il deploy 3.4.29 sulla capture
   AliciaBrooks: due box `sidx` (104 byte) tra ogni frammento lasciavano ancora
   191 segmenti live da 0,5 s su 192 frammenti, molti senza keyframe iniziale.
   `app/mp4_index.py` include i box intermedi nel byte range e taglia soltanto sui
@@ -76,8 +76,12 @@ in Cronologia" e NSFW 3.3/3.4) e [MP4-HLS-RECOVERY.md](docs/MP4-HLS-RECOVERY.md)
   507573 byte verificati sul nodo), senza caricarla muta né ripetere l'avviso.
   Stripchat prova prima i domini HLS correnti pubblicati dal provider, poi gli
   edge statici; Flashphoner copre anche il percorso `master_<id>.m3u8`.
-  Test locali mirati con FFmpeg: 83 passati. Disponibilità HLS e verifica sul
-  nodo richiedono una nuova live pubblica dopo il deploy.
+  Test locali mirati con FFmpeg: 83 passati. La disponibilità HLS di Stripchat
+  richiede una nuova live pubblica per la verifica. CI `main` run `36597522780`
+  verde; container `ahul2vdjkyvjiwgzpcrmxzfe-162449552927` healthy.
+  La capture attiva mollybabyx sul nodo: 73 frammenti, 24 segmenti, tutti con
+  keyframe iniziale e durata >= 2 s. La copia AngelLeeen è ora in quarantena
+  con nota; la pagina Stripchat pubblica `doppiocdn.media` come dominio HLS.
   Dettagli e rollback in [LIVE-PANEL-20260909.md](docs/LIVE-PANEL-20260909.md).
   Recupero e limiti in [MP4-HLS-RECOVERY.md](docs/MP4-HLS-RECOVERY.md).
 - Container: gira sotto Coolify (UUID sopra); il nome **non** è `livevault`.

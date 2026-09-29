@@ -528,11 +528,15 @@ directory `/data/recordings/AliciaBrooks/AliciaBrooks_2026-09-29_03-28-59/`.
 La prima lettura aveva 192 frammenti da 0,5 s, 48 keyframe e 191 segmenti live:
 il fix 3.4.29 non era efficace per quel file. Fra due coppie `moof`/`mdat` ci
 sono due box `sidx` da 52 byte; il divario di 104 byte attivava il taglio prima
-del controllo keyframe. Il candidato 3.4.30 estende il byte range attraverso
+del controllo keyframe. La 3.4.30 estende il byte range attraverso
 quei box e taglia solo quando arriva il prossimo keyframe dopo almeno 2 s.
 
 Test locale su MP4 audio/video prodotto con `-frag_duration 500000` e
 `-movflags empty_moov+default_base_moof+dash`: due `sidx` tra frammenti,
 segmenti avviati su keyframe e decodifica ffmpeg di un segmento centrale.
-Passati 28 test mirati su Windows. Restano verifica CI e sul runtime prima
-della distribuzione. Rollback: immagine 3.4.29 `a6fbbbc`, nessuna migrazione.
+Passati 83 test mirati su Windows nell'intervento completo 3.4.30. PR #40 e CI
+`main` run `36597522780` verdi; immagine `0242aa3` healthy sul nodo. Sulla
+capture attiva mollybabyx il 2026-09-29: 73 frammenti, 24 segmenti live,
+tutti con keyframe iniziale e nessuno sotto 2 s. Non era attiva una capture
+Stripchat durante la verifica: seek nel browser su una nuova live Stripchat
+ancora da osservare. Rollback: immagine 3.4.29 `a6fbbbc`, nessuna migrazione.
