@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.4.30 — Segmenti live con box sidx
+
+- Il recupero isola una copia `.finalizing.mp4` senza traccia audio quando è l'unica rimasta, conservandola in `.recovery-failed.mp4` con nota. Non la carica come video muto e non ripete a ogni passata lo stesso avviso. La copia AngelLeeen del 13/09 verificata sul nodo contiene 4,032 s di solo video; la parte successiva, distinta, contiene audio e video.
+- Il recorder Stripchat prova i domini HLS pubblicati nella pagina corrente prima dei fallback fissi; include `doppiocdn.live` e la forma storica `master_<id>.m3u8` di Flashphoner. Dopo un errore HLS ricontrolla se la camera è diventata privata o offline. Questo copre i 403 dovuti a domini fissi obsoleti; i 403 del provider su tutti i domini pubblicati restano errori reali.
+- La verifica sulla capture AliciaBrooks in produzione dopo il deploy 3.4.29 ha trovato due box `sidx` (104 byte) tra ogni coppia di frammenti. L'indice scambiava il divario per una discontinuità e pubblicava ancora segmenti da 0,5 s, perlopiù senza keyframe iniziale.
+- Il byte range ora comprende i box intermedi all'interno di un gruppo; il taglio avviene solo al keyframe successivo dopo almeno 2 s. Verifica con MP4 audio/video che riproduce il layout `sidx`, compresa decodifica di un segmento estratto dal centro.
+- Rollback: revert del commit e redeploy 3.4.29. Nessuna modifica a schema, dati o impostazioni.
+
 ## 3.4.29 — Seek della capture live Stripchat
 
 - I frammenti Stripchat da circa 0,5 s non iniziano tutti su un keyframe. La playlist live 3.4.28 li esponeva singolarmente come segmenti HLS indipendenti: un seek poteva quindi fermare la riproduzione. L'indice finito e quello live ora iniziano i segmenti sui keyframe; l'indice live pubblica solo gruppi chiusi di almeno 2 s e legge solo i box nuovi a ogni aggiornamento. La playlist resta in sola aggiunta.

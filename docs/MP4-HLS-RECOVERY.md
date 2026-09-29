@@ -122,3 +122,35 @@ Dal 3.4.4 (`app/recovery_policy.py`, `redundant_copy_reason`):
 
 Rollback: revert del commit 3.4.4; le quarantene già eliminate non sono
 recuperabili, ma erano duplicati della grezza o di un file già nel cloud.
+
+## Copia AngelLeeen senza audio e domini HLS (2026-09-29, 3.4.30)
+
+Sorgenti: `app/recovery_policy.py`, `app/main/__init__.py`,
+`app/stripchat_capture.py`, `app/stripchat_capture/__init__.py`,
+`app/source_providers.py`. Runtime letto nel container Coolify 3.4.29 `a6fbbbc`.
+La copia `.AngelLeeen_2026-09-13_11-29-09_20260913_124051_557700_part001.finalizing.mp4`
+nella cartella `/data/recordings/AngelLeeen/AngelLeeen_2026-09-13_11-29-09/`
+misura 507573 byte e `ffprobe` trova 4,032033 s di H.264, senza audio. Nella
+cartella non esiste la grezza o il file finale con lo stesso stem. La parte
+successiva `...124124_439968_part001.mp4` contiene H.264 e AAC per 4,004367 s;
+è una parte distinta e non una sorgente audio sincronizzata per la copia.
+Il recupero ora classifica la traccia audio assente come difetto definitivo:
+sposta l'unica copia nella quarantena con nota, invece di ripetere
+`recovery-temp` a ogni passata. Conserva i byte e non allenta il requisito audio.
+Se esiste una grezza o un caricamento già registrato nel DB, la policy precedente
+elimina la copia ridondante. Un audio mai acquisito non può essere ricreato.
+
+Il recorder usava solo domini edge statici `.com`, `.org`, `.net` dopo il
+fallimento Flashphoner. Ora legge anche `configV3.static.features` e le altre
+forme note di `fallbackDomains` dalla pagina Stripchat, prova prima i domini
+pubblicati e conserva gli statici come riserva (`.live` compreso). Flashphoner
+prova anche `master_<id>.m3u8`. Se l'edge fallisce, ricontrolla lo stato della
+camera: una transizione a privata/offline chiude normalmente la capture.
+I manifest continuano a richiedere HTTP 200,
+`#EXTM3U`, variante leggibile e chiave Mouflon valida. Se la camera non è
+pubblica o tutti i domini rispondono 403, nessun video viene fabbricato.
+Test mirati Windows con FFmpeg: vedere la PR 3.4.30 e la CI. Verifica su una
+nuova live Stripchat necessaria dopo il deploy per confermare che i domini
+pubblicati dal provider siano raggiungibili dal nodo. Rollback: immagine
+3.4.29 `a6fbbbc`; una copia già messa in quarantena resta preservata e può
+essere riportata al nome `.finalizing.mp4` solo dopo ispezione manuale.

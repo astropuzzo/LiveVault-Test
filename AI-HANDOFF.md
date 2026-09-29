@@ -60,12 +60,26 @@ in Cronologia" e NSFW 3.3/3.4) e [MP4-HLS-RECOVERY.md](docs/MP4-HLS-RECOVERY.md)
   produce `.mp4` con `moov`, quindi per Stripchat la timeline copre solo la parte in scrittura.
   QA: ffmpeg `-re` verso un MP4 frammentato e l'app locale con l'autenticazione disattivata
   (solo test): durata 28 → 34 → 42 s, seek indietro ok, 0 stalli/salti in 40 s.
-- 3.4.29 (2026-09-29, candidato): fix della playlist live Stripchat. I frammenti da 0,5 s
+- 3.4.29 (2026-09-29): primo fix della playlist live Stripchat. I frammenti da 0,5 s
   espongono un keyframe circa ogni quattro frammenti; 3.4.28 li serviva separatamente e il seek
   poteva partire a metà GOP. `app/mp4_index.py` raggruppa solo su keyframe e mantiene un indice
   incrementale per la parte in scrittura; pubblica solo segmenti già chiusi. Test e limiti in
-  [LIVE-PANEL-20260909.md](docs/LIVE-PANEL-20260909.md), sezione 3.4.29. Non ancora distribuito
-  né verificato nel browser sul CM4. Rollback: revert e redeploy 3.4.28; nessuno schema modificato.
+  [LIVE-PANEL-20260909.md](docs/LIVE-PANEL-20260909.md), sezione 3.4.29. Deploy `a6fbbbc`
+  healthy, ma la verifica reale ha trovato il difetto `sidx` corretto nel candidato 3.4.30.
+  Rollback: revert e redeploy 3.4.28; nessuno schema modificato.
+- 3.4.30 (2026-09-29, candidato): verifica reale dopo il deploy 3.4.29 sulla capture
+  AliciaBrooks: due box `sidx` (104 byte) tra ogni frammento lasciavano ancora
+  191 segmenti live da 0,5 s su 192 frammenti, molti senza keyframe iniziale.
+  `app/mp4_index.py` include i box intermedi nel byte range e taglia soltanto sui
+  keyframe. Test audio/video con layout `sidx` in `tests/test_v3424_performance.py`.
+  Il recupero isola in quarantena la sola copia AngelLeeen priva di audio (4,032 s,
+  507573 byte verificati sul nodo), senza caricarla muta né ripetere l'avviso.
+  Stripchat prova prima i domini HLS correnti pubblicati dal provider, poi gli
+  edge statici; Flashphoner copre anche il percorso `master_<id>.m3u8`.
+  Test locali mirati con FFmpeg: 83 passati. Disponibilità HLS e verifica sul
+  nodo richiedono una nuova live pubblica dopo il deploy.
+  Dettagli e rollback in [LIVE-PANEL-20260909.md](docs/LIVE-PANEL-20260909.md).
+  Recupero e limiti in [MP4-HLS-RECOVERY.md](docs/MP4-HLS-RECOVERY.md).
 - Container: gira sotto Coolify (UUID sopra); il nome **non** è `livevault`.
   Trovarlo con `docker ps --format '{{.Names}} {{.Image}}'` prima di `docker logs/exec`.
   Fuso del container Europe/Rome (nomi file), nodo Europe/London, DB in UTC.

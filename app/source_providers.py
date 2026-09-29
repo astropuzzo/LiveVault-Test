@@ -638,10 +638,17 @@ def _stripchat_hls_hosts(data: dict[str, Any]) -> list[str]:
     config_v3 = data.get("configV3") if isinstance(data.get("configV3"), dict) else {}
     initial = config_v3.get("initialCommon") if isinstance(config_v3.get("initialCommon"), dict) else {}
     add(initial.get("hlsStreamHost"))
-    static = config_v3.get("static") if isinstance(config_v3.get("static"), dict) else {}
-    settings = static.get("featureSettings") if isinstance(static.get("featureSettings"), dict) else {}
-    fallback = settings.get("hlsFallback") if isinstance(settings.get("hlsFallback"), dict) else {}
-    add(fallback.get("fallbackDomains"))
+    config = data.get("config") if isinstance(data.get("config"), dict) else {}
+    legacy_data = config.get("data") if isinstance(config.get("data"), dict) else {}
+    for root in (config_v3.get("static"), legacy_data):
+        if not isinstance(root, dict):
+            continue
+        add(root.get("hlsStreamHost"))
+        for group_name in ("features", "featuresV2", "featureSettings"):
+            settings = root.get(group_name) if isinstance(root.get(group_name), dict) else {}
+            fallback = settings.get("hlsFallback") if isinstance(settings.get("hlsFallback"), dict) else {}
+            add(fallback.get("fallbackDomains"))
+            add(settings.get("hlsStreamHost"))
     return hosts
 
 

@@ -139,13 +139,29 @@ def flashphoner_candidates(state: dict[str, Any], stream_id: str) -> list[str]:
         f"https://b-{server}.{tld}/hls/{stream_id}/master/{stream_id}_auto.m3u8"
         for tld in CDN_TLDS
     ]
+    older_masters = [
+        f"https://b-{server}.{tld}/hls/{stream_id}/master_{stream_id}.m3u8"
+        for tld in CDN_TLDS
+    ]
     # Keep legacy direct-media shapes as late fallbacks because older rooms and
     # regional edges have exposed them in the past.
     media = [
         f"https://b-{server}.{tld}/hls/{stream_id}/{stream_id}.m3u8"
         for tld in CDN_TLDS
     ]
-    return masters + media
+    return masters + older_masters + media
+
+
+def _provider_edge_hosts(slug: str) -> tuple[str, ...]:
+    """Try the domains advertised by the current room page before static edges."""
+    from app.source_providers import _stripchat_hls_hosts, _stripchat_snapshot
+
+    try:
+        domains = _stripchat_hls_hosts(_stripchat_snapshot(slug))
+    except Exception:
+        domains = []
+    hosts = [f"edge-hls.{domain}" for domain in domains if domain.startswith("doppiocdn.")]
+    return tuple(dict.fromkeys([*hosts, *_legacy.HLS_EDGE_HOSTS]))
 
 
 def resolve_flashphoner_input(
@@ -311,12 +327,21 @@ def capture(args: Any) -> None:
             return
 
     _ensure_builtin_mouflon_keys()
+    args.hls_edge_hosts = _provider_edge_hosts(args.slug)
     print(
         "Stripchat Flashphoner HLS unavailable; falling back to edge-hls/Mouflon",
         file=sys.stderr,
         flush=True,
     )
-    _legacy.capture(args)
+    try:
+        _legacy.capture(args)
+    except StripchatExpectedState:
+        raise
+    except RuntimeError as exc:
+        expected = _current_expected_state(args.slug)
+        if expected is not None:
+            raise expected from exc
+        raise
 
 
 def _cleanup_empty_session(args: Any) -> None:

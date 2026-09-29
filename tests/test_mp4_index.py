@@ -105,3 +105,28 @@ def test_growing_index_reads_only_new_complete_fragments(tmp_path: Path):
     assert [round(f.time) for f in rest] == [3, 4, 5, 6, 7, 8, 9]
     assert reader.latest_time == pytest.approx(10.0)
     assert rest[-1].offset + rest[-1].length == len(full)
+
+
+def test_sidx_gaps_stay_inside_keyframe_group_ranges(tmp_path: Path):
+    from app.mp4_index import GrowingIndex, LivePlaylistIndex
+
+    source = synthetic_fmp4(12)
+    boxes = []
+    position = 0
+    while position < len(source):
+        size, kind = struct.unpack_from(">I4s", source, position)
+        boxes.append(source[position:position + size])
+        if kind == b"mdat":
+            boxes.append(box(b"sidx", bytes(12)))
+        position += size
+    path = tmp_path / "indexed.mp4"
+    path.write_bytes(b"".join(boxes))
+    fragments = GrowingIndex(path).poll()
+    assert all(fragments[i].offset > fragments[i - 1].offset + fragments[i - 1].length
+               for i in range(1, len(fragments)))
+
+    finished = build_index(path, target_seconds=6)
+    live = LivePlaylistIndex(path).snapshot(target_seconds=6)
+    assert [segment.duration for segment in finished.segments] == [6.0, 6.0]
+    assert [segment.duration for segment in live.segments] == [6.0]
+    assert finished.segments[0].length > sum(fragment.length for fragment in fragments[:6])

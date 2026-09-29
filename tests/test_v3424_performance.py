@@ -405,16 +405,18 @@ def test_capture_playlist_includes_earlier_local_parts_of_the_same_live(capture,
 
 # ---- Stripchat-like parts: 0.5 s fragments, a keyframe every fourth one ----
 
-def _stripchat_like_mp4(path: Path, seconds: int = 12) -> bool:
+def _stripchat_like_mp4(path: Path, seconds: int = 12, dash_audio: bool = False) -> bool:
     import shutil
     import subprocess
     if not shutil.which("ffmpeg"):
         return False
-    result = subprocess.run(
-        ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i", f"testsrc=size=160x120:rate=24:duration={seconds}",
-         "-c:v", "libx264", "-g", "48", "-keyint_min", "48", "-sc_threshold", "0", "-pix_fmt", "yuv420p",
-         "-frag_duration", "500000", "-movflags", "empty_moov+default_base_moof", str(path)],
-        capture_output=True)
+    args = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i",
+            f"testsrc=size=160x120:rate=24:duration={seconds}"]
+    if dash_audio:
+        args += ["-f", "lavfi", "-i", f"sine=frequency=440:sample_rate=48000:duration={seconds}", "-c:a", "aac"]
+    args += ["-c:v", "libx264", "-g", "48", "-keyint_min", "48", "-sc_threshold", "0", "-pix_fmt", "yuv420p",
+             "-frag_duration", "500000", "-movflags", "empty_moov+default_base_moof" + ("+dash" if dash_audio else ""), str(path)]
+    result = subprocess.run(args, capture_output=True)
     return result.returncode == 0 and path.exists()
 
 
@@ -446,6 +448,45 @@ def test_capture_endpoint_lists_only_closed_keyframe_segments(capture):
     assert len(ranges) == 5
     assert all(int(line.rsplit("@", 1)[1]) in keyframes for line in ranges)
     assert playlist.count("#EXTINF:2.000,") == 5
+
+
+def test_sidx_boxes_between_fragments_do_not_create_half_second_segments(tmp_path):
+    import subprocess
+    from app.mp4_index import GrowingIndex, LivePlaylistIndex, build_index
+    path = tmp_path / "stripchat_sidx.mp4"
+    if not _stripchat_like_mp4(path, dash_audio=True):
+        pytest.skip("ffmpeg not available")
+    fragments = GrowingIndex(path).poll()
+    assert len(fragments) >= 24
+    assert all(fragments[i].offset - fragments[i - 1].offset - fragments[i - 1].length == 104
+               for i in range(1, 8))  # two sidx boxes, as in the real capture
+    keyframes = {fragment.offset for fragment in fragments if fragment.keyframe}
+    finished = build_index(path, target_seconds=2.0)
+    live = LivePlaylistIndex(path).snapshot()
+    assert len(live.segments) >= 5
+    for index in (finished, live):
+        assert all(segment.offset in keyframes for segment in index.segments)
+        assert all(segment.duration >= 2.0 - 1e-6 for segment in index.segments[:-1])
+        assert all(fragment.offset + fragment.length <= segment.offset + segment.length
+                   for segment in index.segments for fragment in fragments
+                   if segment.offset <= fragment.offset < segment.offset + segment.length)
+    data = path.read_bytes()
+    middle = live.segments[2]
+    standalone = tmp_path / "seek_middle.mp4"
+    standalone.write_bytes(data[:live.init_length] + data[middle.offset:middle.offset + middle.length])
+    subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-i", str(standalone),
+                    "-f", "null", "-"], check=True, capture_output=True)
+
+
+def test_capture_endpoint_groups_sidx_fragments_on_keyframes(capture):
+    from app.mp4_index import GrowingIndex
+    assert _stripchat_like_mp4(capture, dash_audio=True)
+    keyframes = {fragment.offset for fragment in GrowingIndex(capture).poll() if fragment.keyframe}
+    playlist = main.stream_active_capture(25, _Request()).body.decode()
+    ranges = _segment_lines(playlist)
+    assert len(ranges) >= 5
+    assert all(int(line.rsplit("@", 1)[1]) in keyframes for line in ranges)
+    assert playlist.count("#EXTINF:2.000,") >= 5
 
 
 def test_live_index_is_incremental_append_only_and_survives_a_recreated_file(tmp_path):
