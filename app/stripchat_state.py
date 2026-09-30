@@ -21,7 +21,6 @@ _PRIVATE_KEYS = {
     "hidden",
 }
 _TIPJAR_KEYS = {
-    "away",
     "tipjar",
 }
 _OFFLINE_KEYS = {
@@ -83,6 +82,8 @@ def classify_stripchat_cam(payload: dict[str, Any], user_id: int | str) -> Strip
         return StripchatCamState("offline", raw_status, False, False, stream_id)
     if key in _PRIVATE_KEYS:
         return StripchatCamState("private", raw_status, True, False, stream_id)
+    if key == "away":
+        return StripchatCamState("away", raw_status, True, False, stream_id)
     if key in _TIPJAR_KEYS:
         return StripchatCamState("tipjar", raw_status, True, False, stream_id)
 

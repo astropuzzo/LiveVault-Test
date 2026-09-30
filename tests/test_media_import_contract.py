@@ -15,7 +15,7 @@ def test_control_service_runs_upload_enabled_server():
     assert "'/api/media/upload'" in UPLOAD or '"/api/media/upload"' in UPLOAD
     assert 'X-CSRF-Token' in UPLOAD
     assert '.openastro-upload-' in UPLOAD
-    assert 'os.replace(temporary, target)' in UPLOAD
+    assert '_publish_upload(temporary, target)' in UPLOAD
 
 
 def test_media_import_ui_is_present_and_uses_web_fallback():

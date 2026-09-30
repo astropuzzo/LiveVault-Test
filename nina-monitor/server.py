@@ -222,14 +222,18 @@ class Handler(BaseHTTPRequestHandler):
                 status = 404 if exc.code == 404 else 502
                 self._send_json({'ok': False, 'error': 'Preview non ancora disponibile.' if status == 404 else f'QSM preview HTTP {exc.code}.'}, status)
                 return
-            except (urllib.error.URLError, TimeoutError, OSError, ValueError, RuntimeError) as exc:
-                self._send_json({'ok': False, 'error': f'Preview NINA non raggiungibile: {str(exc)[:160]}'}, 502)
+            except (urllib.error.URLError, TimeoutError, OSError, ValueError, RuntimeError):
+                self._send_json({'ok': False, 'error': 'Preview NINA non raggiungibile. Controlla il PC e il collegamento di rete.'}, 502)
                 return
             extra = {}
             if metadata.get('preview_utc'):
                 extra['X-QSM-Preview-Utc'] = metadata['preview_utc']
             if metadata.get('image_id'):
                 extra['X-QSM-Image-Id'] = metadata['image_id']
+            extra['ETag'] = '"' + hashlib.sha256(raw).hexdigest() + '"'
+            if self.headers.get('If-None-Match') == extra['ETag']:
+                self._send_bytes(304, b'', 'image/jpeg', extra)
+                return
             self._send_bytes(200, raw, 'image/jpeg', extra)
             return
 

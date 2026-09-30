@@ -31,7 +31,7 @@ PRIVATE_STATUS_TOKENS = {
     "hidden", "secret show", "secret", "ticket show", "ticket",
 }
 TIPJAR_STATUS_TOKENS = {
-    "away", "offline_tipping", "tip_offline", "tipjar", "tip_jar",
+    "offline_tipping", "tip_offline", "tipjar", "tip_jar",
 }
 
 
@@ -40,6 +40,8 @@ def inaccessible_status(value: object) -> str:
     text = re.sub(r"[\s_-]+", " ", str(value or "").strip().lower())
     if not text:
         return ""
+    if re.search(r"\baway\b", text):
+        return "away"
     if any(token.replace("_", " ") in text for token in TIPJAR_STATUS_TOKENS):
         return "tipjar"
     if any(token in text for token in PRIVATE_STATUS_TOKENS):
@@ -1113,6 +1115,16 @@ async def probe(platform: str, slug: str, quality: str = "best") -> ProbeResult:
 
     text = str(extracted)
     lowered = text.lower()
+    # The stream endpoint's current access state can precede biocontext,
+    # which may still say public around a transition.
+    extracted_unavailable = inaccessible_status(text)
+    if extracted_unavailable:
+        return ProbeResult(
+            live=True, status=extracted_unavailable, recordable=False,
+            title=str(context_data.get("room_title") or ""),
+            last_broadcast=last_broadcast, metadata_status=metadata_status,
+            metadata_error=metadata_error,
+        )
     if room_status:
         if room_status == "public":
             return ProbeResult(

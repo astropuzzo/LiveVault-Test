@@ -11,6 +11,7 @@
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" href="/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="/icon.svg">
+  <link rel="stylesheet" href="/diagnostics.css?v=1.0-audit">
   <link rel="stylesheet" href="/app.css?v=20.1-media-fill"><link rel="stylesheet" href="/shell.css?v=4.0-control"><link rel="stylesheet" href="/theme.css?v=5.0-feel"><link rel="stylesheet" href="/premium.css?v=10.0-product"><link rel="stylesheet" href="/magic.css?v=13.2-nina-embed"><link rel="stylesheet" href="/media-upload.css?v=14.0-import"><link rel="stylesheet" href="/glass.css?v=1.0-glass">
 </head>
 <body data-view="dashboard" class="is-loading">
@@ -114,6 +115,12 @@
           </article>
         </div>
 
+        <section class="panel diagnostic-panel" aria-labelledby="diagnosticTitle">
+          <div class="panel-head"><div><p class="eyebrow">STATO DEL NODO</p><h2 id="diagnosticTitle">Da controllare</h2></div><span id="diagnosticSummary" class="status-chip" role="status">Verifica in corso</span></div>
+          <div id="diagnosticIssues" class="diagnostic-issues"></div>
+          <div class="diagnostic-footer"><small id="diagnosticAge">In attesa del nodo</small><button id="exportDiagnostics" class="button secondary" type="button" disabled>Esporta diagnosi</button></div>
+        </section>
+
         <section class="resource-details" id="resourceDetails">
           <button class="resource-toggle" id="resourceToggle" type="button" aria-expanded="false"><span><b>Risorse live</b><small>CPU, RAM, temperatura, disco e rete</small></span><i>⌄</i></button>
           <section class="metrics-grid" aria-label="Risorse del server">
@@ -186,7 +193,7 @@
               <button class="media-upload-pick" id="mediaUploadChoose" type="button" disabled>Seleziona file</button>
             </label>
             <div class="media-upload-queue" id="mediaUploadQueue" hidden><div class="media-upload-queue-head"><strong>Trasferimenti</strong><span id="mediaUploadQueueSummary">0/0 completati</span></div><div class="media-upload-queue-list" id="mediaUploadQueueList"></div></div>
-            <div class="media-upload-lan"><div class="media-upload-lan-copy"><strong>Dal PC sulla stessa rete: usa prima la LAN</strong><small><code>\\OPENASTRO\Media</code> con l’utente <b>astro</b> trasferisce direttamente via SMB. MiniDLNA è il catalogo TV: non è una pagina web di upload.</small></div><button id="mediaUploadCopySmb" type="button">Copia percorso SMB</button></div>
+            <div class="media-upload-lan"><div class="media-upload-lan-copy"><strong>Dal PC sulla stessa rete: usa prima la LAN</strong><small><code id="mediaUploadSmbPath">\\OPENASTRO\Media</code> con l’utente <b>astro</b> trasferisce direttamente nella libreria selezionata via SMB. MiniDLNA è il catalogo TV: non è una pagina web di upload.</small></div><button id="mediaUploadCopySmb" type="button" disabled>Copia percorso SMB</button></div>
           </section>
 
           <div class="media-recent-wrap" id="mediaRecentWrap" hidden>
@@ -263,7 +270,7 @@
         <label class="wifi-toggle"><input type="checkbox" id="wifiKeep" checked><span></span><div><strong>Hotspot Wi-Fi indipendente</strong><small id="wifiHint">Puoi attivarlo o spegnerlo con qualsiasi profilo.</small></div></label>
         <button class="button power-apply" id="applyPower">Applica profilo</button>
       </div>
-      <p class="power-safety">MAX usa il limite ufficiale di 1,5 GHz: nessun overclock. NVMe e registrazioni non vengono mai sospesi.</p>
+      <p class="power-safety">MAX mantiene la CPU alla frequenza massima configurata sul nodo. NVMe e registrazioni restano attivi.</p>
     </section>
 
         <section class="panel telemetry-panel" id="telemetry">
@@ -463,7 +470,8 @@
   </div>
 
   <script src="/hls.min.js?v=1.7.2" defer></script>
-  <script src="/app.js?v=20.1-nina" defer></script>
+  <script src="/diagnostics.js?v=1.0-audit" defer></script>
+  <script src="/app.js?v=22.0-audit" defer></script>
   <script src="/media-upload.js?v=14.0-import" defer></script>
 </body>
 </html>

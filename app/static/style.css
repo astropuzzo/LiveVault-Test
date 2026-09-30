@@ -636,6 +636,9 @@ input[type="search"]::-webkit-search-cancel-button {
 .source-status.tipjar {
   --tone: var(--tipjar);
 }
+.source-status.away {
+  --tone: #72bdce;
+}
 .source-status.restricted,
 .source-status.paused,
 .source-status.archived {
@@ -662,6 +665,7 @@ input[type="search"]::-webkit-search-cancel-button {
 .source-status.recording,
 .source-status.private,
 .source-status.tipjar,
+.source-status.away,
 .source-status.error,
 .integrity.passed,
 .integrity.failed,
@@ -1880,6 +1884,9 @@ input[type="search"]::-webkit-search-cancel-button {
 .cr-pulse-legend i.tipjar {
   background: var(--tipjar);
 }
+.cr-pulse-legend i.away {
+  background: #72bdce;
+}
 .cr-pulse-legend i.rec {
   background: var(--recording);
 }
@@ -2075,6 +2082,9 @@ input[type="search"]::-webkit-search-cancel-button {
 }
 .cr-pulse-access-span.tipjar {
   fill: url(#lv-pulse-tipjar);
+}
+.cr-pulse-access-span.away {
+  fill: url(#lv-pulse-away);
 }
 .cr-pulse-access-span.restricted {
   fill: url(#lv-pulse-restricted);
@@ -4409,6 +4419,7 @@ body.modal-open {
   --tone: var(--live);
 }
 .creator-hover-status.private,
+.creator-hover-status.away,
 .creator-hover-status.tipjar,
 .creator-hover-status.restricted {
   --tone: var(--warning);

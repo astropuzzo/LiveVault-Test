@@ -1,7 +1,12 @@
 from __future__ import annotations
 
 import importlib.util
+import io
+import json
 import sys
+import signal
+import time
+import urllib.error
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -124,3 +129,79 @@ def test_ass_parser_keeps_dialogue_text(tmp_path):
     assert 'Cucù!' in text
     assert 'ho messo le mie gambe lunghe!' in text
     assert 'prima riga\nseconda riga' in text
+
+
+@pytest.mark.parametrize('payload', [None, [], {}, {'worker': None},
+                                    {'worker': {'active_recorders': -1}},
+                                    {'worker': {'active_recorders': '0'}},
+                                    {'worker': {'active_recorders': True}}])
+def test_malformed_capture_health_is_unknown(monkeypatch, payload):
+    monkeypatch.setattr(streaming.urllib.request, 'urlopen', lambda *a, **k: io.BytesIO(json.dumps(payload).encode()))
+    assert streaming._active_recorders() is None
+
+
+def test_unavailable_capture_health_is_unknown(monkeypatch):
+    def offline(*a, **k): raise OSError('offline')
+    monkeypatch.setattr(streaming.urllib.request, 'urlopen', offline)
+    assert streaming._active_recorders() is None
+
+
+def test_degraded_health_preserves_actual_capture_count(monkeypatch):
+    def degraded(*a, **k):
+        raise urllib.error.HTTPError('http://local/healthz', 503, 'degraded', {},
+                                     io.BytesIO(b'{"ok":false,"worker":{"active_recorders":2}}'))
+    monkeypatch.setattr(streaming.urllib.request, 'urlopen', degraded)
+    assert streaming._active_recorders() == 2
+
+
+def test_unknown_capture_state_blocks_only_full_video_transcode(monkeypatch):
+    monkeypatch.setattr(streaming, '_pressure', lambda: {'load1': 0.2, 'temperature': 50, 'active_recorders': None})
+    result = plan(monkeypatch, '.mkv', _probe('hevc', 'aac'))
+    assert result['mode'] == 'hls_transcode' and result['available'] is False
+    assert 'non verificabile' in result['reason']
+    for suffix, video, audio in [('.mp4', 'h264', 'aac'), ('.mkv', 'h264', 'aac'), ('.mkv', 'h264', 'ac3')]:
+        assert plan(monkeypatch, suffix, _probe(video, audio))['available'] is True
+
+
+def test_background_hls_cleanup_stops_abandoned_process_without_http_requests(tmp_path, monkeypatch):
+    token = 'a' * 20
+    root = tmp_path / token
+    root.mkdir()
+    killed = []
+
+    class Proc:
+        pid = 123456
+        returncode = None
+        def poll(self): return self.returncode
+        def wait(self, timeout): self.returncode = 0
+
+    class StopLoop(Exception): pass
+    monkeypatch.setattr(streaming, 'HLS_ROOT', tmp_path)
+    monkeypatch.setattr(streaming, '_JOBS', {token: {'root': root, 'process': Proc(), 'last_access': time.time() - 601}})
+    monkeypatch.setattr(streaming.os, 'killpg', lambda pid, signum: killed.append((pid, signum)), raising=False)
+    monkeypatch.setattr(streaming.time, 'sleep', lambda seconds: (_ for _ in ()).throw(StopLoop()))
+    with pytest.raises(StopLoop):
+        streaming.maintenance_loop()
+    assert killed == [(123456, signal.SIGTERM)]
+    assert not streaming._JOBS
+    assert not root.exists()
+
+
+def test_background_hls_cleanup_survives_one_failed_pass(monkeypatch):
+    passes = []
+    sleeps = []
+    class StopLoop(Exception): pass
+
+    def cleanup():
+        passes.append(1)
+        if len(passes) == 1: raise OSError('temporary mount error')
+
+    def wait(seconds):
+        sleeps.append(seconds)
+        if len(sleeps) == 2: raise StopLoop()
+
+    monkeypatch.setattr(streaming, '_cleanup_locked', cleanup)
+    monkeypatch.setattr(streaming.time, 'sleep', wait)
+    with pytest.raises(StopLoop): streaming.maintenance_loop()
+    assert len(passes) == 2
+    assert sleeps == [30, 30]

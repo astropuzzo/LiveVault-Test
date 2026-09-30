@@ -15,7 +15,15 @@ SOURCE.txt identifica la revisione (ultimo allineamento completo: 2026-09-25,
 incluse le guide collegate da questo file). Il vecchio handoff duplicato è stato sostituito
 da un rinvio, con originale conservato nella directory rollback.
 
-## Handoff corrente — 2026-09-29 (LiveVault 3.4.28)
+## Handoff corrente — 2026-09-30 (LiveVault 3.4.30; candidato audit 3.4.31)
+Audit SSH di LiveVault, Control/Media e NINA:
+[risultati, sorgenti, rollout e rollback](docs/PANELS-AUDIT-20260929.md).
+Il codice candidato richiede CI e verifica runtime; non confonderlo con le
+immagini baseline `0242aa3`/`900ccd44`. Control installato ha due sorgenti più
+vecchi del repository (hash confrontati con la cronologia Git).
+Il candidato separa AWAY da TIP-JAR, chiude le corse sulle operazioni file e
+aggiunge diagnostica Control e preview NINA con tempo indipendente. Nessuna
+migrazione DB; evidenze e limiti sono nel verbale audit collegato sopra.
 Sessione locale con SSH al nodo. Misure, cause, procedure e rollback in
 [LIVE-PANEL-20260909.md](docs/LIVE-PANEL-20260909.md) (sezioni "Short captures
 in Cronologia" e NSFW 3.3/3.4) e [MP4-HLS-RECOVERY.md](docs/MP4-HLS-RECOVERY.md)

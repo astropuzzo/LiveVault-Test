@@ -1,5 +1,14 @@
 # Changelog
 
+## 3.4.31 — Audit pannelli, AWAY e diagnostica
+
+- AWAY è distinto da TIP-JAR nel probe, nelle schede, nei profili e nella cronologia. Un esito AWAY/private del resolver prevale sul biocontext Chaturbate ancora pubblico; non parte la registrazione finché la sorgente non torna pubblica. Nessuna riscrittura della cronologia precedente.
+- Player e profili scartano risposte tardive; refresh e statistiche rispettano l'ultima mutazione/selezione. La playlist capture mantiene gruppi e sequenze durante le rotazioni, lega gli URL al file realmente aperto e cambia epoca quando cresce il GOP; le sostituzioni atomiche non riutilizzano indici precedenti.
+- Le operazioni manuali e i worker reclamano i file prima di upload, recupero, integrità o cancellazione; richieste concorrenti ricevono 409. Il recupero dello stato abbandonato conserva i dati.
+- Control aggiunge «Da controllare» e report JSON senza segreti; Media riduce sonde, decoder e salvataggi periodici, preserva cataloghi incompleti e rifiuta import concorrenti senza sovrascrivere. Percorso SMB e file mostrati seguono la libreria selezionata. Pulizia HLS indipendente dalle schede aperte.
+- NINA condivide le richieste QSM/JPEG, rifiuta redirect del token, mostra timestamp proprio della preview LIGHT e aggiorna inspector/recuperi fotometrici; timeout e logout invalidano risposte pendenti.
+- Evidenze, runtime, deploy e rollback: [audit pannelli](docs/PANELS-AUDIT-20260929.md). Nessuna migrazione di database o modifica ai parametri di registrazione, QSM, storage o CPU.
+
 ## 3.4.30 — Segmenti live con box sidx
 
 - Il recupero isola una copia `.finalizing.mp4` senza traccia audio quando è l'unica rimasta, conservandola in `.recovery-failed.mp4` con nota. Non la carica come video muto e non ripete a ogni passata lo stesso avviso. La copia AngelLeeen del 13/09 verificata sul nodo contiene 4,032 s di solo video; la parte successiva, distinta, contiene audio e video.

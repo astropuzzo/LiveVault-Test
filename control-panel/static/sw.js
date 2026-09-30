@@ -1,5 +1,5 @@
-const CACHE = "openastro-control-v21.0-glass";
-const SHELL = ["/app.css", "/shell.css", "/theme.css", "/premium.css", "/magic.css", "/media-upload.css", "/glass.css", "/app.js", "/media-upload.js", "/hls.min.js", "/icon.svg", "/manifest.webmanifest"];
+const CACHE = "openastro-control-v22.0-audit";
+const SHELL = ["/app.css", "/shell.css", "/theme.css", "/premium.css", "/magic.css", "/media-upload.css", "/glass.css", "/diagnostics.css", "/diagnostics.js", "/app.js", "/media-upload.js", "/hls.min.js", "/icon.svg", "/manifest.webmanifest"];
 self.addEventListener("install", event => event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(SHELL)).then(() => self.skipWaiting())));
 self.addEventListener("activate", event => event.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(key => key.startsWith("openastro-control-") && key !== CACHE).map(key => caches.delete(key)))).then(() => self.clients.claim())));
 self.addEventListener("fetch", event => {

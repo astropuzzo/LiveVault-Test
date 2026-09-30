@@ -40,14 +40,15 @@ def test_live_access_change_creates_distinct_timeline_intervals(tmp_path):
     with factory.begin() as session:
         source = session.get(Source, source_id)
         manager._observe_live_state(session, source, True, now, "live")
-    with factory.begin() as session:
-        source = session.get(Source, source_id)
-        manager._observe_live_state(session, source, True, now + timedelta(minutes=5), "tipjar")
+    for minute, status in ((5, "away"), (10, "tipjar"), (15, "live")):
+        with factory.begin() as session:
+            source = session.get(Source, source_id)
+            manager._observe_live_state(session, source, True, now + timedelta(minutes=minute), status)
     with factory.begin() as session:
         rows = session.query(LiveSession).filter(LiveSession.source_id == source_id).order_by(LiveSession.started_at).all()
-        assert [row.access_status for row in rows] == ["live", "tipjar"]
-        assert rows[0].ended_at is not None
-        assert rows[1].ended_at is None
+        assert [row.access_status for row in rows] == ["live", "away", "tipjar", "live"]
+        assert all(row.ended_at is not None for row in rows[:-1])
+        assert rows[-1].ended_at is None
     engine.dispose()
 
 

@@ -38,6 +38,7 @@ _ACTIVE_STREAMS: dict[str, dict] = {}
 _PROBE_CACHE_LOCK = threading.Lock()
 _PROBE_CACHE: dict[tuple[str, str, int, int], dict] = {}
 _PROBE_CACHE_MAX = 64
+_THUMB_LOCK = threading.Lock()
 _DISCOVERY_LOCK = threading.Lock()
 _DISCOVERY_CACHE: tuple[float, list[dict]] = (0.0, [])
 _SERVICE_LOCK = threading.Lock()
@@ -61,9 +62,18 @@ def valid_uuid(value: str) -> bool:
     return bool(UUID_RE.fullmatch(value or ''))
 
 
+class _MediaConnection(sqlite3.Connection):
+    def __exit__(self, *args):
+        # sqlite3's standard context commits/rolls back but leaves the FD open.
+        try:
+            return super().__exit__(*args)
+        finally:
+            self.close()
+
+
 def _db() -> sqlite3.Connection:
     STATE_ROOT.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(DB_PATH, timeout=5)
+    conn = sqlite3.connect(DB_PATH, timeout=5, factory=_MediaConnection)
     conn.row_factory = sqlite3.Row
     conn.execute('PRAGMA journal_mode=WAL')
     conn.execute('PRAGMA synchronous=NORMAL')
@@ -169,20 +179,20 @@ def _discover(*, force: bool = False) -> list[dict]:
         cached_at, cached = _DISCOVERY_CACHE
         if not force and cached and now - cached_at < DISCOVERY_TTL:
             return cached
-    result = _run([str(MANAGER), 'list'])
-    value: list[dict] = []
-    if result.returncode == 0:
-        try:
-            payload = json.loads(result.stdout or '[]')
-            if isinstance(payload, list):
-                value = payload
-        except json.JSONDecodeError:
-            pass
-    if not any(str(item.get('uuid') or '') == SHARE_MEDIA_UUID for item in value):
-        value.append(_share_media_device())
-    with _DISCOVERY_LOCK:
-        _DISCOVERY_CACHE = (now, value)
-    return value
+        # Hold the lock during the probe so thumbnail bursts share one discovery.
+        result = _run([str(MANAGER), 'list'])
+        value: list[dict] = []
+        if result.returncode == 0:
+            try:
+                payload = json.loads(result.stdout or '[]')
+                if isinstance(payload, list):
+                    value = payload
+            except json.JSONDecodeError:
+                pass
+        if not any(str(item.get('uuid') or '') == SHARE_MEDIA_UUID for item in value):
+            value.append(_share_media_device())
+        _DISCOVERY_CACHE = (time.monotonic(), value)
+        return value
 
 
 def invalidate_device_cache() -> None:
@@ -291,7 +301,7 @@ def credentials() -> dict:
 def _device(uuid: str, *, require_mounted: bool = True) -> dict:
     if not valid_uuid(uuid):
         raise ValueError('UUID media non valido')
-    for item in _discover(force=require_mounted):
+    for item in _discover():
         if item.get('uuid') == uuid:
             target = Path(item['mountpoint'])
             if require_mounted and not _item_mounted(item):
@@ -401,6 +411,17 @@ def _library_payload(uuid: str) -> dict:
         device = conn.execute('SELECT * FROM media_devices WHERE uuid=?', (uuid,)).fetchone()
         if not device:
             raise FileNotFoundError('Supporto sconosciuto')
+        # Scan completeness must survive cache expiry/service restarts. The
+        # existing event is committed with last_scan, and ts uses its index.
+        scan = conn.execute("SELECT detail FROM media_events WHERE uuid=? AND kind='scan' AND ts=? ORDER BY id DESC LIMIT 1",
+                            (uuid, int(device['last_scan']))).fetchone()
+        truncated = False
+        if scan:
+            try:
+                detail = json.loads(scan['detail'])
+                truncated = bool(detail.get('truncated')) if isinstance(detail, dict) else True
+            except (ValueError, TypeError):
+                truncated = True
         counts = {key: 0 for key in ('video','audio','image','document','archive','other')}
         bytes_by = {key: 0 for key in counts}
         for row in conn.execute('SELECT category,COUNT(*) c,COALESCE(SUM(size),0) b FROM media_items WHERE uuid=? GROUP BY category',(uuid,)):
@@ -411,7 +432,7 @@ def _library_payload(uuid: str) -> dict:
             row['streamable'] = row['category'] in {'video','audio','image'}; row['thumbnail'] = row['category'] in {'video','image'}
     return {'ok':True,'uuid':uuid,'label':device['label'],'mounted':mounted,'counts':counts,'bytes':bytes_by,
             'total_files':sum(counts.values()),'total_bytes':sum(bytes_by.values()),'recent':recent,
-            'last_scan':device['last_scan'],'truncated':False,'scan_limit':MAX_LIBRARY_FILES}
+            'last_scan':device['last_scan'],'truncated':truncated,'scan_limit':MAX_LIBRARY_FILES}
 
 
 def library_summary(uuid: str, *, force: bool = False) -> dict:
@@ -449,11 +470,14 @@ def library_summary(uuid: str, *, force: bool = False) -> dict:
                     row = {'name':entry.name,'path':path.relative_to(root).as_posix(),'size':st.st_size,
                            'modified':int(st.st_mtime),'mime':mime,'category':_category(path,mime)}
                     _upsert_item(conn, uuid, row, token)
+            # Reaching the cap on a folder's last entry can still leave folders
+            # pending. Never delete their remembered rows as if the scan finished.
+            truncated = truncated or bool(stack)
             if not truncated:
                 conn.execute('DELETE FROM media_items WHERE uuid=? AND scan_token<>?', (uuid, token))
             conn.execute('UPDATE media_devices SET last_scan=?,total_files=?,total_bytes=? WHERE uuid=?', (now, scanned, total_bytes, uuid))
             conn.execute('INSERT INTO media_events(ts,kind,uuid,detail) VALUES(?,?,?,?)',(now,'scan',uuid,json.dumps({'files':scanned,'bytes':total_bytes,'truncated':truncated})))
-        payload = _library_payload(uuid); payload['truncated'] = truncated
+        payload = _library_payload(uuid)
     else:
         payload = _library_payload(uuid)
     _LIBRARY_CACHE[uuid] = (now_mono, payload)
@@ -568,14 +592,18 @@ def thumbnail_info(uuid: str, relative: str) -> dict:
     try: os.chmod(THUMB_ROOT,0o750)
     except OSError: pass
     identity=f"{uuid}\0{relative}\0{info['modified']}\0{info['size']}".encode(); name=hashlib.sha256(identity).hexdigest()+'.jpg'; target=THUMB_ROOT/name
+    # One decode at a time on the CM4, and one writer for a shared temporary JPEG.
+    # Recheck inside the lock: simultaneous browsers reuse the completed result.
     if not target.exists() or target.stat().st_size<100:
-        tmp=target.with_suffix('.tmp.jpg'); args=['ffmpeg','-hide_banner','-loglevel','error','-y']
-        if info['category']=='video': args += ['-ss','5','-i',str(info['path']),'-frames:v','1']
-        else: args += ['-i',str(info['path']),'-frames:v','1']
-        args += ['-vf','scale=480:270:force_original_aspect_ratio=decrease,pad=480:270:(ow-iw)/2:(oh-ih)/2','-q:v','5',str(tmp)]
-        result=_run(args,timeout=12)
-        if result.returncode!=0 or not tmp.exists(): tmp.unlink(missing_ok=True); raise FileNotFoundError('Generazione anteprima fallita')
-        tmp.replace(target)
+        with _THUMB_LOCK:
+            if not target.exists() or target.stat().st_size<100:
+                tmp=target.with_suffix('.tmp.jpg'); args=['ffmpeg','-hide_banner','-loglevel','error','-y','-threads','1','-filter_threads','1']
+                if info['category']=='video': args += ['-ss','5','-i',str(info['path']),'-frames:v','1']
+                else: args += ['-i',str(info['path']),'-frames:v','1']
+                args += ['-vf','scale=480:270:force_original_aspect_ratio=decrease,pad=480:270:(ow-iw)/2:(oh-ih)/2','-q:v','5',str(tmp)]
+                result=_run(args,timeout=12)
+                if result.returncode!=0 or not tmp.exists(): tmp.unlink(missing_ok=True); raise FileNotFoundError('Generazione anteprima fallita')
+                tmp.replace(target)
     st=target.stat(); return {'path':target,'name':target.name,'size':st.st_size,'mime':'image/jpeg'}
 
 

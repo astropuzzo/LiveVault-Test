@@ -152,6 +152,51 @@ def test_modified_file_after_scan_is_rescanned(tmp_path, monkeypatch, isolated_d
         assert session.get(Recording, rec_id).nsfw_status == "pending"
 
 
+@pytest.mark.parametrize("claimed_status", ["converting", "deleting"])
+def test_scan_does_not_start_after_file_operation_claim(tmp_path, monkeypatch, isolated_db, claimed_status):
+    video = tmp_path / "claimed.mp4"
+    video.write_bytes(b"original")
+    rec_id = _recording(isolated_db, video)
+    manager = WorkerManager()
+    monkeypatch.setattr(manager, "nsfw_attach_parts", lambda *_args: None)
+    monkeypatch.setattr(storage_handoff, "state", lambda: {"mode": "nvme"})
+    job = manager._next_nsfw_job()
+    assert job.id == rec_id
+    with isolated_db.begin() as session:
+        session.get(Recording, rec_id).upload_status = claimed_status
+    async def forbidden_helper(*_args, **_kwargs):
+        raise AssertionError("scanner cannot open a claimed file")
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", forbidden_helper)
+    asyncio.run(manager._run_nsfw_job(job))
+    assert manager._next_nsfw_job() is None
+    assert video.read_bytes() == b"original"
+    with isolated_db() as session:
+        rec = session.get(Recording, rec_id)
+        assert rec.upload_status == claimed_status and rec.nsfw_status == "pending"
+
+
+def test_failed_scanner_start_releases_scanning_claim(tmp_path, monkeypatch, isolated_db):
+    video = tmp_path / "failed-helper.mp4"
+    video.write_bytes(b"original")
+    rec_id = _recording(isolated_db, video)
+    manager = WorkerManager()
+    monkeypatch.setattr(manager, "nsfw_attach_parts", lambda *_args: None)
+    monkeypatch.setattr(storage_handoff, "state", lambda: {"mode": "nvme"})
+    monkeypatch.setattr(nsfw_worker, "nsfw_dir", lambda: tmp_path / "moments")
+    monkeypatch.setattr(nsfw_worker, "runtime", lambda: _cfg(tmp_path))
+    monkeypatch.setattr(manager, "_nsfw_command", lambda _rec: ["unavailable-helper"])
+    async def missing_helper(*_args, **_kwargs):
+        with isolated_db() as session:
+            assert session.get(Recording, rec_id).nsfw_status == "scanning"
+        raise OSError("helper unavailable")
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", missing_helper)
+    with pytest.raises(OSError, match="helper unavailable"):
+        asyncio.run(manager._run_nsfw_job(manager._next_nsfw_job()))
+    with isolated_db() as session:
+        assert session.get(Recording, rec_id).nsfw_status == "paused"
+    assert manager.nsfw_current is None and video.read_bytes() == b"original"
+
+
 def test_gofile_gets_one_subfolder_per_video_with_fallback(monkeypatch):
     from app import workers
     calls = []

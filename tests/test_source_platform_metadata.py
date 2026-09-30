@@ -1,5 +1,6 @@
 import asyncio
 from datetime import datetime, timezone
+import pytest
 
 from app import source_providers as providers
 
@@ -92,6 +93,32 @@ def test_provider_access_states_are_normalized():
     assert providers.inaccessible_status("Ticket show") == "private"
     assert providers.inaccessible_status("offline_tipping") == "tipjar"
     assert providers.inaccessible_status("Subscribers only live stream") == "restricted"
+    assert providers.inaccessible_status("Performer is currently away") == "away"
+    assert providers.inaccessible_status("Gateway timed out") == ""
+
+
+@pytest.mark.parametrize("room_status,extraction,status", [
+    ("away", {"is_live": True}, "away"),
+    ("away", RuntimeError("Room is currently offline"), "away"),
+    ("public", RuntimeError("Performer is currently away"), "away"),
+    ("public", RuntimeError("Room is currently in a private show"), "private"),
+    ("offline_tipping", {"is_live": True}, "tipjar"),
+    ("public", {"is_live": True}, "live"),
+])
+def test_chaturbate_current_access_and_coarse_metadata(monkeypatch, room_status, extraction, status):
+    def extract(*_args):
+        if isinstance(extraction, Exception):
+            raise extraction
+        return extraction
+    monkeypatch.setattr(providers, "_extract", extract)
+    monkeypatch.setattr(providers, "_fetch_biocontext", lambda _slug: {
+        "room_status": room_status, "last_broadcast": -1,
+    })
+    result = asyncio.run(providers.probe("chaturbate", "ivyquinette", "best"))
+    assert result.live is True
+    assert result.status == status
+    assert result.recordable is (status == "live")
+    assert result.error == ""
 
 
 def test_camsoda_private_show_stays_online_but_not_recordable(monkeypatch):
@@ -109,7 +136,7 @@ def test_camsoda_private_show_stays_online_but_not_recordable(monkeypatch):
     assert result.error == ""
 
 
-def test_bongacams_away_state_is_tipjar_without_stream_extract(monkeypatch):
+def test_bongacams_away_state_without_stream_extract(monkeypatch):
     monkeypatch.setattr(
         providers,
         "_bongacams_room_info",
@@ -131,7 +158,7 @@ def test_bongacams_away_state_is_tipjar_without_stream_extract(monkeypatch):
     result = asyncio.run(providers.probe("bongacams", "example", "best"))
 
     assert result.live is True
-    assert result.status == "tipjar"
+    assert result.status == "away"
     assert result.recordable is False
 
 

@@ -28,6 +28,17 @@ function pulseLoader() {
 }
 const pulseResponse = hours => ({hours, generated_at:'2026-09-09T09:00:00Z', sessions: []});
 
+test('AWAY retains its own label and interval alongside TIP-JAR', () => {
+  const ctx = vm.createContext({timestamp: value => Date.parse(value) || 0});
+  vm.runInContext(liveSource.slice(liveSource.indexOf('function statusLabel('), liveSource.indexOf('function fallbackProviders(')) +
+    liveSource.slice(liveSource.indexOf('function pulseUnavailableIntervals('), liveSource.indexOf('function ensurePulseMediaPreview(')), ctx);
+  assert.equal(ctx.statusLabel('away'), 'AWAY');
+  assert.equal(ctx.accessStatusLabel('away'), 'AWAY');
+  const intervals = ['away','tipjar','live'].map(status => ({status, started_at:'2026-09-30T00:00:00Z',ended_at:'2026-09-30T00:05:00Z'}));
+  assert.deepEqual(Array.from(ctx.pulseUnavailableIntervals({access_intervals:intervals}), row=>row.status), ['away','tipjar']);
+  assert.equal(ctx.accessStatusLabel('tipjar'), 'TIP-JAR');
+});
+
 test('pulse coalesces concurrent refreshes and does not request before authenticated boot', async () => {
   const {ctx, pending} = pulseLoader();
   assert.equal(pending.length, 0);
@@ -239,4 +250,222 @@ test('archive query syntax filters by creator, status, size, duration and flags'
   assert.equal(match('blaze a.mp4'), true);
   assert.equal(ctx.parseSizeBytes('1,5g'), 1.5 * 1024 ** 3);
   assert.equal(ctx.parseDurationSeconds('2h'), 7200);
+});
+
+function videoLoader(native = true) {
+  const pending = [];
+  const player = {src: '', pause() {}, load() {}, removeAttribute() { this.src = ''; }, canPlayType: () => native ? 'probably' : ''};
+  const title = {textContent: ''};
+  const ctx = vm.createContext({
+    URL, AbortController, AbortSignal, location: {origin: 'http://local'}, window: {},
+    safeUrl: value => value, toast() {}, openModal() {},
+    $: selector => selector === '#videoPlayer' ? player : title,
+    fetch: (url, options) => new Promise((resolve, reject) => pending.push({url, options, resolve, reject})),
+  });
+  vm.runInContext(liveSource.slice(liveSource.indexOf('let activeHls = null'), liveSource.indexOf('function statusLabel(')), ctx);
+  return {ctx, pending, player, title};
+}
+
+test('late playlist cannot replace a newer video or its title', async () => {
+  const {ctx, pending, player, title} = videoLoader();
+  const old = ctx.playVideo('/api/recordings/1/view', 'old');
+  const current = ctx.playVideo('/api/recordings/2/view', 'current');
+  assert.equal(pending[0].options.signal.aborted, true);
+  pending[1].resolve({ok: true});
+  await current;
+  pending[0].resolve({ok: true});
+  await old;
+  assert.equal(player.src, '/api/recordings/2/stream.m3u8');
+  assert.equal(title.textContent, 'current');
+});
+
+test('closing video cancels pending playback without a late fallback', async () => {
+  const {ctx, pending, player} = videoLoader();
+  const loading = ctx.playVideo('/api/recordings/1/view', 'old');
+  ctx.stopVideo();
+  assert.equal(pending[0].options.signal.aborted, true);
+  pending[0].reject(new Error('aborted'));
+  await loading;
+  assert.equal(player.src, '');
+});
+
+test('closing while hls.js loads does not attach a stale player', async () => {
+  const {ctx, pending, player} = videoLoader(false);
+  let libraryResolve;
+  let created = 0;
+  ctx.loadHlsLibrary = () => new Promise(resolve => { libraryResolve = resolve; });
+  const loading = ctx.playVideo('/api/recordings/1/view', 'old');
+  pending[0].resolve({ok: true});
+  await new Promise(setImmediate);
+  ctx.stopVideo();
+  class Hls { constructor() { created += 1; } static isSupported() { return true; } }
+  libraryResolve(Hls);
+  await loading;
+  assert.equal(created, 0);
+  assert.equal(player.src, '');
+});
+
+function statisticsLoader() {
+  const pending = [];
+  const renders = [];
+  const ctx = vm.createContext({
+    statisticsBusy: false, statisticsRequest: null, statisticsRequestVersion: 0,
+    statisticsDays: 30, statisticsData: null, lastStatisticsLoad: 0,
+    profileStatisticsRequestVersion: 0, profileStatisticsDays: 30, profileData: null,
+    api: url => new Promise((resolve, reject) => pending.push({url, resolve, reject})),
+    renderStatistics: () => renders.push(ctx.statisticsData), renderProfile: () => renders.push(ctx.profileData),
+  });
+  vm.runInContext(liveSource.slice(liveSource.indexOf('async function loadStatistics('), liveSource.indexOf('// Periodic refreshes must not rebuild')), ctx);
+  return {ctx, pending, renders};
+}
+
+test('statistics preserves the latest range when responses arrive backwards', async () => {
+  const {ctx, pending, renders} = statisticsLoader();
+  const old = ctx.loadStatistics(30);
+  const current = ctx.loadStatistics(7);
+  assert.equal(pending.length, 2);
+  pending[1].resolve({days: 7});
+  await current;
+  pending[0].resolve({days: 30});
+  await old;
+  assert.equal(ctx.statisticsDays, 7);
+  assert.equal(ctx.statisticsData.days, 7);
+  assert.equal(renders.length, 1);
+  assert.equal(ctx.statisticsBusy, false);
+});
+
+test('statistics joins the same pending range and ignores superseded failure', async () => {
+  const {ctx, pending} = statisticsLoader();
+  const old = ctx.loadStatistics(30);
+  const shared = ctx.loadStatistics(30);
+  assert.equal(pending.length, 1);
+  const current = ctx.loadStatistics(90);
+  pending[0].reject(new Error('old request failed'));
+  await Promise.all([old, shared]);
+  assert.equal(ctx.statisticsBusy, true);
+  pending[1].resolve({days: 90});
+  await current;
+  assert.equal(ctx.statisticsData.days, 90);
+});
+
+test('profile statistics cannot attach to another profile or a closed modal', async () => {
+  const {ctx, pending, renders} = statisticsLoader();
+  const profile = {source: {profile_id: 1}};
+  ctx.profileData = profile;
+  const loading = ctx.loadProfileStatistics(7);
+  const newerProfile = {source: {profile_id: 2}};
+  ctx.profileData = newerProfile;
+  pending[0].resolve({days: 7});
+  await loading;
+  assert.equal(newerProfile.activity_statistics, undefined);
+  const closing = ctx.loadProfileStatistics(30);
+  ctx.profileData = null;
+  pending[1].resolve({days: 30});
+  await closing;
+  assert.equal(renders.length, 0);
+});
+
+test('profile statistics ignores an older range response', async () => {
+  const {ctx, pending, renders} = statisticsLoader();
+  ctx.profileData = {source: {profile_id: 1}};
+  const old = ctx.loadProfileStatistics(30);
+  const current = ctx.loadProfileStatistics(7);
+  pending[1].resolve({days: 7});
+  await current;
+  pending[0].resolve({days: 30});
+  await old;
+  assert.equal(ctx.profileData.activity_statistics.days, 7);
+  assert.equal(renders.length, 1);
+});
+
+function profileLoader() {
+  const pending = [];
+  const renders = [];
+  const controls = {};
+  const ctx = vm.createContext({
+    sources: [], profileData: null, profileRequestVersion: 0,
+    profileStatisticsRequestVersion: 0, profileStatisticsDays: 30,
+    $: selector => controls[selector] ||= {classList: {add() {}}, innerHTML: ''},
+    $$: () => [], document: {body: {classList: {remove() {}}}},
+    api: url => new Promise((resolve, reject) => pending.push({url, resolve, reject})),
+    openModal() {}, toast() {}, esc: value => value,
+    renderProfile: () => renders.push(ctx.profileData),
+  });
+  vm.runInContext(liveSource.slice(liveSource.indexOf('function closeModal('), liveSource.indexOf('// Fragmented captures')), ctx);
+  vm.runInContext(liveSource.slice(liveSource.indexOf('async function openProfile('), liveSource.indexOf('function renderProfile(')), ctx);
+  return {ctx, pending, renders};
+}
+
+test('opening a newer profile discards an older response before its statistics request', async () => {
+  const {ctx, pending, renders} = profileLoader();
+  const old = ctx.openProfile(1);
+  const current = ctx.openProfile(2);
+  pending[1].resolve({source: {id: 2, profile_id: 2}});
+  await new Promise(setImmediate);
+  assert.equal(pending[2].url, '/api/library/profiles/2/statistics?days=30');
+  pending[2].resolve({days: 30});
+  await current;
+  pending[0].resolve({source: {id: 1, profile_id: 1}});
+  await old;
+  assert.equal(ctx.profileData.source.id, 2);
+  assert.equal(pending.length, 3);
+  assert.equal(renders.length, 1);
+});
+
+test('closing a profile while statistics load prevents late modal rendering', async () => {
+  const {ctx, pending, renders} = profileLoader();
+  const opening = ctx.openProfile(1);
+  pending[0].resolve({source: {id: 1, profile_id: 1}});
+  await new Promise(setImmediate);
+  ctx.closeModal('profileModal');
+  pending[1].resolve({days: 30});
+  await opening;
+  assert.equal(ctx.profileData, null);
+  assert.equal(renders.length, 0);
+});
+
+test('refresh queues one fresh pass after mutations and retains archive demand', async () => {
+  const pending = [];
+  const ctx = vm.createContext({
+    refresh: options => new Promise(resolve => pending.push({options, resolve})),
+    activeView: 'archive', controlRoomPulseData: null,
+  });
+  vm.runInContext(liveSource.slice(liveSource.indexOf('const refreshV271 = refresh;')), ctx);
+  const initial = ctx.refresh();
+  let mutationDone = false;
+  const mutation = ctx.refresh({includeRecordings: true}).then(() => { mutationDone = true; });
+  const shared = ctx.refresh({includeRecordings: false});
+  assert.equal(pending.length, 1);
+  pending[0].resolve();
+  await new Promise(setImmediate);
+  assert.equal(pending.length, 2);
+  assert.equal(pending[1].options.includeRecordings, true);
+  assert.equal(mutationDone, false);
+  pending[1].resolve();
+  await Promise.all([initial, mutation, shared]);
+  assert.equal(mutationDone, true);
+  assert.equal(pending.length, 2);
+});
+
+test('periodic refresh callers share pending work without prolonging a slow refresh', async () => {
+  const pending = [];
+  const ctx = vm.createContext({
+    refresh: options => new Promise(resolve => pending.push({options, resolve})),
+    activeView: 'archive', controlRoomPulseData: null,
+  });
+  vm.runInContext(liveSource.slice(liveSource.indexOf('const refreshV271 = refresh;')), ctx);
+  const initial = ctx.refresh();
+  const tick = ctx.refresh();
+  pending[0].resolve();
+  await Promise.all([initial, tick]);
+  assert.equal(pending.length, 1);
+});
+
+test('API shows the actionable message in structured busy errors', async () => {
+  const ctx = vm.createContext({
+    AbortSignal,
+    fetch: async () => ({ok: false, status: 409, json: async () => ({detail: {code: 'recording_busy', message: 'File occupato'}})}),
+  });
+  vm.runInContext(liveSource.slice(liveSource.indexOf('async function api('), liveSource.indexOf('function setBusy(')), ctx);
+  await assert.rejects(ctx.api('/api/recordings/1/recover', {method: 'POST'}), /File occupato/);
 });

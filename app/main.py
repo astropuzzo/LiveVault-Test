@@ -12,8 +12,8 @@ import time
 import zlib
 from bisect import bisect_left, bisect_right
 from collections import defaultdict, deque
-from contextlib import asynccontextmanager
-from functools import lru_cache
+from contextlib import asynccontextmanager, contextmanager
+from functools import lru_cache, wraps
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -23,7 +23,7 @@ from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
-from sqlalchemy import case, delete, distinct, func, or_, select
+from sqlalchemy import case, delete, distinct, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import defer, load_only
 
@@ -47,7 +47,8 @@ from .db import (
 )
 from .file_cleanup import cleanup_empty_parents, cleanup_orphan_videos, safe_unlink
 from .media_validation import build_validation_receipt
-from .mp4_index import NotFragmented, cached_index, hls_playlist, hls_session_playlist, live_playlist_index
+from .mp4_index import NotFragmented, cached_index, hls_playlist
+from .live_capture_playlist import capture_part_identity, capture_part_path, capture_playlist_snapshot
 from .predictions import forecast, rank_upcoming
 from .nsfw_scan import LABELS as NSFW_LABELS
 from .nsfw_live_worker import cluster_marks
@@ -73,7 +74,7 @@ BASE = Path(__file__).parent
 LOGIN_FAILURES: dict[str, deque[float]] = defaultdict(deque)
 LOGIN_WINDOW = 10 * 60
 LOGIN_MAX_FAILURES = 6
-VERSION = "3.4.30"
+VERSION = "3.4.31"
 
 
 class LoginBody(BaseModel):
@@ -539,7 +540,7 @@ def _smart_library_counts(db) -> dict[str, int]:
             1 for profile in profiles
             if any(
                 source.enabled and not source.archived
-                and source.last_status in {"live", "private", "tipjar", "restricted", "recording"}
+                and source.last_status in {"live", "private", "tipjar", "away", "restricted", "recording"}
                 for source in by_profile.get(profile.id, [])
             )
         ),
@@ -1296,7 +1297,7 @@ def _hover_status(rows: list[Source]) -> str:
         "archived" if row.archived else ("paused" if not row.enabled else str(row.last_status or "offline"))
         for row in rows
     ]
-    for preferred in ("recording", "private", "tipjar", "restricted", "live", "error"):
+    for preferred in ("recording", "private", "tipjar", "away", "restricted", "live", "error"):
         if preferred in statuses:
             return preferred
     if rows and all(row.archived for row in rows):
@@ -1566,18 +1567,18 @@ def list_sources(request: Request):
             )
             detected_live = bool(
                 not source.archived
-                and (active or (source.last_status in {"live", "private", "tipjar", "restricted", "recording"} and fresh_live))
+                and (active or (source.last_status in {"live", "private", "tipjar", "away", "restricted", "recording"} and fresh_live))
             )
             recording_blocked = bool(
                 detected_live and not active and source.consent_confirmed and not source.archived
                 and (
                     cfg.recording_paused
                     or not source.enabled
-                    or source.last_status in {"private", "tipjar", "restricted"}
+                    or source.last_status in {"private", "tipjar", "away", "restricted"}
                 )
             )
             pause_reason = (
-                source.last_status if recording_blocked and source.last_status in {"private", "tipjar", "restricted"}
+                source.last_status if recording_blocked and source.last_status in {"private", "tipjar", "away", "restricted"}
                 else "global" if recording_blocked and cfg.recording_paused
                 else "source" if recording_blocked and not source.enabled
                 else ""
@@ -1899,7 +1900,7 @@ def control_room_pulse(request: Request, hours: int = 12):
                     access_end = min(ended, access["ended"])
                     if access_end <= access_start:
                         continue
-                    status = access["status"] if access["status"] in {"live", "private", "tipjar", "restricted"} else "live"
+                    status = access["status"] if access["status"] in {"live", "private", "tipjar", "away", "restricted"} else "live"
                     if access_intervals and access_intervals[-1]["status"] == status and access_start <= access_intervals[-1]["ended"] + timedelta(seconds=75):
                         access_intervals[-1]["ended"] = max(access_intervals[-1]["ended"], access_end)
                     else:
@@ -2522,20 +2523,27 @@ def view_recording_fragment(fragment_id: int, request: Request):
 
 
 @app.get("/api/sources/{source_id}/capture")
-def view_active_capture(source_id: int, request: Request):
+def view_active_capture(source_id: int, request: Request, part: str = ""):
     require_auth(request)
-    path = manager.playable_active_capture_path(source_id)
+    pinned_identity = capture_part_identity(source_id, part) if part else None
+    if part and pinned_identity is None:
+        raise HTTPException(404, "Parte della registrazione non più disponibile")
+    path = capture_part_path(source_id, part) if part else manager.playable_active_capture_path(source_id)
     if path is None:
         raise HTTPException(404, "Registrazione attiva non ancora disponibile")
+    pinned_path = path
     path = _local_media_path(path)
-    if _wants_player_page(request) and _has_stream_index(path):
+    if part and path != pinned_path:
+        raise HTTPException(404, "Parte della registrazione non più disponibile")
+    if not part and _wants_player_page(request) and _has_stream_index(path):
         with db_session() as db:
             source = db.get(Source, source_id)
             name = str(source.name) if source else f"Sorgente {source_id}"
         return _player_page(f"{name} · REC locale", f"/api/sources/{source_id}/capture.m3u8",
                             f"/api/sources/{source_id}/capture?raw=1", live=True)
     media_type = _video_media_type(path)
-    return StorageFileResponse(path, media_type=media_type, headers={"Cache-Control": "private, no-store"})
+    return StorageFileResponse(path, media_type=media_type, headers={"Cache-Control": "private, no-store"},
+                               expected_identity=pinned_identity)
 
 
 def _stream_playlist(path: Path, media_uri: str, live: bool = False) -> Response:
@@ -2596,12 +2604,11 @@ def _session_closed_parts(source_id: int, active_path: Path) -> list[tuple[Path,
 
 
 @app.get("/api/sources/{source_id}/capture.m3u8")
-def stream_active_capture(source_id: int, request: Request):
+def stream_active_capture(source_id: int, request: Request, epoch: str = ""):
     """Timeline of the running capture: the closed local parts of this live plus the growing one.
 
-    The growing part is read incrementally and listed in closed, keyframe-aligned segments of at
-    least 2 s, so the playlist only ever grows and the player's timeline lengthens with the
-    recording; closed parts are immutable and grouped like a finished file.
+    Both growing and closed parts use the same keyframe groups. Byte URLs pin each
+    advertised file; removed parts advance the sliding playlist's sequence counters.
     """
     require_auth(request)
     path = manager.playable_active_capture_path(source_id)
@@ -2609,21 +2616,12 @@ def stream_active_capture(source_id: int, request: Request):
         raise HTTPException(404, "Registrazione attiva non ancora disponibile")
     active = _local_media_path(path)
     try:
-        growing = live_playlist_index(active)
+        body, current_epoch = capture_playlist_snapshot(source_id, active, [closed for closed, _uri in _session_closed_parts(source_id, active)])
     except (NotFragmented, OSError, ValueError, struct_error) as exc:
         raise HTTPException(409, f"Riproduzione diretta: {exc}") from None
-    if not growing.segments:
-        raise HTTPException(409, "Nessun frammento completo")
-    parts: list[tuple] = []
-    for closed, media_uri in _session_closed_parts(source_id, active):
-        try:
-            index = cached_index(closed)
-        except (NotFragmented, OSError, ValueError, struct_error):
-            continue  # a finished, non-fragmented part cannot be byte-ranged into HLS
-        if index.segments:
-            parts.append((index, media_uri))
-    parts.append((growing, f"/api/sources/{source_id}/capture"))
-    body = hls_session_playlist(parts, live=True)
+    if epoch != current_epoch:
+        return Response(status_code=307, headers={"Location": f"/api/sources/{source_id}/capture.m3u8?epoch={current_epoch}",
+                                                  "Cache-Control": "private, no-store"})
     return Response(body, media_type="application/vnd.apple.mpegurl", headers={"Cache-Control": "private, no-store"})
 
 
@@ -2641,21 +2639,78 @@ def download_recording(recording_id: int, request: Request):
     return StorageFileResponse(path, filename=filename, media_type="application/octet-stream")
 
 
+_recording_actions: set[int] = set()
+_recording_actions_lock = threading.Lock()
+
+
+def _recording_busy(status: str = "processing") -> None:
+    raise HTTPException(409, {"code": "recording_busy", "status": status,
+                              "message": "File occupato: attendi la fine dell'operazione in corso"})
+
+
+@contextmanager
+def _recording_action(recording_id: int):
+    with _recording_actions_lock:
+        if recording_id in _recording_actions:
+            _recording_busy()
+        _recording_actions.add(recording_id)
+    try:
+        yield
+    finally:
+        with _recording_actions_lock:
+            _recording_actions.discard(recording_id)
+
+
+def _exclusive_recording_action(function):
+    if asyncio.iscoroutinefunction(function):
+        @wraps(function)
+        async def asynchronous(recording_id: int, request: Request, *args, **kwargs):
+            require_auth(request)
+            with _recording_action(recording_id):
+                return await function(recording_id, request, *args, **kwargs)
+        return asynchronous
+    @wraps(function)
+    def synchronous(recording_id: int, request: Request, *args, **kwargs):
+        require_auth(request)
+        with _recording_action(recording_id):
+            return function(recording_id, request, *args, **kwargs)
+    return synchronous
+
+
+def _check_recording_busy(rec: Recording, *, allow_abandoned_conversion: bool = False) -> None:
+    if rec.id in getattr(manager, "_repairing_recordings", set()):
+        _recording_busy("converting")
+    if rec.upload_status in {"uploading", "deleting", "converting"}:
+        if not (allow_abandoned_conversion and rec.upload_status == "converting"):
+            _recording_busy(str(rec.upload_status))
+
+
+def _change_recording_state(db, rec: Recording, **values) -> None:
+    claim = update(Recording).where(
+        Recording.id == rec.id, Recording.upload_status == rec.upload_status,
+        Recording.local_deleted.is_(False),
+    )
+    if values.get("upload_status") == "converting":
+        claim = claim.where(Recording.thumbnail_status != "processing", Recording.nsfw_status != "scanning")
+    changed = db.execute(claim.values(**values), execution_options={"synchronize_session": False})
+    if changed.rowcount != 1:
+        _recording_busy("changed")
+
+
 @app.post("/api/recordings/{recording_id}/upload-now")
+@_exclusive_recording_action
 def upload_now(recording_id: int, request: Request):
     require_auth(request)
     with db_session() as db:
         rec = db.get(Recording, recording_id)
         if not rec:
             raise HTTPException(404, "Registrazione non trovata")
+        _check_recording_busy(rec)
         if rec.local_deleted or not Path(rec.local_path).exists():
             raise HTTPException(400, "File locale non disponibile")
         if rec.integrity_status != "passed":
             raise HTTPException(400, "Il file deve superare il controllo integrità prima dell'upload")
-        rec.upload_status = "pending"
-        rec.upload_attempts = 0
-        rec.upload_priority = 100
-        rec.last_error = ""
+        _change_recording_state(db, rec, upload_status="pending", upload_attempts=0, upload_priority=100, last_error="")
     set_values({"upload_paused": False})
     manager.clear_retry_backoff()
     manager.wake()
@@ -2663,37 +2718,47 @@ def upload_now(recording_id: int, request: Request):
 
 
 @app.post("/api/recordings/{recording_id}/retry")
+@_exclusive_recording_action
 def retry_recording(recording_id: int, request: Request):
     require_auth(request)
     with db_session() as db:
         rec = db.get(Recording, recording_id)
         if not rec:
             raise HTTPException(404, "Registrazione non trovata")
+        _check_recording_busy(rec)
         if rec.local_deleted or not Path(rec.local_path).exists():
             raise HTTPException(400, "File locale non disponibile")
         if rec.integrity_status != "passed":
             raise HTTPException(400, "Ricontrolla prima l'integrità del file")
-        rec.upload_status = "pending"
-        rec.upload_attempts = 0
-        rec.last_error = ""
+        _change_recording_state(db, rec, upload_status="pending", upload_attempts=0, last_error="")
     manager.clear_retry_backoff()
     manager.wake()
     return {"ok": True}
 
 
 @app.post("/api/recordings/{recording_id}/integrity")
+@_exclusive_recording_action
 async def recheck_integrity(recording_id: int, request: Request):
     require_auth(request)
     with db_session() as db:
         rec = db.get(Recording, recording_id)
         if not rec:
             raise HTTPException(404, "Registrazione non trovata")
+        _check_recording_busy(rec)
         path = Path(rec.local_path)
         old_sha = rec.sha256
-    if not path.exists():
-        raise HTTPException(404, "File locale non disponibile")
-    result = await asyncio.to_thread(verify_media, path, runtime().integrity_mode)
-    digest = await asyncio.to_thread(sha256_file, path) if result.ok else old_sha
+        previous_status = rec.upload_status
+        if not path.exists():
+            raise HTTPException(404, "File locale non disponibile")
+        _change_recording_state(db, rec, upload_status="converting")
+    try:
+        result = await asyncio.to_thread(verify_media, path, runtime().integrity_mode)
+        digest = await asyncio.to_thread(sha256_file, path) if result.ok else old_sha
+    except BaseException:
+        with db_session() as db:
+            db.execute(update(Recording).where(Recording.id == recording_id, Recording.upload_status == "converting")
+                       .values(upload_status=previous_status))
+        raise
     if result.ok and old_sha and digest != old_sha:
         result.ok = False
         result.error = "SHA-256 cambiato rispetto alla finalizzazione"
@@ -2709,8 +2774,8 @@ async def recheck_integrity(recording_id: int, request: Request):
             rec.integrity_checked_at = utcnow()
             if result.ok:
                 rec.sha256 = digest
-                if rec.upload_status == "integrity_failed":
-                    rec.upload_status = "pending"
+                rec.upload_status = "pending" if previous_status == "integrity_failed" else previous_status
+                if previous_status == "integrity_failed":
                     rec.last_error = ""
             else:
                 rec.upload_status = "integrity_failed"
@@ -2720,6 +2785,7 @@ async def recheck_integrity(recording_id: int, request: Request):
 
 
 @app.post("/api/recordings/{recording_id}/recover")
+@_exclusive_recording_action
 async def recover_recording(recording_id: int, request: Request):
     """Re-run media recovery and integrity validation for one local archive item.
 
@@ -2735,13 +2801,11 @@ async def recover_recording(recording_id: int, request: Request):
             raise HTTPException(404, "Registrazione non trovata")
         if rec.local_deleted:
             raise HTTPException(400, "File locale non disponibile")
-        if rec.upload_status in {"uploading", "deleting"}:
-            raise HTTPException(409, "File occupato: attendi la fine dell'operazione in corso")
+        _check_recording_busy(rec, allow_abandoned_conversion=True)
         path = Path(rec.local_path)
         previous_status = str(rec.upload_status or "integrity_failed")
         was_uploaded = previous_status == "uploaded" and bool(rec.remote_url)
-        rec.upload_status = "converting"
-        rec.last_error = "Recupero manuale in corso"
+        _change_recording_state(db, rec, upload_status="converting", last_error="Recupero manuale in corso")
     if not path.is_file():
         with db_session() as db:
             rec = db.get(Recording, recording_id)
@@ -2817,20 +2881,20 @@ async def recover_recording(recording_id: int, request: Request):
 
 
 @app.post("/api/recordings/{recording_id}/convert-mp4")
+@_exclusive_recording_action
 async def convert_mp4(recording_id: int, request: Request):
     require_auth(request)
     with db_session() as db:
         rec = db.get(Recording, recording_id)
         if not rec:
             raise HTTPException(404, "Registrazione non trovata")
-        if rec.upload_status in {"uploading", "converting"}:
-            raise HTTPException(409, "Attendi la fine dell'elaborazione prima di convertire")
+        _check_recording_busy(rec)
         path = Path(rec.local_path)
         previous_upload_status = rec.upload_status
         already_ready = path.suffix.lower() == ".mp4" and mp4_is_streaming_ready(path)
         if not already_ready:
             # Remove this record from the uploader selection while the file path changes.
-            rec.upload_status = "converting"
+            _change_recording_state(db, rec, upload_status="converting")
     if not path.exists():
         with db_session() as db:
             rec = db.get(Recording, recording_id)
@@ -2893,6 +2957,36 @@ async def convert_mp4(recording_id: int, request: Request):
 
 
 def _remove_local_copy(recording_id: int, *, force: bool = False, delete_thumbnail: bool = False) -> dict:
+    with _recording_action(recording_id):
+        return _remove_local_copy_claimed(recording_id, force=force, delete_thumbnail=delete_thumbnail)
+
+
+def _claim_recording_deletion(db, rec: Recording) -> str:
+    _check_recording_busy(rec)
+    if rec.thumbnail_status == "processing":
+        _recording_busy("thumbnail")
+    if rec.nsfw_status == "scanning":
+        _recording_busy("nsfw")
+    previous_status = rec.upload_status
+    changed = db.execute(update(Recording).where(
+        Recording.id == rec.id, Recording.upload_status == previous_status,
+        Recording.local_deleted.is_(bool(rec.local_deleted)),
+        Recording.thumbnail_status == rec.thumbnail_status,
+        Recording.nsfw_status != "scanning",
+    ).values(upload_status="deleting"), execution_options={"synchronize_session": False})
+    if changed.rowcount != 1:
+        _recording_busy("changed")
+    return previous_status
+
+
+def _release_recording_deletion(recording_id: int, previous_status: str) -> None:
+    with db_session() as db:
+        db.execute(update(Recording).where(Recording.id == recording_id, Recording.upload_status == "deleting")
+                   .values(upload_status=previous_status))
+
+
+def _remove_local_copy_claimed(recording_id: int, *, force: bool = False, delete_thumbnail: bool = False,
+                               delete_entry: bool = False) -> dict:
     """Remove the actual local bytes first, then update DB state.
 
     Non-uploaded files require force=True. Files currently being uploaded/converted are
@@ -2906,12 +3000,11 @@ def _remove_local_copy(recording_id: int, *, force: bool = False, delete_thumbna
         previous_status = rec.upload_status
         local_path = Path(rec.local_path)
         thumbnail_path = Path(rec.thumbnail_path) if rec.thumbnail_path else None
-        if previous_status in {"uploading", "converting", "deleting"} or rec.thumbnail_status == "processing":
-            raise HTTPException(409, "File occupato: attendi la fine dell'operazione in corso")
+        _check_recording_busy(rec)
         if previous_status != "uploaded" and not force:
             raise HTTPException(400, "File non caricato: usa la cancellazione forzata per eliminarlo definitivamente")
-        if previous_status != "uploaded":
-            rec.upload_status = "deleting"
+        # Uploaded copies also need a claim: retry/recovery can reopen their bytes.
+        previous_status = _claim_recording_deletion(db, rec)
 
     try:
         freed, removed = safe_unlink(local_path, settings.recordings_dir)
@@ -2921,24 +3014,22 @@ def _remove_local_copy(recording_id: int, *, force: bool = False, delete_thumbna
             _, thumbnail_removed = safe_unlink(thumbnail_path, settings.data_dir / "thumbnails")
             cleanup_empty_parents(thumbnail_path.parent, settings.data_dir / "thumbnails")
     except (OSError, ValueError) as exc:
-        with db_session() as db:
-            rec = db.get(Recording, recording_id)
-            if rec and rec.upload_status == "deleting":
-                rec.upload_status = previous_status
+        _release_recording_deletion(recording_id, previous_status)
         raise HTTPException(500, f"Impossibile eliminare il file locale: {exc}") from exc
 
     with db_session() as db:
-        rec = db.get(Recording, recording_id)
-        if rec:
-            rec.local_deleted = True
-            if previous_status != "uploaded":
-                rec.upload_status = "discarded"
-                rec.last_error = "File locale eliminato manualmente prima dell'upload"
-            else:
-                rec.upload_status = "uploaded"
-                rec.last_error = ""
+        claim = (Recording.id == recording_id, Recording.upload_status == "deleting")
+        if delete_entry:
+            changed = db.execute(delete(Recording).where(*claim))
+        else:
+            values = {"local_deleted": True,
+                      "upload_status": "uploaded" if previous_status == "uploaded" else "discarded",
+                      "last_error": "" if previous_status == "uploaded" else "File locale eliminato manualmente prima dell'upload"}
             if delete_thumbnail and thumbnail_removed:
-                rec.thumbnail_path = ""
+                values["thumbnail_path"] = ""
+            changed = db.execute(update(Recording).where(*claim).values(**values))
+        if changed.rowcount != 1:
+            _recording_busy("changed")
 
     manager.clear_retry_backoff()
     manager.wake()
@@ -2952,42 +3043,43 @@ def _remove_local_copy(recording_id: int, *, force: bool = False, delete_thumbna
 
 
 @app.delete("/api/recordings/{recording_id}/local")
+@_exclusive_recording_action
 def delete_local_recording(recording_id: int, request: Request, force: bool = False, delete_thumbnail: bool = False):
     require_auth(request)
-    return _remove_local_copy(recording_id, force=force, delete_thumbnail=delete_thumbnail)
+    return _remove_local_copy_claimed(recording_id, force=force, delete_thumbnail=delete_thumbnail)
 
 
 @app.delete("/api/recordings/{recording_id}")
+@_exclusive_recording_action
 def delete_recording(recording_id: int, request: Request, delete_file: bool = True, delete_thumbnail: bool = True):
     """Delete an archive entry. By default the underlying local file is deleted too."""
     require_auth(request)
-    with db_session() as db:
-        rec = db.get(Recording, recording_id)
-        if not rec:
-            raise HTTPException(404, "Registrazione non trovata")
-        if rec.upload_status in {"uploading", "converting", "deleting"} or rec.thumbnail_status == "processing":
-            raise HTTPException(409, "File occupato: attendi la fine dell'operazione in corso")
-        thumbnail_path = Path(rec.thumbnail_path) if rec.thumbnail_path else None
-
     freed = 0
     file_removed = False
     thumbnail_removed = False
     if delete_file:
-        result = _remove_local_copy(recording_id, force=True, delete_thumbnail=delete_thumbnail)
+        result = _remove_local_copy_claimed(recording_id, force=True, delete_thumbnail=delete_thumbnail, delete_entry=True)
         freed = int(result["freed"])
         file_removed = bool(result["removed"])
         thumbnail_removed = bool(result["thumbnail_removed"])
-    elif delete_thumbnail and thumbnail_path:
+    else:
+        with db_session() as db:
+            rec = db.get(Recording, recording_id)
+            if not rec:
+                raise HTTPException(404, "Registrazione non trovata")
+            thumbnail_path = Path(rec.thumbnail_path) if rec.thumbnail_path else None
+            previous_status = _claim_recording_deletion(db, rec)
         try:
-            _, thumbnail_removed = safe_unlink(thumbnail_path, settings.data_dir / "thumbnails")
-            cleanup_empty_parents(thumbnail_path.parent, settings.data_dir / "thumbnails")
+            if delete_thumbnail and thumbnail_path:
+                _, thumbnail_removed = safe_unlink(thumbnail_path, settings.data_dir / "thumbnails")
+                cleanup_empty_parents(thumbnail_path.parent, settings.data_dir / "thumbnails")
         except (OSError, ValueError) as exc:
+            _release_recording_deletion(recording_id, previous_status)
             raise HTTPException(500, f"Impossibile eliminare la miniatura: {exc}") from exc
-
-    with db_session() as db:
-        rec = db.get(Recording, recording_id)
-        if rec:
-            db.delete(rec)
+        with db_session() as db:
+            changed = db.execute(delete(Recording).where(Recording.id == recording_id, Recording.upload_status == "deleting"))
+            if changed.rowcount != 1:
+                _recording_busy("changed")
 
     manager.clear_retry_backoff()
     manager.wake()
@@ -3009,10 +3101,12 @@ def retry_failed_recordings(request: Request):
         rows = list(db.scalars(select(Recording).where(Recording.upload_status.in_(["failed", "waiting_config"]), Recording.integrity_status == "passed")).all())
         for rec in rows:
             if not rec.local_deleted and Path(rec.local_path).exists():
-                rec.upload_status = "pending"
-                rec.upload_attempts = 0
-                rec.last_error = ""
-                changed += 1
+                claimed = db.execute(update(Recording).where(
+                    Recording.id == rec.id, Recording.upload_status == rec.upload_status,
+                    Recording.local_deleted.is_(False), Recording.integrity_status == "passed",
+                ).values(upload_status="pending", upload_attempts=0, last_error=""),
+                    execution_options={"synchronize_session": False})
+                changed += int(claimed.rowcount == 1)
     manager.clear_retry_backoff()
     manager.wake()
     return {"ok": True, "changed": changed}
@@ -3134,7 +3228,7 @@ def _build_predictions() -> dict:
         key = int(profile_id or -source_id)
         entry = profiles.setdefault(key, {"profile_id": profile_id, "representative_source_id": source_id,
                                           "display_name": name or str(source_id), "live": False, "sessions": []})
-        entry["live"] = entry["live"] or status in {"live", "recording", "private", "tipjar", "restricted"}
+        entry["live"] = entry["live"] or status in {"live", "recording", "private", "tipjar", "away", "restricted"}
         entry["sessions"].extend(by_source.get(int(source_id), []))
     creators = []
     for entry in profiles.values():

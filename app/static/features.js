@@ -82,7 +82,7 @@
       for (const [id, now] of Object.entries(current.sources)) {
         const before = previous.sources[id];
         if (!before || before.status === now.status) continue;
-        const wasLive = ['live', 'recording', 'private', 'tipjar'].includes(before.status);
+        const wasLive = ['live', 'recording', 'private', 'away', 'tipjar', 'restricted'].includes(before.status);
         if (now.status === 'recording' && before.status !== 'recording') announce('REC avviata', now.name);
         else if (now.status === 'live' && !wasLive) announce(now.blocked ? 'Live non registrata' : 'Live iniziata', now.name, now.blocked ? 'bad' : 'good');
         else if (wasLive && ['offline', 'was_live', 'post_live'].includes(now.status)) announce('Live terminata', now.name);

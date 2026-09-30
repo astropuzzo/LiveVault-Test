@@ -770,6 +770,17 @@ def livevault_health() -> dict:
     try:
         with urllib.request.urlopen("http://127.0.0.1:8080/healthz", timeout=3) as response:
             return json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        # A 503 includes the worker/storage diagnosis. Keep it visible rather
+        # than replacing it with an indistinguishable network outage.
+        try:
+            payload = json.loads(exc.read().decode("utf-8"))
+            if isinstance(payload, dict):
+                payload["ok"] = False
+                return payload
+        except (ValueError, OSError):
+            pass
+        return {"ok": False}
     except Exception:
         return {"ok": False}
 
@@ -1397,6 +1408,7 @@ if __name__ == "__main__":
     load_history()
     load_availability()
     threading.Thread(target=history_loop, name="telemetry", daemon=True).start()
+    threading.Thread(target=media_streaming.maintenance_loop, name="hls-maintenance", daemon=True).start()
     server = ThreadingHTTPServer((HOST, PORT), Handler)
     print(f"OpenAstro Control listening on http://{HOST}:{PORT}", flush=True)
     server.serve_forever()

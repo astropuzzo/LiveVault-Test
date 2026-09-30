@@ -1,50 +1,69 @@
 import contextlib
 from pathlib import Path
 from types import SimpleNamespace
+from datetime import datetime, timezone
 
 import pytest
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 
 from app import workers
 from app import storage_handoff
+from app.db import Base, Recording
 from app.utils import generate_thumbnail
 
 
-@contextlib.contextmanager
-def _db_returning(current):
-    yield SimpleNamespace(get=lambda _model, _id: current)
-
-
-def test_uploaded_file_is_retained_until_thumbnail_is_ready(tmp_path: Path, monkeypatch):
+@pytest.fixture
+def uploaded_recording(tmp_path, monkeypatch):
+    engine = create_engine(f"sqlite:///{tmp_path / 'thumbnails.db'}")
+    Base.metadata.create_all(engine)
+    maker = sessionmaker(engine, expire_on_commit=False)
+    @contextlib.contextmanager
+    def scope():
+        with maker() as session:
+            yield session
+            session.commit()
+    monkeypatch.setattr(workers, "db_session", scope)
     media = tmp_path / "ready.mp4"
     media.write_bytes(b"video-bytes")
-    current = SimpleNamespace(local_deleted=False, upload_status="uploaded", thumbnail_status="pending")
+    with maker.begin() as session:
+        rec = Recording(source_id=1, source_name="Demo", session_id="s1", local_path=str(media), filename=media.name,
+                        started_at=datetime.now(timezone.utc), upload_status="uploaded", thumbnail_status="pending")
+        session.add(rec)
+        session.flush()
+        recording_id = rec.id
     manager = object.__new__(workers.WorkerManager)
     manager.last_errors = {}
+    monkeypatch.setattr(manager, "nsfw_hold_blocks_delete", lambda _rec: False)
+    yield maker, recording_id, media, manager
+    engine.dispose()
+
+
+def test_uploaded_file_is_retained_until_thumbnail_is_ready(uploaded_recording, monkeypatch):
+    maker, recording_id, media, manager = uploaded_recording
 
     monkeypatch.setattr(workers, "runtime", lambda: SimpleNamespace(delete_after_upload=True, generate_thumbnails=True))
-    monkeypatch.setattr(workers, "db_session", lambda: _db_returning(current))
-
-    assert manager._delete_uploaded_local_if_ready(1, media) is False
+    assert manager._delete_uploaded_local_if_ready(recording_id, media) is False
     assert media.exists()
-    assert current.local_deleted is False
+    with maker() as session:
+        assert session.get(Recording, recording_id).local_deleted is False
 
-    current.thumbnail_status = "ready"
-    assert manager._delete_uploaded_local_if_ready(1, media) is True
+    with maker.begin() as session:
+        session.get(Recording, recording_id).thumbnail_status = "ready"
+    assert manager._delete_uploaded_local_if_ready(recording_id, media) is True
     assert not media.exists()
-    assert current.local_deleted is True
+    with maker() as session:
+        rec = session.get(Recording, recording_id)
+        assert rec.local_deleted is True and rec.upload_status == "uploaded"
 
 
-def test_thumbnail_processing_always_blocks_auto_delete_even_if_feature_was_disabled(tmp_path: Path, monkeypatch):
-    media = tmp_path / "processing.mp4"
-    media.write_bytes(b"video-bytes")
-    current = SimpleNamespace(local_deleted=False, upload_status="uploaded", thumbnail_status="processing")
-    manager = object.__new__(workers.WorkerManager)
-    manager.last_errors = {}
+def test_thumbnail_processing_always_blocks_auto_delete_even_if_feature_was_disabled(uploaded_recording, monkeypatch):
+    maker, recording_id, media, manager = uploaded_recording
+    with maker.begin() as session:
+        session.get(Recording, recording_id).thumbnail_status = "processing"
 
     monkeypatch.setattr(workers, "runtime", lambda: SimpleNamespace(delete_after_upload=True, generate_thumbnails=False))
-    monkeypatch.setattr(workers, "db_session", lambda: _db_returning(current))
-
-    assert manager._delete_uploaded_local_if_ready(2, media) is False
+    assert manager._delete_uploaded_local_if_ready(recording_id, media) is False
     assert media.exists()
 
 

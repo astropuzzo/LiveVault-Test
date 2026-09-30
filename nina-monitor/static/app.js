@@ -6,11 +6,19 @@
   let previewPending = null;
   let lastSnapshot = null;
   let selectedFrameIndex = null;
+  let selectedFrameIdentity = null;
+  let inspectorSignature = '';
   let selectedEvidenceKey = null;
   let evidenceSignature = '';
   let tableSignature = '';
   let plotSignature = '';
   let lastPreviewAttempt = 0;
+  let previewEtag = null;
+  let previewObjectUrl = null;
+  let pendingPreviewObjectUrl = null;
+  let previewUtc = '';
+  let sessionEpoch = 0;
+  let activeStateRequest = null;
 
   const COLORS = {
     quality: '#8AB4F8', confidence: '#C58AF9', guide: '#81C995', stars: '#FDD663', background: '#F28B82',
@@ -47,19 +55,31 @@
     return 'N/A';
   }
   function isAbnormal(frame) { const s = String(frame?.status || '').toUpperCase(); return s.includes('REJECT') || s === 'WARNING' || s === 'ERROR'; }
+  function frameIdentity(frame) { return frame?.frameIndex == null && !frame?.timestampUtc ? null : `${frame.timestampUtc || ''}|${frame.frameIndex ?? ''}`; }
 
   async function jsonFetch(url, options = {}) {
-    const response = await fetch(url, {cache:'no-store',credentials:'same-origin',...options});
-    let payload = {}; try { payload = await response.json(); } catch (_) {}
-    if (!response.ok) { const error = new Error(payload.error || `HTTP ${response.status}`); error.status = response.status; error.payload = payload; throw error; }
-    return payload;
+    const controller=new AbortController(),abort=()=>controller.abort(),timer=setTimeout(abort,8000);
+    if(options.signal?.aborted)abort();else options.signal?.addEventListener('abort',abort,{once:true});
+    try {
+      const response = await fetch(url, {cache:'no-store',credentials:'same-origin',...options,signal:controller.signal});
+      let payload = {}; try { payload = await response.json(); } catch (_) {}
+      if (!response.ok) { const error = new Error(payload.error || `HTTP ${response.status}`); error.status = response.status; error.payload = payload; throw error; }
+      return payload;
+    } finally { clearTimeout(timer);options.signal?.removeEventListener('abort',abort); }
   }
   function showLogin(message = '') {
+    sessionEpoch++;activeStateRequest?.abort();previewPending=null;previewFrame=null;previewEtag=null;previewUtc='';lastPreviewAttempt=0;
+    if(previewObjectUrl)URL.revokeObjectURL(previewObjectUrl);previewObjectUrl=null;
+    if(pendingPreviewObjectUrl)URL.revokeObjectURL(pendingPreviewObjectUrl);pendingPreviewObjectUrl=null;
+    const image=$('#previewImage');image.onload=null;image.onerror=null;image.removeAttribute('src');image.hidden=true;$('#previewPlaceholder').hidden=false;
+    $('#previewState').textContent='Nessuna preview ricevuta';
+    selectedFrameIndex=null;selectedFrameIdentity=null;inspectorSignature='';lastSnapshot=null;tableSignature='';plotSignature='';evidenceSignature='';selectedEvidenceKey=null;
+    renderFrameInspector(null);$('#stellarTooltip').hidden=true;
     $('#appView').hidden = true; $('#loginView').hidden = false;
     const error = $('#loginError'); error.hidden = !message; error.textContent = message;
     stopPolling(); setTimeout(() => $('#loginPassword')?.focus(),0);
   }
-  function showApp() { $('#loginView').hidden = true; $('#appView').hidden = false; startPolling(); }
+  function showApp() { sessionEpoch++;$('#loginView').hidden = true; $('#appView').hidden = false; startPolling(); }
   function startPolling() { stopPolling(); refresh(true); pollTimer = setInterval(() => refresh(false),1000); }
   function stopPolling() { if (pollTimer) clearInterval(pollTimer); pollTimer = null; }
 
@@ -191,27 +211,51 @@
     $('#bestAcceptedBody').innerHTML=rows(best); $('#worstAcceptedBody').innerHTML=rows(worst);
   }
   function renderFrameInspector(frame) {
-    const host=$('#frameInspector'); if(!frame){host.className='inspector-empty';host.innerHTML='Seleziona un frame.';return;}
+    const host=$('#frameInspector'); if(!frame){host.className='inspector-empty';host.innerHTML='Seleziona un frame.';$('#inspectorHint').textContent='clicca una riga';return;}
     host.className='inspector'; host.innerHTML=`<div class="inspector-file"><div><span>FILE</span><strong>${esc(fileName(frame))}</strong><small>${esc(text(frame.source))}${frame.sequenceTitle?` · ${esc(frame.sequenceTitle)}`:''}</small></div><span class="pill ${statusClass(frame.status)}">${esc(text(frame.status))}</span></div><div class="inspector-reason"><b>${esc(text(frame.probableCause,'Nessuna causa automatica'))}</b><span>${esc(text(frame.reason))}</span></div><div class="inspector-grid">${[['Quality',num(frame.quality,0)],['Evidence',num(frame.confidence,0,' / 100')],['Guide RMS',arcsec(frame.guideRmsArcsec)],['Max excursion',arcsec(frame.maxGuideExcursionArcsec)],['Guide pattern',text(frame.guidePattern)],['Stars',num(frame.stars,0)],['Stars baseline',num(frame.starBaseline,0)],['Stars Δ',signed(frame.starDeltaPercent)],['Background',num(frame.background,2)],['BG baseline',num(frame.backgroundBaseline,2)],['BG Δ',signed(frame.backgroundDeltaPercent)],['File action',text(frame.fileDisposition)],['Trend',trendText(frame)],['Target / filter',`${text(frame.target)} · ${text(frame.filter)}`],['Exposure',num(frame.exposureSeconds,1,' s')],['Gain / bin',`G${num(frame.gain,0)} · ${num(frame.binX,0)}×${num(frame.binY,0)}`]].map(([k,v])=>`<div class="inspector-metric"><span>${esc(k)}</span><b>${esc(v)}</b></div>`).join('')}</div>`;
     if(frame.imageEvidenceAvailable || frame.imageEvidenceAttempted)host.insertAdjacentHTML('beforeend',evidenceMarkup(frame,'it'));
     $('#inspectorHint').textContent=`frame #${num(frame.frameIndex,0)} · ${when(frame.timestampUtc,true)}`;
   }
   function renderTables(frames) {
-    const list=Array.isArray(frames)?frames:[]; const rejected=list.filter(f=>String(f.status||'').toUpperCase().includes('REJECT')||f.guideFalsePositive).slice(-80).reverse();
+    const list=Array.isArray(frames)?frames:[]; const rejected=list.filter(f=>String(f.status||'').toUpperCase().includes('REJECT')||f.guideFalsePositive||f.starCountFalsePositive).slice(-80).reverse();
     $('#rejectedTableBody').innerHTML=rejected.length?rejected.map(f=>`<tr class="${statusClass(f.status)}${Number(f.frameIndex)===selectedFrameIndex?' selected':''}" tabindex="0" role="button" aria-label="Esamina frame ${esc(f.frameIndex)}" data-frame-id="${esc(f.frameIndex)}"><td>${esc(num(f.frameIndex,0))}</td><td class="filename">${esc(fileName(f))}</td><td>${esc(text(f.fileDisposition))}</td><td>${esc(num(f.quality,0))}</td><td>${esc(num(f.confidence,0))}</td><td>${esc(arcsec(f.guideRmsArcsec))}</td><td>${esc(signed(f.starDeltaPercent))}</td><td>${esc(signed(f.backgroundDeltaPercent))}</td><td class="cause">${esc(text(f.probableCause))}</td></tr>`).join(''):'<tr class="empty-row"><td colspan="9">Nessuno scarto o recupero nella cronologia ricevuta.</td></tr>';
     const history=list.slice(-80); $('#frameHistoryBody').innerHTML=history.length?history.map(f=>`<tr class="${statusClass(f.status)}${Number(f.frameIndex)===selectedFrameIndex?' selected':''}" tabindex="0" role="button" aria-label="Esamina frame ${esc(f.frameIndex)}" data-frame-id="${esc(f.frameIndex)}"><td>${esc(num(f.frameIndex,0))}</td><td>${esc(num(f.quality,0))}</td><td>${esc(num(f.confidence,0))}</td><td>${esc(text(f.status))}</td><td class="filename">${esc(fileName(f))}</td><td>${esc(arcsec(f.guideRmsArcsec))}</td><td>${esc(text(f.guidePattern))}</td><td>${esc(trendText(f))}</td><td>${esc(signed(f.starDeltaPercent))}</td><td>${esc(signed(f.backgroundDeltaPercent))}</td><td class="cause">${esc(text(f.probableCause))}</td></tr>`).join(''):'<tr class="empty-row"><td colspan="11">No QSM frames.</td></tr>';
   }
 
-  function requestPreview(frame, syntheticMode) {
-    const frameId=frame?.timestampUtc || frame?.frameIndex; if(frameId==null || previewFrame===frameId || previewPending===frameId || Date.now()-lastPreviewAttempt<5000)return; previewPending=frameId;lastPreviewAttempt=Date.now();
-    const image=$('#previewImage'),placeholder=$('#previewPlaceholder'),state=$('#previewState'); state.textContent=syntheticMode?'Cerco l’ultimo LIGHT reale ricevuto da N.I.N.A.…':`Carico preview ${fileName(frame)}…`;
-    image.onload=()=>{previewFrame=frameId;previewPending=null;image.hidden=false;placeholder.hidden=true;state.textContent=syntheticMode?'Ultimo LIGHT reale ricevuto da N.I.N.A.':`${fileName(frame)} · ${text(frame.filter,'senza filtro')} · ${num(frame.exposureSeconds,1,' s')}`;};
-    image.onerror=()=>{previewPending=null;if(previewFrame==null){image.hidden=true;placeholder.hidden=false;}state.textContent=syntheticMode?'Nessun LIGHT reale disponibile da questa istanza N.I.N.A.':'Preview non ancora pronta · nuovo tentativo automatico';};
-    image.src=`api/preview.jpg?t=${Date.now()}`;
+  function previewCaption() {
+    const stamp=Date.parse(previewUtc),age=Number.isFinite(stamp)?Math.max(0,Math.floor((Date.now()-stamp)/1000)):null;
+    return `Ultimo LIGHT reale${age==null?'':` · ${when(previewUtc,true)} · ${age<60?`${age} s`:`${Math.floor(age/60)} min`} fa`}`;
+  }
+  async function requestPreview(frame, syntheticMode) {
+    const frameId=frameIdentity(frame)||'unassessed',epoch=sessionEpoch;
+    if(previewPending!==null||Date.now()-lastPreviewAttempt<(previewFrame===frameId?15000:5000))return;
+    previewPending=frameId;lastPreviewAttempt=Date.now();
+    const image=$('#previewImage'),placeholder=$('#previewPlaceholder'),state=$('#previewState');
+    if(!previewObjectUrl)state.textContent='Cerco l’ultimo LIGHT reale ricevuto da N.I.N.A.…';
+    const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),8000);
+    try {
+      const response=await fetch('api/preview.jpg',{cache:'no-store',credentials:'same-origin',signal:controller.signal,headers:previewEtag?{'If-None-Match':previewEtag}:{}});
+      if(epoch!==sessionEpoch)return;
+      if(response.status===401){showLogin('Sessione scaduta. Accedi di nuovo.');return;}
+      if(response.status!==304&&!response.ok)throw new Error(`HTTP ${response.status}`);
+      previewUtc=response.headers.get('X-QSM-Preview-Utc')||previewUtc;
+      if(response.status===304){previewFrame=frameId;state.textContent=previewCaption();previewPending=null;return;}
+      if((response.headers.get('Content-Type')||'').split(';')[0].trim().toLowerCase()!=='image/jpeg')throw new Error('Preview non valida');
+      const blob=await response.blob();if(epoch!==sessionEpoch)return;
+      const objectUrl=URL.createObjectURL(blob),etag=response.headers.get('ETag');
+      pendingPreviewObjectUrl=objectUrl;
+      image.onload=()=>{if(epoch!==sessionEpoch){URL.revokeObjectURL(objectUrl);return;}if(previewObjectUrl)URL.revokeObjectURL(previewObjectUrl);pendingPreviewObjectUrl=null;previewObjectUrl=objectUrl;previewEtag=etag;previewFrame=frameId;previewPending=null;image.hidden=false;placeholder.hidden=true;state.textContent=previewCaption();};
+      image.onerror=()=>{URL.revokeObjectURL(objectUrl);if(epoch!==sessionEpoch)return;pendingPreviewObjectUrl=null;previewPending=null;previewFrame=null;if(!previewObjectUrl){image.hidden=true;placeholder.hidden=false;}state.textContent='Preview non ancora pronta · nuovo tentativo automatico';};
+      image.src=objectUrl;
+    } catch(error) {
+      if(epoch!==sessionEpoch)return;
+      previewPending=null;previewFrame=null;
+      state.textContent=syntheticMode?'Nessun LIGHT reale disponibile da questa istanza N.I.N.A.':'Preview non disponibile · nuovo tentativo automatico';
+    } finally { clearTimeout(timer); }
   }
 
   function selectFrame(frameIndex) {
-    const frames=Array.isArray(lastSnapshot?.frames)?lastSnapshot.frames:[]; const frame=frames.find(f=>Number(f.frameIndex)===Number(frameIndex)); if(!frame)return; selectedFrameIndex=Number(frame.frameIndex);renderFrameInspector(frame);renderTables(frames);
+    const frames=Array.isArray(lastSnapshot?.frames)?lastSnapshot.frames:[]; const frame=frames.find(f=>Number(f.frameIndex)===Number(frameIndex)); if(!frame)return; selectedFrameIndex=Number(frame.frameIndex);selectedFrameIdentity=frameIdentity(frame);inspectorSignature=JSON.stringify(frame);renderFrameInspector(frame);renderTables(frames);
   }
 
   function render(payload) {
@@ -220,6 +264,7 @@
     if(!payload.reachable||!payload.snapshot){banner.classList.remove('live');$('#bannerTitle').textContent=payload.reachable?'QSM collegato · nessuna sessione attiva':'N.I.N.A. non disponibile';$('#bannerText').textContent=payload.message||'—';empty.hidden=false;dashboard.hidden=true;$('#emptyTitle').textContent=payload.configured?'PC N.I.N.A. non raggiungibile':'Collegamento N.I.N.A. da configurare';$('#emptyText').textContent=payload.message||'Configura QSM sul PC N.I.N.A. e riavvia il container.';return;}
     empty.hidden=true;dashboard.hidden=false;
     const snapshot=payload.snapshot||{},summary=snapshot.summary||{},frame=snapshot.currentFrame||{},guide=snapshot.guidingLive||{},mode=snapshot.mode||{},settings=snapshot.settings||{},frames=Array.isArray(snapshot.frames)?snapshot.frames:[]; frames.forEach(f=>{if(['LEARNING','ERROR'].includes(String(f.status).toUpperCase()))f.quality=null;});if(['LEARNING','ERROR'].includes(String(frame.status).toUpperCase()))frame.quality=null;lastSnapshot=snapshot;
+    if(selectedFrameIdentity!=null){const selected=frames.find(f=>frameIdentity(f)===selectedFrameIdentity);if(!selected){selectedFrameIndex=null;selectedFrameIdentity=null;inspectorSignature='';renderFrameInspector(null);}else{const signature=JSON.stringify(selected);if(signature!==inspectorSignature){renderFrameInspector(selected);inspectorSignature=signature;}}}
     const synthetic=Boolean(mode.syntheticMode),scope=text(mode.monitoringScope,'AdvancedSequencerLights'); $('#modeTag').textContent=synthetic?'SYNTHETIC LAB':'LIVE';$('#modeTag').classList.toggle('synthetic',synthetic);
     banner.classList.toggle('live',Boolean(payload.sessionActive));$('#bannerTitle').textContent=synthetic?`Synthetic Lab${mode.syntheticSessionName?` · ${mode.syntheticSessionName}`:''}`:payload.sessionActive?'Sessione N.I.N.A. attiva':'QSM collegato · nessuna sessione attiva';$('#bannerText').textContent=synthetic?`${text(mode.syntheticStatus,'LAB')} · QSM sintetico + PHD2/preview reali separati`:(payload.message||'—');
 
@@ -229,11 +274,11 @@
     const events=groupEvents(frames);$('#eventCountValue').textContent=`${events.length} session events`;
     $('#capturedValue').textContent=num(summary.captured,0);$('#usableValue').textContent=num(summary.usable,0);$('#rejectedValue').textContent=num(summary.rejected,0);$('#acceptanceValue').textContent=num(summary.acceptanceRate,1,'%');$('#sessionQualityValue').textContent=summary.usable>0?num(summary.sessionQuality,0):'—';$('#sessionConfidenceValue').textContent=summary.usable>0?num(summary.sessionConfidence,0):'—';
     const sig=JSON.stringify(frames), ps=JSON.stringify(settings);if(sig!==tableSignature||ps!==plotSignature){renderPluginTimeline(frames,settings);renderSessionEvents(events);renderRankings(frames);renderTables(frames);tableSignature=sig;plotSignature=ps;}renderGuide(guide,settings);renderStellar(snapshot);$('#sessionNote').textContent=`${num(summary.learning||0)} in apprendimento · ${num(summary.errors||0)} errori`;
-    if(selectedFrameIndex!=null&&!frames.some(f=>Number(f.frameIndex)===selectedFrameIndex)){selectedFrameIndex=null;renderFrameInspector(null);}
+    if(previewObjectUrl&&previewPending===null)$('#previewState').textContent=previewCaption();
     requestPreview(frame,synthetic);
   }
 
-  async function refresh(force=false){if(busy||document.hidden)return;busy=true;try{render(await jsonFetch(`api/state${force?'?force=1':''}`));}catch(error){if(error.status===401){showLogin('Sessione scaduta. Accedi di nuovo.');return;}render({configured:true,reachable:false,sessionActive:false,message:`Monitor non disponibile: ${error.message}`,snapshot:null});}finally{busy=false;}}
+  async function refresh(force=false){if(busy||document.hidden)return;busy=true;const epoch=sessionEpoch,controller=new AbortController();activeStateRequest=controller;try{const payload=await jsonFetch(`api/state${force?'?force=1':''}`,{signal:controller.signal});if(epoch===sessionEpoch&&!$('#appView').hidden)render(payload);}catch(error){if(epoch!==sessionEpoch)return;if(error.status===401){showLogin('Sessione scaduta. Accedi di nuovo.');return;}render({configured:true,reachable:false,sessionActive:false,message:error.name==='AbortError'?'Monitor non disponibile: richiesta scaduta.':`Monitor non disponibile: ${error.message}`,snapshot:null});}finally{if(activeStateRequest===controller)activeStateRequest=null;busy=false;}}
 function evidenceMarkup(f, lang = 'en') {
   const it = lang === 'it', t = (a,b) => it ? a : b;
   const escape = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -273,7 +318,7 @@ function evidenceMarkup(f, lang = 'en') {
     const key=f=>`${f.timestampUtc||''}|${f.frameIndex}`;
     const selector=$('#stellarSelect');
     if(!list.some(f=>key(f)===selectedEvidenceKey))selectedEvidenceKey=list.length?key(list[0]):null;
-    const options=list.map(f=>`<option value="${esc(key(f))}">#${esc(f.frameIndex)} · ${(f.guideFalsePositive||f.starCountFalsePositive)&&!String(f.status).toUpperCase().includes('REJECT')?'Recuperato':text(f.status)} · ${esc(fileName(f))}</option>`).join('');
+    const options=list.map(f=>`<option value="${esc(key(f))}">#${esc(f.frameIndex)} · ${(f.guideFalsePositive||f.starCountFalsePositive)&&!String(f.status).toUpperCase().includes('REJECT')?'Recuperato':esc(text(f.status))} · ${esc(fileName(f))}</option>`).join('');
     if(selector.innerHTML!==options)selector.innerHTML=options;
     selector.hidden=!list.length;selector.value=selectedEvidenceKey||'';
     $('#stellarCount').textContent=`${list.length} verificati · ${list.filter(f=>(f.guideFalsePositive||f.starCountFalsePositive)&&!String(f.status).toUpperCase().includes('REJECT')).length} recuperati`;

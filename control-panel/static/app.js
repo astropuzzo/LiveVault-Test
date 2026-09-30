@@ -34,8 +34,8 @@ let currentView = VALID_VIEWS.has(location.hash.slice(1)) ? location.hash.slice(
 const powerProfiles = [
   {key:'eco', name:'ECO', glyph:'E', governor:'powersave', mhz:900, description:'Il nodo respira piano: consumi e temperatura ridotti per monitoraggio e servizi leggeri.'},
   {key:'balanced', name:'Bilanciato', glyph:'B', governor:'schedutil', mhz:1200, description:'Il punto dolce: consumi contenuti e accelerazione immediata quando LiveVault ne ha bisogno.'},
-  {key:'performance', name:'Performance', glyph:'P', governor:'schedutil', mhz:1500, description:'Risposta rapida con frequenza dinamica completa, ideale per più stream simultanei.'},
-  {key:'max', name:'MAX', glyph:'M', governor:'performance', mhz:1500, description:'Massima reattività costante entro i limiti ufficiali del Compute Module 4.'},
+  {key:'performance', name:'Performance', glyph:'P', governor:'schedutil', mhz:1800, description:'Risposta rapida con frequenza dinamica completa, ideale per più stream simultanei.'},
+  {key:'max', name:'MAX', glyph:'M', governor:'performance', mhz:1800, description:'Massima reattività costante entro il limite configurato sul nodo.'},
 ];
 
 const actionLabels = {
@@ -458,6 +458,8 @@ function renderMediaTrackControls(plan, selectedAudio, selectedSubtitle, onAudio
 let mediaProfile = {continue:[], recently_played:[], favorites:[], active_streams:[], stats:{known_files:0,known_bytes:0}};
 let mediaFavoriteKeys = new Set();
 let mediaHomeLoadedAt = 0;
+let mediaHomeRequest = null;
+let mediaHomeRefreshQueued = false;
 function isMediaFavorite(path, uuid = mediaUuid) { return mediaFavoriteKeys.has(`${uuid}:${path}`); }
 async function toggleMediaFavorite(path, name = '', uuid = mediaUuid) {
   if (!uuid || !path) return false;
@@ -476,11 +478,39 @@ function mediaResumePosition(uuid, path) {
   const row = rows.find(item => item.uuid === uuid && item.path === path);
   return Number(row?.position || 0);
 }
+const MEDIA_PROGRESS_INTERVAL_MS = 10000;
+const mediaProgressWrites = new Map();
 async function saveMediaProgress(media, force = false) {
   if (!media || !mediaPlayerUuid || !mediaPlayerPath || !Number.isFinite(media.currentTime)) return;
   const position=mediaPlaybackBase + media.currentTime; const duration=mediaPlaybackDuration || media.duration || 0;
-  if (!duration || (!force && position < 2)) return;
-  try { await fetch('/api/media/progress',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:JSON.stringify({uuid:mediaPlayerUuid,path:mediaPlayerPath,position,duration}),signal:AbortSignal.timeout(8000)}); } catch (_) {}
+  if (!signedIn || !csrf || !Number.isFinite(position) || !Number.isFinite(duration) || duration <= 0 || (!force && (document.hidden || position < 2))) return;
+  const key = `${mediaPlayerUuid}\0${mediaPlayerPath}`;
+  let write = mediaProgressWrites.get(key);
+  if (!write) { write = {lastSavedAt:0, pending:null, request:null}; mediaProgressWrites.set(key, write); }
+  if (!force && (write.request || Date.now() - write.lastSavedAt < MEDIA_PROGRESS_INTERVAL_MS)) return write.request;
+  // Snapshot identity before awaiting: closing/switching players must save the
+  // old file. A forced close supersedes a pending sample and is sent in order.
+  write.pending = {uuid:mediaPlayerUuid, path:mediaPlayerPath, position, duration};
+  if (write.request) return write.request;
+  write.request = (async () => {
+    while (write.pending) {
+      const payload = write.pending; write.pending = null;
+      try {
+        const response = await fetch('/api/media/progress',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:JSON.stringify(payload),signal:AbortSignal.timeout(8000)});
+        if (response.ok) write.lastSavedAt = Date.now();
+        if (response.status === 401) { write.pending = null; showLogin(); }
+      } catch (_) {}
+    }
+  })().finally(() => {
+    write.request = null;
+    if (mediaProgressWrites.size > 64) {
+      for (const [oldKey, oldWrite] of mediaProgressWrites) {
+        if (oldKey !== key && !oldWrite.request) mediaProgressWrites.delete(oldKey);
+        if (mediaProgressWrites.size <= 64) break;
+      }
+    }
+  });
+  return write.request;
 }
 function mediaProfileCard(item, kind='history') {
   const available = item.available !== false;
@@ -507,12 +537,24 @@ function renderMediaHome(profile = {}) {
   bindMediaProfileCards(); renderMediaFiles();
 }
 async function loadMediaHome(force=false) {
-  if (!signedIn || (currentView !== 'media' && !force)) return;
-  const now=Date.now(); if (!force && now-mediaHomeLoadedAt<10000) return; mediaHomeLoadedAt=now;
-  try {
-    const response=await fetch('/api/media/home',{cache:'no-store',signal:AbortSignal.timeout(12000)}); if(response.status===401)return showLogin();
-    const result=await response.json(); if(response.ok&&result.ok) renderMediaHome(result);
-  } catch (_) {}
+  if (!signedIn || document.hidden || (currentView !== 'media' && !force)) return;
+  if (mediaHomeRequest) {
+    if (force) mediaHomeRefreshQueued = true;
+    return mediaHomeRequest;
+  }
+  const now=Date.now(); if (!force && now-mediaHomeLoadedAt<10000) return;
+  mediaHomeRequest = (async () => {
+    do {
+      mediaHomeRefreshQueued = false;
+      try {
+        const response=await fetch('/api/media/home',{cache:'no-store',signal:AbortSignal.timeout(12000)}); if(response.status===401)return showLogin();
+        const result=await response.json();
+        // A forced refresh after a mutation needs a snapshot taken afterwards.
+        if (response.ok && result.ok && signedIn && !document.hidden && !mediaHomeRefreshQueued) { mediaHomeLoadedAt=Date.now(); renderMediaHome(result); }
+      } catch (_) {}
+    } while (mediaHomeRefreshQueued && signedIn && !document.hidden);
+  })().finally(() => { mediaHomeRequest = null; mediaHomeRefreshQueued = false; });
+  return mediaHomeRequest;
 }
 function mediaCategoryLabel(category) { return ({video:'VIDEO',audio:'AUDIO',image:'FOTO',document:'DOC',archive:'ARCHIVIO',other:'FILE',dir:'CARTELLA'})[category] || 'FILE'; }
 function mediaDate(timestamp) { return timestamp ? new Date(timestamp * 1000).toLocaleDateString('it-IT',{day:'2-digit',month:'short',year:'numeric'}) : '—'; }
@@ -521,6 +563,7 @@ function mediaDuration(value) {
   return h ? `${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}` : `${m}:${String(s).padStart(2,'0')}`;
 }
 let mediaItems = [];
+let mediaItemsUuid = '';
 let mediaLibrary = null;
 let mediaFilter = 'all';
 let mediaView = 'grid';
@@ -552,7 +595,7 @@ function mediaCard(item) {
 function renderMediaFiles() {
   const host = $('#mediaFiles');
   if (!mediaUuid) { host.className = `media-files-v2 ${mediaView}`; host.innerHTML = '<div class="media-empty"><strong>Nessun supporto</strong><small>Collega un’unità USB per iniziare.</small></div>'; return; }
-  const items = mediaFilteredItems();
+  const items = mediaItemsUuid === mediaUuid ? mediaFilteredItems() : [];
   host.className = `media-files-v2 ${mediaView}`;
   host.innerHTML = items.length ? items.map(mediaCard).join('') : '<div class="media-empty"><strong>Nessun risultato</strong><small>Prova a cambiare ricerca o filtro.</small></div>';
   $$('.media-dir').forEach(button => button.addEventListener('click', () => loadMediaDirectory(button.dataset.mediaPath)));
@@ -599,7 +642,7 @@ async function loadMediaDirectory(path = mediaPath) {
     const result = await response.json();
     if (uuid !== mediaUuid || request !== mediaDirectoryRequest) return;
     if (!response.ok || !result.ok) throw new Error(result.error || `HTTP ${response.status}`);
-    mediaPath = result.path || ''; mediaItems = result.items || [];
+    mediaPath = result.path || ''; mediaItems = result.items || []; mediaItemsUuid = uuid;
     $('#mediaDriveLabel').textContent = result.label || 'USB'; $('#mediaPath').textContent = `/${mediaPath}`;
     $('#mediaBack').disabled = !mediaPath; $('#mediaBack').dataset.parent = result.parent || '';
     renderMediaFiles();
@@ -644,29 +687,31 @@ async function openMediaPlayer(path,name,category,uuid=mediaUuid,options={}){
 }
 function renderMedia(media = {}) {
   const devices = media.devices || [], mounted = devices.filter(device => device.mounted);
+  if (mediaUuid && !mounted.some(device => device.uuid === mediaUuid)) { mediaUuid=''; mediaPath=''; mediaItems=[]; mediaItemsUuid=''; renderMediaLibrary(null); }
+  if (!mediaUuid && mounted.length) { mediaUuid=mounted[0].uuid; mediaPath=''; }
+  const selected = mounted.find(device => device.uuid === mediaUuid);
+  const smbPath = selected ? (selected.smb_path || media.smb_path || '\\\\OPENASTRO\\Media') : 'Seleziona un supporto online';
   $('#mediaChip').textContent = mounted.length ? `${mounted.length} support${mounted.length === 1 ? 'o' : 'i'} online` : 'Nessun supporto';
   $('#mediaChip').className = `status-chip ${mounted.length ? 'good' : ''}`;
-  $('#mediaSmbPath').textContent = media.smb_path || '\\\\OPENASTRO\\Media'; $('#mediaDlnaName').textContent = media.dlna_name || 'OpenAstro Media';
+  $('#mediaSmbPath').textContent = smbPath; $('#mediaUploadSmbPath').textContent = smbPath;
+  $('#mediaUploadCopySmb').disabled = !selected;
+  $('#mediaDlnaName').textContent = media.dlna_name || 'OpenAstro Media';
   $('#mediaSmbState').textContent = media.smb === 'active' ? 'ON' : 'OFF'; $('#mediaSmbState').className = media.smb === 'active' ? 'good' : 'bad';
   $('#mediaDlnaState').textContent = media.dlna === 'active' ? 'ON' : 'OFF'; $('#mediaDlnaState').className = media.dlna === 'active' ? 'good' : 'bad';
   $('#mediaDeviceList').innerHTML = devices.length ? devices.map(device => {
     const usage = device.usage, usedPct = usage?.total ? usage.used/usage.total*100 : 0;
     return `<div class="media-device ${device.uuid === mediaUuid ? 'selected' : ''} ${device.mounted?'':'offline'}"><button class="media-select" data-media-uuid="${escapeHtml(device.uuid)}" ${device.mounted?'':'disabled'}><strong>${escapeHtml(device.label || 'USB')}</strong><small>${escapeHtml(device.model || '')}</small><span>${usage ? `${bytes(usage.free)} liberi · ${escapeHtml(device.fstype.toUpperCase())}` : `${escapeHtml(device.fstype.toUpperCase())} · ricordato / offline`}</span><div class="mini-capacity"><i style="width:${usedPct.toFixed(1)}%"></i></div></button>${device.mounted ? (device.ejectable === false ? '<span class="media-offline-chip">NVME</span>' : `<button class="media-eject" data-media-eject="${escapeHtml(device.uuid)}" title="Espelli in sicurezza">EJECT</button>`) : '<span class="media-offline-chip">OFFLINE</span>'}</div>`;
   }).join('') : '<div class="media-empty side"><strong>Nessuna USB</strong><small>Collega un supporto rimovibile.</small></div>';
-  $$('.media-select').forEach(button => button.addEventListener('click', () => { mediaUuid = button.dataset.mediaUuid; mediaPath=''; mediaSignature=''; mediaLibrary=null; renderMedia(media); loadMediaDirectory(''); loadMediaLibrary(); }));
+  $$('.media-select').forEach(button => button.addEventListener('click', () => { mediaUuid = button.dataset.mediaUuid; mediaPath=''; mediaSignature=''; mediaItems=[]; mediaItemsUuid=mediaUuid; renderMediaLibrary(null); renderMediaFiles(); renderMedia(media); }));
   $$('.media-eject').forEach(button => button.addEventListener('click', event => { event.stopPropagation(); openConfirm('media_eject',{uuid:button.dataset.mediaEject}); }));
-  if (mediaUuid && !mounted.some(device => device.uuid === mediaUuid)) { mediaUuid=''; mediaPath=''; mediaItems=[]; mediaLibrary=null; }
-  if (!mediaUuid && mounted.length) { mediaUuid=mounted[0].uuid; mediaPath=''; }
-  const selected = mounted.find(device => device.uuid === mediaUuid);
   if (selected) {
-    $('#mediaSmbPath').textContent = selected.smb_path || media.smb_path || '\\OPENASTRO\Media';
     $('#mediaDriveModel').textContent = `${selected.model || 'USB STORAGE'} · ${String(selected.fstype||'').toUpperCase()} · READ-ONLY`;
     $('#mediaDriveName').textContent = selected.label || 'Media USB'; const usage=selected.usage;
     $('#mediaDriveMeta').textContent = `${bytes(usage?.used||0)} usati su ${bytes(usage?.total||selected.size||0)}`; $('#mediaDriveFree').textContent = bytes(usage?.free||0); $('#mediaDriveBar').style.width = `${usage?.total ? usage.used/usage.total*100 : 0}%`;
   } else { $('#mediaDriveModel').textContent='NESSUN SUPPORTO'; $('#mediaDriveName').textContent='Media USB'; $('#mediaDriveMeta').textContent='Inserisci un dispositivo USB rimovibile.'; $('#mediaDriveFree').textContent='—'; $('#mediaDriveBar').style.width='0%'; }
   const signature = mounted.map(device => `${device.uuid}:${device.usage?.used||0}`).join('|');
   if (currentView === 'media' && mediaUuid && signature !== mediaSignature) { mediaSignature=signature; loadMediaDirectory(mediaPath); loadMediaLibrary(); }
-  if (!mounted.length) { mediaItems=[]; renderMediaFiles(); renderMediaLibrary(null); $('#mediaRecentWrap').hidden=true; }
+  if (!mounted.length) { mediaItems=[]; mediaItemsUuid=''; renderMediaFiles(); renderMediaLibrary(null); $('#mediaRecentWrap').hidden=true; }
 }
 
 function selectView(view, updateHash = false) {
@@ -708,6 +753,7 @@ function dashboardStatusCard(id, state, detail, tone = '') {
 
 function render(data) {
   latestState = data;
+  globalThis.OpenAstroDiagnostics?.update(data);
   document.body.classList.remove('stale','is-loading');
   csrf = data.csrf || csrf;
   const host = data.host;

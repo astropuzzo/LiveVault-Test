@@ -13,6 +13,7 @@ import subprocess
 import threading
 import time
 import urllib.request
+import urllib.error
 
 import media_center
 
@@ -30,13 +31,21 @@ MAX_HLS_JOBS = 2
 HLS_IDLE_SECONDS = 600
 
 
-def _active_recorders() -> int:
+def _active_recorders() -> int | None:
     try:
         with urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=2) as response:
             payload = json.loads(response.read().decode('utf-8'))
-            return int((payload.get('worker') or {}).get('active_recorders') or 0)
+    except urllib.error.HTTPError as exc:
+        # Degraded health can still report the real capture count in its body.
+        try:
+            payload = json.loads(exc.read().decode('utf-8'))
+        except (OSError, ValueError):
+            return None
     except Exception:
-        return 0
+        return None
+    worker = payload.get('worker') if isinstance(payload, dict) else None
+    count = worker.get('active_recorders') if isinstance(worker, dict) else None
+    return count if isinstance(count, int) and not isinstance(count, bool) and count >= 0 else None
 
 
 def _temperature() -> float | None:
@@ -190,7 +199,9 @@ def playback_plan(uuid: str, relative: str, *, audio_stream: int | None = None) 
     pressure = _pressure()
     available = mode not in {'unsupported', 'download'}
     if mode == 'hls_transcode':
-        if pressure['active_recorders'] > 0:
+        if pressure['active_recorders'] is None:
+            available = False; reason = 'Transcode video sospeso: stato registrazioni LiveVault non verificabile'
+        elif pressure['active_recorders'] > 0:
             available = False; reason = 'Transcode video sospeso mentre LiveVault registra'
         elif pressure['temperature'] is not None and pressure['temperature'] >= 75:
             available = False; reason = 'Transcode sospeso: temperatura elevata'
@@ -242,6 +253,18 @@ def _cleanup_locked() -> None:
                     shutil.rmtree(child, ignore_errors=True)
             except OSError:
                 pass
+
+
+def maintenance_loop() -> None:
+    """Reap abandoned HLS jobs even when every browser has disconnected."""
+    while True:
+        try:
+            with _LOCK:
+                _cleanup_locked()
+        except Exception:
+            # A transient I/O error must not disable later cleanup passes.
+            print('OpenAstro HLS cleanup temporarily unavailable', flush=True)
+        time.sleep(30)
 
 
 def _stop_locked(token: str) -> None:

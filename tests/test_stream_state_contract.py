@@ -57,7 +57,7 @@ def test_stripchat_private_paid_and_geo_states_are_nonrecordable():
 
     assert (private.status, private.live, private.recordable) == ("private", True, False)
     # Away is intentionally normalized into the app's tip-jar/non-public bucket.
-    assert (away.status, away.live, away.recordable) == ("tipjar", True, False)
+    assert (away.status, away.live, away.recordable) == ("away", True, False)
     assert (restricted.status, restricted.live, restricted.recordable) == ("restricted", True, False)
 
 

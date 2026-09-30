@@ -11,10 +11,14 @@ let settingsData = null;
 let libraryMeta = {categories: [], collections: [], smart_counts: {}};
 let libraryProfiles = [];
 let profileData = null;
+let profileRequestVersion = 0;
 let statisticsData = null;
 let statisticsDays = 30;
 let profileStatisticsDays = 30;
 let statisticsBusy = false;
+let statisticsRequest = null;
+let statisticsRequestVersion = 0;
+let profileStatisticsRequestVersion = 0;
 let lastStatisticsLoad = 0;
 let refreshBusy = false;
 let lastRecordingLoad = 0;
@@ -448,7 +452,7 @@ async function api(url, options = {}) {
   }
   let data = {};
   try { data = await response.json(); } catch { /* empty response */ }
-  if (!response.ok) throw new Error(data.detail || data.message || `HTTP ${response.status}`);
+  if (!response.ok) throw new Error(typeof data.detail === 'string' ? data.detail : data.detail?.message || data.message || `HTTP ${response.status}`);
   return data;
 }
 
@@ -481,13 +485,15 @@ function closeModal(id) {
   modal.classList.add('hidden');
   if (!$$('.modal:not(.hidden)').length) document.body.classList.remove('modal-open');
   if (id === 'videoModal') stopVideo();
-  if (id === 'profileModal') profileData = null;
+  if (id === 'profileModal') { profileData = null; profileRequestVersion += 1; profileStatisticsRequestVersion += 1; }
 }
 
 // Fragmented captures have no duration in their header: the server exposes an
 // HLS byte-range playlist so the whole timeline is seekable immediately.
 let activeHls = null;
 let hlsLibrary = null;
+let videoRequestVersion = 0;
+let videoPlaylistRequest = null;
 
 function streamPlaylistUrl(url) {
   let path = '';
@@ -510,6 +516,9 @@ function loadHlsLibrary() {
 }
 
 function stopVideo() {
+  videoRequestVersion += 1;
+  videoPlaylistRequest?.abort();
+  videoPlaylistRequest = null;
   const player = $('#videoPlayer');
   if (activeHls) { activeHls.destroy(); activeHls = null; }
   player.pause();
@@ -522,33 +531,40 @@ async function playVideo(url, title) {
   if (!localUrl) return toast('Copia locale non disponibile', 'bad');
   const player = $('#videoPlayer');
   stopVideo();
+  const requestVersion = videoRequestVersion;
   $('#videoTitle').textContent = title;
   openModal('videoModal');
   const playlist = streamPlaylistUrl(localUrl);
   if (playlist) {
+    const controller = new AbortController();
+    videoPlaylistRequest = controller;
     try {
-      const response = await fetch(playlist, {credentials: 'same-origin', cache: 'no-store'});
+      const response = await fetch(playlist, {credentials: 'same-origin', cache: 'no-store', signal: AbortSignal.any([controller.signal, AbortSignal.timeout(20000)])});
+      if (requestVersion !== videoRequestVersion) return;
       if (response.ok) {
         if (player.canPlayType('application/vnd.apple.mpegurl')) {
           player.src = playlist;
           return;
         }
         const Hls = await loadHlsLibrary();
+        if (requestVersion !== videoRequestVersion) return;
         if (Hls?.isSupported()) {
-          activeHls = new Hls({enableWorker: false, maxBufferLength: 30, backBufferLength: 60});
-          activeHls.on(Hls.Events.ERROR, (_event, data) => {
-            if (!data.fatal) return;
-            activeHls?.destroy();
+          const hls = activeHls = new Hls({enableWorker: false, maxBufferLength: 30, backBufferLength: 60});
+          hls.on(Hls.Events.ERROR, (_event, data) => {
+            if (!data.fatal || requestVersion !== videoRequestVersion || activeHls !== hls) return;
+            hls.destroy();
             activeHls = null;
             player.src = localUrl;
           });
-          activeHls.loadSource(playlist);
-          activeHls.attachMedia(player);
+          hls.loadSource(playlist);
+          hls.attachMedia(player);
           return;
         }
       }
-    } catch (_error) { /* fall back to direct playback */ }
+    } catch (_error) { /* fall back to direct playback for the current request */ }
+    finally { if (videoPlaylistRequest === controller) videoPlaylistRequest = null; }
   }
+  if (requestVersion !== videoRequestVersion) return;
   player.src = localUrl;
 }
 
@@ -559,7 +575,7 @@ function openLocalVideo(url, title = 'Copia locale') {
 function statusLabel(value) {
   return ({
     recording: 'REC', live: 'LIVE', offline: 'Offline', paused: 'In pausa', archived: 'Archiviata',
-    private: 'Privata', tipjar: 'Tip-jar', restricted: 'Non accessibile',
+    private: 'Privata', away: 'AWAY', tipjar: 'Tip-jar', restricted: 'Non accessibile',
     error: 'Errore', unknown: '—', is_upcoming: 'Programmata', post_live: 'Appena terminata',
     was_live: 'Terminata', not_live: 'Non live'
   })[value] || value;
@@ -618,10 +634,10 @@ function buildLibraryProfiles() {
   libraryProfiles = [...profileGroups()].map(([profileId, rows]) => {
     const representative = rows.find(row => !row.archived) || rows[0];
     const statuses = rows.map(row => row.last_status);
-    const live = statuses.some(status => ['recording', 'live', 'private', 'tipjar', 'restricted'].includes(status));
+    const live = statuses.some(status => ['recording', 'live', 'private', 'away', 'tipjar', 'restricted'].includes(status));
     const error = rows.some(row => row.last_status === 'error' || String(row.last_error || '').trim());
     const enabled = rows.some(row => row.enabled && !row.archived);
-    const accessStatus = ['private', 'tipjar', 'restricted'].find(value => statuses.includes(value));
+    const accessStatus = ['private', 'away', 'tipjar', 'restricted'].find(value => statuses.includes(value));
     const status = live ? (statuses.includes('recording') ? 'recording' : accessStatus || 'live') : error ? 'error' : enabled ? 'offline' : 'paused';
     const categories = representative.categories || [];
     const collections = representative.collections || [];
@@ -717,7 +733,7 @@ function renderSources() {
     return;
   }
   root.innerHTML = rows.map(source => {
-    const live = ['recording', 'live', 'private', 'tipjar', 'restricted'].includes(source.last_status);
+    const live = ['recording', 'live', 'private', 'away', 'tipjar', 'restricted'].includes(source.last_status);
     const publicUrl = safeUrl(source.source_url);
     const cloudUrl = safeUrl(source.latest_cloud_url);
     const folderUrl = safeUrl(source.gofile_folder_url);
@@ -763,7 +779,7 @@ function tagMarkup(items, className = 'library-tag') {
 }
 
 function smartMatch(profile) {
-  if (librarySmart === 'live') return ['recording', 'live', 'private', 'tipjar', 'restricted'].includes(profile.status);
+  if (librarySmart === 'live') return ['recording', 'live', 'private', 'away', 'tipjar', 'restricted'].includes(profile.status);
   if (librarySmart === 'favorites') return profile.favorite;
   if (librarySmart === 'attention') return profile.attention;
   if (librarySmart === 'paused') return !profile.enabled;
@@ -800,7 +816,7 @@ function libraryCover(profile) {
 function renderLibraryCounts() {
   const counts = {
     all: libraryProfiles.length,
-    live: libraryProfiles.filter(profile => ['recording', 'live', 'private', 'tipjar', 'restricted'].includes(profile.status)).length,
+    live: libraryProfiles.filter(profile => ['recording', 'live', 'private', 'away', 'tipjar', 'restricted'].includes(profile.status)).length,
     favorites: libraryProfiles.filter(profile => profile.favorite).length,
     attention: libraryProfiles.filter(profile => profile.attention).length,
     paused: libraryProfiles.filter(profile => !profile.enabled).length,
@@ -905,6 +921,9 @@ async function loadLibraryMeta() {
 }
 
 async function openProfile(sourceId) {
+  const requestVersion = ++profileRequestVersion;
+  profileStatisticsRequestVersion += 1;
+  profileData = null;
   const source = sources.find(item => item.id === Number(sourceId));
   $('#profileTitle').textContent = source?.display_name || source?.name || 'Profilo';
   $('#profileProvider').textContent = '';
@@ -912,15 +931,20 @@ async function openProfile(sourceId) {
   $('#profileContent').innerHTML = '<div class="empty">Caricamento…</div>';
   openModal('profileModal');
   try {
-    profileData = await api(`/api/sources/${Number(sourceId)}/profile`);
+    const data = await api(`/api/sources/${Number(sourceId)}/profile`);
+    if (requestVersion !== profileRequestVersion) return;
     try {
-      profileData.activity_statistics = await api(`/api/library/profiles/${profileData.source.profile_id}/statistics?days=${profileStatisticsDays}`);
+      data.activity_statistics = await api(`/api/library/profiles/${data.source.profile_id}/statistics?days=${profileStatisticsDays}`);
     } catch (error) {
-      profileData.activity_statistics = null;
+      if (requestVersion !== profileRequestVersion) return;
+      data.activity_statistics = null;
       toast(`Statistiche profilo: ${error.message}`, 'bad');
     }
+    if (requestVersion !== profileRequestVersion) return;
+    profileData = data;
     renderProfile();
   } catch (error) {
+    if (requestVersion !== profileRequestVersion) return;
     $('#profileContent').innerHTML = `<div class="error-text">${esc(error.message)}</div>`;
   }
 }
@@ -994,6 +1018,7 @@ function renderProfile() {
 
 async function saveProfile(button) {
   if (!profileData) return;
+  const requestVersion = profileRequestVersion;
   const sourceId = profileData.source.id;
   const body = {
     display_name: $('#profileDisplayName').value.trim(),
@@ -1006,10 +1031,9 @@ async function saveProfile(button) {
     await api(`/api/sources/${sourceId}/library`, {method: 'PATCH', body: JSON.stringify(body)});
     toast('Profilo aggiornato');
     await refresh({includeRecordings: false});
-    profileData = await api(`/api/sources/${sourceId}/profile`);
-    profileData.activity_statistics = await api(`/api/library/profiles/${profileData.source.profile_id}/statistics?days=${profileStatisticsDays}`);
-    renderProfile();
+    if (requestVersion === profileRequestVersion) await openProfile(sourceId);
   } catch (error) {
+    if (requestVersion !== profileRequestVersion) return;
     const target = $('#profileSaveError');
     if (target) target.textContent = error.message;
   } finally {
@@ -1502,22 +1526,37 @@ function renderStatistics() {
 }
 
 async function loadStatistics(days = statisticsDays) {
-  if (statisticsBusy) return;
+  const requestedDays = Math.max(1, Math.min(365, Number(days) || 30));
+  if (statisticsRequest?.days === requestedDays) return statisticsRequest.promise;
+  const requestVersion = ++statisticsRequestVersion;
   statisticsBusy = true;
-  statisticsDays = Math.max(1, Math.min(365, Number(days) || 30));
-  try {
-    statisticsData = await api(`/api/statistics?days=${statisticsDays}`);
-    lastStatisticsLoad = Date.now();
-    renderStatistics();
-  } finally {
-    statisticsBusy = false;
-  }
+  statisticsDays = requestedDays;
+  const request = {days: requestedDays, promise: null};
+  statisticsRequest = request;
+  request.promise = (async () => {
+    try {
+      const data = await api(`/api/statistics?days=${requestedDays}`);
+      if (requestVersion !== statisticsRequestVersion) return;
+      statisticsData = data;
+      lastStatisticsLoad = Date.now();
+      renderStatistics();
+    } catch (error) {
+      if (requestVersion === statisticsRequestVersion) throw error;
+    } finally {
+      if (statisticsRequest === request) { statisticsRequest = null; statisticsBusy = false; }
+    }
+  })();
+  return request.promise;
 }
 
 async function loadProfileStatistics(days) {
   if (!profileData) return;
+  const profile = profileData;
+  const requestVersion = ++profileStatisticsRequestVersion;
   profileStatisticsDays = Math.max(1, Math.min(365, Number(days) || 30));
-  profileData.activity_statistics = await api(`/api/library/profiles/${profileData.source.profile_id}/statistics?days=${profileStatisticsDays}`);
+  const data = await api(`/api/library/profiles/${profile.source.profile_id}/statistics?days=${profileStatisticsDays}`);
+  if (profileData !== profile || requestVersion !== profileStatisticsRequestVersion) return;
+  profile.activity_statistics = data;
   renderProfile();
 }
 
@@ -2013,6 +2052,8 @@ $('#profileContent').addEventListener('click', async event => {
   const button = event.target.closest('[data-profile-action]');
   if (!button || !profileData) return;
   const action = button.dataset.profileAction;
+  const requestVersion = profileRequestVersion;
+  const profileSourceId = profileData.source.id;
   if (action === 'save') return saveProfile(button);
   if (action === 'manage-taxonomy') {
     closeModal('profileModal');
@@ -2074,11 +2115,8 @@ $('#profileContent').addEventListener('click', async event => {
       await api(`/api/sources/${source.id}`, {method: 'PATCH', body: JSON.stringify({enabled: !source.enabled})});
       toast(source.enabled ? 'Sorgente in pausa' : 'Sorgente riattivata');
     }
-    const sourceId = profileData.source.id;
     await refresh({includeRecordings: false});
-    profileData = await api(`/api/sources/${sourceId}/profile`);
-    profileData.activity_statistics = await api(`/api/library/profiles/${profileData.source.profile_id}/statistics?days=${profileStatisticsDays}`);
-    renderProfile();
+    if (requestVersion === profileRequestVersion) await openProfile(profileSourceId);
   } catch (error) { toast(error.message, 'bad'); }
   finally { setBusy(button, false); }
 });
@@ -2266,7 +2304,7 @@ function controlRoomProfileRows() {
     const previewSource = recordingRows.find(row => row.preview_url) || recordingRows[0] || liveRows[0] || rows[0];
     const actionSource = blockedRows[0] || recordingRows[0] || liveRows[0] || rows.find(row => row.enabled) || rows[0];
     const newest = field => rows.reduce((best, row) => timestamp(row[field]) > timestamp(best) ? row[field] : best, null);
-    const unavailable = ['private', 'tipjar', 'restricted'].includes(actionSource.pause_reason);
+    const unavailable = ['private', 'away', 'tipjar', 'restricted'].includes(actionSource.pause_reason);
     return {
       profile_id: profileId,
       source: actionSource,
@@ -2312,7 +2350,7 @@ function controlRoomPreviewMarkup(profile, wall = false) {
   const previewUrl = previewEnabled && source?.preview_url ? `${source.preview_url}?v=${timestamp(updated) || 0}` : '';
   const cover = safeUrl(source?.cover_thumbnail_url || '');
   const recordingLabel = profile.recording ? 'REC' : profile.live ? 'LIVE' : 'OFFLINE';
-  const unavailableLabel = {private: 'PRIVATA', tipjar: 'TIP-JAR', restricted: 'LIMITATA'}[source?.pause_reason] || '';
+  const unavailableLabel = {private: 'PRIVATA', away: 'AWAY', tipjar: 'TIP-JAR', restricted: 'LIMITATA'}[source?.pause_reason] || '';
   const alertLabel = unavailableLabel || (profile.blocked ? 'NON REGISTRATA' : '');
   const freshness = previewUrl ? (updated ? `Fotogramma · ${ago(updated)}` : 'Anteprima in caricamento') : cover ? 'Copertina archivio' : 'Anteprima non disponibile';
   return `<div class="cr-preview ${profile.blocked && !profile.unavailable ? 'attention' : ''} ${wall ? 'wall' : ''}">
@@ -2327,6 +2365,7 @@ function controlRoomPreviewMarkup(profile, wall = false) {
 function controlRoomStatusText(profile) {
   const source = profile.source;
   if (source.pause_reason === 'private') return 'ONLINE · PRIVATA';
+  if (source.pause_reason === 'away') return 'ONLINE · AWAY';
   if (source.pause_reason === 'tipjar') return 'ONLINE · TIP-JAR';
   if (source.pause_reason === 'restricted') return 'ONLINE · NON ACCESSIBILE';
   if (profile.blocked) {
@@ -2651,11 +2690,11 @@ function pulseRecordingFiles(session) {
 
 function pulseUnavailableIntervals(session) {
   return (Array.isArray(session?.access_intervals) ? session.access_intervals : [])
-    .filter(row => ['private', 'tipjar', 'restricted'].includes(row?.status) && timestamp(row?.started_at) && timestamp(row?.ended_at));
+    .filter(row => ['private', 'away', 'tipjar', 'restricted'].includes(row?.status) && timestamp(row?.started_at) && timestamp(row?.ended_at));
 }
 
 function accessStatusLabel(status) {
-  return {private: 'PRIVATA', tipjar: 'TIP-JAR', restricted: 'NON ACCESSIBILE'}[status] || 'ONLINE';
+  return {private: 'PRIVATA', away: 'AWAY', tipjar: 'TIP-JAR', restricted: 'NON ACCESSIBILE'}[status] || 'ONLINE';
 }
 
 function ensurePulseMediaPreview() {
@@ -2886,7 +2925,7 @@ function controlRoomPulseMarkup() {
   const hidden = Math.max(0, profileOrder.length - recentProfiles.length);
   const notice = controlRoomPulseLoading ? 'Caricamento cronologia…' : controlRoomPulseError ? (lastControlRoomPulseLoad ? `Cronologia non aggiornata · ultimo aggiornamento ${dateText(controlRoomPulseData.generated_at)}` : 'Cronologia non disponibile · nuovo tentativo automatico') : '';
   const footer = `<div class="cr-pulse-summary" role="status">${notice ? `<span>${esc(notice)}</span>` : ''}<span>${esc(`${recentProfiles.length} di ${profileOrder.length} profili · ${hours}h visualizzate · ${DISPLAY_TIME_ZONE}`)}</span>${controlRoomPulseData.truncated ? ' · Limite sessioni raggiunto: riduci la finestra per vedere tutti i dati.' : ''}${hidden || controlRoomPulseExpanded ? `<button class="btn quiet" data-pulse-expand type="button">${hidden ? `Mostra altri ${hidden} profili` : 'Mostra meno'}</button>` : ''}</div>`;
-  return `<section class="cr-pulse"><div class="cr-pulse-head"><div><strong>Cronologia</strong></div><div class="cr-pulse-head-right"><span class="cr-pulse-legend"><i class="live"></i>ONLINE <i class="private"></i>PRIVATA <i class="tipjar"></i>TIP-JAR <i class="rec"></i>REC <i class="processing"></i>IN ELABORAZIONE <i class="restricted"></i>LIMITATA <i class="missed"></i>NON REC</span><span>${controlRoomPulseData.hours || 12}h${hidden ? ` · +${hidden}` : ''}</span></div></div><div class="cr-pulse-scale"><span></span><div>${labels}</div></div>${rows || '<div class="empty">Nessuna sessione nei filtri e nella finestra visualizzata.</div>'}${footer}</section>`;
+  return `<section class="cr-pulse"><div class="cr-pulse-head"><div><strong>Cronologia</strong></div><div class="cr-pulse-head-right"><span class="cr-pulse-legend"><i class="live"></i>ONLINE <i class="private"></i>PRIVATA <i class="away"></i>AWAY <i class="tipjar"></i>TIP-JAR <i class="rec"></i>REC <i class="processing"></i>IN ELABORAZIONE <i class="restricted"></i>LIMITATA <i class="missed"></i>NON REC</span><span>${controlRoomPulseData.hours || 12}h${hidden ? ` · +${hidden}` : ''}</span></div></div><div class="cr-pulse-scale"><span></span><div>${labels}</div></div>${rows || '<div class="empty">Nessuna sessione nei filtri e nella finestra visualizzata.</div>'}${footer}</section>`;
 }
 
 function controlRoomRecentEnded(profiles) {
@@ -3168,15 +3207,36 @@ $('#recordings')?.addEventListener('click', event => {
 });
 
 const refreshV271 = refresh;
+let refreshRequest = null;
+let queuedRefreshOptions = null;
 refresh = async function refreshV280(options = {}) {
-  if (refreshBusy) return;
-  const shouldLoadPulse = activeView === 'dashboard' && !document.hidden && !app.classList.contains('hidden');
-  const pulsePromise = shouldLoadPulse ? loadControlRoomPulse() : Promise.resolve(controlRoomPulseData);
-  await refreshV271({...options, deferDashboardRender: shouldLoadPulse});
-  await pulsePromise;
-  if (activeView === 'dashboard') {
-    if (viewInteractionActive()) pendingViewRender = true;
-    else renderSources();
-    renderLivePauseAlert();
+  if (refreshRequest) {
+    // Timer/SSE callers join the snapshot already running. Only explicit
+    // requests queue a fresh pass, so a slow/offline server cannot keep every
+    // caller waiting forever behind a new periodic tick.
+    if (!Object.keys(options).length) return refreshRequest;
+    // An in-flight snapshot may predate a mutation. Keep one fresh pass and
+    // preserve the strongest archive request from every caller waiting on it.
+    queuedRefreshOptions = {...(queuedRefreshOptions || {}), ...options,
+      includeRecordings: !!(queuedRefreshOptions?.includeRecordings || options.includeRecordings)};
+    return refreshRequest;
   }
+  refreshRequest = (async () => {
+    let nextOptions = options;
+    do {
+      queuedRefreshOptions = null;
+      const shouldLoadPulse = activeView === 'dashboard' && !document.hidden && !app.classList.contains('hidden');
+      const pulsePromise = shouldLoadPulse ? loadControlRoomPulse() : Promise.resolve(controlRoomPulseData);
+      await refreshV271({...nextOptions, deferDashboardRender: shouldLoadPulse});
+      await pulsePromise;
+      if (activeView === 'dashboard') {
+        if (viewInteractionActive()) pendingViewRender = true;
+        else renderSources();
+        renderLivePauseAlert();
+      }
+      nextOptions = queuedRefreshOptions;
+    } while (nextOptions);
+  })();
+  try { return await refreshRequest; }
+  finally { refreshRequest = null; }
 };

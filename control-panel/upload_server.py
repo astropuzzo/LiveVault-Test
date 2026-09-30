@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import json
+import ctypes
+import errno
 import mimetypes
 import os
 from pathlib import Path
@@ -56,11 +58,29 @@ def _upload_name(value: str, folder: Path) -> str:
         raise ValueError('Nome file non valido')
     try:
         name_max = os.pathconf(folder, 'PC_NAME_MAX')
-    except (OSError, ValueError):
+    except (AttributeError, OSError, ValueError):
         name_max = 255
     if len(name.encode('utf-8')) > name_max:
         raise ValueError('Nome file troppo lungo')
     return name
+
+
+def _publish_upload(temporary: Path, target: Path) -> None:
+    """Atomically publish without replacing a concurrent web or SMB import."""
+    if os.name == 'nt':
+        # Windows rename already refuses to replace an existing destination.
+        os.rename(temporary, target)
+        return
+    libc = ctypes.CDLL(None, use_errno=True)
+    rename = getattr(libc, 'renameat2', None)
+    if rename is None:
+        raise OSError(errno.ENOTSUP, 'Pubblicazione sicura non supportata')
+    rename.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
+    rename.restype = ctypes.c_int
+    # Linux RENAME_NOREPLACE works on both ext4 and the SHARE exFAT library.
+    if rename(-100, os.fsencode(temporary), -100, os.fsencode(target), 1) != 0:
+        code = ctypes.get_errno()
+        raise OSError(code, os.strerror(code), str(target))
 
 
 def _remember_uploaded_file(uuid: str, root: Path, target: Path, client: str) -> None:
@@ -148,7 +168,7 @@ class Handler(panel.Handler):
                     remaining -= len(chunk)
                 handle.flush()
                 os.fsync(handle.fileno())
-            os.replace(temporary, target)
+            _publish_upload(temporary, target)
             temporary = None
             try:
                 target.chmod(0o644)
@@ -164,6 +184,8 @@ class Handler(panel.Handler):
                 'size': target.stat().st_size,
                 'message': f'{target.name} caricato. MiniDLNA lo rileverà tramite inotify.',
             })
+        except FileExistsError:
+            self.send_json({'ok': False, 'error': 'Esiste già un file con questo nome.'}, 409)
         except PermissionError as exc:
             self.send_json({'ok': False, 'error': str(exc)}, 403)
         except (ValueError, FileNotFoundError, NotADirectoryError) as exc:
@@ -186,6 +208,7 @@ if __name__ == '__main__':
     panel.load_history()
     panel.load_availability()
     panel.threading.Thread(target=panel.history_loop, name='telemetry', daemon=True).start()
+    panel.threading.Thread(target=panel.media_streaming.maintenance_loop, name='media-hls-cleanup', daemon=True).start()
     server = panel.ThreadingHTTPServer((panel.HOST, panel.PORT), Handler)
     print(f'OpenAstro Control listening on http://{panel.HOST}:{panel.PORT}', flush=True)
     server.serve_forever()

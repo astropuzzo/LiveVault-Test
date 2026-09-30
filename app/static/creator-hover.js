@@ -14,7 +14,7 @@
 
   function statusText(value) {
     return ({
-      recording: 'REC', live: 'LIVE', private: 'PRIVATA', tipjar: 'TIP JAR', restricted: 'LIMITATA',
+      recording: 'REC', live: 'LIVE', private: 'PRIVATA', away: 'AWAY', tipjar: 'TIP JAR', restricted: 'LIMITATA',
       error: 'ERRORE', paused: 'PAUSA', archived: 'ARCHIVIATA', offline: 'OFFLINE', unknown: '—'
     })[String(value || '').toLowerCase()] || String(value || '—').toUpperCase();
   }
@@ -89,7 +89,7 @@
     const recent = (payload?.recent_recordings || []).slice(0, 3);
     const cover = safeUrl(source.cover_thumbnail_url || recent.find(item => item.thumbnail_url)?.thumbnail_url || '');
     const statuses = linked.map(item => String(item.last_status || '').toLowerCase());
-    const status = ['recording', 'private', 'tipjar', 'restricted', 'live', 'error'].find(item => statuses.includes(item))
+    const status = ['recording', 'private', 'away', 'tipjar', 'restricted', 'live', 'error'].find(item => statuses.includes(item))
       || String(source.last_status || 'offline').toLowerCase();
     const lastSeen = linked.map(item => item.last_seen_live_at).filter(Boolean).sort((a, b) => timestamp(b) - timestamp(a))[0]
       || source.last_seen_live_at || source.last_live_at || null;

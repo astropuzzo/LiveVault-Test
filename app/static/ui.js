@@ -168,7 +168,7 @@
     const previewEnabled = !document.hidden && activeView === 'dashboard' && profile.recording;
     const previewUrl = previewEnabled && source?.preview_url ? `${source.preview_url}?v=${timestamp(updated) || 0}` : '';
     const cover = safeUrl(source?.cover_thumbnail_url || '');
-    const unavailableLabel = {private:'Privata',tipjar:'Tip-jar',restricted:'Limitata'}[source?.pause_reason] || '';
+    const unavailableLabel = {private:'Privata',away:'AWAY',tipjar:'Tip-jar',restricted:'Limitata'}[source?.pause_reason] || '';
     const state = profile.recording ? 'REC' : profile.live ? 'LIVE' : 'OFFLINE';
     const visual = previewUrl ? `<img data-live-preview src="${esc(previewUrl)}" alt="Preview live di ${esc(profile.display_name)}" loading="lazy" decoding="async">`
       : cover ? `<img class="cr-preview-cover" src="${esc(cover)}" alt="Copertina di ${esc(profile.display_name)}" loading="lazy" decoding="async">`

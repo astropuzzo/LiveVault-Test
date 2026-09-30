@@ -19,7 +19,7 @@ import time
 from datetime import timedelta
 from pathlib import Path
 
-from sqlalchemy import case, select
+from sqlalchemy import case, select, update
 
 from . import storage_handoff
 from .config import settings
@@ -85,6 +85,7 @@ class NsfwWorkerMixin:
             candidates = db.scalars(
                 select(Recording)
                 .where(Recording.local_deleted.is_(False), Recording.integrity_status == "passed",
+                       ~Recording.upload_status.in_(["converting", "deleting"]),
                        Recording.nsfw_status.in_(["pending", "paused"]))
                 # Already uploaded files first: they only wait for the scan to be deleted.
                 .order_by(case((Recording.upload_status == "uploaded", 0), else_=1), Recording.started_at.asc())
@@ -99,16 +100,24 @@ class NsfwWorkerMixin:
                 done = db.scalars(
                     select(Recording)
                     .where(Recording.local_deleted.is_(False), Recording.nsfw_file_sig != "",
+                           ~Recording.upload_status.in_(["converting", "deleting"]),
                            Recording.nsfw_status.in_(["safe", "review", "nsfw"]))
                     .order_by(Recording.id.desc()).limit(200)
                 ).all()
                 for row in done:
                     signature = file_signature(Path(row.local_path))
                     if signature and signature != row.nsfw_file_sig:
-                        row.nsfw_status, row.nsfw_resume_at, row.nsfw_progress = "pending", 0.0, 0.0
-                        row.nsfw_hits, row.nsfw_error = "", "File modificato dopo l'analisi: rianalisi"
-                        rec = row
-                        break
+                        changed = db.execute(update(Recording).where(
+                            Recording.id == row.id, Recording.local_deleted.is_(False),
+                            Recording.upload_status == row.upload_status, Recording.nsfw_status == row.nsfw_status,
+                            Recording.local_path == row.local_path,
+                        ).values(nsfw_status="pending", nsfw_resume_at=0.0, nsfw_progress=0.0,
+                                 nsfw_hits="", nsfw_error="File modificato dopo l'analisi: rianalisi"),
+                            execution_options={"synchronize_session": False})
+                        if changed.rowcount == 1:
+                            db.refresh(row)
+                            rec = row
+                            break
             if rec:
                 db.flush()
                 # nsfw_hits is deferred: load it before the row is detached.
@@ -212,9 +221,11 @@ class NsfwWorkerMixin:
             if storage_handoff.state()["mode"] == "buffer":
                 return  # on the detached NVMe: scanned when it is back
             with db_session() as db:
-                current = db.get(Recording, rec.id)
-                if current:
-                    current.nsfw_status, current.nsfw_error = "skipped", "File locale non disponibile"
+                db.execute(update(Recording).where(
+                    Recording.id == rec.id, Recording.local_deleted.is_(False),
+                    ~Recording.upload_status.in_(["converting", "deleting"]),
+                    Recording.nsfw_status.in_(["pending", "paused"]), Recording.local_path == rec.local_path,
+                ).values(nsfw_status="skipped", nsfw_error="File locale non disponibile"))
             return
         hits = _load(rec.nsfw_hits)
         resume_at = float(rec.nsfw_resume_at or 0)
@@ -229,16 +240,27 @@ class NsfwWorkerMixin:
                 current = db.get(Recording, rec.id)
                 if current is None or current.nsfw_source == "live":
                     return
-        nsfw_dir().mkdir(parents=True, exist_ok=True)
-        if resume_at <= 0 and not hits:
-            for old in nsfw_dir().glob(f"{rec.id}-*.jpg"):
-                old.unlink(missing_ok=True)
         signature = file_signature(path)
         with db_session() as db:
             current = db.get(Recording, rec.id)
-            if not current or current.nsfw_status not in ("pending", "paused"):
+            if (not current or current.nsfw_status not in ("pending", "paused")
+                    or current.local_deleted or current.upload_status in ("converting", "deleting")):
                 return
-            current.nsfw_status, current.nsfw_error = "scanning", ""
+            claimed = db.execute(update(Recording).where(
+                Recording.id == rec.id, Recording.local_deleted.is_(False),
+                Recording.upload_status == current.upload_status, Recording.nsfw_status == current.nsfw_status,
+                Recording.local_path == rec.local_path, Recording.sha256 == rec.sha256,
+            ).values(nsfw_status="scanning", nsfw_error=""), execution_options={"synchronize_session": False})
+            if claimed.rowcount != 1:
+                return
+        try:
+            nsfw_dir().mkdir(parents=True, exist_ok=True)
+            if resume_at <= 0 and not hits:
+                for old in nsfw_dir().glob(f"{rec.id}-*.jpg"):
+                    old.unlink(missing_ok=True)
+        except BaseException:
+            self._nsfw_checkpoint(rec.id, hits, status="paused")
+            raise
         self._nsfw_stop_reason = ""
         began = time.monotonic()
         self.nsfw_current = {"recording_id": rec.id, "name": rec.source_name, "filename": rec.filename,
@@ -246,12 +268,18 @@ class NsfwWorkerMixin:
                              "frames": 0, "verified": 0, "found": sum(1 for h in hits if h.get("label")), "eta_seconds": None,
                              "speed": None, "started_at": utcnow().isoformat(), "resumed_from": resume_at}
         threads = self._nsfw_threads(runtime())
-        proc = await asyncio.create_subprocess_exec(
-            *self._nsfw_command(rec), cwd=str(Path(__file__).resolve().parents[1]),
-            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL, env=helper_env())
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *self._nsfw_command(rec), cwd=str(Path(__file__).resolve().parents[1]),
+                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL, env=helper_env())
+        except BaseException:
+            self._nsfw_checkpoint(rec.id, hits, status="paused")
+            self.nsfw_current = None
+            raise
         result: dict | None = None
         stopped = ""
         last_saved = 0.0
+        interrupted = False
         try:
             while True:
                 stopped = self._nsfw_should_stop(threads)
@@ -277,12 +305,17 @@ class NsfwWorkerMixin:
                             self.nsfw_current["found"] = sum(1 for h in hits if h.get("label"))
                     elif kind in ("done", "error"):
                         result = event
+        except BaseException:
+            interrupted = True
+            raise
         finally:
             if proc.returncode is None:
                 with contextlib.suppress(ProcessLookupError):
                     proc.kill()
                 with contextlib.suppress(Exception):
                     await asyncio.wait_for(proc.wait(), timeout=10)
+            if interrupted:
+                self._nsfw_checkpoint(rec.id, hits, status="paused")
             self.nsfw_current = None
         if stopped:
             self._nsfw_checkpoint(rec.id, hits, status="paused")

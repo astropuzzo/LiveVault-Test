@@ -44,6 +44,11 @@
     privatePattern.append(svgNode('path', {d: 'M-3 11L11-3M3 14L14 3', stroke: '#1a1330', 'stroke-width': 1.4, opacity: .35}));
     defs.append(privatePattern);
 
+    const awayPattern = svgNode('pattern', {id: 'lv-pulse-away', width: 12, height: 12, patternUnits: 'userSpaceOnUse'});
+    patternRect(awayPattern, '#72bdce', 12, 12);
+    awayPattern.append(svgNode('path', {d: 'M3 3v6M8 3v6', stroke: '#122a30', 'stroke-width': 2, opacity: .5}));
+    defs.append(awayPattern);
+
     const tipjarPattern = svgNode('pattern', {id: 'lv-pulse-tipjar', width: 12, height: 12, patternUnits: 'userSpaceOnUse'});
     patternRect(tipjarPattern, '#f0943f', 12, 12);
     tipjarPattern.append(svgNode('circle', {cx: 3, cy: 3, r: 1.1, fill: '#2a1506', opacity: .4}));
@@ -232,6 +237,7 @@
     ['missed', 'NON REC', 'url(#lv-pulse-missed)'],
     ['unrecorded', 'INTERVALLO SENZA REC', 'url(#lv-pulse-unrecorded)'],
     ['private', 'PRIVATA', 'url(#lv-pulse-private)'],
+    ['away', 'AWAY', 'url(#lv-pulse-away)'],
     ['tipjar', 'TIP-JAR', 'url(#lv-pulse-tipjar)'],
     ['restricted', 'LIMITATA', 'url(#lv-pulse-restricted)'],
   ];

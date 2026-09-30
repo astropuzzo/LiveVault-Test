@@ -1,0 +1,11 @@
+.diagnostic-panel { margin-top:24px; }
+.diagnostic-panel .panel-head { align-items:center; flex-wrap:wrap; gap:12px; }
+.diagnostic-issues { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr)); gap:10px; }
+.diagnostic-issue { display:flex; flex-direction:column; gap:6px; padding:14px 16px; border-radius:14px; border:1px solid rgba(255,190,88,.25); background:rgba(255,190,88,.05); color:inherit; text-decoration:none; min-width:0; }
+.diagnostic-issue small { color:var(--muted,#b0bdd0); line-height:1.5; }
+.diagnostic-issue.critical { border-color:rgba(255,107,107,.35); background:rgba(255,107,107,.07); }
+.diagnostic-issue.info { border-color:rgba(138,172,225,.25); background:rgba(138,172,225,.05); }
+.diagnostic-issue:focus-visible { outline:2px solid #93bfff; outline-offset:3px; }
+.diagnostic-footer { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; margin-top:16px; }
+.diagnostic-footer small { color:var(--muted,#b0bdd0); }
+@media(max-width:600px) { .diagnostic-panel { margin-top:16px; } .diagnostic-footer .button { width:100%; } }

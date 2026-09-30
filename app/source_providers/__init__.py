@@ -145,7 +145,7 @@ async def _probe_stripchat(slug: str, quality: str) -> ProbeResult:
 
     if state.status == "live":
         return ProbeResult(True, "live", recordable=True, title=slug, metadata_status="unsupported")
-    if state.status in {"private", "tipjar", "restricted"}:
+    if state.status in {"private", "away", "tipjar", "restricted"}:
         return ProbeResult(True, state.status, recordable=False, title=slug, metadata_status="unsupported")
     if state.status == "offline":
         return ProbeResult(False, "offline", recordable=False, title=slug, metadata_status="unsupported")

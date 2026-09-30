@@ -6,6 +6,12 @@ import importlib.util
 import os
 from pathlib import Path
 import sys
+import concurrent.futures
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import threading
+import time
+import urllib.error
+import urllib.request
 
 import pytest
 
@@ -156,3 +162,161 @@ def test_proxy_preserves_stellar_evidence_without_inventing_limits(monkeypatch):
     assert result['currentFrame'] == frame
     assert result['frames'][0]['quality'] is None
     assert 'starTailLimitPercent' not in result['frames'][0]
+
+
+@pytest.mark.parametrize('force', [False, True])
+def test_snapshot_requests_share_inflight_fetch_and_cache_after_io(monkeypatch, force):
+    qsm_client.reset_cache()
+    monkeypatch.setenv('OPENASTRO_NINA_QSM_URL', 'http://127.0.0.1:18973')
+    monkeypatch.setenv('OPENASTRO_NINA_QSM_TOKEN', 'test-only-token')
+    started, release = threading.Event(), threading.Event()
+    calls = []
+
+    def fetch(*_):
+        calls.append(True)
+        started.set()
+        assert release.wait(3)
+        return {'available': True, 'summary': {'captured': 1}}, 600
+
+    monkeypatch.setattr(qsm_client, '_fetch_json', fetch)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
+        requests = [pool.submit(qsm_client.state, force=force) for _ in range(4)]
+        assert started.wait(1)
+        # The transfer outlasts CACHE_SECONDS; age must begin when it finishes.
+        time.sleep(qsm_client.CACHE_SECONDS + 0.05)
+        release.set()
+        results = [request.result(timeout=2) for request in requests]
+    assert len(calls) == 1
+    assert all(result['reachable'] for result in results)
+    assert qsm_client.state()['reachable'] is True
+    assert len(calls) == 1
+
+
+def test_preview_requests_share_bytes_and_metadata(monkeypatch):
+    qsm_client.reset_cache()
+    started, release = threading.Event(), threading.Event()
+    calls = []
+
+    def fetch():
+        calls.append(True)
+        started.set()
+        assert release.wait(3)
+        return b'jpeg-bytes', {'preview_utc': '2026-09-29T19:35:00Z', 'image_id': '6'}
+
+    monkeypatch.setattr(qsm_client, '_fetch_preview', fetch)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
+        requests = [pool.submit(qsm_client.preview) for _ in range(4)]
+        assert started.wait(1)
+        release.set()
+        results = [request.result(timeout=2) for request in requests]
+    assert len(calls) == 1
+    assert all(result == results[0] for result in results)
+    results[0][1]['image_id'] = 'modified-client-copy'
+    assert qsm_client.preview()[1]['image_id'] == '6'
+
+
+def test_unavailable_preview_is_cached_to_avoid_retry_storm(monkeypatch):
+    qsm_client.reset_cache()
+    calls = []
+
+    def fetch():
+        calls.append(True)
+        raise urllib.error.HTTPError('http://qsm.test', 404, 'Not found', {}, None)
+
+    monkeypatch.setattr(qsm_client, '_fetch_preview', fetch)
+    for _ in range(3):
+        with pytest.raises(urllib.error.HTTPError) as failure:
+            qsm_client.preview()
+        assert failure.value.code == 404
+    assert len(calls) == 1
+
+
+@pytest.mark.parametrize('route', ['snapshot', 'preview.jpg'])
+def test_qsm_redirects_never_forward_secret(monkeypatch, route):
+    qsm_client.reset_cache()
+    received = []
+
+    class Sink(BaseHTTPRequestHandler):
+        def do_GET(self):
+            received.append(self.headers.get('X-QSM-Token'))
+            self.send_response(200)
+            self.end_headers()
+        def log_message(self, *_):
+            pass
+
+    sink = ThreadingHTTPServer(('127.0.0.1', 0), Sink)
+
+    class Redirect(BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(302)
+            self.send_header('Location', f'http://127.0.0.1:{sink.server_port}/receive')
+            self.end_headers()
+        def log_message(self, *_):
+            pass
+
+    source = ThreadingHTTPServer(('127.0.0.1', 0), Redirect)
+    for service in (source, sink):
+        threading.Thread(target=service.serve_forever, daemon=True).start()
+    monkeypatch.setenv('OPENASTRO_NINA_QSM_URL', f'http://127.0.0.1:{source.server_port}')
+    monkeypatch.setenv('OPENASTRO_NINA_QSM_TOKEN', 'test-only-token')
+    try:
+        if route == 'snapshot':
+            result = qsm_client.state(force=True)
+            assert result['reachable'] is False
+            assert result['message'] == 'QSM HTTP 302.'
+        else:
+            with pytest.raises(urllib.error.HTTPError) as failure:
+                qsm_client.preview()
+            assert failure.value.code == 302
+        assert received == []
+    finally:
+        source.shutdown()
+        sink.shutdown()
+        source.server_close()
+        sink.server_close()
+
+
+@pytest.mark.parametrize('url', ['http://user:secret@example.test', 'http://example.test:invalid', 'http://example.test/?token=secret'])
+def test_qsm_config_rejects_ambiguous_or_secret_bearing_urls(monkeypatch, url):
+    qsm_client.reset_cache()
+    monkeypatch.setenv('OPENASTRO_NINA_QSM_URL', url)
+    monkeypatch.setenv('OPENASTRO_NINA_QSM_TOKEN', 'test-only-token')
+    monkeypatch.setattr(qsm_client, '_fetch_json', lambda *_: pytest.fail('network must not be called'))
+    assert qsm_client.state(force=True)['configured'] is False
+    assert qsm_client.diagnostics()['qsm_url'] == ''
+
+
+def test_upstream_exception_cannot_expose_qsm_token(monkeypatch):
+    qsm_client.reset_cache()
+    monkeypatch.setenv('OPENASTRO_NINA_QSM_URL', 'http://127.0.0.1:18973')
+    monkeypatch.setenv('OPENASTRO_NINA_QSM_TOKEN', 'test-only-token')
+
+    def fetch(*_):
+        raise ValueError('Invalid header value: test-only-token')
+
+    monkeypatch.setattr(qsm_client, '_fetch_json', fetch)
+    result = qsm_client.state(force=True)
+    assert result['reachable'] is False
+    assert 'test-only-token' not in str(result)
+
+
+def test_preview_conditional_request_keeps_timestamp_without_resending_jpeg(monkeypatch):
+    server = _load_server(monkeypatch)
+    monkeypatch.setattr(server.Handler, '_require_session', lambda _: True)
+    monkeypatch.setattr(qsm_client, 'preview', lambda: (b'jpeg-bytes', {'preview_utc': '2026-09-29T19:35:00Z', 'image_id': '6'}))
+    service = ThreadingHTTPServer(('127.0.0.1', 0), server.Handler)
+    threading.Thread(target=service.serve_forever, daemon=True).start()
+    url = f'http://127.0.0.1:{service.server_port}/api/preview.jpg'
+    try:
+        with urllib.request.urlopen(url, timeout=2) as response:
+            assert response.read() == b'jpeg-bytes'
+            etag = response.headers['ETag']
+        request = urllib.request.Request(url, headers={'If-None-Match': etag})
+        with pytest.raises(urllib.error.HTTPError) as unchanged:
+            urllib.request.urlopen(request, timeout=2)
+        assert unchanged.value.code == 304
+        assert unchanged.value.headers['X-QSM-Preview-Utc'] == '2026-09-29T19:35:00Z'
+        assert unchanged.value.read() == b''
+    finally:
+        service.shutdown()
+        service.server_close()

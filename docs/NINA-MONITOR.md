@@ -83,7 +83,7 @@ NINA Monitor    -> nina-monitor/**
 
 Therefore a commit that changes only `nina-monitor/**` updates only NINA Monitor. It must not restart LiveVault or any host service. Feature changes are validated by GitHub CI before merging to `main`; the merge then becomes the production deployment trigger.
 
-## Current UI (QSM 1.4, deployed 2026-09-13)
+## Current UI (source verified 2026-09-29)
 
 Source: `nina-monitor/static/{index.html,app.js,app.css}`. The dedicated monitor
 application remains the deployment target; no other application requires a restart.
@@ -105,9 +105,14 @@ by the plugin. Quality belongs to an exposure; session quality averages usable f
 evidence strength is a 0–100 diagnostic index, not a calibrated probability.
 Learning/error quality and missing measurements are unavailable, not zero.
 
-Polling keeps the selected check and expanded details stable. The latest JPEG is
-requested only when frame identity changes; failed attempts are throttled to five
-seconds. Diagnostics, history and expandable rankings follow the evidence view.
+Polling keeps the selected check and expanded details stable when its data is unchanged.
+If the selected frame's verdict or measurements change, its inspector refreshes; a new
+session reusing a frame index clears the old selection because identity includes UTC
+timestamp and index. The rejection/recovery table includes both guiding and stellar-flux
+recoveries. The latest real JPEG has its own timestamp and age, independently of the
+assessed or synthetic frame. It refreshes at most every 15 seconds when frame identity
+is unchanged, with a five-second throttle for a new identity or failed attempt.
+Diagnostics, history and expandable rankings follow the evidence view.
 The live signed RA/DEC chart does not plot total-vector rejection limits on its axes.
 
 Validation: local Chromium at 1440, 900 and 430 px, using the existing 13-image
@@ -143,9 +148,50 @@ The browser never receives a FITS/XISF path or QSM secret. QSM generates a displ
 - encoded in RAM;
 - FITS/XISF is not re-read;
 - no preview file is persisted on ASIAIR/eMMC/NVMe;
-- the browser requests the preview only when the QSM frame timestamp/index identity changes.
+- the browser checks the latest real JPEG every 15 seconds while the dashboard is visible,
+  including synthetic sessions and before the first assessed frame;
+- successful and failed upstream JPEG requests share an in-memory five-second cache;
+- an unchanged JPEG returns HTTP 304 through an ETag, avoiding another image transfer to
+  the browser; changed image blobs are revoked when replaced or when the user logs out;
+- the displayed timestamp comes from `X-QSM-Preview-Utc`, never from the assessed frame.
 
 This keeps remote traffic small and makes the feature independent from LiveVault storage.
+
+### Request and cache safety (source verified 2026-09-29)
+
+Source: `nina-monitor/qsm_client.py`, `server.py` and `static/app.js`; runtime remains
+`/app` in the separate Coolify application. Concurrent snapshot requests, including
+forced refreshes already in flight, share one QSM fetch. Snapshot cache age begins
+after network I/O completes; an offline or slow PC cannot make the cache expire before
+the result is published. The browser aborts a request after eight seconds and discards
+state/preview responses from a session that has already logged out.
+
+QSM URLs must be HTTP(S) origins or paths without embedded credentials, query strings
+or fragments. Both upstream routes reject HTTP redirects rather than forwarding
+`X-QSM-Token` to another endpoint. Network error text is deliberately generic so an
+invalid header or URL cannot echo a secret into an authenticated browser response.
+
+Read-only host check on 2026-09-29: NINA image
+`ctrzdfqqsdljdcb2sbdrc7ug:900ccd44f86e003877ab08b1893de565748fdfe5`, container
+`ctrzdfqqsdljdcb2sbdrc7ug-130640406037`, healthy, zero mounts, user `openastro`;
+LAN binding is `192.168.1.27:9091` (not host localhost). `/healthz` reports
+`isolated: true`, unauthenticated `/api/state` returns 401, and QSM was reachable
+in a single 161 ms sample. The sampled JPEG timestamp was ten minutes newer than
+the last assessed frame, confirming why preview identity must be independent.
+This read-only check predates deployment of these source fixes; the sample is not
+a latency benchmark or a guarantee of continuous QSM availability.
+
+Validation: focused Python regressions cover concurrent slow fetches, preview cache,
+redirect rejection, error redaction and conditional JPEG responses; JavaScript
+regressions cover selection reuse, independent preview identity/freshness, recovery
+history and logout/timeout races. Exact-commit Linux CI and browser QA are deployment
+gates. No persistent schema or N.I.N.A. control/threshold behavior changes.
+
+Rollback: redeploy the prior NINA image
+`ctrzdfqqsdljdcb2sbdrc7ug:900ccd44f86e003877ab08b1893de565748fdfe5` through this
+application's Coolify history, or revert only these monitor changes. Keep the existing
+environment, authentication, zero mounts and Funnel route; verify LiveVault uptime
+is unchanged. Caches are memory-only and disappear on a NINA redeploy.
 
 ## Isolation contract
 

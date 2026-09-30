@@ -121,6 +121,18 @@ Restarting, redeploying or crashing `openastro-nina-monitor` must not restart or
 
 The NINA monitor keeps no persistent application state. Coolify environment configuration lives on internal storage with the rest of Coolify state; session data and previews remain in memory only.
 
+Source verification, 2026-09-29: runtime code is `/app/server.py`, `/app/qsm_client.py`
+and `/app/static/`. Snapshot fetches share in-flight work and start the 0.5-second
+cache TTL after I/O; JPEGs share a five-second memory cache. The visible dashboard
+checks the latest real preview every 15 seconds even when the last assessed frame
+has not changed, and uses ETag/304 to avoid resending unchanged images. QSM redirects
+are rejected to keep its token on the configured endpoint. Configure a direct HTTP(S)
+base URL without embedded credentials, a query string or a fragment.
+
+Operational evidence and rollback are in [`../docs/NINA-MONITOR.md`](../docs/NINA-MONITOR.md).
+These source changes require this application's own build/CI/deploy checks; the
+read-only runtime audit still identified image `900ccd44f86e003877ab08b1893de565748fdfe5`.
+
 ## Deploy gate
 
 Before production deployment:

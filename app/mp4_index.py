@@ -263,7 +263,7 @@ def build_index(path: Path, target_seconds: float = 6.0) -> FragmentIndex:
     return FragmentIndex(init_length=init_length, segments=tuple(segments), complete=complete)
 
 
-_cache: dict[tuple[str, float], tuple[tuple[int, int], FragmentIndex]] = {}
+_cache: dict[tuple[str, float], tuple[tuple[int, int, int, int], FragmentIndex]] = {}
 _cache_lock = threading.Lock()
 
 
@@ -271,7 +271,7 @@ def cached_index(path: Path, target_seconds: float = 6.0) -> FragmentIndex:
     """Index of ``path``; ``target_seconds=0`` gives one segment per fragment (live playlists)."""
     stat = os.stat(path)
     key = (str(path), float(target_seconds))
-    signature = (stat.st_size, stat.st_mtime_ns)
+    signature = (stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns)
     with _cache_lock:
         hit = _cache.get(key)
         if hit and hit[0] == signature:
@@ -304,7 +304,9 @@ def hls_playlist(index: FragmentIndex, media_uri: str, live: bool = False) -> st
     return "\n".join(lines) + "\n"
 
 
-def hls_session_playlist(parts: list[tuple[FragmentIndex, str]], live: bool = True) -> str:
+def hls_session_playlist(parts: list[tuple[FragmentIndex, str]], live: bool = True, *,
+                         media_sequence: int = 0, discontinuity_sequence: int = 0,
+                         sliding: bool = False, target_duration: int | None = None) -> str:
     """One playlist over several fragmented MP4 files of the same live, oldest first.
 
     Every file has its own init section and restarts its timestamps at zero, so each
@@ -313,15 +315,20 @@ def hls_session_playlist(parts: list[tuple[FragmentIndex, str]], live: bool = Tr
     player reloading the playlist sees the timeline lengthen as the recording goes on.
     """
     segments = [segment for index, _ in parts for segment in index.segments]
-    target = max(1, math.ceil(max((segment.duration for segment in segments), default=1)))
+    required_target = max(1, math.ceil(max((segment.duration for segment in segments), default=1)))
+    target = required_target if target_duration is None else int(target_duration)
+    if target < required_target:
+        raise ValueError("Intervallo tra keyframe oltre il target della playlist")
     lines = [
         "#EXTM3U",
         "#EXT-X-VERSION:7",
         f"#EXT-X-TARGETDURATION:{target}",
-        "#EXT-X-MEDIA-SEQUENCE:0",
-        f"#EXT-X-PLAYLIST-TYPE:{'EVENT' if live else 'VOD'}",
+        f"#EXT-X-MEDIA-SEQUENCE:{media_sequence}",
+        f"#EXT-X-DISCONTINUITY-SEQUENCE:{discontinuity_sequence}",
         "#EXT-X-INDEPENDENT-SEGMENTS",
     ]
+    if not sliding:
+        lines.append(f"#EXT-X-PLAYLIST-TYPE:{'EVENT' if live else 'VOD'}")
     for number, (index, media_uri) in enumerate(parts):
         if number:
             lines.append("#EXT-X-DISCONTINUITY")
@@ -365,11 +372,17 @@ class GrowingIndex:
         self.running_base = 0
         self.latest_time = 0.0
         self._pending: tuple[int, int | None, int, bool] | None = None
+        self._identity: tuple[int, int] | None = None
 
     def poll(self, limit: int = 4096) -> list[LiveFragment]:
-        size = os.path.getsize(self.path)
         found: list[LiveFragment] = []
         with open(self.path, "rb") as handle:
+            stat = os.fstat(handle.fileno())
+            identity = (stat.st_dev, stat.st_ino)
+            if self._identity is not None and (self._identity != identity or stat.st_size < self.position):
+                self.__init__(self.path)
+            self._identity = identity
+            size = stat.st_size
             while self.position + 8 <= size and len(found) < limit:
                 handle.seek(self.position)
                 header = handle.read(16)
@@ -436,12 +449,18 @@ class LivePlaylistIndex:
     def _reset(self) -> None:
         self.reader = GrowingIndex(self.path)
         self.fragments: list[LiveFragment] = []
+        self._identity: tuple[int, int] | None = None
 
     def snapshot(self, target_seconds: float = 2.0) -> FragmentIndex:
         with self.lock:
-            if os.path.getsize(self.path) < self.reader.position:
+            stat = os.stat(self.path)
+            if (stat.st_dev, stat.st_ino) != self._identity or stat.st_size < self.reader.position:
                 self._reset()  # the file was recreated under the same name
-            self.fragments.extend(self.reader.poll())
+            fresh = self.reader.poll()
+            if self._identity is not None and self._identity != self.reader._identity:
+                self.fragments.clear()  # replacement between stat and the reader's open
+            self._identity = self.reader._identity
+            self.fragments.extend(fresh)
             segments: list[Segment] = []
             start = length = 0
             elapsed = 0.0

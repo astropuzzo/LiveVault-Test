@@ -12,7 +12,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, or_, select, update
 
 from .config import settings
 from .db import CloudDay, LiveSession, Profile, Recording, RecordingFragment, Source, db_session
@@ -200,6 +200,7 @@ class WorkerManager(NsfwWorkerMixin, LiveNsfwMixin):
         self._gofile_file_folders: dict[int, tuple[str, str, str]] = {}
         self._mp4_finalize_lock = asyncio.Lock()
         self._recovery_lock = asyncio.Lock()
+        self._repairing_recordings: set[int] = set()
         self.recovery_task: asyncio.Task | None = None
         self.backfill_task: asyncio.Task | None = None
 
@@ -362,9 +363,22 @@ class WorkerManager(NsfwWorkerMixin, LiveNsfwMixin):
     def _recover_interrupted_uploads(self) -> None:
         with db_session() as db:
             rows = list(db.scalars(
-                select(Recording).where(Recording.upload_status.in_(["uploading", "converting"]))
+                select(Recording).where(Recording.upload_status.in_(["uploading", "converting", "deleting"]))
             ).all())
             for rec in rows:
+                if rec.upload_status == "deleting":
+                    # Reconcile an interrupted unlink without completing a deletion
+                    # on restart. Offline storage cannot prove that bytes are gone.
+                    if not storage_handoff.media_online():
+                        continue
+                    exists = Path(rec.local_path).is_file()
+                    rec.local_deleted = not exists
+                    if rec.remote_url and rec.uploaded_at:
+                        rec.upload_status = "uploaded"
+                    else:
+                        rec.upload_status = "discarded"
+                    rec.last_error = "Cancellazione interrotta da un riavvio; stato riconciliato senza rimuovere file"
+                    continue
                 rec.upload_status = "pending" if rec.integrity_status == "passed" else "integrity_failed"
                 rec.last_error = "Elaborazione interrotta da un riavvio; rimessa in coda"
 
@@ -634,10 +648,15 @@ class WorkerManager(NsfwWorkerMixin, LiveNsfwMixin):
             with db_session() as db:
                 current = db.get(Recording, rec.id)
                 if current and current.upload_status in {"pending", "failed", "waiting_config", "integrity_failed"}:
-                    current.upload_status = "converting"
-                    claimed = True
+                    result = db.execute(update(Recording).where(
+                        Recording.id == current.id, Recording.upload_status == current.upload_status,
+                        Recording.local_deleted.is_(False), Recording.thumbnail_status != "processing",
+                        Recording.nsfw_status != "scanning",
+                    ).values(upload_status="converting"), execution_options={"synchronize_session": False})
+                    claimed = result.rowcount == 1
             if not claimed:
                 continue
+            self._repairing_recordings.add(rec.id)
             try:
                 await self._prepare_mp4(path)
                 integrity = await asyncio.to_thread(verify_media, path, runtime().integrity_mode)
@@ -686,6 +705,8 @@ class WorkerManager(NsfwWorkerMixin, LiveNsfwMixin):
                         current.integrity_status = "failed"
                         current.integrity_error = detail
                         current.last_error = detail
+            finally:
+                self._repairing_recordings.discard(rec.id)
 
     def _next_thumbnail_job(self) -> Recording | None:
         if not runtime().generate_thumbnails or not storage_handoff.media_online():
@@ -697,6 +718,7 @@ class WorkerManager(NsfwWorkerMixin, LiveNsfwMixin):
                 .where(
                     Recording.local_deleted.is_(False),
                     Recording.integrity_status == "passed",
+                    ~Recording.upload_status.in_(["converting", "deleting"]),
                     Recording.thumbnail_status.in_(["pending", "failed"]),
                     or_(Recording.thumbnail_next_attempt_at.is_(None), Recording.thumbnail_next_attempt_at <= now),
                 )
@@ -705,10 +727,15 @@ class WorkerManager(NsfwWorkerMixin, LiveNsfwMixin):
             )
             if rec is None:
                 return None
-            rec.thumbnail_status = "processing"
-            rec.thumbnail_attempts = int(rec.thumbnail_attempts or 0) + 1
-            rec.thumbnail_error = ""
-            db.flush()
+            claimed = db.execute(update(Recording).where(
+                Recording.id == rec.id, Recording.local_deleted.is_(False),
+                Recording.upload_status == rec.upload_status,
+                Recording.thumbnail_status == rec.thumbnail_status,
+            ).values(thumbnail_status="processing", thumbnail_attempts=Recording.thumbnail_attempts + 1,
+                     thumbnail_error=""), execution_options={"synchronize_session": False})
+            if claimed.rowcount != 1:
+                return None
+            db.refresh(rec)
             db.expunge(rec)
             return rec
 
@@ -726,17 +753,29 @@ class WorkerManager(NsfwWorkerMixin, LiveNsfwMixin):
                 return False
             if getattr(current, "nsfw_status", "") == "scanning" or self.nsfw_hold_blocks_delete(current):
                 return False
+            claimed = db.execute(update(Recording).where(
+                Recording.id == recording_id, Recording.local_deleted.is_(False),
+                Recording.upload_status == "uploaded", Recording.thumbnail_status == current.thumbnail_status,
+                Recording.nsfw_status == current.nsfw_status,
+            ).values(upload_status="deleting"), execution_options={"synchronize_session": False})
+            if claimed.rowcount != 1:
+                return False
         try:
             path.unlink(missing_ok=True)
         except OSError as exc:
             self.last_errors[f"delete-after-upload:{recording_id}"] = str(exc)[-900:]
+            with db_session() as db:
+                db.execute(update(Recording).where(Recording.id == recording_id, Recording.upload_status == "deleting")
+                           .values(upload_status="uploaded"))
             return False
         with db_session() as db:
             current = db.get(Recording, recording_id)
-            if current and current.upload_status == "uploaded":
-                current.local_deleted = True
+            if current and current.upload_status == "deleting":
+                values = {"local_deleted": True, "upload_status": "uploaded"}
                 if getattr(current, "nsfw_status", "") in ("pending", "paused"):
-                    current.nsfw_status = "skipped"
+                    values["nsfw_status"] = "skipped"
+                db.execute(update(Recording).where(Recording.id == recording_id, Recording.upload_status == "deleting")
+                           .values(**values))
         self.last_errors.pop(f"delete-after-upload:{recording_id}", None)
         return True
 
@@ -1423,7 +1462,7 @@ class WorkerManager(NsfwWorkerMixin, LiveNsfwMixin):
             .order_by(LiveSession.started_at.desc(), LiveSession.id.desc())
         )
         if live:
-            normalized_status = access_status if access_status in {"live", "private", "tipjar", "restricted"} else "live"
+            normalized_status = access_status if access_status in {"live", "private", "tipjar", "away", "restricted"} else "live"
             if open_session and open_session.access_status != normalized_status:
                 started_at = open_session.started_at
                 if started_at.tzinfo is None:
@@ -1777,10 +1816,14 @@ class WorkerManager(NsfwWorkerMixin, LiveNsfwMixin):
                 ).all())
                 rec = next((r for r in candidates if self._retry_after.get(r.id, 0) <= now), None)
             if rec:
-                rec.upload_status = "uploading"
-                rec.upload_attempts += 1
-                rec.upload_priority = 0
-                db.flush()
+                result = db.execute(update(Recording).where(
+                    Recording.id == rec.id, Recording.upload_status == rec.upload_status,
+                    Recording.local_deleted.is_(False), Recording.integrity_status == "passed",
+                ).values(upload_status="uploading", upload_attempts=Recording.upload_attempts + 1,
+                         upload_priority=0), execution_options={"synchronize_session": False})
+                if result.rowcount != 1:
+                    return None
+                db.refresh(rec)
                 db.expunge(rec)
             return rec
 

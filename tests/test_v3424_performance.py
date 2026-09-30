@@ -287,6 +287,16 @@ class _Request:
         self.cookies = {}
 
 
+def _capture_playlist_response(source_id, request):
+    from urllib.parse import parse_qs, urlsplit
+    response = main.stream_active_capture(source_id, request)
+    if response.status_code == 307:
+        epoch = parse_qs(urlsplit(response.headers["location"]).query)["epoch"][0]
+        response = main.stream_active_capture(source_id, request, epoch=epoch)
+    assert response.status_code == 200
+    return response
+
+
 @pytest.fixture()
 def capture(tmp_path, monkeypatch, factory):
     growing = tmp_path / "AliciaBrooks_part001.capture.mp4"
@@ -317,9 +327,9 @@ def test_capture_still_serves_the_file_to_players_and_on_request(capture):
         assert Path(response.path) == capture and response.media_type == "video/mp4"
     forced = main.view_active_capture(25, _Request({"sec-fetch-dest": "document"}, {"raw": "1"}))
     assert Path(forced.path) == capture
-    playlist = main.stream_active_capture(25, _Request()).body.decode()
-    assert "#EXT-X-PLAYLIST-TYPE:EVENT" in playlist and "#EXT-X-ENDLIST" not in playlist
-    assert "/api/sources/25/capture" in playlist and "#EXTINF" in playlist
+    playlist = _capture_playlist_response(25, _Request()).body.decode()
+    assert "#EXT-X-PLAYLIST-TYPE" not in playlist and "#EXT-X-ENDLIST" not in playlist
+    assert "/api/sources/25/capture?part=" in playlist and "#EXTINF" in playlist
 
 
 def test_a_file_without_a_stream_index_is_never_wrapped(tmp_path, monkeypatch, factory):
@@ -377,8 +387,8 @@ def test_session_playlist_spans_parts_with_discontinuities(tmp_path):
         pytest.skip("ffmpeg not available")
     playlist = hls_session_playlist([(cached_index(first), "/api/fragments/1/view"),
                                      (cached_index(second, 0.0), "/api/sources/25/capture")], live=True)
-    assert playlist.count("#EXT-X-MAP:") == 2 and playlist.count("#EXT-X-DISCONTINUITY") == 1
-    assert playlist.index("/api/fragments/1/view") < playlist.index("#EXT-X-DISCONTINUITY") < playlist.rindex("/api/sources/25/capture")
+    assert playlist.count("#EXT-X-MAP:") == 2 and playlist.count("#EXT-X-DISCONTINUITY\n") == 1
+    assert playlist.index("/api/fragments/1/view") < playlist.index("#EXT-X-DISCONTINUITY\n") < playlist.rindex("/api/sources/25/capture")
     assert "#EXT-X-ENDLIST" not in playlist and "#EXT-X-PLAYLIST-TYPE:EVENT" in playlist
 
 
@@ -397,9 +407,13 @@ def test_capture_playlist_includes_earlier_local_parts_of_the_same_live(capture,
         session.flush()
         row_id = row.id
     monkeypatch.setattr(main.manager, "active", {25: SimpleNamespace(session_id="live-1")})
-    playlist = main.stream_active_capture(25, _Request()).body.decode()
-    assert f"/api/fragments/{row_id}/view" in playlist and "/api/sources/25/capture" in playlist
-    assert playlist.index(f"/api/fragments/{row_id}/view") < playlist.index("#EXT-X-DISCONTINUITY") < playlist.rindex("/api/sources/25/capture")
+    playlist = _capture_playlist_response(25, _Request()).body.decode()
+    from app.live_capture_playlist import capture_part_path
+    from urllib.parse import parse_qs, urlsplit
+    media_urls = [line for line in playlist.splitlines() if line.startswith("/api/sources/25/capture?part=")]
+    assert capture_part_path(25, parse_qs(urlsplit(media_urls[0]).query)["part"][0]) == closed.resolve()
+    assert capture_part_path(25, parse_qs(urlsplit(media_urls[-1]).query)["part"][0]) == capture.resolve()
+    assert playlist.index(media_urls[0]) < playlist.index("#EXT-X-DISCONTINUITY\n") < playlist.rindex(media_urls[-1])
     assert playlist.count("#EXT-X-MAP:") == 2  # the older live's fragment is not part of this timeline
 
 
@@ -443,7 +457,7 @@ def test_capture_endpoint_lists_only_closed_keyframe_segments(capture):
     from app.mp4_index import GrowingIndex
     assert _stripchat_like_mp4(capture)
     keyframes = {fragment.offset for fragment in GrowingIndex(capture).poll() if fragment.keyframe}
-    playlist = main.stream_active_capture(25, _Request()).body.decode()
+    playlist = _capture_playlist_response(25, _Request()).body.decode()
     ranges = _segment_lines(playlist)
     assert len(ranges) == 5
     assert all(int(line.rsplit("@", 1)[1]) in keyframes for line in ranges)
@@ -482,7 +496,7 @@ def test_capture_endpoint_groups_sidx_fragments_on_keyframes(capture):
     from app.mp4_index import GrowingIndex
     assert _stripchat_like_mp4(capture, dash_audio=True)
     keyframes = {fragment.offset for fragment in GrowingIndex(capture).poll() if fragment.keyframe}
-    playlist = main.stream_active_capture(25, _Request()).body.decode()
+    playlist = _capture_playlist_response(25, _Request()).body.decode()
     ranges = _segment_lines(playlist)
     assert len(ranges) >= 5
     assert all(int(line.rsplit("@", 1)[1]) in keyframes for line in ranges)

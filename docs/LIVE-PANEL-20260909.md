@@ -166,6 +166,10 @@ dependency on the host (hls.js 1.7.2 is vendored in `app/static/vendor/`).
   `/api/recordings/{id}/stream.m3u8`, `/api/fragments/{id}/stream.m3u8`,
   `/api/sources/{id}/capture.m3u8` (409 when the file is not fragmented; the
   player then falls back to the direct file). CSP gains `media-src 'self' blob:`.
+  Il candidato audit del 2026-09-29 aggiunge `app/live_capture_playlist.py` per
+  la rotazione della capture: playlist scorrevole, sequenze monotone e URL dei
+  byte legati alla singola parte. I file VOD conservano l'indice precedente;
+  verifiche e limiti nella sezione audit qui sotto.
 - 17 new providers in `app/source_providers.py` (TikTok, CamModels, SOOP, CHZZK,
   Bigo, Picarto, TwitCasting, DLive, VK Live, Huya, Douyu, YouNow, Showroom,
   17LIVE, MixChannel, Rumble, Niconico); capture still goes through yt-dlp/
@@ -483,6 +487,123 @@ initial inspection; a live preview cannot be sampled without an active capture.
 These changes are not a production deployment. Merge only after green CI and
 review. Rollback is the preceding Coolify image `607a151`; no migration is added.
 Do not reset the dirty checkout at `/mnt/livevault-nvme/gpt-harness/work/LiveVault-Test`.
+
+## Audit player e richieste asincrone (candidato 2026-09-29)
+
+Sorgenti: `app/static/app.js`, `app/live_capture_playlist.py`, `app/main.py`,
+`app/mp4_index.py`, `app/workers.py`, `app/storage_response.py`.
+Stati AWAY e claim scanner: `app/source_providers.py`,
+`app/stripchat_state.py`, `app/nsfw_worker.py`; verifica sorgente 2026-09-30.
+Baseline del clone audit: GitHub `main` `5fddda9`.
+Le verifiche riportate qui sono locali sul candidato; questa sezione non
+attesta il deploy o la continuità di una capture sul nodo.
+
+- Il player assegna una generazione a ogni apertura/chiusura e annulla la
+  richiesta playlist precedente. Una risposta tardiva o il caricamento
+  ritardato di hls.js non riapre un player chiuso né sostituisce il video
+  successivo. Anche gli errori HLS restano legati alla propria istanza.
+- I refresh periodici/SSE condividono la richiesta in corso. Le richieste
+  esplicite dopo un'azione accodano una sola nuova passata, conservando
+  `includeRecordings=true` se almeno un chiamante lo richiede; i chiamanti
+  attendono anche quella passata. I tick periodici non prolungano una
+  richiesta lenta o fallita con una coda permanente.
+- Le statistiche accettano subito l'ultimo periodo selezionato; richieste
+  identiche condividono il lavoro e risposte/errori superati non ripristinano
+  un periodo precedente. Il profilo carica i dati in uno snapshot locale;
+  apertura di un altro profilo o chiusura della finestra invalidano le
+  risposte precedenti, comprese le statistiche e i reload dopo salvataggio.
+- La capture usa gruppi su keyframe da 2 s sia mentre una parte cresce sia
+  dopo la chiusura. Prima del fix, 12 s di file pubblicavano cinque gruppi
+  live da 2 s che alla rotazione diventavano due gruppi da 6 s mantenendo
+  `MEDIA-SEQUENCE:0`; gli stessi numeri di segmento indicavano altri byte.
+  Ora i gruppi già annunciati conservano range, durata e URL. Il target HLS
+  è fisso per URI di playlist (almeno 3 s). Se un GOP successivo supera il
+  target, la route redirige alla nuova `capture.m3u8?epoch=<id>` con un
+  target adeguato, mantenendo range e posizioni già pubblicati; i loader
+  HLS seguono il redirect senza una risposta 409 permanente. Gli indici
+  live e finiti invalidano anche per device/inode cambiati, compresa la
+  sostituzione con un file più grande o con dimensione/mtime identici.
+- Ogni URL `capture?part=<token>` è autenticato e lega source, directory di
+  sessione, percorso risolto e identità device/inode. La route ricontrolla
+  la radice delle registrazioni e passa l'identità registrata a
+  `StorageFileResponse`, che la verifica con `fstat` sul descrittore
+  effettivamente aperto e serve i byte dallo stesso handle. Quindi
+  range HTTP e cancellazione durante il cambio storage restano attivi.
+  Un token sconosciuto, di un'altra source, per un file sostituito/eliminato
+  o per un percorso esterno restituisce 404; non legge la nuova parte attiva.
+  L'identità resta fissata anche durante indicizzazione e pubblicazione:
+  una sostituzione atomica fra le due fasi non lega range vecchi al nuovo file.
+- Remux/stitch/upload continuano a rimuovere le copie previste. La playlist
+  non dichiara `EVENT`: quando sparisce un prefisso avanza `MEDIA-SEQUENCE`
+  e `DISCONTINUITY-SEQUENCE`, conservando il significato dei segmenti
+  rimasti. La timeline disponibile copre le sole parti ancora riproducibili;
+  per Stripchat il remux finale non frammentato non aggiunge storia HLS.
+  Nessun video viene trattenuto per il player. Le cache sono in memoria:
+  massimo 16 sessioni, 256 parti ricordate per sessione e 2048 token;
+  deploy/evizione richiedono la riapertura del player, senza effetti sui dati.
+- Upload immediato e retry rispondono 409 `recording_busy` mentre il file
+  viene caricato, convertito o eliminato. Recupero, conversione, verifica
+  integrità e cancellazioni condividono l'esclusione per registrazione;
+  anche le pulizie in blocco la rispettano. L'integrità reclama
+  temporaneamente il file e ripristina lo stato precedente su eccezione.
+  Le transizioni API, uploader e repair usano compare-and-set, così una
+  lettura precedente non sovrascrive un claim successivo. La cancellazione
+  locale reclama `deleting` prima dell'unlink anche per una copia già
+  caricata e ripristina `uploaded` solo dopo la rimozione dei byte; il link
+  cloud resta disponibile. Cancellare la sola voce senza il file usa lo
+  stesso claim e non può rimuovere la riga di un upload appena iniziato.
+  La rimozione automatica dopo upload e il worker miniature usano claim
+  condizionali: un recupero o una cancellazione vincenti impediscono
+  l'avvio di un nuovo lettore sul file. Un errore di unlink rilascia il claim.
+  La coda NSFW esclude `converting`/`deleting`; lo scanner reclama `scanning`
+  con compare-and-set prima di aprire il processo helper. Conversione,
+  recupero, verifica integrità e cancellazione rispettano quel claim.
+  Un errore/annullamento nell'avvio o nella lettura dell'helper rilascia
+  l'analisi in `paused`, conservando progressi e file.
+  All'avvio, con storage online, un `deleting` interrotto viene riconciliato
+  senza cancellare altri byte: `uploaded` con ricevuta cloud esistente,
+  altrimenti `discarded`, con `local_deleted` basato sulla presenza reale.
+  Con storage offline resta occupato fino a un avvio con storage online,
+  per non confondere un disco scollegato con un file eliminato.
+  Il repair espone
+  l'ownership in `_repairing_recordings`: un `converting` realmente attivo
+  resta occupato, uno lasciato da un processo interrotto resta recuperabile.
+  Il frontend mostra il messaggio del 409 strutturato. Il registro delle
+  operazioni manuali è locale al singolo processo uvicorn del Dockerfile;
+  più processi API richiederebbero un lease condiviso per distinguere un
+  vecchio `converting` da un'operazione manuale su un altro processo.
+
+Test locali Python 3.13 su Windows con FFmpeg 7.1: 83 passati nel gruppo
+player/concorrenza/indici/storage, worker, receipt, libreria e contratti UI;
+test Node del frontend: 29 passati. Regressioni in
+`tests/test_live_capture_rotation.py` (rotazione, eliminazione, range HTTP,
+vincoli dei token, percorso esterno e limiti cache),
+`tests/test_panel_frontend.cjs` (risposte invertite, chiusura, cambio profilo,
+refresh dopo mutazione) e aggiornamento del contratto in
+`tests/test_v3424_performance.py`; le operazioni concorrenti e il recovery
+del `converting` abbandonato sono verificati in
+`tests/test_recording_action_concurrency.py` (claim prima dell'unlink,
+CAS contro upload/recupero/miniature, rimozione della sola voce e rilascio
+su errori), insieme ai test SQLite in `tests/test_thumbnail_queue.py`.
+La cronologia verifica anche il passaggio live → away → tipjar → live,
+con intervalli distinti, in `tests/test_worker_monitoring.py`.
+Verifica aggiuntiva del 2026-09-30: 52 test passati nel gruppo
+`test_recording_action_concurrency.py`, `test_thumbnail_queue.py` e
+`test_worker_monitoring.py`, inclusi i claim di cancellazione e l'avvio
+con operazioni interrotte; questo gruppo non richiede FFmpeg.
+La CI Linux e la prova browser con capture
+reale devono ancora confermare il candidato.
+Validazione finale locale 30 settembre: 512 test passati, 11 saltati nel gruppo
+che esclude cinque file di test dipendenti da host/mount Linux; controllo versione
+3.4.31 incluso. Successivo gruppo scanner/claim/versione: 49 passati, un test
+ONNX saltato; copre sia file reclamato dopo la scelta della coda sia helper
+non avviabile e protezione dei byte durante l'analisi. La CI esegue tutti i file.
+AWAY resta distinto da TIP-JAR nei nuovi intervalli e nella UI; gli intervalli
+storici non sono riclassificati. Entrambi sospendono la capture fino al ritorno
+pubblico. QA delle etichette su fixture esplicita a 1440×1000 e 412×915;
+la segnalazione ivyquinette e i limiti sono nel verbale audit.
+Rollback: revert del commit audit e redeploy dell'immagine precedente;
+nessuna migrazione, modifica alle impostazioni o riscrittura di media/DB.
 
 ## Playlist della capture live 3.4.29 (verifica locale 2026-09-29)
 
