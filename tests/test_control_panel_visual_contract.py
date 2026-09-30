@@ -3,14 +3,12 @@ from pathlib import Path
 ROOT = Path(__file__).parents[1] / 'control-panel' / 'static'
 
 
-def test_product_visual_layers_are_explicit_and_ordered():
+def test_one_authoritative_theme_follows_only_functional_components():
     html = (ROOT / 'index.html').read_text(encoding='utf-8')
-    app = html.index('/app.css?v=')
-    shell = html.index('/shell.css?v=4.0-control')
-    theme = html.index('/theme.css?v=5.0-feel')
-    premium = html.index('/premium.css?v=10.0-product')
-    magic = html.index('/magic.css?v=13.2-nina-embed')
-    assert app < shell < theme < premium < magic
+    assert html.index('/diagnostics.css?v=') < html.index('/app.css?v=3.5.0')
+    assert html.index('/media-upload.css?v=') < html.index('/app.css?v=3.5.0')
+    for retired in ('shell.css', 'theme.css', 'premium.css', 'magic.css', 'glass.css'):
+        assert retired not in html
 
 
 def test_dashboard_has_single_product_hero_and_mobile_route_title():
@@ -30,34 +28,24 @@ def test_dashboard_has_single_product_hero_and_mobile_route_title():
     assert 'https://openastro.tailf2871c.ts.net:10000/' in html
 
 
-def test_premium_theme_keeps_route_specific_accent_and_mobile_dock():
-    css = (ROOT / 'premium.css').read_text(encoding='utf-8')
-    assert 'body[data-view="media"]' in css
-    assert '.metric-card .ring' in css
-    assert '.mobile-nav' in css
-    assert 'conic-gradient' in css
+def test_spatial_theme_keeps_operational_meters_and_mobile_dock():
+    css = (ROOT / 'app.css').read_text(encoding='utf-8')
+    assert '.node-meters' in css and '.live-rings' in css
+    assert '.mobile-nav' in css and 'conic-gradient' in css
+    assert 'Mona Sans' in css and 'prefers-reduced-motion' in css
 
 
-def test_visual_qa_layer_uses_data_driven_surfaces_and_progressive_disclosure():
-    css = (ROOT / 'magic.css').read_text(encoding='utf-8')
+def test_new_layout_keeps_progressive_disclosure_and_player_transport():
+    css = (ROOT / 'app.css').read_text(encoding='utf-8')
     js = (ROOT / 'app.js').read_text(encoding='utf-8')
-    assert '.node-meters' in css
-    assert '.app-tile' in css
-    assert '.live-rings' in css
-    assert '.power-gauge' in css
-    assert '.media-feature-card' in css
-    assert '.resource-details.open>.metrics-grid' in css
-    assert '.media-tech-open' in css
-    assert '.system-tab-telemetry' in css
-    assert 'backdrop-filter:blur(28px)' in css
+    for selector in ['.app-tile', '.power-gauge', '.media-feature-card', '.resource-details.open', '.media-tech-open', '.system-tab-telemetry', '.media-video-controls', '.media-subtitle-overlay']:
+        assert selector in css
     assert "setHeroBar('#heroCpuBar'" in js
     assert "media.classList.toggle('media-tech-open')" in js
 
 
-def test_glass_layer_is_last_and_has_fallbacks():
+def test_shared_motion_and_local_font_are_available_offline():
     html = (ROOT / 'index.html').read_text(encoding='utf-8')
-    assert html.index('/magic.css?v=') < html.index('/glass.css?v=1.0-glass')
-    css = (ROOT / 'glass.css').read_text(encoding='utf-8')
-    assert '@supports not ((backdrop-filter' in css
-    assert 'prefers-reduced-transparency' in css
-    assert '"/glass.css"' in (ROOT / 'sw.js').read_text(encoding='utf-8')
+    sw = (ROOT / 'sw.js').read_text(encoding='utf-8')
+    assert '/motion.js?v=3.5.0' in html
+    assert '"/motion.js"' in sw and '"/fonts/mona-sans-latin-wght.woff2"' in sw

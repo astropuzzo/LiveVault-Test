@@ -83,9 +83,15 @@ NINA Monitor    -> nina-monitor/**
 
 Therefore a commit that changes only `nina-monitor/**` updates only NINA Monitor. It must not restart LiveVault or any host service. Feature changes are validated by GitHub CI before merging to `main`; the merge then becomes the production deployment trigger.
 
-## Current UI (source verified 2026-09-29)
+## Current UI (3.5.0 source verified 2026-09-30)
 
-Source: `nina-monitor/static/{index.html,app.js,app.css}`. The dedicated monitor
+Source: `nina-monitor/static/{index.html,app.js,app.css,motion.js,fonts/}`.
+The Observatory layout is rebuilt around preview, measured quality, stellar
+evidence, telemetry and review. Mona Sans is bundled locally; finite entrances
+respect reduced motion and hidden tabs. `server.py` explicitly serves motion
+and the local WOFF2 file; relative asset URLs work behind `/nina/`.
+Source is a rollout candidate until the deployment report confirms production:
+[UI redesign, verification and rollback](UI-REDESIGN-20260930.md). The dedicated monitor
 application remains the deployment target; no other application requires a restart.
 
 Image preview and stellar evidence now lead the dashboard. The inspector shows

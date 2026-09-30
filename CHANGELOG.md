@@ -1,5 +1,16 @@
 # Changelog
 
+## 3.5.0 — Nuova suite UI e motion design
+
+- LiveVault: shell e login ricostruiti, navigazione numerata, live prima della cronologia,
+  libreria con righe e schede responsive, archivio con filtri progressivi, analisi e player.
+- Control/Media: nuova regia del nodo, sette viste, import e player integrati nel design.
+- NINA: Observatory con preview ed evidenze, telemetria e revisione separate per priorità.
+- Mona Sans locale, superfici solide e accenti semantici; animazioni finite,
+  sospese nelle schede nascoste e disattivate con movimento ridotto.
+- Nessuna migrazione DB o modifica alle impostazioni di acquisizione/storage.
+  Sorgenti, QA, deploy e rollback: [UI-REDESIGN-20260930](docs/UI-REDESIGN-20260930.md).
+
 ## 3.4.31 — Audit pannelli, AWAY e diagnostica
 
 - AWAY è distinto da TIP-JAR nel probe, nelle schede, nei profili e nella cronologia. Un esito AWAY/private del resolver prevale sul biocontext Chaturbate ancora pubblico; non parte la registrazione finché la sorgente non torna pubblica. Nessuna riscrittura della cronologia precedente.

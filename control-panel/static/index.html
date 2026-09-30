@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <meta name="theme-color" content="#0b1729">
+  <meta name="theme-color" content="#101412">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="OpenAstro">
@@ -11,16 +11,19 @@
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" href="/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="/icon.svg">
-  <link rel="stylesheet" href="/diagnostics.css?v=1.0-audit">
-  <link rel="stylesheet" href="/app.css?v=20.1-media-fill"><link rel="stylesheet" href="/shell.css?v=4.0-control"><link rel="stylesheet" href="/theme.css?v=5.0-feel"><link rel="stylesheet" href="/premium.css?v=10.0-product"><link rel="stylesheet" href="/magic.css?v=13.2-nina-embed"><link rel="stylesheet" href="/media-upload.css?v=14.0-import"><link rel="stylesheet" href="/glass.css?v=1.0-glass">
+  <link rel="preload" href="/fonts/mona-sans-latin-wght.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/diagnostics.css?v=3.5.0">
+  <link rel="stylesheet" href="/media-upload.css?v=3.5.0">
+  <link rel="stylesheet" href="/app.css?v=3.5.0">
 </head>
 <body data-view="dashboard" class="is-loading">
   <div class="app-shell">
     <aside class="sidebar">
       <div class="brand-block">
-        <div class="mark" aria-hidden="true"><span></span></div>
-        <div><strong>OpenAstro</strong><small>Control Center</small></div>
+        <div class="mark" aria-hidden="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z"/></svg></div>
+        <div><strong>OpenAstro</strong><small>Il tuo centro di controllo</small></div>
       </div>
+      <p class="rail-label">IL TUO SPAZIO</p>
       <nav class="side-nav" aria-label="Sezioni principali">
         <a href="#dashboard" data-route="dashboard" class="active"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 13h6V4H4v9Zm0 7h6v-5H4v5Zm10 0h6v-9h-6v9Zm0-16v5h6V4h-6Z"/></svg><span>Dashboard</span></a>
         <a href="#media" data-route="media"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v14H4V5Zm6 3v8l6-4-6-4Z"/></svg><span>Media</span></a>
@@ -33,28 +36,43 @@
       <div class="sidebar-foot">
         <a class="livevault-link" href="https://openastro.tailf2871c.ts.net/" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5h6v2H7v10h10v-4h2v6H5V5Zm8 0h6v6h-2V8.4l-6.3 6.3-1.4-1.4L15.6 7H13V5Z"/></svg><span>Apri LiveVault</span></a>
         <div class="connection"><i id="connectionDot"></i><span id="connectionText">Connessione…</span></div>
-        <button id="logoutButton" class="logout">Esci</button>
       </div>
     </aside>
 
+    <button id="logoutButton" class="logout" type="button">Esci</button>
+
     <header class="mobile-header">
-      <div class="mobile-identity"><div class="mark" aria-hidden="true"><span></span></div><div><small>OPENASTRO</small><strong id="mobileViewTitle">Dashboard</strong></div></div>
-      <div class="mobile-status"><div class="connection"><i></i><span id="mobileConnectionText">Online</span></div></div>
+      <div class="mobile-identity"><div class="mark" aria-hidden="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z"/></svg></div><div><small>OPENASTRO</small><strong id="mobileViewTitle">Dashboard</strong></div></div>
+      <div class="mobile-status"><div class="connection"><i></i><span id="mobileConnectionText">Connessione…</span></div></div>
     </header>
 
     <main class="app-main">
-      <section class="app-view active" data-view-panel="dashboard" aria-labelledby="view-dashboard-title">
-        <div class="dashboard-topline"><div><p class="eyebrow">OPENASTRO CONTROL</p><span>Nodo personale</span></div><div class="hero-meta"><span id="hostName">openastro</span><span id="uptime">—</span><span id="lastUpdate">—</span></div></div>
+      <section class="app-view active" data-view-panel="dashboard" aria-labelledby="heroTitle">
+        <header class="dashboard-topline" data-motion>
+          <div><p class="eyebrow">OPENASTRO / CONTROL</p><h1>Una visione.<br>Tutto sotto controllo.</h1></div>
+          <div class="hero-meta"><span id="hostName">openastro</span><span id="uptime">—</span><span id="lastUpdate">—</span></div>
+        </header>
 
         <div class="dashboard-mosaic">
-          <article class="app-tile node-card" id="overview">
-            <div class="tile-heading"><span>Nodo</span><i class="state-dot"></i></div>
+          <article class="app-tile node-card" id="overview" data-motion>
+            <div class="tile-heading"><span>IL NODO / COMPUTE MODULE</span><i class="state-dot"></i></div>
             <div class="node-summary">
+              <span class="uptime-caption">Tempo di attività</span>
               <strong class="hero-uptime" id="heroUptimeValue">—</strong>
-              <div class="hero-state"><h1 id="heroTitle">Verifica…</h1><span id="heroRecorderPill">—</span></div>
+              <div class="hero-state"><h2 id="heroTitle">Verifica…</h2><span id="heroRecorderPill">—</span></div>
               <p id="heroSubtitle">Stato operativo del nodo.</p>
             </div>
-            <div class="node-meters" aria-hidden="true">
+            <svg class="node-orbit" data-orbit viewBox="0 0 220 220" fill="none" aria-hidden="true">
+              <circle cx="110" cy="110" r="90" stroke="#b9c5ad" stroke-width="1"/>
+              <ellipse cx="110" cy="110" rx="102" ry="39" transform="rotate(-32 110 110)" stroke="#647857" stroke-width="1"/>
+              <ellipse cx="110" cy="110" rx="39" ry="102" transform="rotate(-32 110 110)" stroke="#647857" stroke-width="1"/>
+              <path d="M110 4v25M110 191v25M4 110h25M191 110h25" stroke="#b9c5ad" stroke-width="1"/>
+              <rect x="84" y="84" width="52" height="52" rx="13" fill="#101412"/>
+              <path d="M97 97h10v10H97zM113 97h10v10h-10zM97 113h10v10H97zM113 113h10v10h-10z" fill="#d9ff82"/>
+              <circle cx="186" cy="56" r="5" fill="#101412"/>
+              <circle cx="71" cy="179" r="4" fill="#647857"/>
+            </svg>
+            <div class="node-meters">
               <div class="hero-bar" id="heroCpuBar"><i></i><span>CPU</span><b id="heroCpuText">—</b></div>
               <div class="hero-bar" id="heroRamBar"><i></i><span>RAM</span><b id="heroRamText">—</b></div>
               <div class="hero-bar" id="heroTempBar"><i></i><span>TEMP</span><b id="heroTempText">—</b></div>
@@ -62,29 +80,58 @@
             </div>
           </article>
 
-          <article class="app-tile live-card">
+          <article class="app-tile live-card" data-motion>
             <div class="tile-heading"><span>LiveVault</span><i class="state-dot"></i></div>
             <div class="live-rings" id="liveRings" aria-hidden="true"><i></i><i></i><i></i></div>
             <strong id="dashLiveState">Verifica…</strong>
             <small id="dashLiveDetail">—</small>
           </article>
 
-          <article class="app-tile power-card">
+          <article class="app-tile power-card" data-motion>
             <div class="tile-heading"><span>Energia</span><i></i></div>
             <div class="power-gauge" id="dashPowerArt" aria-hidden="true"><i></i></div>
             <strong id="dashPowerState">—</strong>
             <small id="dashPowerDetail">—</small>
           </article>
 
-          <article class="app-tile storage-card">
+          <article class="app-tile storage-card" data-motion>
             <div class="tile-heading"><span>Storage</span><i></i></div>
             <strong id="dashStorageMode">—</strong>
             <small id="dashStorageDetail">—</small>
             <div class="storage-usage" id="dashStorageArt" aria-hidden="true"><i></i><b></b></div>
           </article>
 
-          <article class="app-tile action-card">
-            <div class="tile-heading action-heading"><span>Controlli</span><a href="https://openastro.tailf2871c.ts.net:10000/" target="_blank" rel="noopener">Coolify ↗</a></div>
+
+
+          <article class="media-feature-card" data-motion>
+            <a href="#media" data-route="media" aria-label="Apri OpenAstro Media">
+              <div class="media-feature-copy"><span>OPENASTRO / MEDIA</span><h2>Le tue storie.<br>Sempre a portata di mano.</h2><div class="media-feature-status"><strong id="dashMediaState">Verifica…</strong><small id="dashMediaDetail">In attesa delle librerie</small></div></div>
+              <div class="media-feature-orb" aria-hidden="true"><i></i><i></i><b>▶</b></div><span class="media-feature-arrow" aria-hidden="true">↗</span>
+            </a>
+          </article>
+        </div>
+
+        <section class="panel diagnostic-panel" data-motion aria-labelledby="diagnosticTitle">
+          <div class="panel-head"><div><p class="eyebrow">STATO DEL NODO</p><h2 id="diagnosticTitle">Da controllare</h2></div><span id="diagnosticSummary" class="status-chip" role="status">Verifica in corso</span></div>
+          <div id="diagnosticIssues" class="diagnostic-issues"></div>
+          <div class="diagnostic-footer"><small id="diagnosticAge">In attesa del nodo</small><button id="exportDiagnostics" class="button secondary" type="button" disabled>Esporta diagnosi</button></div>
+        </section>
+
+        <section class="resource-details" id="resourceDetails">
+          <button class="resource-toggle" id="resourceToggle" type="button" aria-expanded="false"><span><b>Risorse live</b><small>CPU, RAM, temperatura, disco e rete</small></span><i>⌄</i></button>
+          <section class="metrics-grid" aria-label="Risorse del server">
+            <article class="metric-card"><div class="ring" id="cpuRing"><span id="cpuValue">—</span></div><div><p>CPU</p><strong id="loadValue">—</strong><small id="coreValue">—</small></div></article>
+            <article class="metric-card"><div class="ring" id="ramRing"><span id="ramValue">—</span></div><div><p>MEMORIA</p><strong id="ramUsed">—</strong><small id="ramTotal">—</small></div></article>
+            <article class="metric-card"><div class="ring temp" id="tempRing"><span id="tempValue">—</span></div><div><p>TEMPERATURA</p><strong id="tempState">—</strong><small>Compute Module</small></div></article>
+            <article class="metric-card"><div class="ring" id="diskRing"><span id="diskValue">—</span></div><div><p>NVME SERVER</p><strong id="diskFree">—</strong><small id="diskTotal">—</small></div></article>
+            <article class="metric-card network-card"><div class="ring" id="networkRing"><span>NET</span></div><div><p>RETE LIVE</p><strong id="networkDown">↓ —</strong><small id="networkUp">↑ —</small></div></article>
+            <article class="metric-card watt-card"><div class="ring power-ring" id="wattRing"><span>—</span></div><div><p>POTENZA MISURATA</p><strong id="wattValue">—</strong><small id="wattDaily">Sensore ingresso ASIAIR</small></div></article>
+          </section>
+        </section>
+
+        <section class="dashboard-control-section" aria-label="Comandi del nodo">
+          <article class="app-tile action-card" data-motion>
+            <div class="tile-heading action-heading"><span>Comandi del nodo</span><a href="https://openastro.tailf2871c.ts.net:10000/" target="_blank" rel="noopener">Coolify ↗</a></div>
             <div class="action-bubbles">
               <button id="quickNvmeAction" data-action="eject_nvme" data-confirm="Tieni premuto per espellere in sicurezza" aria-label="Espelli o rimonta NVMe">
                 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4h12v10H6V4Zm-2 14h16v2H4v-2Zm5-8 3 3 3-3h-2V7h-2v3H9Z"/></svg><span id="quickNvmeTitle">Espelli</span><small id="quickNvmeState">NVMe</small>
@@ -106,37 +153,12 @@
               </button>
             </div>
           </article>
-
-          <article class="media-feature-card">
-            <a href="#media" data-route="media" aria-label="Apri OpenAstro Media">
-              <div><span>OpenAstro Media</span><strong id="dashMediaState">Pronto</strong><small id="dashMediaDetail">Nessun supporto collegato</small></div>
-              <div class="media-feature-orb" aria-hidden="true"><i></i><i></i><b>▶</b></div>
-            </a>
-          </article>
-        </div>
-
-        <section class="panel diagnostic-panel" aria-labelledby="diagnosticTitle">
-          <div class="panel-head"><div><p class="eyebrow">STATO DEL NODO</p><h2 id="diagnosticTitle">Da controllare</h2></div><span id="diagnosticSummary" class="status-chip" role="status">Verifica in corso</span></div>
-          <div id="diagnosticIssues" class="diagnostic-issues"></div>
-          <div class="diagnostic-footer"><small id="diagnosticAge">In attesa del nodo</small><button id="exportDiagnostics" class="button secondary" type="button" disabled>Esporta diagnosi</button></div>
-        </section>
-
-        <section class="resource-details" id="resourceDetails">
-          <button class="resource-toggle" id="resourceToggle" type="button" aria-expanded="false"><span><b>Risorse live</b><small>CPU, RAM, temperatura, disco e rete</small></span><i>⌄</i></button>
-          <section class="metrics-grid" aria-label="Risorse del server">
-            <article class="metric-card"><div class="ring" id="cpuRing"><span id="cpuValue">—</span></div><div><p>CPU</p><strong id="loadValue">—</strong><small id="coreValue">—</small></div></article>
-            <article class="metric-card"><div class="ring" id="ramRing"><span id="ramValue">—</span></div><div><p>MEMORIA</p><strong id="ramUsed">—</strong><small id="ramTotal">—</small></div></article>
-            <article class="metric-card"><div class="ring temp" id="tempRing"><span id="tempValue">—</span></div><div><p>TEMPERATURA</p><strong id="tempState">—</strong><small>Compute Module</small></div></article>
-            <article class="metric-card"><div class="ring" id="diskRing"><span id="diskValue">—</span></div><div><p>NVME SERVER</p><strong id="diskFree">—</strong><small id="diskTotal">—</small></div></article>
-            <article class="metric-card network-card"><div class="ring" id="networkRing"><span>NET</span></div><div><p>RETE LIVE</p><strong id="networkDown">↓ —</strong><small id="networkUp">↑ —</small></div></article>
-            <article class="metric-card watt-card"><div class="ring power-ring" id="wattRing"><span>—</span></div><div><p>POTENZA MISURATA</p><strong id="wattValue">—</strong><small id="wattDaily">Sensore ingresso ASIAIR</small></div></article>
-          </section>
         </section>
 
       </section>
 
       <section class="app-view" data-view-panel="media" aria-labelledby="view-media-title">
-        <div class="view-heading"><div><p class="eyebrow">LIBRERIA PERSONALE</p><h1 id="view-media-title">Media</h1><p>USB, streaming, import e libreria in un unico workspace.</p></div></div>
+        <header class="view-heading" data-motion><div><p class="eyebrow">LIBRERIA PERSONALE</p><h1 id="view-media-title">La tua libreria.<br>Ovunque tu sia.</h1><p>Film, musica e ricordi. Le tue librerie, da ogni dispositivo.</p></div></header>
             <section class="panel media-panel workspace-panel" id="media">
       <div class="panel-head media-head">
         <div><p class="eyebrow">MEDIA HUB</p><h2>OpenAstro Media</h2><small>La tua libreria USB, in casa e fuori casa.</small></div>
@@ -158,10 +180,10 @@
       </div>
 
       <div class="media-profile-rails" id="mediaProfileRails">
-        <section id="mediaContinueWrap" hidden><div class="media-section-title"><span>CONTINUA A GUARDARE</span><small>resume server-side</small></div><div class="media-profile-rail" id="mediaContinue"></div></section>
+        <section id="mediaContinueWrap" hidden><div class="media-section-title"><span>CONTINUA A GUARDARE</span><small>Riprendi da dove eri rimasto</small></div><div class="media-profile-rail" id="mediaContinue"></div></section>
         <section id="mediaFavoritesWrap" hidden><div class="media-section-title"><span>I TUOI PREFERITI</span><small>disponibili su ogni browser</small></div><div class="media-profile-rail" id="mediaFavorites"></div></section>
         <section id="mediaPlayedWrap" hidden><div class="media-section-title"><span>VISTI DI RECENTE</span><small>cronologia OpenAstro</small></div><div class="media-profile-rail" id="mediaPlayed"></div></section>
-        <section id="mediaStreamsWrap" hidden><div class="media-section-title"><span>SESSIONI IN RIPRODUZIONE</span><small>stream HTTP attivi</small></div><div class="media-stream-list" id="mediaStreams"></div></section>
+        <section id="mediaStreamsWrap" hidden><div class="media-section-title"><span>SESSIONI IN RIPRODUZIONE</span><small>Riproduzioni in corso</small></div><div class="media-stream-list" id="mediaStreams"></div></section>
       </div>
 
       <div class="media-layout media-layout-v2">
@@ -184,17 +206,7 @@
             <div class="media-capacity"><strong id="mediaDriveFree">—</strong><small>liberi</small><div class="bar"><i id="mediaDriveBar"></i></div></div>
           </div>
 
-          <section class="media-upload-card disabled" id="mediaUploadCard" aria-labelledby="mediaUploadTitle">
-            <header class="media-upload-head"><div><span>IMPORTA SUL SERVER</span><strong id="mediaUploadTitle">Carica dal computer</strong><small id="mediaUploadRoute">Percorso automatico: LAN/Tailscale diretto quando disponibile, Internet solo come fallback.</small></div><span class="media-upload-route" id="mediaUploadRouteChip">AUTO</span></header>
-            <label class="media-drop-zone" id="mediaDropZone" aria-disabled="true">
-              <input id="mediaUploadInput" type="file" multiple hidden>
-              <span class="media-drop-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M11 15h2V8.8l2.6 2.6 1.4-1.4L12 5l-5 5 1.4 1.4L11 8.8V15Zm-6 3h14v2H5v-2Z"/></svg></span>
-              <span class="media-drop-copy"><strong>Trascina qui film, musica, foto o altri file</strong><small>Destinazione: <b id="mediaUploadPath">nessun supporto</b>. Il file entra subito nella libreria web e MiniDLNA lo rileva automaticamente.</small></span>
-              <button class="media-upload-pick" id="mediaUploadChoose" type="button" disabled>Seleziona file</button>
-            </label>
-            <div class="media-upload-queue" id="mediaUploadQueue" hidden><div class="media-upload-queue-head"><strong>Trasferimenti</strong><span id="mediaUploadQueueSummary">0/0 completati</span></div><div class="media-upload-queue-list" id="mediaUploadQueueList"></div></div>
-            <div class="media-upload-lan"><div class="media-upload-lan-copy"><strong>Dal PC sulla stessa rete: usa prima la LAN</strong><small><code id="mediaUploadSmbPath">\\OPENASTRO\Media</code> con l’utente <b>astro</b> trasferisce direttamente nella libreria selezionata via SMB. MiniDLNA è il catalogo TV: non è una pagina web di upload.</small></div><button id="mediaUploadCopySmb" type="button" disabled>Copia percorso SMB</button></div>
-          </section>
+
 
           <div class="media-recent-wrap" id="mediaRecentWrap" hidden>
             <div class="media-section-title"><span>AGGIUNTI DI RECENTE</span><small id="mediaRecentCount"></small></div>
@@ -212,6 +224,18 @@
             </div>
             <div id="mediaFiles" class="media-files-v2 grid"><div class="media-empty"><strong>Nessun supporto</strong><small>Collega un'unità USB per iniziare.</small></div></div>
           </div>
+
+          <section class="media-upload-card disabled" id="mediaUploadCard" aria-labelledby="mediaUploadTitle">
+            <header class="media-upload-head"><div><span>IMPORTA SUL SERVER</span><strong id="mediaUploadTitle">Carica dal computer</strong><small id="mediaUploadRoute">Percorso automatico: LAN/Tailscale diretto quando disponibile, Internet solo come fallback.</small></div><span class="media-upload-route" id="mediaUploadRouteChip">AUTO</span></header>
+            <label class="media-drop-zone" id="mediaDropZone" aria-disabled="true">
+              <input id="mediaUploadInput" type="file" multiple hidden>
+              <span class="media-drop-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M11 15h2V8.8l2.6 2.6 1.4-1.4L12 5l-5 5 1.4 1.4L11 8.8V15Zm-6 3h14v2H5v-2Z"/></svg></span>
+              <span class="media-drop-copy"><strong>Trascina qui film, musica, foto o altri file</strong><small>Destinazione: <b id="mediaUploadPath">nessun supporto</b>. Il file entra subito nella libreria web e MiniDLNA lo rileva automaticamente.</small></span>
+              <button class="media-upload-pick" id="mediaUploadChoose" type="button" disabled>Seleziona file</button>
+            </label>
+            <div class="media-upload-queue" id="mediaUploadQueue" hidden><div class="media-upload-queue-head"><strong>Trasferimenti</strong><span id="mediaUploadQueueSummary">0/0 completati</span></div><div class="media-upload-queue-list" id="mediaUploadQueueList"></div></div>
+            <div class="media-upload-lan"><div class="media-upload-lan-copy"><strong>Dal PC sulla stessa rete: usa prima la LAN</strong><small><code id="mediaUploadSmbPath">\\OPENASTRO\Media</code> con l’utente <b>astro</b> trasferisce direttamente nella libreria selezionata via SMB. MiniDLNA è il catalogo TV: non è una pagina web di upload.</small></div><button id="mediaUploadCopySmb" type="button" disabled>Copia percorso SMB</button></div>
+          </section>
         </div>
       </div>
       <p class="media-note">I supporti Media sono scrivibili soltanto per import autenticato OpenAstro/SMB. DLNA e accesso guest restano in sola lettura. Streaming remoto e download passano dal pannello HTTPS; SMB e DLNA restano esclusivamente nella rete locale.</p>
@@ -221,8 +245,8 @@
       </section>
 
       <section class="app-view" data-view-panel="storage" aria-labelledby="view-storage-title">
-        <div class="view-heading"><div><p class="eyebrow">ARCHIVIAZIONE</p><h1 id="view-storage-title">Storage</h1><p>NVMe, buffer interno, backup e rimozione sicura.</p></div></div>
-            <section class="panel storage-panel" id="storage">
+        <header class="view-heading" data-motion><div><p class="eyebrow">ARCHIVIAZIONE</p><h1 id="view-storage-title">Spazio alle tue idee.</h1><p>NVMe, buffer interno, backup e rimozione sicura.</p></div></header>
+            <section class="panel storage-panel" data-motion id="storage">
       <div class="panel-head">
         <div><p class="eyebrow">ARCHIVIAZIONE</p><h2>NVMe duale</h2></div>
         <span class="status-chip" id="storageChip">Verifica…</span>
@@ -244,9 +268,9 @@
       </section>
 
       <section class="app-view" data-view-panel="system" aria-labelledby="view-system-title">
-        <div class="view-heading"><div><p class="eyebrow">PRESTAZIONI</p><h1 id="view-system-title">Sistema</h1><p>Energia, temperatura e telemetria storica.</p></div></div>
+        <header class="view-heading" data-motion><div><p class="eyebrow">PRESTAZIONI</p><h1 id="view-system-title">Il ritmo del tuo nodo.</h1><p>Energia, temperatura e telemetria storica.</p></div></header>
         <div class="system-tabs" role="tablist" aria-label="Vista sistema"><button class="active" type="button" data-system-tab="power">Energia</button><button type="button" data-system-tab="telemetry">Storico</button></div>
-        <div class="system-grid system-tab-power">    <section class="panel power-panel" id="power">
+        <div class="system-grid system-tab-power">    <section class="panel power-panel" data-motion id="power">
       <div class="panel-head">
         <div><p class="eyebrow">CPU E CONNETTIVITÀ</p><h2>Profilo energetico</h2></div>
         <span class="profile-chip" id="currentProfile">—</span>
@@ -257,7 +281,7 @@
       </div>
       <div class="profile-slider">
         <input id="powerSlider" type="range" min="0" max="3" step="1" value="1" aria-label="Profilo energetico da ECO a MAX">
-        <div class="profile-labels"><span>ECO</span><span>BALANCE</span><span>PERFORMANCE</span><span>MAX</span></div>
+        <div class="profile-labels"><span>ECO</span><span>BILANCIATO</span><span>PRESTAZIONI</span><span>MAX</span></div>
       </div>
       <div class="power-facts">
         <div><span>GOVERNOR</span><strong id="powerGovernor">—</strong></div>
@@ -273,7 +297,7 @@
       <p class="power-safety">MAX mantiene la CPU alla frequenza massima configurata sul nodo. NVMe e registrazioni restano attivi.</p>
     </section>
 
-        <section class="panel telemetry-panel" id="telemetry">
+        <section class="panel telemetry-panel" data-motion id="telemetry">
       <div class="panel-head telemetry-head">
         <div><p class="eyebrow">TELEMETRIA</p><h2>Andamento risorse</h2></div>
         <div class="range-switch" role="group" aria-label="Intervallo grafici">
@@ -322,23 +346,23 @@
       </section>
 
       <section class="app-view" data-view-panel="nina" aria-labelledby="view-nina-title">
-        <div class="view-heading nina-view-heading">
-          <div><p class="eyebrow">ASTRO SESSION LIVE</p><h1 id="view-nina-title">NINA</h1><p>QualitySessionMeter live dentro OpenAstro. Runtime separato in Coolify.</p></div>
+        <header class="view-heading nina-view-heading" data-motion>
+          <div><p class="eyebrow">LA SESSIONE ASTRO</p><h1 id="view-nina-title">La tua notte.<br>In ogni dettaglio.</h1><p>La sessione N.I.N.A. e la qualità delle tue acquisizioni, in un unico sguardo.</p></div>
           <div class="nina-head-actions"><a class="button secondary" href="/nina/" target="_blank" rel="noopener">Apri Monitor ↗</a></div>
-        </div>
+        </header>
         <section class="panel nina-embedded-panel">
           <div class="nina-embed-bar">
-            <div><span class="nina-live-dot" aria-hidden="true"></span><strong>NINA Monitor</strong><small>Container Coolify indipendente · QSM sul PC N.I.N.A. · read-only</small></div>
+            <div><span class="nina-live-dot" aria-hidden="true"></span><strong>NINA Monitor</strong><small>Qualità della sessione · Monitor indipendente</small></div>
           </div>
           <div class="nina-frame-wrap"><iframe id="ninaMonitorFrame" title="OpenAstro NINA Monitor" src="/nina/" loading="eager" referrerpolicy="no-referrer" allow=""></iframe></div>
-          <p class="nina-note">Il browser non contatta direttamente N.I.N.A.: il token QSM resta nel container NINA Monitor. L'autenticazione NINA resta indipendente dal Control Center.</p>
+          <details class="module-technical"><summary>Informazioni sulla connessione</summary><p class="nina-note">Il browser non contatta direttamente N.I.N.A.: il token QSM resta nel container NINA Monitor. L'autenticazione NINA resta indipendente dal Control Center.</p></details>
         </section>
       </section>
 
       <section class="app-view" data-view-panel="pihole" aria-labelledby="view-pihole-title">
-        <div class="view-heading pihole-view-heading"><div><p class="eyebrow">PROTEZIONE DNS</p><h1 id="view-pihole-title">Pi-hole</h1><p>Filtering di rete e DNS cifrato personale, dentro e fuori casa.</p></div><div class="pihole-head-state"><span id="piholeRemoteBadge" class="status-chip">Verifica…</span><button class="button secondary" id="piholeRefresh" type="button">Aggiorna</button></div></div>
+        <header class="view-heading pihole-view-heading" data-motion><div><p class="eyebrow">PROTEZIONE DNS</p><h1 id="view-pihole-title">Una rete più pulita.</h1><p>Pi-hole e DNS cifrato. Protezione personale, in casa e fuori.</p></div><div class="pihole-head-state"><span id="piholeRemoteBadge" class="status-chip">Verifica…</span><button class="button secondary" id="piholeRefresh" type="button">Aggiorna</button></div></header>
         <div class="pihole-page-grid">
-          <section class="panel pihole-panel" id="piholePanel" aria-labelledby="piholeTitle">
+          <section class="panel pihole-panel" data-motion id="piholePanel" aria-labelledby="piholeTitle">
             <div class="panel-head"><div><p class="eyebrow">RETE DI CASA</p><h2 id="piholeTitle">DNS LAN e filtering</h2></div><span class="status-chip" id="piholeInstallState">Verifica…</span></div>
             <div class="pihole-primary">
               <div><strong id="piholeBlockingTitle">Stato in verifica</strong><small id="piholeDnsDetail">Controllo DNS e FTL…</small></div>
@@ -353,7 +377,7 @@
             <div class="action-row pihole-actions"><a class="button secondary" id="piholeAdminLink" href="#" target="_blank" rel="noopener">Apri Pi-hole ↗</a><button class="button secondary" id="piholeRestart" type="button" data-pihole-endpoint="/api/pihole/restart">Riavvia servizio</button><button class="button secondary" id="piholeGravityAction" type="button" data-pihole-endpoint="/api/pihole/gravity">Aggiorna Gravity</button></div>
           </section>
 
-          <section class="panel pihole-remote-panel" aria-labelledby="remoteDnsTitle">
+          <section class="panel pihole-remote-panel" data-motion aria-labelledby="remoteDnsTitle">
             <div class="panel-head"><div><p class="eyebrow">FUORI CASA</p><h2 id="remoteDnsTitle">DNS remoto</h2></div><span class="dns-live-dot" id="piholeRemoteDot" aria-hidden="true"></span></div>
             <div class="remote-hero"><div><span>GATEWAY PUBBLICO</span><strong id="piholeRemoteHost">—</strong><small id="piholeRemoteNote">Endpoint infrastrutturale: non inserirlo nel campo DNS privato di Android.</small></div><span class="status-chip">Infrastruttura</span></div>
             <div class="dot-network-banner" id="piholeNetworkBanner" hidden><div><span id="piholeNetworkKicker">RETE IPV6</span><strong id="piholeNetworkTitle">Configurazione richiesta</strong><small id="piholeNetworkReason">Verifica delegazione Iliadbox…</small></div><span class="status-chip" id="piholeNetworkState">—</span></div>
@@ -369,7 +393,7 @@
             <div class="action-row compact remote-actions"><button class="button secondary" type="button" data-pihole-endpoint="/api/pihole/remote/test">Testa gateway</button></div>
           </section>
 
-          <section class="panel dns-devices-panel" aria-labelledby="dnsDevicesTitle">
+          <section class="panel dns-devices-panel" data-motion aria-labelledby="dnsDevicesTitle">
             <div class="panel-head devices-head"><div><p class="eyebrow">DISPOSITIVI REMOTI</p><h2 id="dnsDevicesTitle">Accessi personali</h2><small>Ogni dispositivo ha una credenziale separata. Puoi bloccarlo senza modificare gli altri.</small></div><button class="button" id="piholeAddDevice" type="button">Aggiungi dispositivo</button></div>
             <div class="device-summary"><span><b id="piholeDeviceOnline">0</b> online</span><span><b id="piholeDeviceEnabled">0</b> abilitati</span><span><b id="piholeDeviceTotal">0</b> totali</span></div>
             <div class="dns-device-list" id="piholeDeviceList"><div class="dns-device-empty"><strong>Nessun dispositivo remoto</strong><small>Aggiungi il Samsung, un iPhone, iPad o Mac e copia la configurazione una sola volta.</small></div></div>
@@ -394,7 +418,7 @@
       </section>
 
       <section class="app-view" data-view-panel="advanced" aria-labelledby="view-advanced-title">
-        <div class="view-heading"><div><p class="eyebrow">AMMINISTRAZIONE</p><h1 id="view-advanced-title">Avanzate</h1><p>Solo ciò che serve per diagnosi e manutenzione.</p></div></div>
+        <header class="view-heading" data-motion><div><p class="eyebrow">AMMINISTRAZIONE</p><h1 id="view-advanced-title">Dietro le quinte.</h1><p>Servizi, connessioni e attività. Tutto il necessario per prenderti cura del nodo.</p></div></header>
         <div class="advanced-grid">    <section class="panel" id="services">
       <div class="panel-head"><div><p class="eyebrow">OPERATIVITÀ</p><h2>Servizi</h2></div><span id="serviceCount">—</span></div>
       <div class="service-grid" id="serviceGrid"></div>
@@ -457,21 +481,29 @@
 
   <div class="toast" id="toast" role="status"></div>
   <div class="login-gate" id="loginGate" hidden>
-    <form class="login-card" id="loginForm">
-      <div class="login-brand"><div class="mark"><span></span></div><small>IL TUO NODO PERSONALE</small></div>
-      <p class="eyebrow">OPENASTRO CONTROL</p>
-      <h1>Accesso al nodo.</h1>
-      <p>Connessione cifrata. Inserisci le credenziali del pannello.</p>
-      <label>UTENTE<input id="loginUsername" name="username" autocomplete="username" value="admin" required></label>
-      <label>PASSWORD<input id="loginPassword" name="password" type="password" autocomplete="current-password" required></label>
-      <button class="button login-submit" type="submit">Entra nel pannello <span>→</span></button>
-      <div class="login-error" id="loginError" role="alert"></div>
+    <form class="login-card" id="loginForm" data-motion>
+      <div class="login-story">
+        <div class="login-brand"><div class="mark" aria-hidden="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z"/></svg></div><small>OPENASTRO / CONTROL</small></div>
+        <p class="eyebrow">IL TUO NODO PERSONALE</p>
+        <h1>Il tuo mondo.<br><em>Sotto controllo.</em></h1>
+        <p>Un unico spazio per le tue librerie, le sessioni e il tuo server. Entra e ritrova tutto.</p>
+        <svg class="login-orbit" data-orbit viewBox="0 0 150 100" fill="none" aria-hidden="true"><ellipse cx="75" cy="50" rx="68" ry="25" transform="rotate(-18 75 50)" stroke="currentColor"/><ellipse cx="75" cy="50" rx="27" ry="45" transform="rotate(-18 75 50)" stroke="currentColor"/><circle cx="134" cy="27" r="4" fill="#d9ff82"/></svg>
+      </div>
+      <div class="login-form-fields">
+        <p>Bentornato.</p>
+        <label>UTENTE<input id="loginUsername" name="username" autocomplete="username" value="admin" required></label>
+        <label>PASSWORD<input id="loginPassword" name="password" type="password" autocomplete="current-password" required></label>
+        <button class="button login-submit" type="submit">Accedi al tuo spazio <span aria-hidden="true">→</span></button>
+        <div class="login-error" id="loginError" role="alert"></div>
+        <small class="login-footnote">Accesso personale · Connessione cifrata</small>
+      </div>
     </form>
   </div>
 
   <script src="/hls.min.js?v=1.7.2" defer></script>
-  <script src="/diagnostics.js?v=1.0-audit" defer></script>
-  <script src="/app.js?v=22.0-audit" defer></script>
-  <script src="/media-upload.js?v=14.0-import" defer></script>
+  <script src="/diagnostics.js?v=3.5.0" defer></script>
+  <script src="/app.js?v=3.5.0" defer></script>
+  <script src="/media-upload.js?v=3.5.0" defer></script>
+  <script src="/motion.js?v=3.5.0" defer></script>
 </body>
 </html>

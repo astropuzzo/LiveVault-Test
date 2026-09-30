@@ -34,10 +34,11 @@ def test_expensive_views_are_lazy_loaded():
 
 
 def test_pwa_shell_contains_new_layout_css():
-    assert '/shell.css' in SW
-    assert 'openastro-control-v22.0-audit' in SW
+    assert '"/app.css"' in SW and '"/motion.js"' in SW
+    assert 'openastro-control-v3.5.0' in SW
     assert '"/diagnostics.js"' in SW and '"/diagnostics.css"' in SW
-    assert '/magic.css' in SW
+    for retired in ['shell.css','theme.css','premium.css','magic.css','glass.css']:
+        assert retired not in SW
 
 
 def test_nina_monitor_is_embedded_same_origin_without_duplicate_entrypoints():
@@ -47,7 +48,7 @@ def test_nina_monitor_is_embedded_same_origin_without_duplicate_entrypoints():
     assert 'href="/nina/"' in HTML
     assert 'openastro.tailf2871c.ts.net:9091' not in HTML
     assert 'nina-embed-links' not in HTML
-    assert 'Container Coolify indipendente' in HTML
+    assert 'Informazioni sulla connessione' in HTML
     assert 'Il browser non contatta direttamente N.I.N.A.' in HTML
     assert 'il token QSM resta nel container NINA Monitor' in HTML
 def test_service_worker_precache_contains_only_existing_assets():

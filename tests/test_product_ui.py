@@ -15,9 +15,11 @@ def test_product_ui_is_dark_icon_driven_and_preserves_primary_hooks():
 
     assert '<meta name="color-scheme" content="dark">' in html
     assert has_css(css, "color-scheme:dark")
-    # 3.2 glass layer: frosted surfaces with fallbacks for no-blur / reduced transparency.
-    assert has_css(css, "--glass-blur:")
-    assert has_css(css, "@supports not ((backdrop-filter")
+    # Local type and solid surfaces form one design system; no remote font dependency.
+    assert has_css(css, 'font-family:"Mona Sans"')
+    assert "/static/fonts/mona-sans-latin-wght.woff2" in css
+    assert has_css(css, "--primary:#d9ff82")
+    assert "prefers-reduced-motion" in css
     assert "prefers-reduced-transparency" in css
     assert "/static/icons.svg#monitor" in html
     assert '<symbol id="search"' in icons
@@ -40,7 +42,7 @@ def test_product_ui_is_dark_icon_driven_and_preserves_primary_hooks():
     assert "chart-y-label" in ui
 
 
-def test_new_ui_does_not_reintroduce_marketing_dashboard_patterns():
+def test_operational_copy_keeps_real_views_and_readable_mobile_navigation():
     html = (STATIC / "index.html").read_text(encoding="utf-8").lower()
-    for banned in ("hero", "eyebrow", "command center", "everything at a glance", "intelligent monitoring"):
+    for banned in ("command center", "everything at a glance", "intelligent monitoring"):
         assert banned not in html

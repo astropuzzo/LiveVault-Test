@@ -249,9 +249,9 @@
     const pulse = typeof controlRoomPulseMarkup === 'function' ? controlRoomPulseMarkup() : '';
     const recent = typeof controlRoomRecentEnded === 'function' ? controlRoomRecentEnded(profiles) : [];
     setMarkup(root, `<div class="monitor-summary"><div><span class="state-dot ${live.length ? 'live' : ''}"></span><strong>${live.length} live</strong><span>${blocked ? `${blocked} da controllare` : live.length ? 'Copertura REC attiva' : 'Nessuna live'}</span></div><button class="btn secondary compact" data-live-wall type="button" ${live.length ? '' : 'disabled'}>${icon('grid','button-icon')}<span>Live wall</span></button></div>
-      ${pulse}
       <section class="monitor-section"><header><h3>Live</h3><span>${live.length}</span></header>${live.length ? `<div class="cr-live-grid">${live.map(p => controlRoomLiveCard(p)).join('')}</div>` : '<div class="empty compact">Nessuna creator live.</div>'}</section>
       ${recent.length ? `<section class="monitor-section"><header><h3>Appena terminate</h3><span>${recent.length}</span></header><div class="cr-ended-list">${recent.map(controlRoomEndedCard).join('')}</div></section>` : ''}
+      ${pulse}
       ${offlineFocus.length ? `<section class="monitor-section"><header><h3>Focus</h3><span>${offlineFocus.length}</span></header><div class="cr-compact-list">${offlineFocus.map(p => controlRoomCompactRow(p,true)).join('')}</div></section>` : ''}
       <details id="controlRoomOffline" class="cr-offline" ${controlRoomOfflineOpen ? 'open' : ''}><summary><span>Altre creator</span><span>${offline.length}</span>${icon('chevron-down','mini-icon')}</summary><div class="cr-compact-list">${offline.length ? offline.map(p => controlRoomCompactRow(p)).join('') : '<div class="empty compact">Nessuna.</div>'}</div></details>`);
     renderControlRoomWall(profiles);

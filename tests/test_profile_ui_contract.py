@@ -25,7 +25,7 @@ def test_profile_workspace_is_readable_and_csp_safe():
     assert 'class="profile-main-column"' in app
     assert 'class="profile-side-column"' in app
     assert has_css(css, ".profile-workspace{display:grid;grid-template-columns:minmax(0,1fr) 360px")
-    assert has_css(css, "@media(max-width:720px)")
+    assert has_css(css, "@media(max-width:820px)")
     assert has_css(css, ".profile-save{position:sticky")
 
 

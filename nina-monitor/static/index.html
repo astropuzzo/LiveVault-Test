@@ -3,114 +3,180 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <meta name="theme-color" content="#101318">
-  <title>NINA Monitor · OpenAstro</title>
-  <link rel="stylesheet" href="app.css">
+  <meta name="theme-color" content="#101412">
+  <title>NINA Monitor · OpenAstro Observatory</title>
+  <link rel="preload" href="fonts/mona-sans-latin-wght.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="app.css?v=3.5.0">
 </head>
 <body>
-  <div class="backdrop"></div>
-
-  <section id="loginView" class="login-shell" hidden>
-    <form id="loginForm" class="login-card" autocomplete="on">
-      <div class="brand-mark">N</div>
-      <p class="eyebrow">OPENASTRO</p>
-      <h1>NINA Monitor</h1>
-      <p class="muted">Accesso al monitor N.I.N.A.</p>
-      <label><span>Password</span><input id="loginPassword" type="password" autocomplete="current-password" required autofocus></label>
-      <button type="submit">Accedi</button>
-      <p id="loginError" class="error" hidden></p>
-    </form>
+  <section id="loginView" class="login-shell" hidden aria-labelledby="loginHeading">
+    <header class="login-masthead">
+      <div class="suite-brand"><span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 32 32"><circle cx="16" cy="16" r="9"/><path d="M5 22 27 10M16 4v5m0 14v5"/><circle cx="27" cy="10" r="2"/></svg></span><span>OPENASTRO <span class="brand-divider">/</span> OBSERVATORY</span></div>
+      <span class="access-label">ACCESSO RISERVATO</span>
+    </header>
+    <div class="login-layout">
+      <div class="login-intro" data-motion>
+        <p class="eyebrow">IL TUO OSSERVATORIO REMOTO</p>
+        <h1>NINA<span class="login-slash">/</span><span>Observatory.</span></h1>
+        <p class="login-description">Un punto di vista chiaro, su ogni esposizione.</p>
+        <svg class="login-orbit orbital-art" viewBox="0 0 480 320" aria-hidden="true">
+          <g data-orbit><ellipse cx="240" cy="160" rx="185" ry="58" transform="rotate(-25 240 160)"/><ellipse cx="240" cy="160" rx="185" ry="58" transform="rotate(25 240 160)"/><circle cx="240" cy="160" r="93"/><path d="M240 34v32m0 188v32M102 160h32m212 0h32"/><circle class="orbit-core" cx="240" cy="160" r="8"/><circle class="orbit-node" cx="385" cy="93" r="6"/></g>
+        </svg>
+      </div>
+      <form id="loginForm" class="login-card" autocomplete="on" data-motion>
+        <span class="module-index">01 <span>/ ACCESS</span></span>
+        <h2 id="loginHeading">Il tuo cielo.<br>In tempo reale.</h2>
+        <p class="muted">Accedi a NINA Monitor per seguire la sessione e la qualità delle esposizioni.</p>
+        <label for="loginPassword">Password</label>
+        <input id="loginPassword" type="password" autocomplete="current-password" required autofocus placeholder="Password di accesso">
+        <button class="login-submit" type="submit"><span>Apri l’osservatorio</span><span aria-hidden="true">↗</span></button>
+        <p id="loginError" class="error" role="alert" hidden></p>
+        <p class="login-note"><span class="tiny-orbit" aria-hidden="true"></span>Monitoraggio in sola lettura.</p>
+      </form>
+    </div>
+    <footer class="login-footer"><span>OPENASTRO SUITE</span><span>N.I.N.A. · QualitySessionMeter</span></footer>
   </section>
 
-  <main id="appView" class="app-shell" hidden>
-    <header class="topbar">
-      <div class="brand-row"><div class="brand-mark small">N</div><div><p class="eyebrow">OPENASTRO · QSM</p><h1>QualitySessionMeter</h1></div></div>
-      <div class="top-actions"><span id="modeTag" class="mode-tag">LIVE</span><span id="linkState" class="link-state"><i></i><b>Verifica…</b></span><button id="logoutButton" class="ghost" type="button">Esci</button></div>
+  <main id="appView" class="app-shell" hidden aria-label="Osservatorio NINA">
+    <a class="skip-link" href="#overview">Vai alla panoramica</a>
+    <header class="topbar" data-motion>
+      <div class="brand-row">
+        <div class="suite-brand"><span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 32 32"><circle cx="16" cy="16" r="9"/><path d="M5 22 27 10M16 4v5m0 14v5"/><circle cx="27" cy="10" r="2"/></svg></span><span>OPENASTRO SUITE</span></div>
+        <h1>NINA <span>/ Observatory</span></h1>
+      </div>
+      <div class="top-actions">
+        <span id="modeTag" class="mode-tag">LIVE</span>
+        <span id="linkState" class="link-state"><i aria-hidden="true"></i><b>Verifica…</b></span>
+        <button id="logoutButton" class="ghost" type="button">Esci <span aria-hidden="true">↗</span></button>
+      </div>
     </header>
-
-    <section id="statusBanner" class="status-banner">
-      <div><strong id="bannerTitle">In attesa di N.I.N.A.</strong><span id="bannerText">In attesa dei dati QualitySessionMeter.</span></div><i class="status-dot"></i>
+    <nav class="instrument-nav" aria-label="Sezioni dell’osservatorio">
+      <div class="nav-links">
+        <a href="#overview"><span aria-hidden="true">01</span> Panoramica</a>
+        <a href="#stellar"><span aria-hidden="true">02</span> Stelle</a>
+        <a href="#telemetry"><span aria-hidden="true">03</span> Telemetria</a>
+        <a href="#review"><span aria-hidden="true">04</span> Revisione</a>
+      </div>
+      <span class="read-only-label"><span class="tiny-orbit" aria-hidden="true"></span>SOLA LETTURA</span>
+    </nav>
+    <section id="statusBanner" class="status-banner" aria-label="Stato del collegamento">
+      <i class="status-dot" aria-hidden="true"></i>
+      <div><strong id="bannerTitle">In attesa di N.I.N.A.</strong><span id="bannerText">In attesa dei dati QualitySessionMeter.</span></div>
     </section>
-
-    <section id="emptyState" class="empty-state" hidden><div><strong id="emptyTitle">N.I.N.A. non disponibile</strong><p id="emptyText">Verifica collegamento QSM e rete.</p></div></section>
-
+    <section id="emptyState" class="empty-state" hidden aria-labelledby="emptyTitle" data-motion>
+      <div class="empty-copy">
+        <p class="eyebrow">IL CIELO PUÒ ASPETTARE</p>
+        <h2 id="emptyTitle">N.I.N.A. non disponibile</h2>
+        <p id="emptyText">Verifica collegamento QSM e rete.</p>
+        <p class="empty-note">Il monitor riprende automaticamente quando il collegamento torna disponibile.</p>
+        <div class="standby-checks"><span><b>01</b> PC N.I.N.A.</span><span><b>02</b> Plugin QSM</span><span><b>03</b> Collegamento rete</span></div>
+      </div>
+      <div class="empty-instrument" aria-hidden="true">
+        <svg class="orbital-art" viewBox="0 0 400 340"><g data-orbit><circle cx="200" cy="170" r="114"/><circle cx="200" cy="170" r="64"/><ellipse cx="200" cy="170" rx="160" ry="44" transform="rotate(-30 200 170)"/><path d="M200 34v32m0 208v32M64 170h32m208 0h32"/><circle class="orbit-core" cx="200" cy="170" r="7"/><circle class="orbit-node" cx="335" cy="92" r="5"/></g></svg>
+        <span>REMOTE OBSERVATORY <span>/ STANDBY</span></span>
+      </div>
+    </section>
     <section id="dashboard" class="dashboard" hidden>
-      <article class="qsm-card qsm-primary-card">
-        <div class="qsm-primary-grid">
-          <section><span class="qsm-label">QUALITÀ ULTIMO FRAME</span><strong id="qualityValue" class="qsm-quality-value">—</strong><b id="qualityLabel" class="qsm-accent-line">Waiting for frame</b></section>
-          <section><span class="qsm-label">FORZA DELLE EVIDENZE</span><strong id="confidenceValue" class="qsm-confidence-value">—</strong><b id="confidenceLabel" class="qsm-accent-line">Waiting</b></section>
-          <section class="qsm-status-block"><span id="modeText" class="qsm-label">MONITOR ONLY</span><strong id="frameStatusMain">IDLE</strong><span id="probableCauseMain">Waiting for first LIGHT frame</span><span id="reasonMain">—</span><em id="currentFileMain">—</em></section>
+      <section id="overview" class="observatory-section" aria-labelledby="overviewHeading" data-motion>
+        <div class="section-heading"><div><p class="eyebrow">01 / MISSION OVERVIEW</p><h2 id="overviewHeading">Ogni frame. Un quadro chiaro.</h2></div><p>La luce raccolta.<br>La qualità misurata.</p></div>
+        <div class="hero-grid">
+          <article id="previewPanel" class="qsm-card preview-panel">
+            <div class="qsm-title split-title"><h3>ULTIMO LIGHT</h3><span class="instrument-label"><span class="tiny-orbit" aria-hidden="true"></span>ANTEPRIMA REALE</span></div>
+            <div class="preview-wrap">
+              <div id="previewPlaceholder" class="preview-placeholder">
+                <svg class="preview-orbit orbital-art" viewBox="0 0 240 180" aria-hidden="true"><g data-orbit><circle cx="120" cy="90" r="53"/><ellipse cx="120" cy="90" rx="95" ry="24" transform="rotate(-25 120 90)"/><path d="M120 22v14m0 108v14M53 90h14m106 0h14"/><circle class="orbit-core" cx="120" cy="90" r="4"/></g></svg>
+                <b>La prossima luce arriva qui.</b><span>Comparirà al prossimo LIGHT reale salvato da N.I.N.A.</span>
+              </div>
+              <img id="previewImage" alt="Preview ultima esposizione NINA" hidden>
+            </div>
+            <div class="preview-meta"><span id="previewState">Nessuna preview ricevuta</span><span>Il file originale resta su N.I.N.A.</span></div>
+          </article>
+          <article class="qsm-card qsm-primary-card">
+            <div class="qsm-title"><h3>FRAME QUALITY</h3><span class="module-index">QSM</span></div>
+            <div class="qsm-primary-grid">
+              <section class="quality-instrument"><span class="qsm-label">QUALITÀ ULTIMO FRAME</span><div class="score-row"><strong id="qualityValue" class="qsm-quality-value">—</strong><span class="score-unit">/ 100</span></div><b id="qualityLabel" class="qsm-accent-line">Waiting for frame</b></section>
+              <section class="confidence-instrument"><span class="qsm-label">FORZA DELLE EVIDENZE</span><strong id="confidenceValue" class="qsm-confidence-value">—</strong><b id="confidenceLabel" class="qsm-accent-line">Waiting</b><p class="score-explainer">Indice diagnostico, non una probabilità.</p></section>
+              <section class="qsm-status-block"><span id="modeText" class="qsm-label">MONITOR ONLY</span><strong id="frameStatusMain">IDLE</strong><span id="probableCauseMain">Waiting for first LIGHT frame</span><span id="reasonMain">—</span><em id="currentFileMain">—</em></section>
+            </div>
+          </article>
         </div>
-      </article>
-      <article class="qsm-card session-card">
-        <div class="qsm-session-grid">
-          <section><span class="qsm-label">SCATTATI</span><strong id="capturedValue">0</strong></section>
-          <section><span class="qsm-label">UTILIZZABILI</span><strong id="usableValue">0</strong></section>
-          <section><span class="qsm-label">SCARTATI</span><strong id="rejectedValue">0</strong></section>
-          <section><span class="qsm-label">ACCETTAZIONE</span><strong id="acceptanceValue">0.0%</strong></section>
-          <section><span class="qsm-label">QUALITÀ UTILIZZABILI</span><strong id="sessionQualityValue">0</strong></section>
-          <section><span class="qsm-label">EVIDENZE MEDIE</span><strong id="sessionConfidenceValue">0%</strong></section>
-        </div>
-      <p id="sessionNote" class="qsm-help"></p></article>
-<div class="hero-grid">
-      <article id="previewPanel" class="qsm-card remote-card preview-panel">
-        <div class="qsm-title split-title"><span>ULTIMO LIGHT</span><small>Anteprima reale</small></div>
-        <div class="preview-wrap"><div id="previewPlaceholder" class="preview-placeholder"><b>Preview in attesa</b><span>Comparirà al prossimo LIGHT reale salvato da N.I.N.A.</span></div><img id="previewImage" alt="Preview ultima esposizione NINA" hidden></div>
-        <div class="preview-meta"><span id="previewState">Nessuna preview ricevuta</span><span>Il file originale resta su N.I.N.A.</span></div>
-      </article>
-      <article id="stellarPanel" class="qsm-card stellar-panel">
-        <div class="evidence-head"><div><span class="eyebrow">QSM 1.4</span><h2>Analisi stellare</h2></div><span id="stellarCount" class="review-count">In attesa</span></div>
-
-        <label class="qsm-label" for="stellarSelect">FRAME</label><select id="stellarSelect" class="evidence-select" aria-label="Frame verificato"></select>
-        <div id="stellarEvidence"></div>
-      </article>
-</div>
-      <article class="qsm-card">
-        <div class="qsm-signal-grid">
-          <section><span class="qsm-label">GUIDE RMS</span><strong id="guideRmsFrame">N/A</strong><small id="guideExcursionFrame">N/A</small></section>
-          <section><span class="qsm-label">TIPO DI GUIDA</span><strong id="guidePatternFrame">N/A</strong><small id="guidePatternConfidence">N/A</small></section>
-          <section><span class="qsm-label">STELLE</span><div class="inline-value"><strong id="starsFrame">N/A</strong><span id="starsDeltaValue">N/A</span></div><small id="starTrendFrame">N/A</small></section>
-          <section><span class="qsm-label">FONDO CIELO</span><div class="inline-value"><strong id="backgroundFrame">N/A</strong><span id="backgroundDeltaValue">N/A</span></div><small id="backgroundTrendFrame">N/A</small></section>
-          <section><span class="qsm-label">ANDAMENTO</span><strong id="temporalFrame">N/A</strong><small id="eventCountValue">0 session events</small></section>
-        </div>
-      </article>
-      <article class="qsm-card timeline-card">
-        <div class="qsm-title">ANDAMENTO DELLA SESSIONE</div>
-        <div class="qsm-help">Linee tratteggiate: baseline e limiti attivi. Seleziona un frame per i dettagli.</div>
-        <div id="pluginTimeline" class="plugin-timeline"></div>
-      </article>
-      <article id="guidePanel" class="qsm-card remote-card">
-        <div class="qsm-title split-title"><span>GUIDA LIVE · ultimi 20 secondi</span><small>Diagnostica in tempo reale</small></div>
-        <div class="guide-facts"><span>Total RMS <b id="guideTotalValue">—</b></span><span>RA RMS <b id="guideRaValue">—</b></span><span>DEC RMS <b id="guideDecValue">—</b></span><span>Max <b id="guideMaxValue">—</b></span><span>Samples <b id="guideSamplesValue">—</b></span></div>
-        <div id="guidePlot" class="plot guide-plot"></div>
-      </article>
-      <article class="qsm-card rejected-review-card">
-        <div class="qsm-title split-title"><span>SCARTI E RECUPERI</span><small>Decisioni registrate dal plugin</small></div>
-        <div id="reviewMessage" class="qsm-help">Seleziona un frame per i dettagli. Gestione file disponibile in N.I.N.A.</div>
-        <div class="table-wrap plugin-table-wrap rejected-wrap"><table class="frame-table plugin-table"><thead><tr><th>#</th><th>File</th><th>File action</th><th>Q</th><th>Conf.</th><th>RMS</th><th>Stars Δ</th><th>BG Δ</th><th>Cause</th></tr></thead><tbody id="rejectedTableBody"></tbody></table></div>
-        <div class="review-inspector-head"><span>DETTAGLIO DEL FRAME</span><small id="inspectorHint">clicca una riga</small></div>
-        <div id="frameInspector" class="inspector-empty">Seleziona un frame.</div>
-      </article>
-      <article class="qsm-card">
-        <div class="qsm-title">CRONOLOGIA</div>
-        <div class="table-wrap plugin-table-wrap history-wrap"><table class="frame-table plugin-table"><thead><tr><th>#</th><th>Q</th><th>Evidenze</th><th>Stato</th><th>File</th><th>RMS</th><th>Pattern</th><th>Trend</th><th>Stars Δ</th><th>BG Δ</th><th>Causa</th></tr></thead><tbody id="frameHistoryBody"></tbody></table></div>
-      </article>
-<details class="secondary-details"><summary>Eventi e confronto dei frame utilizzabili</summary>
-      <article class="qsm-card">
-        <div class="qsm-title">EVENTI RECENTI</div>
-        <div class="table-wrap plugin-table-wrap events-table-wrap"><table class="frame-table plugin-table"><thead><tr><th>Event</th><th>Time</th><th>Type</th><th>Frames</th><th>Conf.</th><th>Severity</th><th>Primary cause</th></tr></thead><tbody id="sessionEventsBody"></tbody></table></div>
-      </article>
-      <article class="qsm-card">
-        <div class="best-worst-grid">
-          <section><div class="qsm-title">BEST ACCEPTED</div><div class="table-wrap plugin-table-wrap rank-wrap"><table class="frame-table plugin-table"><thead><tr><th>#</th><th>Quality</th><th>Conf.</th><th>File</th></tr></thead><tbody id="bestAcceptedBody"></tbody></table></div></section>
-          <section><div class="qsm-title">WORST ACCEPTED</div><div class="table-wrap plugin-table-wrap rank-wrap"><table class="frame-table plugin-table"><thead><tr><th>#</th><th>Quality</th><th>Conf.</th><th>File</th></tr></thead><tbody id="worstAcceptedBody"></tbody></table></div></section>
-        </div>
-      </article>
-</details>
+        <article class="session-card" aria-label="Riepilogo della sessione">
+          <div class="session-heading"><span class="qsm-label">SESSIONE CORRENTE</span><span>QualitySessionMeter</span></div>
+          <div class="qsm-session-grid">
+            <section><span class="qsm-label">SCATTATI</span><strong id="capturedValue">0</strong></section>
+            <section><span class="qsm-label">UTILIZZABILI</span><strong id="usableValue">0</strong></section>
+            <section><span class="qsm-label">SCARTATI</span><strong id="rejectedValue">0</strong></section>
+            <section><span class="qsm-label">ACCETTAZIONE</span><strong id="acceptanceValue">0.0%</strong></section>
+            <section><span class="qsm-label">QUALITÀ UTILIZZABILI</span><strong id="sessionQualityValue">0</strong></section>
+            <section><span class="qsm-label">EVIDENZE MEDIE</span><strong id="sessionConfidenceValue">0%</strong></section>
+          </div>
+          <p id="sessionNote" class="qsm-help"></p>
+        </article>
+      </section>
+      <section id="stellar" class="observatory-section" aria-labelledby="stellarHeading" data-motion>
+        <div class="section-heading"><div><p class="eyebrow">02 / STELLAR INSPECTION</p><h2 id="stellarHeading">Dentro ogni stella.</h2></div><p>Misure reali.<br>Esiti registrati dal plugin.</p></div>
+        <article id="stellarPanel" class="qsm-card stellar-panel">
+          <div class="evidence-head"><div><span class="qsm-label">DEEP ANALYSIS</span><h3>Analisi stellare</h3></div><span id="stellarCount" class="review-count">In attesa</span></div>
+          <div class="evidence-selector"><label class="qsm-label" for="stellarSelect">FRAME VERIFICATO</label><select id="stellarSelect" class="evidence-select" aria-label="Frame verificato"></select></div>
+          <div id="stellarEvidence"></div>
+        </article>
+      </section>
+      <section id="telemetry" class="observatory-section" aria-labelledby="telemetryHeading" data-motion>
+        <div class="section-heading"><div><p class="eyebrow">03 / SESSION TELEMETRY</p><h2 id="telemetryHeading">Il segnale, nel tempo.</h2></div><p>Guida, cielo e qualità.<br>Una sessione leggibile.</p></div>
+        <article class="qsm-card signal-card">
+          <div class="qsm-signal-grid">
+            <section><span class="qsm-label">GUIDE RMS</span><strong id="guideRmsFrame">N/A</strong><small id="guideExcursionFrame">N/A</small></section>
+            <section><span class="qsm-label">TIPO DI GUIDA</span><strong id="guidePatternFrame">N/A</strong><small id="guidePatternConfidence">N/A</small></section>
+            <section><span class="qsm-label">STELLE</span><div class="inline-value"><strong id="starsFrame">N/A</strong><span id="starsDeltaValue">N/A</span></div><small id="starTrendFrame">N/A</small></section>
+            <section><span class="qsm-label">FONDO CIELO</span><div class="inline-value"><strong id="backgroundFrame">N/A</strong><span id="backgroundDeltaValue">N/A</span></div><small id="backgroundTrendFrame">N/A</small></section>
+            <section><span class="qsm-label">ANDAMENTO</span><strong id="temporalFrame">N/A</strong><small id="eventCountValue">0 session events</small></section>
+          </div>
+        </article>
+        <article class="qsm-card timeline-card">
+          <div class="qsm-title split-title"><h3>ANDAMENTO DELLA SESSIONE</h3><span class="instrument-label">QSM / MULTICHANNEL</span></div>
+          <p class="qsm-help">Linee tratteggiate: baseline e limiti attivi. Seleziona un frame per i dettagli.</p>
+          <div id="pluginTimeline" class="plugin-timeline" tabindex="0" role="region" aria-label="Andamento della sessione, scorrimento orizzontale"></div>
+        </article>
+        <article id="guidePanel" class="qsm-card remote-card">
+          <div class="qsm-title split-title"><h3>GUIDA LIVE</h3><span class="instrument-label">ULTIMI 20 SECONDI / PHD2</span></div>
+          <div class="guide-facts"><span>Total RMS <b id="guideTotalValue">—</b></span><span>RA RMS <b id="guideRaValue">—</b></span><span>DEC RMS <b id="guideDecValue">—</b></span><span>Max <b id="guideMaxValue">—</b></span><span>Samples <b id="guideSamplesValue">—</b></span></div>
+          <div id="guidePlot" class="plot guide-plot"></div>
+        </article>
+      </section>
+      <section id="review" class="observatory-section" aria-labelledby="reviewHeading" data-motion>
+        <div class="section-heading"><div><p class="eyebrow">04 / FRAME REVIEW</p><h2 id="reviewHeading">Ogni decisione, in chiaro.</h2></div><p>Scarti, recuperi e dettagli.<br>I file restano su N.I.N.A.</p></div>
+        <article class="qsm-card rejected-review-card">
+          <div class="qsm-title split-title"><h3>SCARTI E RECUPERI</h3><span class="instrument-label">ESITI DEL PLUGIN</span></div>
+          <p id="reviewMessage" class="qsm-help">Seleziona un frame per i dettagli. Gestione file disponibile in N.I.N.A.</p>
+          <div class="table-wrap plugin-table-wrap rejected-wrap" tabindex="0" role="region" aria-label="Scarti e recuperi, scorrimento orizzontale"><table class="frame-table plugin-table"><caption class="sr-only">Scarti e recuperi della cronologia recente</caption><thead><tr><th scope="col">#</th><th scope="col">File</th><th scope="col">File action</th><th scope="col">Q</th><th scope="col">Conf.</th><th scope="col">RMS</th><th scope="col">Stars Δ</th><th scope="col">BG Δ</th><th scope="col">Cause</th></tr></thead><tbody id="rejectedTableBody"></tbody></table></div>
+          <div class="review-inspector-head"><h4>DETTAGLIO DEL FRAME</h4><span id="inspectorHint">clicca una riga</span></div>
+          <div id="frameInspector" class="inspector-empty">Seleziona un frame.</div>
+        </article>
+        <article class="qsm-card history-card">
+          <div class="qsm-title split-title"><h3>CRONOLOGIA</h3><span class="instrument-label">FRAME RECENTI</span></div>
+          <div class="table-wrap plugin-table-wrap history-wrap" tabindex="0" role="region" aria-label="Cronologia dei frame, scorrimento orizzontale"><table class="frame-table plugin-table"><caption class="sr-only">Cronologia dei frame ricevuti da QSM</caption><thead><tr><th scope="col">#</th><th scope="col">Q</th><th scope="col">Evidenze</th><th scope="col">Stato</th><th scope="col">File</th><th scope="col">RMS</th><th scope="col">Pattern</th><th scope="col">Trend</th><th scope="col">Stars Δ</th><th scope="col">BG Δ</th><th scope="col">Causa</th></tr></thead><tbody id="frameHistoryBody"></tbody></table></div>
+        </article>
+        <details class="secondary-details">
+          <summary><span>Eventi e confronto dei frame utilizzabili</span><span class="details-action" aria-hidden="true">+</span></summary>
+          <div class="secondary-content">
+            <article class="qsm-card">
+              <div class="qsm-title"><h3>EVENTI RECENTI</h3></div>
+              <div class="table-wrap plugin-table-wrap events-table-wrap" tabindex="0" role="region" aria-label="Eventi recenti, scorrimento orizzontale"><table class="frame-table plugin-table"><caption class="sr-only">Eventi recenti della sessione</caption><thead><tr><th scope="col">Event</th><th scope="col">Time</th><th scope="col">Type</th><th scope="col">Frames</th><th scope="col">Conf.</th><th scope="col">Severity</th><th scope="col">Primary cause</th></tr></thead><tbody id="sessionEventsBody"></tbody></table></div>
+            </article>
+            <article class="qsm-card">
+              <div class="best-worst-grid">
+                <section><div class="qsm-title"><h3>BEST ACCEPTED</h3></div><div class="table-wrap plugin-table-wrap rank-wrap" tabindex="0" role="region" aria-label="Migliori frame utilizzabili, scorrimento orizzontale"><table class="frame-table plugin-table"><caption class="sr-only">Migliori frame utilizzabili</caption><thead><tr><th scope="col">#</th><th scope="col">Quality</th><th scope="col">Conf.</th><th scope="col">File</th></tr></thead><tbody id="bestAcceptedBody"></tbody></table></div></section>
+                <section><div class="qsm-title"><h3>WORST ACCEPTED</h3></div><div class="table-wrap plugin-table-wrap rank-wrap" tabindex="0" role="region" aria-label="Frame utilizzabili con qualità più bassa, scorrimento orizzontale"><table class="frame-table plugin-table"><caption class="sr-only">Frame utilizzabili con qualità più bassa</caption><thead><tr><th scope="col">#</th><th scope="col">Quality</th><th scope="col">Conf.</th><th scope="col">File</th></tr></thead><tbody id="worstAcceptedBody"></tbody></table></div></section>
+              </div>
+            </article>
+          </div>
+        </details>
+      </section>
     </section>
-
-    <footer><span>OpenAstro · QualitySessionMeter</span><span>Monitoraggio remoto · sola lettura</span></footer><div id="stellarTooltip" class="stellar-tooltip" hidden></div>
+    <footer class="app-footer"><span>OPENASTRO <span>/</span> NINA OBSERVATORY</span><span>QualitySessionMeter · Monitoraggio remoto</span><a href="#overview">Torna in alto <span aria-hidden="true">↑</span></a></footer>
+    <div id="stellarTooltip" class="stellar-tooltip" hidden></div>
   </main>
-  <script src="app.js" defer></script>
+  <script src="app.js?v=3.5.0" defer></script>
+  <script src="motion.js?v=3.5.0" defer></script>
 </body>
 </html>

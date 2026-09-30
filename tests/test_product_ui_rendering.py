@@ -23,7 +23,7 @@ def test_product_ui_rendering_regressions_are_pinned():
     assert has_css(css, 'transform: scale(3)')
 
     assert has_css(css, '.archive-table-head')
-    assert has_css(css, 'grid-template-columns: minmax(260px,1.15fr) minmax(240px,.9fr) 120px 130px 96px')
+    assert has_css(css, 'grid-template-columns:76px minmax(180px,1.4fr) minmax(140px,.9fr) 88px 96px 85px')
     assert has_css(css, '.archive-surface .row-more[open]')
     assert has_css(css, '.archive-surface .row-more[open] .row-menu')
     assert has_css(css, '.archive-surface .icon-button.recovery')

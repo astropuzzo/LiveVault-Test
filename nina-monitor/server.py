@@ -168,6 +168,8 @@ class Handler(BaseHTTPRequestHandler):
             '/index.html': 'index.html',
             '/app.js': 'app.js',
             '/app.css': 'app.css',
+            '/motion.js': 'motion.js',
+            '/fonts/mona-sans-latin-wght.woff2': 'fonts/mona-sans-latin-wght.woff2',
         }.get(path)
         if not mapped:
             self._send_json({'ok': False, 'error': 'not found'}, 404)

@@ -1,5 +1,18 @@
 # Live panel and short reconnect files
 
+## UI 3.5.0 — sorgente verificato 2026-09-30
+
+La shell, login, quattro viste e player sono ricostruiti in
+`app/static/{index.html,style.css,ui.js,player.css,motion.js}`. Le live precedono
+la cronologia; la libreria ha righe/schede responsive, l’archivio filtri
+progressivi e l’analisi grafici più ampi. Asset locali, animazioni finite,
+movimento ridotto e stop nelle schede nascoste. Le maschere NSFW, i byte range,
+AWAY/TIP-JAR e i contratti di acquisizione restano invariati.
+Runtime nell’immagine Coolify; candidata finché il rollout non è verificato.
+Evidenze visuali, limiti e rollback 3.4.31:
+[UI-REDESIGN-20260930](UI-REDESIGN-20260930.md).
+
+
 Verified 2026-09-09 via existing SSH access. Production image was
 `ahul2vdjkyvjiwgzpcrmxzfe:607a151830f290240f4ce84f0a25be4471f96a1b`, healthy.
 Authenticated status, sources and six-hour Pulse APIs responded. No capture was

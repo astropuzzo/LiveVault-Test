@@ -15,6 +15,11 @@ SOURCE.txt identifica la revisione (ultimo allineamento completo: 2026-09-30,
 incluse le guide collegate da questo file). Il vecchio handoff duplicato è stato sostituito
 da un rinvio, con originale conservato nella directory rollback.
 
+## Redesign UI 3.5.0 — candidato 2026-09-30
+Nuova suite visiva in verifica su `codex/ui-future-20260930`.
+Sorgenti, QA, rollout e rollback in [UI-REDESIGN-20260930](docs/UI-REDESIGN-20260930.md).
+Produzione invariata a 3.4.31 finché il rollout non è confermato.
+
 ## Handoff corrente — 2026-09-30 (LiveVault 3.4.31 in produzione)
 Audit SSH di LiveVault, Control/Media e NINA concluso sul commit sorgente
 `fc023fd8908d41fc897c78b73a65f97695ab26e0`: [evidenze e rollback](docs/PANELS-AUDIT-20260929.md).

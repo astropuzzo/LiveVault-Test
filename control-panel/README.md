@@ -4,6 +4,18 @@ PWA mobile-first per monitorare e controllare il server ASIAIR/Debian. Il serviz
 vive sulla memoria interna, resta accessibile senza NVMe e viene pubblicato solo
 in HTTPS tramite Tailscale Funnel, con autenticazione applicativa.
 
+## Interfaccia 3.5.0 (candidato verificato nel sorgente, 2026-09-30)
+
+`static/index.html` e `static/app.css` sono ricostruiti: navigazione numerata,
+dashboard del nodo, Media Hub e cinque moduli di controllo. Login, player e
+conferma mantenuta dei comandi conservano i contratti esistenti. Font locale
+in `static/fonts/`, animazioni finite in `static/motion.js`; preferenza di
+movimento ridotto rispettata. I fogli `shell/theme/premium/magic/glass` sono
+ritirati dalla pagina e dalla precache. Il runtime resta
+`/opt/openastro-control/static`; deploy solo asset, senza restart del servizio.
+Verifica visuale, limiti e rollback privato in
+[UI-REDESIGN-20260930](../docs/UI-REDESIGN-20260930.md).
+
 ## Funzioni
 
 - CPU, memoria, temperatura, uptime, rete e dischi in tempo reale
@@ -181,16 +193,14 @@ Le modifiche visive al Control Center non si considerano concluse sulla sola bas
 
 Il browser QA/Playwright è volutamente separato dal runtime del pannello e non è una dipendenza di produzione. Durante registrazioni LiveVault attive le catture e i test vanno eseguiti a bassa priorità e non devono avviare transcoding, scansioni media forzate o benchmark.
 
-## Livello glass (2026-09-24)
+## Skin precedente — ritirata il 2026-09-30
 
-`control-panel/static/glass.css` (`?v=1.0-glass`, ultimo foglio in `index.html`,
-aggiunto alla SHELL di `sw.js`, cache corrente `openastro-control-v22.0-audit`) applica
-sfondo ad aurore e superfici traslucide sfocate, con fallback senza
-`backdrop-filter` e per `prefers-reduced-transparency`/`reduced-motion`.
-Il livello glass originale cambiava solo CSS. QA aggiornato il 2026-09-29/30
-con asset candidati e snapshot sanitizzati del nodo a 1440×1000 e 412×915:
-Dashboard, Media e Sistema, inclusi i grafici e il percorso SMB NVMe.
-Stato del deploy in [audit pannelli](../docs/PANELS-AUDIT-20260929.md).
-Rollback del livello glass: rimuovere il `<link>` a
-`glass.css` (o ripristinare `index.html` e `sw.js` precedenti); non serve
-riavviare il servizio.
+Il livello glass del 2026-09-24 e le skin shell/theme/premium/magic sono
+conservati nel repository per recupero storico, ma non sono caricati da
+`index.html` né precache della release 3.5.0. Il nuovo foglio principale è
+`static/app.css`, preceduto soltanto dagli stili funzionali diagnostica/import.
+Fonte, evidenze e rollback completo della suite in
+[UI-REDESIGN-20260930](../docs/UI-REDESIGN-20260930.md). Per tornare alla UI 3.4.31
+ripristinare gli asset dal backup privato del rollout; rimuovere un solo link
+CSS non basta, perché il redesign ricompone anche il DOM. Nessun restart del
+servizio per il ripristino statico.
