@@ -114,8 +114,8 @@ def test_standalone_assets_and_docker_contract_exist():
     css = (ROOT / 'static' / 'app.css').read_text(encoding='utf-8')
     assert 'api/state' in js and '/api/state' not in js
     assert 'api/preview.jpg' in js and '/api/preview.jpg' not in js
-    assert 'href="app.css?v=3.5.0"' in html and 'src="app.js?v=3.5.0"' in html
-    assert 'src="motion.js?v=3.5.0"' in html
+    assert 'href="app.css?v=3.5.1"' in html and 'src="app.js?v=3.5.1"' in html
+    assert 'src="motion.js?v=3.5.1"' in html
     assert '[hidden]{display:none!important}' in css
     assert 'guidingLive' in js
     assert 'ANDAMENTO DELLA SESSIONE' in html
@@ -329,7 +329,7 @@ def test_new_static_assets_resolve_under_the_reverse_proxy_prefix(monkeypatch):
     thread = threading.Thread(target=service.serve_forever, daemon=True)
     thread.start()
     try:
-        for route, name in [('motion.js?v=3.5.0', 'motion.js'), ('fonts/mona-sans-latin-wght.woff2', 'fonts/mona-sans-latin-wght.woff2')]:
+        for route, name in [('motion.js?v=3.5.1', 'motion.js'), ('fonts/mona-sans-latin-wght.woff2', 'fonts/mona-sans-latin-wght.woff2')]:
             with urllib.request.urlopen(f'http://127.0.0.1:{service.server_port}/{route}', timeout=2) as response:
                 assert response.status == 200
                 assert response.read() == (ROOT / 'static' / name).read_bytes()

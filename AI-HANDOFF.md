@@ -15,16 +15,25 @@ SOURCE.txt identifica la revisione (ultimo allineamento completo: 2026-09-30,
 incluse le guide collegate da questo file). Il vecchio handoff duplicato è stato sostituito
 da un rinvio, con originale conservato nella directory rollback.
 
-## Redesign UI 3.5.0 — candidato 2026-09-30
-Nuova suite visiva in verifica su `codex/ui-future-20260930`.
+## UI — runtime 3.5.0, revisione visiva 3.5.1 in preparazione
+Verifica **2026-09-30**: LiveVault e NINA `:103abbd349cb0f5fee6e062e41def90c412d6e0d`
+healthy; Control attivo, sei asset SHA-256 identici allo stesso sorgente in
+`/opt/openastro-control/static`, PID invariato 1589194. CI main
+[36718431842](https://github.com/astropuzzo/LiveVault-Test/actions/runs/36718431842)
+verde: 583 Python e 69 JavaScript. Backup Control privato:
+`/var/backups/openastro/20260930-ui-future/control-before.tar.gz`; immagini
+3.4.31 `:fc023fd...` conservate. Nessuna migrazione DB.
+Il primo design è stato respinto dall’utente: evoluzione dell’originale con
+vetro, blu cosmico e motion esteso in lavorazione su `codex/ui-future-20260930`.
 Sorgenti, QA, rollout e rollback in [UI-REDESIGN-20260930](docs/UI-REDESIGN-20260930.md).
-Produzione invariata a 3.4.31 finché il rollout non è confermato.
+La copia `/opt/openastro-ops` è ancora al precedente allineamento 3.4.31:
+allinearla insieme al prossimo rollout; non confonderla con il runtime verificato.
 
-## Handoff corrente — 2026-09-30 (LiveVault 3.4.31 in produzione)
+## Audit precedente — 2026-09-30 (release 3.4.31)
 Audit SSH di LiveVault, Control/Media e NINA concluso sul commit sorgente
 `fc023fd8908d41fc897c78b73a65f97695ab26e0`: [evidenze e rollback](docs/PANELS-AUDIT-20260929.md).
 CI feature e main verdi: 582 test Python e 61 JavaScript, build/prova NINA isolato.
-LiveVault e NINA hanno immagini `:fc023fd...` healthy; Control è aggiornato in
+Durante quell’audit LiveVault e NINA avevano immagini `:fc023fd...` healthy; Control fu aggiornato in
 `/opt/openastro-control`, nove hash identici al sorgente testato. Le immagini
 `0242aa3`/`900ccd44` sono rollback, non il runtime corrente. Backup Control privato:
 `/var/backups/openastro/20260930-panels-audit/control-before.tar.gz`.

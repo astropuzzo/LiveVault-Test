@@ -435,7 +435,8 @@ function toast(message, type = 'good') {
   element.className = `toast ${type}`;
   element.textContent = message;
   $('#toastRegion').append(element);
-  setTimeout(() => element.remove(), 4200);
+  globalThis.OpenAstroMotion?.open(element);
+  setTimeout(() => { if (globalThis.OpenAstroMotion) globalThis.OpenAstroMotion.close(element, () => element.remove()); else element.remove(); }, 4200);
 }
 
 async function api(url, options = {}) {
@@ -475,6 +476,7 @@ function openModal(id) {
   const modal = $(`#${id}`);
   if (!modal) return;
   modal.classList.remove('hidden');
+  globalThis.OpenAstroMotion?.open(modal.querySelector('.modal-card') || modal);
   document.body.classList.add('modal-open');
   setTimeout(() => modal.querySelector('input:not([type="hidden"]), select, button')?.focus(), 0);
 }
@@ -482,8 +484,12 @@ function openModal(id) {
 function closeModal(id) {
   const modal = $(`#${id}`);
   if (!modal) return;
-  modal.classList.add('hidden');
-  if (!$$('.modal:not(.hidden)').length) document.body.classList.remove('modal-open');
+  const hide = () => {
+    modal.classList.add('hidden');
+    if (!$$('.modal:not(.hidden)').length) document.body.classList.remove('modal-open');
+  };
+  if (globalThis.OpenAstroMotion) globalThis.OpenAstroMotion.close(modal.querySelector('.modal-card') || modal, hide);
+  else hide();
   if (id === 'videoModal') stopVideo();
   if (id === 'profileModal') { profileData = null; profileRequestVersion += 1; profileStatisticsRequestVersion += 1; }
 }

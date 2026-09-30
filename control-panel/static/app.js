@@ -294,6 +294,7 @@ function renderHistory(points, energy = {}, availability = {}, rangeSeconds = hi
   $('#wattAverage').textContent = energy.average_watts != null ? `media ${energy.average_watts.toFixed(1)} W` : 'media —';
   const coverage = energy.covered_seconds < 60 ? `${energy.covered_seconds} s` : duration(energy.covered_seconds);
   $('#energyMeasured').textContent = energy.wh != null ? `${energy.wh.toFixed(2)} Wh · ${coverage} coperti` : 'In attesa di campioni misurati';
+  ['computeChart','temperatureChart','networkChart','diskChart','wattChart'].forEach(id=>globalThis.OpenAstroMotion?.render(document.getElementById(id),'chart'));
 }
 async function refreshHistory() {
   if (historyBusy || document.hidden || !signedIn || currentView !== 'system') return;
@@ -601,6 +602,7 @@ function renderMediaFiles() {
   $$('.media-dir').forEach(button => button.addEventListener('click', () => loadMediaDirectory(button.dataset.mediaPath)));
   $$('[data-media-play]').forEach(button => button.addEventListener('click', () => openMediaPlayer(button.dataset.mediaPlay, button.dataset.mediaName, button.dataset.mediaCategory)));
   $$('[data-media-fav]').forEach(button => button.addEventListener('click', () => toggleMediaFavorite(button.dataset.mediaFav, button.dataset.mediaName)));
+  globalThis.OpenAstroMotion?.render($('#mediaFiles'));
 }
 function renderMediaLibrary(library) {
   mediaLibrary = library;
@@ -651,10 +653,18 @@ async function loadMediaDirectory(path = mediaPath) {
   }
   finally { if (request === mediaDirectoryRequest) mediaBusy = false; }
 }
+function closeControlDialog(dialog) {
+  const finish = () => { if (dialog.open) dialog.close(); };
+  if (globalThis.OpenAstroMotion) globalThis.OpenAstroMotion.close(dialog, finish); else finish();
+}
+function cancelConfirmation() {
+  stopHold(); pendingAction = null; pendingPayload = {};
+  closeControlDialog($('#confirmDialog'));
+}
 function closeMediaPlayer() {
   const stage=$('#mediaPlayerStage'), media=stage.querySelector('video,audio'); if(media) saveMediaProgress(media,true);
   if(mediaResumeTimer)clearInterval(mediaResumeTimer); mediaResumeTimer=null; mediaSubtitleController?.destroy?.(); mediaSubtitleController=null; stopMediaHls(); stage.innerHTML='';
-  mediaPlaybackBase=0; mediaPlaybackDuration=0; if($('#mediaPlayerDialog').open)$('#mediaPlayerDialog').close(); setTimeout(()=>loadMediaHome(true),500);
+  mediaPlaybackBase=0; mediaPlaybackDuration=0; if($('#mediaPlayerDialog').open)closeControlDialog($('#mediaPlayerDialog')); setTimeout(()=>loadMediaHome(true),500);
 }
 async function openMediaPlayer(path,name,category,uuid=mediaUuid,options={}){
   if(!uuid||!path)return; const device=(latestState?.media?.devices||[]).find(item=>item.uuid===uuid); if(!device?.mounted)return toast('Il supporto che contiene questo file non è collegato.',true);
@@ -662,7 +672,7 @@ async function openMediaPlayer(path,name,category,uuid=mediaUuid,options={}){
   await stopMediaHls(); mediaSubtitleController?.destroy?.(); mediaSubtitleController=null; mediaPlayerUuid=uuid; mediaPlayerPath=path; mediaPlayerName=name||path.split('/').at(-1); mediaPlaybackBase=0; mediaPlaybackDuration=0;
   $('#mediaPlayerTitle').textContent=mediaPlayerName; $('#mediaPlayerType').textContent=mediaCategoryLabel(category); $('#mediaPlayerPlan').textContent='ANALISI'; $('#mediaPlayerNote').textContent='Analisi compatibilità codec e carico del nodo…'; $('#mediaPlayerTracks').hidden=true; $('#mediaPlayerTracks').innerHTML='';
   $('#mediaPlayerDownload').href=mediaUrl(path,true,uuid); $('#mediaPlayerMeta').innerHTML='<span>Analisi file…</span>'; $('#mediaPlayerFavorite').textContent=isMediaFavorite(path,uuid)?'★ Preferito':'☆ Preferito';
-  if(!$('#mediaPlayerDialog').open)$('#mediaPlayerDialog').showModal(); const stage=$('#mediaPlayerStage'); stage.innerHTML='<div class="media-playback-wait"><strong>Preparazione playback…</strong><small>OpenAstro sta scegliendo il percorso più efficiente.</small></div>';
+  if(!$('#mediaPlayerDialog').open)$('#mediaPlayerDialog').showModal(); globalThis.OpenAstroMotion?.open($('#mediaPlayerDialog')); const stage=$('#mediaPlayerStage'); stage.innerHTML='<div class="media-playback-wait"><strong>Preparazione playback…</strong><small>OpenAstro sta scegliendo il percorso più efficiente.</small></div>';
   let plan={mode:'direct',available:true,audio_tracks:[],selected_audio_stream:null,subtitles:[],duration:0,reason:'Direct Play'};
   try{const r=await fetch(mediaPlanUrl(path,uuid,requestedAudio),{cache:'no-store',signal:AbortSignal.timeout(12000)});const x=await r.json();if(r.ok&&x.ok)plan=x;}catch(_){}
   let selectedAudio=plan.selected_audio_stream??requestedAudio; mediaPlaybackDuration=Number(plan.duration||0); const resume=Number.isFinite(Number(options.position))?Number(options.position):mediaResumePosition(uuid,path); const directUrl=mediaUrl(path,false,uuid); let media=null;
@@ -902,8 +912,9 @@ function toast(message, error = false) {
   const el = $('#toast');
   el.textContent = message;
   el.className = `toast show ${error ? 'error' : ''}`;
+  globalThis.OpenAstroMotion?.open(el);
   clearTimeout(el._timer);
-  el._timer = setTimeout(() => el.className = 'toast', 4500);
+  el._timer = setTimeout(() => { if (globalThis.OpenAstroMotion) globalThis.OpenAstroMotion.close(el, () => {el.className='toast';}); else el.className='toast'; }, 4500);
 }
 function openConfirm(action, payload = {}) {
   if (actionBusy) return toast('Un’operazione è già in corso.');
@@ -915,6 +926,7 @@ function openConfirm(action, payload = {}) {
   $('#dialogText').textContent = text;
   $('#holdAction').style.setProperty('--hold', '0%');
   $('#confirmDialog').showModal();
+  globalThis.OpenAstroMotion?.open($('#confirmDialog'));
 }
 async function executeAction(action, payload = {}) {
   if (actionBusy || !action) return;
@@ -1002,9 +1014,9 @@ $('#dnsDeviceRegenerate').addEventListener('click', async () => { if(!selectedDn
 $('#dnsDeviceDelete').addEventListener('click', async () => { if(!selectedDnsDeviceId||!window.confirm('Eliminare questo dispositivo e revocarne definitivamente l’accesso?'))return; const id=selectedDnsDeviceId; const result=await postPihole('/api/pihole/devices/delete',{id}); if(result){closeDnsDetail();toast('Dispositivo eliminato.');} });
 $('#piholeToggle').addEventListener('change', event => setPiholeState(Boolean(event.target.checked)));
 $$('[data-pihole-endpoint]').forEach(button => button.addEventListener('click', async () => { const result=await postPihole(button.dataset.piholeEndpoint); if(result)toast(result.message||'Operazione completata.'); }));
-$('#cancelAction').addEventListener('click', () => $('#confirmDialog').close());
+$('#cancelAction').addEventListener('click', cancelConfirmation);
 $('#confirmDialog').addEventListener('close', () => { stopHold(); pendingAction = null; pendingPayload = {}; });
-$('#confirmDialog').addEventListener('cancel', stopHold);
+$('#confirmDialog').addEventListener('cancel', cancelConfirmation);
 window.addEventListener('blur', stopHold);
 $('#holdAction').addEventListener('keydown', event => { if ([' ', 'Enter'].includes(event.key) && !event.repeat) startHold(event); });
 $('#holdAction').addEventListener('keyup', stopHold);
@@ -1059,6 +1071,7 @@ $$('[data-system-tab]').forEach(button=>button.addEventListener('click',()=>{
   const tab=button.dataset.systemTab; const grid=$('.system-grid'); if(!grid)return;
   grid.classList.toggle('system-tab-power',tab==='power'); grid.classList.toggle('system-tab-telemetry',tab==='telemetry');
   $$('[data-system-tab]').forEach(item=>item.classList.toggle('active',item===button));
+  grid.querySelectorAll('[data-motion]').forEach(panel=>{if(panel.getClientRects().length)globalThis.OpenAstroMotion?.open(panel);});
   if(tab==='telemetry') refreshHistory();
 }));
 $$('[data-route]').forEach(link => link.addEventListener('click', event => { event.preventDefault(); selectView(link.dataset.route, true); }));

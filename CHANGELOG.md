@@ -1,5 +1,16 @@
 # Changelog
 
+## 3.5.1 — 2026-09-30
+
+Evoluzione delle tre UI verso vetro e blu cosmico: shell flottanti, gerarchia
+compatta, superfici in profondità e stati semantici distinti. Motion condiviso
+per cambio viste, pulsanti, finestre/toast, filtri, grafici SVG e selezione frame.
+Animazioni finite e budget concorrente, stop su scheda nascosta/movimento ridotto;
+nessuna rianimazione periodica della telemetria. Annullare una conferma interrompe
+subito hold e comando prima dell’uscita visiva. NINA distingue LIVE, STANDBY,
+OFFLINE e CONFIGURA; nasconde le sezioni senza snapshot. Font locali, cache PWA 3.5.1.
+Sorgenti, QA, runtime e rollback: [verbale UI](docs/UI-REDESIGN-20260930.md).
+
 ## 3.5.0 — Nuova suite UI e motion design
 
 - LiveVault: shell e login ricostruiti, navigazione numerata, live prima della cronologia,

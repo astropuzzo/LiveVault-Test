@@ -240,3 +240,14 @@ test('a late directory reply cannot bind old-library files to the new selection'
   assert.equal(ctx.mediaItems[0].name,'fresh.mp4');
   assert.deepEqual(renders,[{uuid:'USB',path:'new'}]);
 });
+
+
+test('canceling a confirmation stops its hold command before the visual exit completes', () => {
+  let exit, stopped=0;
+  const dialog={open:true,close(){this.open=false;}};
+  const ctx=vm.createContext({OpenAstroMotion:{close(_node,done){exit=done;}},$:()=>dialog,pendingAction:'shutdown',pendingPayload:{danger:true},stopHold(){stopped++;}});
+  vm.runInContext(source.slice(source.indexOf('function closeControlDialog('),source.indexOf('function closeMediaPlayer(')),ctx);
+  ctx.cancelConfirmation();
+  assert.equal(stopped,1);assert.equal(ctx.pendingAction,null);assert.deepEqual(Object.keys(ctx.pendingPayload),[]);
+  assert.equal(dialog.open,true);exit();assert.equal(dialog.open,false);
+});

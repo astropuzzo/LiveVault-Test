@@ -203,7 +203,8 @@
     const warning = profile.last_error ? `<div class="inline-alert">${icon('warning','mini-icon')}<span>${esc(profile.last_error)}</span></div>` : '';
     const providers = profile.providers.join(' · ');
     const accounts = profile.rows.length > 1 ? ` · ${profile.rows.length} account` : '';
-    return `<article class="cr-live-card ${profile.blocked && !profile.unavailable ? 'blocked' : ''} ${profile.focus ? 'focus' : ''}">
+    const cardState = profile.unavailable ? source.pause_reason : profile.recording ? 'recording' : profile.live ? 'live' : 'offline';
+    return `<article data-state="${esc(cardState)}" data-motion-key="source-${source.id}" class="cr-live-card ${profile.blocked && !profile.unavailable ? 'blocked' : ''} ${profile.focus ? 'focus' : ''}">
       ${controlRoomPreviewMarkup(profile, wall)}
       <div class="cr-live-body"><div class="cr-live-head"><div>${creatorLinkMarkup(source.id, profile.display_name, 'cr-live-name')}<div class="cr-live-provider">${esc(providers + accounts)}</div></div><strong class="cr-live-state">${esc(controlRoomStatusText(profile))}</strong></div>${warning}${actions}</div>
     </article>`;
@@ -255,6 +256,7 @@
       ${offlineFocus.length ? `<section class="monitor-section"><header><h3>Focus</h3><span>${offlineFocus.length}</span></header><div class="cr-compact-list">${offlineFocus.map(p => controlRoomCompactRow(p,true)).join('')}</div></section>` : ''}
       <details id="controlRoomOffline" class="cr-offline" ${controlRoomOfflineOpen ? 'open' : ''}><summary><span>Altre creator</span><span>${offline.length}</span>${icon('chevron-down','mini-icon')}</summary><div class="cr-compact-list">${offline.length ? offline.map(p => controlRoomCompactRow(p)).join('') : '<div class="empty compact">Nessuna.</div>'}</div></details>`);
     renderControlRoomWall(profiles);
+    globalThis.OpenAstroMotion?.render(root);
   };
 
   function categoryTags(profile) {
@@ -296,6 +298,7 @@
     }).join(''));
     updateSelectionUi(visible);
     applyDynamicStyles(root);
+    globalThis.OpenAstroMotion?.render(root);
   };
 
   function attentionReasonsProduct(recording) {
@@ -348,6 +351,7 @@
     const total=Number(statusData?.history?.recordings??recordings.length);
     $('#recordingFooter').textContent=`${visible.length} nei filtri · ${groups.length} gruppi · ${recordings.length} caricati`;
     $('#loadOlderRecordings').hidden=recordings.length<archiveLoadedLimit||(total>0&&total<=recordings.length);
+    globalThis.OpenAstroMotion?.render(root);
   };
 
   const baseRenderProfile = renderProfile;
@@ -366,6 +370,7 @@
       else if(text.startsWith('\u25b6')){node.textContent=text.replace(/^\u25b6\s*/, '');node.insertAdjacentHTML('afterbegin',icon('play','button-icon'));}
     });
     $$('#profileContent .local-capture > span').forEach(node=>{node.textContent=node.textContent.replace(/^\u25cf\s*/,'');});
+    globalThis.OpenAstroMotion?.render($('#profileContent'), 'selection');
     return result;
   };
 
@@ -373,6 +378,7 @@
   renderStatistics = function renderStatisticsProduct() {
     const result=baseRenderStatistics();
     $$('#statisticsLeaderboard .leader-live').forEach(node=>node.textContent='LIVE');
+    globalThis.OpenAstroMotion?.render($('#statisticsView'), 'chart');
     return result;
   };
 

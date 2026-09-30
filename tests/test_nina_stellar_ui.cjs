@@ -71,6 +71,24 @@ async function monitorHarness(fetchImpl) {
 const light=(extra={})=>({frameIndex:6,timestampUtc:'2026-09-29T12:00:00Z',status:'ACCEPTED',quality:90,fileName:'assessed-six.fits',...extra});
 const snapshot=frames=>({configured:true,reachable:true,sessionActive:true,latencyMs:10,snapshot:{frames,currentFrame:frames.at(-1)||{},summary:{captured:frames.length,usable:frames.length},settings:{},mode:{monitorOnly:true},guidingLive:{series:[]}}});
 
+test('connection and session badge recover accurately across offline, idle and active states',async()=>{
+ const h=await monitorHarness();
+ h.monitor.render(snapshot([light()]));
+ assert.equal(h.element('#modeTag').textContent,'LIVE');assert.equal(h.element('.instrument-nav').hidden,false);
+ h.monitor.render({configured:true,reachable:false,sessionActive:false,snapshot:null});
+ assert.equal(h.element('#modeTag').textContent,'OFFLINE');assert.equal(h.element('.instrument-nav').hidden,true);assert.equal(h.element('#dashboard').hidden,true);
+ h.monitor.render({configured:true,reachable:true,sessionActive:false,snapshot:null});
+ assert.equal(h.element('#modeTag').textContent,'STANDBY');assert.equal(h.element('#emptyTitle').textContent,'In attesa di una sessione N.I.N.A.');assert.equal(h.element('.instrument-nav').hidden,true);
+ h.monitor.render({configured:false,reachable:false,sessionActive:false,snapshot:null});
+ assert.equal(h.element('#modeTag').textContent,'CONFIGURA');
+ h.monitor.render({...snapshot([light()]),sessionActive:false});
+ assert.equal(h.element('#modeTag').textContent,'STANDBY');assert.equal(h.element('.instrument-nav').hidden,false);
+ const synthetic=snapshot([light()]);synthetic.snapshot.mode.syntheticMode=true;h.monitor.render(synthetic);
+ assert.equal(h.element('#modeTag').textContent,'SYNTHETIC LAB');
+ h.monitor.render(snapshot([light()]));
+ assert.equal(h.element('#modeTag').textContent,'LIVE');assert.equal(h.element('#emptyState').hidden,true);
+});
+
 test('selected inspector updates verdict, preserves unchanged details, and clears reused indices',async()=>{
  const h=await monitorHarness();h.monitor.render(snapshot([light()]));h.monitor.selectFrame(6);
  assert.match(h.element('#frameInspector').innerHTML,/ACCEPTED/);

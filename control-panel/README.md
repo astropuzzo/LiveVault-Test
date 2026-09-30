@@ -4,16 +4,19 @@ PWA mobile-first per monitorare e controllare il server ASIAIR/Debian. Il serviz
 vive sulla memoria interna, resta accessibile senza NVMe e viene pubblicato solo
 in HTTPS tramite Tailscale Funnel, con autenticazione applicativa.
 
-## Interfaccia 3.5.0 (candidato verificato nel sorgente, 2026-09-30)
+## Interfaccia 3.5.1 (candidato, 2026-09-30)
 
-`static/index.html` e `static/app.css` sono ricostruiti: navigazione numerata,
-dashboard del nodo, Media Hub e cinque moduli di controllo. Login, player e
-conferma mantenuta dei comandi conservano i contratti esistenti. Font locale
-in `static/fonts/`, animazioni finite in `static/motion.js`; preferenza di
-movimento ridotto rispettata. I fogli `shell/theme/premium/magic/glass` sono
-ritirati dalla pagina e dalla precache. Il runtime resta
-`/opt/openastro-control/static`; deploy solo asset, senza restart del servizio.
-Verifica visuale, limiti e rollback privato in
+`static/index.html` e `static/app.css`: evoluzione cosmic glass dell’originale,
+rail flottante, stato operativo centrale, monitoraggio asimmetrico e Media Hub
+compatto. Tutti i 292 ID operativi e le sette viste conservati; login, player,
+fullscreen e hold mantengono i contratti. Il motion condiviso usa entrate/uscite
+finite, feedback dei controlli, filtri e grafici. Annullare una conferma ferma
+subito hold e comando prima dell’uscita visiva. Movimento ridotto e scheda
+nascosta cancellano le animazioni; la telemetria non ripete gli effetti.
+Font locali; skin storiche ritirate dalla pagina e dalla precache.
+Runtime corrente 3.5.0 da `103abbd...` in `/opt/openastro-control/static`;
+prossimo deploy di sette asset noti (incluso `app.js`), senza restart.
+QA, stato rollout, limiti e rollback privato:
 [UI-REDESIGN-20260930](../docs/UI-REDESIGN-20260930.md).
 
 ## Funzioni
@@ -197,7 +200,7 @@ Il browser QA/Playwright è volutamente separato dal runtime del pannello e non 
 
 Il livello glass del 2026-09-24 e le skin shell/theme/premium/magic sono
 conservati nel repository per recupero storico, ma non sono caricati da
-`index.html` né precache della release 3.5.0. Il nuovo foglio principale è
+`index.html` né precache delle release 3.5.x. Il nuovo foglio principale è
 `static/app.css`, preceduto soltanto dagli stili funzionali diagnostica/import.
 Fonte, evidenze e rollback completo della suite in
 [UI-REDESIGN-20260930](../docs/UI-REDESIGN-20260930.md). Per tornare alla UI 3.4.31

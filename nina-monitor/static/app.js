@@ -189,6 +189,7 @@
       const cell=plotW/list.length; const hitX=Math.max(L,x-cell/2); svg+=`<rect class="timeline-hit" tabindex="0" role="button" aria-label="Esamina frame ${esc(f.frameIndex)}" data-frame-id="${esc(f.frameIndex)}" x="${hitX.toFixed(1)}" y="0" width="${Math.max(4,cell).toFixed(1)}" height="${H}" fill="transparent"><title>${esc(timelineTooltip(f,settings))}</title></rect>`;
     });
     svg+='</svg>'; host.innerHTML=svg;
+    globalThis.OpenAstroMotion?.render(host,'chart');
   }
 
   function renderGuide(guide, settings={}) {
@@ -199,6 +200,7 @@
     const pts=(key)=>series.map((p,i)=>{const v=n(p[key]);if(v==null)return null;const x=series.length===1?W:i/(series.length-1)*W,y=H-(v+maxAbs)/(2*maxAbs)*H;return `${x.toFixed(1)},${y.toFixed(1)}`}).filter(Boolean).join(' ');
     const ly=(v)=>H-(v+maxAbs)/(2*maxAbs)*H; const y0=ly(0),yp=ly(lim),ym=ly(-lim);
     plot.innerHTML=`<div class="guide-legend"><span><i class="legend ra"></i>RA</span><span><i class="legend dec"></i>DEC</span><span>scala ±${maxAbs.toFixed(1)}"</span><span>RA / DEC · errore per asse</span></div><div class="guide-svg-wrap"><div class="guide-y-axis"><span>+${maxAbs.toFixed(1)}"</span><span>0"</span><span>−${maxAbs.toFixed(1)}"</span></div><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none"><line class="zero-line" x1="0" y1="${y0}" x2="${W}" y2="${y0}"/><polyline class="line-ra" points="${pts('raArcsec')}"/><polyline class="line-dec" points="${pts('decArcsec')}"/></svg><div class="guide-x-axis"><span>−20 s</span><span>adesso</span></div></div>`;
+    globalThis.OpenAstroMotion?.render(plot,'chart');
   }
 
   function renderSessionEvents(events) {
@@ -256,16 +258,18 @@
 
   function selectFrame(frameIndex) {
     const frames=Array.isArray(lastSnapshot?.frames)?lastSnapshot.frames:[]; const frame=frames.find(f=>Number(f.frameIndex)===Number(frameIndex)); if(!frame)return; selectedFrameIndex=Number(frame.frameIndex);selectedFrameIdentity=frameIdentity(frame);inspectorSignature=JSON.stringify(frame);renderFrameInspector(frame);renderTables(frames);
+    globalThis.OpenAstroMotion?.render($('#frameInspector'),'selection');
   }
 
   function render(payload) {
-    const link=$('#linkState'),banner=$('#statusBanner'),empty=$('#emptyState'),dashboard=$('#dashboard');
+    const link=$('#linkState'),banner=$('#statusBanner'),empty=$('#emptyState'),dashboard=$('#dashboard'),nav=$('.instrument-nav'),tag=$('#modeTag');
+    if(nav)nav.hidden=!payload.reachable||!payload.snapshot;
     link.className=`link-state ${payload.reachable?'online':payload.configured?'warn':''}`; link.querySelector('b').textContent=payload.reachable?`QSM online · ${num(payload.latencyMs,0,' ms')}`:payload.configured?'QSM non raggiungibile':'Da configurare';
-    if(!payload.reachable||!payload.snapshot){banner.classList.remove('live');$('#bannerTitle').textContent=payload.reachable?'QSM collegato · nessuna sessione attiva':'N.I.N.A. non disponibile';$('#bannerText').textContent=payload.message||'—';empty.hidden=false;dashboard.hidden=true;$('#emptyTitle').textContent=payload.configured?'PC N.I.N.A. non raggiungibile':'Collegamento N.I.N.A. da configurare';$('#emptyText').textContent=payload.message||'Configura QSM sul PC N.I.N.A. e riavvia il container.';return;}
+    if(!payload.reachable||!payload.snapshot){tag.textContent=payload.reachable?'STANDBY':payload.configured?'OFFLINE':'CONFIGURA';tag.classList.remove('synthetic');banner.classList.remove('live');$('#bannerTitle').textContent=payload.reachable?'QSM collegato · nessuna sessione attiva':'N.I.N.A. non disponibile';$('#bannerText').textContent=payload.message||'—';empty.hidden=false;dashboard.hidden=true;$('#emptyTitle').textContent=payload.reachable?'In attesa di una sessione N.I.N.A.':payload.configured?'PC N.I.N.A. non raggiungibile':'Collegamento N.I.N.A. da configurare';$('#emptyText').textContent=payload.message||'Configura QSM sul PC N.I.N.A. e riavvia il container.';return;}
     empty.hidden=true;dashboard.hidden=false;
     const snapshot=payload.snapshot||{},summary=snapshot.summary||{},frame=snapshot.currentFrame||{},guide=snapshot.guidingLive||{},mode=snapshot.mode||{},settings=snapshot.settings||{},frames=Array.isArray(snapshot.frames)?snapshot.frames:[]; frames.forEach(f=>{if(['LEARNING','ERROR'].includes(String(f.status).toUpperCase()))f.quality=null;});if(['LEARNING','ERROR'].includes(String(frame.status).toUpperCase()))frame.quality=null;lastSnapshot=snapshot;
     if(selectedFrameIdentity!=null){const selected=frames.find(f=>frameIdentity(f)===selectedFrameIdentity);if(!selected){selectedFrameIndex=null;selectedFrameIdentity=null;inspectorSignature='';renderFrameInspector(null);}else{const signature=JSON.stringify(selected);if(signature!==inspectorSignature){renderFrameInspector(selected);inspectorSignature=signature;}}}
-    const synthetic=Boolean(mode.syntheticMode),scope=text(mode.monitoringScope,'AdvancedSequencerLights'); $('#modeTag').textContent=synthetic?'SYNTHETIC LAB':'LIVE';$('#modeTag').classList.toggle('synthetic',synthetic);
+    const synthetic=Boolean(mode.syntheticMode),scope=text(mode.monitoringScope,'AdvancedSequencerLights'); tag.textContent=synthetic?'SYNTHETIC LAB':payload.sessionActive?'LIVE':'STANDBY';tag.classList.toggle('synthetic',synthetic);
     banner.classList.toggle('live',Boolean(payload.sessionActive));$('#bannerTitle').textContent=synthetic?`Synthetic Lab${mode.syntheticSessionName?` · ${mode.syntheticSessionName}`:''}`:payload.sessionActive?'Sessione N.I.N.A. attiva':'QSM collegato · nessuna sessione attiva';$('#bannerText').textContent=synthetic?`${text(mode.syntheticStatus,'LAB')} · QSM sintetico + PHD2/preview reali separati`:(payload.message||'—');
 
     $('#qualityValue').textContent=n(frame.quality)==null?'—':num(frame.quality,0);$('#qualityLabel').textContent=qualityLabel(frame);$('#confidenceValue').textContent=n(frame.confidence)==null?'—':num(frame.confidence,0,' / 100');$('#confidenceLabel').textContent=confidenceLabel(frame.confidence);
@@ -329,7 +333,7 @@ function evidenceMarkup(f, lang = 'en') {
     const html=f?evidenceMarkup(f,'it'):`<div class="evidence-empty"><strong>${title}</strong>${note}</div>`;
     if(html!==evidenceSignature){$('#stellarEvidence').innerHTML=html;evidenceSignature=html;}
   }
-  $('#stellarSelect').addEventListener('change',e=>{selectedEvidenceKey=e.target.value;renderStellar(lastSnapshot||{});});
+  $('#stellarSelect').addEventListener('change',e=>{selectedEvidenceKey=e.target.value;renderStellar(lastSnapshot||{});globalThis.OpenAstroMotion?.render($('#stellarPanel'),'selection');});
   document.addEventListener('keydown',e=>{const row=e.target.closest('[data-frame-id]');if(row&&(e.key==='Enter'||e.key===' ')){e.preventDefault();selectFrame(row.dataset.frameId);}});
   $('#pluginTimeline').addEventListener('pointermove',e=>{
     const hit=e.target.closest('[data-frame-id]'),tip=$('#stellarTooltip');

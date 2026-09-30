@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <meta name="theme-color" content="#101412">
+  <meta name="theme-color" content="#070d1c">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="OpenAstro">
@@ -12,18 +12,18 @@
   <link rel="icon" href="/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="/icon.svg">
   <link rel="preload" href="/fonts/mona-sans-latin-wght.woff2" as="font" type="font/woff2" crossorigin>
-  <link rel="stylesheet" href="/diagnostics.css?v=3.5.0">
-  <link rel="stylesheet" href="/media-upload.css?v=3.5.0">
-  <link rel="stylesheet" href="/app.css?v=3.5.0">
+  <link rel="stylesheet" href="/diagnostics.css?v=3.5.1">
+  <link rel="stylesheet" href="/media-upload.css?v=3.5.1">
+  <link rel="stylesheet" href="/app.css?v=3.5.1">
 </head>
 <body data-view="dashboard" class="is-loading">
   <div class="app-shell">
     <aside class="sidebar">
       <div class="brand-block">
-        <div class="mark" aria-hidden="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z"/></svg></div>
-        <div><strong>OpenAstro</strong><small>Il tuo centro di controllo</small></div>
+        <div class="mark" aria-hidden="true"><svg viewBox="0 0 28 28" fill="none" aria-hidden="true"><circle cx="14" cy="14" r="8" stroke="currentColor" stroke-width="1.5"/><ellipse cx="14" cy="14" rx="13" ry="4.5" transform="rotate(-32 14 14)" stroke="currentColor" stroke-width="1.2"/><circle cx="22" cy="6.5" r="2" fill="currentColor"/></svg></div>
+        <div><strong>OpenAstro</strong><small>Console personale</small></div>
       </div>
-      <p class="rail-label">IL TUO SPAZIO</p>
+      <p class="rail-label">CENTRO DI CONTROLLO</p>
       <nav class="side-nav" aria-label="Sezioni principali">
         <a href="#dashboard" data-route="dashboard" class="active"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 13h6V4H4v9Zm0 7h6v-5H4v5Zm10 0h6v-9h-6v9Zm0-16v5h6V4h-6Z"/></svg><span>Dashboard</span></a>
         <a href="#media" data-route="media"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v14H4V5Zm6 3v8l6-4-6-4Z"/></svg><span>Media</span></a>
@@ -42,36 +42,49 @@
     <button id="logoutButton" class="logout" type="button">Esci</button>
 
     <header class="mobile-header">
-      <div class="mobile-identity"><div class="mark" aria-hidden="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z"/></svg></div><div><small>OPENASTRO</small><strong id="mobileViewTitle">Dashboard</strong></div></div>
+      <div class="mobile-identity"><div class="mark" aria-hidden="true"><svg viewBox="0 0 28 28" fill="none" aria-hidden="true"><circle cx="14" cy="14" r="8" stroke="currentColor" stroke-width="1.5"/><ellipse cx="14" cy="14" rx="13" ry="4.5" transform="rotate(-32 14 14)" stroke="currentColor" stroke-width="1.2"/><circle cx="22" cy="6.5" r="2" fill="currentColor"/></svg></div><div><small>OPENASTRO</small><strong id="mobileViewTitle">Dashboard</strong></div></div>
       <div class="mobile-status"><div class="connection"><i></i><span id="mobileConnectionText">Connessione…</span></div></div>
     </header>
 
     <main class="app-main">
       <section class="app-view active" data-view-panel="dashboard" aria-labelledby="heroTitle">
         <header class="dashboard-topline" data-motion>
-          <div><p class="eyebrow">OPENASTRO / CONTROL</p><h1>Una visione.<br>Tutto sotto controllo.</h1></div>
+          <div><p class="eyebrow">OPENASTRO CONTROL</p><h1>La tua console.</h1><p class="dashboard-caption">Stato del nodo, acquisizioni e librerie. In tempo reale.</p></div>
           <div class="hero-meta"><span id="hostName">openastro</span><span id="uptime">—</span><span id="lastUpdate">—</span></div>
         </header>
 
         <div class="dashboard-mosaic">
           <article class="app-tile node-card" id="overview" data-motion>
-            <div class="tile-heading"><span>IL NODO / COMPUTE MODULE</span><i class="state-dot"></i></div>
-            <div class="node-summary">
-              <span class="uptime-caption">Tempo di attività</span>
-              <strong class="hero-uptime" id="heroUptimeValue">—</strong>
-              <div class="hero-state"><h2 id="heroTitle">Verifica…</h2><span id="heroRecorderPill">—</span></div>
-              <p id="heroSubtitle">Stato operativo del nodo.</p>
+            <div class="tile-heading"><span>ASIAIR / NODO PERSONALE</span><i class="state-dot"></i></div>
+            <div class="node-core">
+              <div class="node-summary">
+                <div class="hero-state"><h2 id="heroTitle">Verifica…</h2><span id="heroRecorderPill">—</span></div>
+                <p id="heroSubtitle">Stato operativo del nodo.</p>
+                <div class="uptime-line"><span class="uptime-caption">Tempo di attività</span><strong class="hero-uptime" id="heroUptimeValue">—</strong></div>
+              </div>
+              <div class="orbital-core" aria-hidden="true">
+                <svg class="node-orbit" data-orbit viewBox="0 0 240 240" fill="none">
+                  <defs>
+                    <radialGradient id="consoleOrbGlow"><stop stop-color="#63b8ff" stop-opacity=".28"/><stop offset="1" stop-color="#63b8ff" stop-opacity="0"/></radialGradient>
+                    <linearGradient id="consoleOrbMetal" x1="76" y1="78" x2="162" y2="161" gradientUnits="userSpaceOnUse"><stop stop-color="#29496e"/><stop offset=".45" stop-color="#172d4b"/><stop offset="1" stop-color="#0a192d"/></linearGradient>
+                    <linearGradient id="consoleOrbEdge" x1="63" y1="60" x2="178" y2="172" gradientUnits="userSpaceOnUse"><stop stop-color="#b1dcff"/><stop offset=".5" stop-color="#63b8ff" stop-opacity=".15"/><stop offset="1" stop-color="#9c9fff" stop-opacity=".5"/></linearGradient>
+                  </defs>
+                  <circle cx="120" cy="120" r="115" fill="url(#consoleOrbGlow)"/>
+                  <circle cx="120" cy="120" r="85" stroke="#719bca" stroke-opacity=".14"/>
+                  <circle cx="120" cy="120" r="106" stroke="#719bca" stroke-opacity=".08" stroke-dasharray="3 7"/>
+                  <ellipse cx="120" cy="120" rx="105" ry="39" transform="rotate(-27 120 120)" stroke="#63b8ff" stroke-opacity=".5"/>
+                  <ellipse cx="120" cy="120" rx="42" ry="95" transform="rotate(-27 120 120)" stroke="#9c9fff" stroke-opacity=".4"/>
+                  <rect x="79" y="79" width="82" height="82" rx="24" fill="url(#consoleOrbMetal)" stroke="url(#consoleOrbEdge)"/>
+                  <path d="M120 96a24 24 0 1 0 24 24" stroke="#c6e6ff" stroke-width="1.7" stroke-linecap="round"/>
+                  <path d="M98 110h44M99 130h40" stroke="#63b8ff" stroke-opacity=".55"/>
+                  <ellipse cx="120" cy="120" rx="10" ry="23" stroke="#9c9fff" stroke-opacity=".7"/>
+                  <circle cx="143" cy="100" r="4" fill="#c6e6ff"/>
+                  <circle cx="212" cy="73" r="4" fill="#8dccff"/>
+                  <circle cx="41" cy="168" r="3" fill="#b5b7ff"/>
+                </svg>
+                <span class="orbital-core-caption">OPENASTRO</span>
+              </div>
             </div>
-            <svg class="node-orbit" data-orbit viewBox="0 0 220 220" fill="none" aria-hidden="true">
-              <circle cx="110" cy="110" r="90" stroke="#b9c5ad" stroke-width="1"/>
-              <ellipse cx="110" cy="110" rx="102" ry="39" transform="rotate(-32 110 110)" stroke="#647857" stroke-width="1"/>
-              <ellipse cx="110" cy="110" rx="39" ry="102" transform="rotate(-32 110 110)" stroke="#647857" stroke-width="1"/>
-              <path d="M110 4v25M110 191v25M4 110h25M191 110h25" stroke="#b9c5ad" stroke-width="1"/>
-              <rect x="84" y="84" width="52" height="52" rx="13" fill="#101412"/>
-              <path d="M97 97h10v10H97zM113 97h10v10h-10zM97 113h10v10H97zM113 113h10v10h-10z" fill="#d9ff82"/>
-              <circle cx="186" cy="56" r="5" fill="#101412"/>
-              <circle cx="71" cy="179" r="4" fill="#647857"/>
-            </svg>
             <div class="node-meters">
               <div class="hero-bar" id="heroCpuBar"><i></i><span>CPU</span><b id="heroCpuText">—</b></div>
               <div class="hero-bar" id="heroRamBar"><i></i><span>RAM</span><b id="heroRamText">—</b></div>
@@ -105,7 +118,7 @@
 
           <article class="media-feature-card" data-motion>
             <a href="#media" data-route="media" aria-label="Apri OpenAstro Media">
-              <div class="media-feature-copy"><span>OPENASTRO / MEDIA</span><h2>Le tue storie.<br>Sempre a portata di mano.</h2><div class="media-feature-status"><strong id="dashMediaState">Verifica…</strong><small id="dashMediaDetail">In attesa delle librerie</small></div></div>
+              <div class="media-feature-copy"><span>MEDIA HUB</span><h2>La tua libreria, senza confini.</h2><p class="media-feature-description">Video, musica e foto da tutti i tuoi supporti.</p><div class="media-feature-status"><strong id="dashMediaState">Verifica…</strong><small id="dashMediaDetail">In attesa delle librerie</small></div></div>
               <div class="media-feature-orb" aria-hidden="true"><i></i><i></i><b>▶</b></div><span class="media-feature-arrow" aria-hidden="true">↗</span>
             </a>
           </article>
@@ -117,7 +130,7 @@
           <div class="diagnostic-footer"><small id="diagnosticAge">In attesa del nodo</small><button id="exportDiagnostics" class="button secondary" type="button" disabled>Esporta diagnosi</button></div>
         </section>
 
-        <section class="resource-details" id="resourceDetails">
+        <section class="resource-details" id="resourceDetails" data-motion-disclosure>
           <button class="resource-toggle" id="resourceToggle" type="button" aria-expanded="false"><span><b>Risorse live</b><small>CPU, RAM, temperatura, disco e rete</small></span><i>⌄</i></button>
           <section class="metrics-grid" aria-label="Risorse del server">
             <article class="metric-card"><div class="ring" id="cpuRing"><span id="cpuValue">—</span></div><div><p>CPU</p><strong id="loadValue">—</strong><small id="coreValue">—</small></div></article>
@@ -158,8 +171,8 @@
       </section>
 
       <section class="app-view" data-view-panel="media" aria-labelledby="view-media-title">
-        <header class="view-heading" data-motion><div><p class="eyebrow">LIBRERIA PERSONALE</p><h1 id="view-media-title">La tua libreria.<br>Ovunque tu sia.</h1><p>Film, musica e ricordi. Le tue librerie, da ogni dispositivo.</p></div></header>
-            <section class="panel media-panel workspace-panel" id="media">
+        <header class="view-heading" data-motion><div><p class="eyebrow">LIBRERIA PERSONALE</p><h1 id="view-media-title">Media Hub</h1><p>Film, musica e ricordi. Le tue librerie, da ogni dispositivo.</p></div></header>
+            <section class="panel media-panel workspace-panel" id="media" data-motion-disclosure>
       <div class="panel-head media-head">
         <div><p class="eyebrow">MEDIA HUB</p><h2>OpenAstro Media</h2><small>La tua libreria USB, in casa e fuori casa.</small></div>
         <div class="media-head-actions"><span class="status-chip" id="mediaChip">Nessun supporto</span><button class="button secondary media-tech-toggle" id="mediaTechToggle" type="button">Dettagli</button><button class="button secondary" data-action="media_rescan">Rileva USB</button></div>
@@ -245,7 +258,7 @@
       </section>
 
       <section class="app-view" data-view-panel="storage" aria-labelledby="view-storage-title">
-        <header class="view-heading" data-motion><div><p class="eyebrow">ARCHIVIAZIONE</p><h1 id="view-storage-title">Spazio alle tue idee.</h1><p>NVMe, buffer interno, backup e rimozione sicura.</p></div></header>
+        <header class="view-heading" data-motion><div><p class="eyebrow">ARCHIVIAZIONE</p><h1 id="view-storage-title">Storage</h1><p>NVMe, buffer interno, backup e rimozione sicura.</p></div></header>
             <section class="panel storage-panel" data-motion id="storage">
       <div class="panel-head">
         <div><p class="eyebrow">ARCHIVIAZIONE</p><h2>NVMe duale</h2></div>
@@ -268,9 +281,9 @@
       </section>
 
       <section class="app-view" data-view-panel="system" aria-labelledby="view-system-title">
-        <header class="view-heading" data-motion><div><p class="eyebrow">PRESTAZIONI</p><h1 id="view-system-title">Il ritmo del tuo nodo.</h1><p>Energia, temperatura e telemetria storica.</p></div></header>
+        <header class="view-heading" data-motion><div><p class="eyebrow">PRESTAZIONI</p><h1 id="view-system-title">Sistema</h1><p>Energia, temperatura e telemetria storica.</p></div></header>
         <div class="system-tabs" role="tablist" aria-label="Vista sistema"><button class="active" type="button" data-system-tab="power">Energia</button><button type="button" data-system-tab="telemetry">Storico</button></div>
-        <div class="system-grid system-tab-power">    <section class="panel power-panel" data-motion id="power">
+        <div class="system-grid system-tab-power" data-motion-tabs>    <section class="panel power-panel" data-motion id="power">
       <div class="panel-head">
         <div><p class="eyebrow">CPU E CONNETTIVITÀ</p><h2>Profilo energetico</h2></div>
         <span class="profile-chip" id="currentProfile">—</span>
@@ -347,7 +360,7 @@
 
       <section class="app-view" data-view-panel="nina" aria-labelledby="view-nina-title">
         <header class="view-heading nina-view-heading" data-motion>
-          <div><p class="eyebrow">LA SESSIONE ASTRO</p><h1 id="view-nina-title">La tua notte.<br>In ogni dettaglio.</h1><p>La sessione N.I.N.A. e la qualità delle tue acquisizioni, in un unico sguardo.</p></div>
+          <div><p class="eyebrow">LA SESSIONE ASTRO</p><h1 id="view-nina-title">NINA Monitor</h1><p>La sessione N.I.N.A. e la qualità delle tue acquisizioni, in un unico sguardo.</p></div>
           <div class="nina-head-actions"><a class="button secondary" href="/nina/" target="_blank" rel="noopener">Apri Monitor ↗</a></div>
         </header>
         <section class="panel nina-embedded-panel">
@@ -360,7 +373,7 @@
       </section>
 
       <section class="app-view" data-view-panel="pihole" aria-labelledby="view-pihole-title">
-        <header class="view-heading pihole-view-heading" data-motion><div><p class="eyebrow">PROTEZIONE DNS</p><h1 id="view-pihole-title">Una rete più pulita.</h1><p>Pi-hole e DNS cifrato. Protezione personale, in casa e fuori.</p></div><div class="pihole-head-state"><span id="piholeRemoteBadge" class="status-chip">Verifica…</span><button class="button secondary" id="piholeRefresh" type="button">Aggiorna</button></div></header>
+        <header class="view-heading pihole-view-heading" data-motion><div><p class="eyebrow">PROTEZIONE DNS</p><h1 id="view-pihole-title">Protezione DNS</h1><p>Pi-hole e DNS cifrato. Protezione personale, in casa e fuori.</p></div><div class="pihole-head-state"><span id="piholeRemoteBadge" class="status-chip">Verifica…</span><button class="button secondary" id="piholeRefresh" type="button">Aggiorna</button></div></header>
         <div class="pihole-page-grid">
           <section class="panel pihole-panel" data-motion id="piholePanel" aria-labelledby="piholeTitle">
             <div class="panel-head"><div><p class="eyebrow">RETE DI CASA</p><h2 id="piholeTitle">DNS LAN e filtering</h2></div><span class="status-chip" id="piholeInstallState">Verifica…</span></div>
@@ -418,7 +431,7 @@
       </section>
 
       <section class="app-view" data-view-panel="advanced" aria-labelledby="view-advanced-title">
-        <header class="view-heading" data-motion><div><p class="eyebrow">AMMINISTRAZIONE</p><h1 id="view-advanced-title">Dietro le quinte.</h1><p>Servizi, connessioni e attività. Tutto il necessario per prenderti cura del nodo.</p></div></header>
+        <header class="view-heading" data-motion><div><p class="eyebrow">AMMINISTRAZIONE</p><h1 id="view-advanced-title">Operazioni</h1><p>Servizi, connessioni e attività. Tutto il necessario per prenderti cura del nodo.</p></div></header>
         <div class="advanced-grid">    <section class="panel" id="services">
       <div class="panel-head"><div><p class="eyebrow">OPERATIVITÀ</p><h2>Servizi</h2></div><span id="serviceCount">—</span></div>
       <div class="service-grid" id="serviceGrid"></div>
@@ -483,11 +496,11 @@
   <div class="login-gate" id="loginGate" hidden>
     <form class="login-card" id="loginForm" data-motion>
       <div class="login-story">
-        <div class="login-brand"><div class="mark" aria-hidden="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z"/></svg></div><small>OPENASTRO / CONTROL</small></div>
+        <div class="login-brand"><div class="mark" aria-hidden="true"><svg viewBox="0 0 28 28" fill="none" aria-hidden="true"><circle cx="14" cy="14" r="8" stroke="currentColor" stroke-width="1.5"/><ellipse cx="14" cy="14" rx="13" ry="4.5" transform="rotate(-32 14 14)" stroke="currentColor" stroke-width="1.2"/><circle cx="22" cy="6.5" r="2" fill="currentColor"/></svg></div><small>OPENASTRO / CONTROL</small></div>
         <p class="eyebrow">IL TUO NODO PERSONALE</p>
-        <h1>Il tuo mondo.<br><em>Sotto controllo.</em></h1>
-        <p>Un unico spazio per le tue librerie, le sessioni e il tuo server. Entra e ritrova tutto.</p>
-        <svg class="login-orbit" data-orbit viewBox="0 0 150 100" fill="none" aria-hidden="true"><ellipse cx="75" cy="50" rx="68" ry="25" transform="rotate(-18 75 50)" stroke="currentColor"/><ellipse cx="75" cy="50" rx="27" ry="45" transform="rotate(-18 75 50)" stroke="currentColor"/><circle cx="134" cy="27" r="4" fill="#d9ff82"/></svg>
+        <h1>Il tuo centro<br>di <em>controllo.</em></h1>
+        <p>Il tuo server, le tue acquisizioni e le tue librerie. Tutto connesso, in uno spazio personale.</p>
+        <svg class="login-orbit" data-orbit viewBox="0 0 150 100" fill="none" aria-hidden="true"><ellipse cx="75" cy="50" rx="68" ry="25" transform="rotate(-18 75 50)" stroke="currentColor"/><ellipse cx="75" cy="50" rx="27" ry="45" transform="rotate(-18 75 50)" stroke="currentColor"/><circle cx="134" cy="27" r="4" fill="#63b8ff"/></svg>
       </div>
       <div class="login-form-fields">
         <p>Bentornato.</p>
@@ -495,15 +508,15 @@
         <label>PASSWORD<input id="loginPassword" name="password" type="password" autocomplete="current-password" required></label>
         <button class="button login-submit" type="submit">Accedi al tuo spazio <span aria-hidden="true">→</span></button>
         <div class="login-error" id="loginError" role="alert"></div>
-        <small class="login-footnote">Accesso personale · Connessione cifrata</small>
+        <small class="login-footnote">Accesso personale · Sessione protetta</small>
       </div>
     </form>
   </div>
 
   <script src="/hls.min.js?v=1.7.2" defer></script>
-  <script src="/diagnostics.js?v=3.5.0" defer></script>
-  <script src="/app.js?v=3.5.0" defer></script>
-  <script src="/media-upload.js?v=3.5.0" defer></script>
-  <script src="/motion.js?v=3.5.0" defer></script>
+  <script src="/diagnostics.js?v=3.5.1" defer></script>
+  <script src="/app.js?v=3.5.1" defer></script>
+  <script src="/media-upload.js?v=3.5.1" defer></script>
+  <script src="/motion.js?v=3.5.1" defer></script>
 </body>
 </html>

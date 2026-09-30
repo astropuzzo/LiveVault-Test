@@ -3,18 +3,18 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#101412">
+  <meta name="theme-color" content="#070d1c">
   <meta name="color-scheme" content="dark">
   <title>LiveVault</title>
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" href="/static/icon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/static/style.css?v=3.5.0">
+  <link rel="stylesheet" href="/static/style.css?v=3.5.1">
 </head>
 <body data-product="livevault">
   <a class="skip-link" href="#mainContent">Vai al contenuto</a>
 
   <section id="login" class="login-shell hidden">
-    <div class="login-intro"><span class="suite-label">OPENASTRO / LIVEVAULT</span><h2>Il momento.<br><em>Resta.</em></h2><p>La tua regia personale. Dal primo frame all’archivio.</p><div class="login-orbit" aria-hidden="true"><i></i><i></i><i></i><b>LV</b></div><small>Capture · Library · Cloud</small></div><form id="loginForm" class="login-panel" autocomplete="on">
+    <div class="login-intro" data-motion><span class="suite-label">OPENASTRO / LIVEVAULT</span><h2>La tua regia.<br><em>Senza limiti.</em></h2><p>Live, registrazioni e archivio. In un unico spazio.</p><div class="login-orbit" data-orbit aria-hidden="true"><i></i><i></i><i></i><b>LV</b></div><small>Capture · Library · Cloud</small></div><form id="loginForm" class="login-panel" data-motion autocomplete="on">
       <div class="login-mark" aria-hidden="true"><svg class="icon icon-xl"><use href="/static/icons.svg#vault"></use></svg></div>
       <div class="login-copy"><span class="suite-label">IL TUO WORKSPACE</span><h1>Bentornato.</h1><p>Accedi a LiveVault.</p></div>
       <label class="field"><span>Password</span><input id="password" type="password" autocomplete="current-password" required autofocus></label>
@@ -32,7 +32,7 @@
         <button class="nav-link" type="button" data-view="archive" data-tooltip="Archivio"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#archive"></use></svg><span>Archivio</span><small class="nav-index">03</small></button>
         <button class="nav-link" type="button" data-view="statistics" data-tooltip="Analisi"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#chart"></use></svg><span>Analisi</span><small class="nav-index">04</small></button>
       </nav>
-      <div class="rail-spacer"></div><div class="rail-caption"><i></i><span>Il tuo spazio.<br>La tua regia.</span></div>
+      <div class="rail-spacer"></div><div class="rail-caption"><i></i><span>Capture · Library<br>Cloud archive</span></div>
       <div class="rail-actions">
         <button id="healthPill" class="rail-icon-button health-button hidden" type="button" aria-label="Problemi di sistema" data-tooltip="Stato sistema"></button>
         <a class="rail-icon-button node-link" href="https://openastro.tailf2871c.ts.net:8443/" aria-label="OpenAstro Control" data-tooltip="OpenAstro Control"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#server"></use></svg></a>
@@ -53,7 +53,7 @@
 
     <main class="content-shell" id="mainContent" tabindex="-1">
       <div id="dashboardView" class="view-section" data-page="dashboard">
-        <header class="page-header dashboard-head" data-motion><div><span class="suite-label">01 / CAPTURE WORKSPACE</span><h1>In diretta<span class="accent-period">.</span></h1><p>Ogni sorgente. Ogni istante. Tutto sotto controllo.</p></div><div class="signal-art" aria-hidden="true"><svg viewBox="0 0 240 180"><g fill="none" stroke="currentColor"><ellipse cx="120" cy="90" rx="108" ry="47" transform="rotate(-32 120 90)"/><ellipse cx="120" cy="90" rx="108" ry="47" transform="rotate(32 120 90)"/><circle cx="120" cy="90" r="55" stroke-dasharray="2 8"/><circle cx="120" cy="90" r="20"/></g><circle cx="213" cy="54" r="5" fill="currentColor"/></svg></div><div class="page-actions"><time id="lastRefresh" class="sr-only">—</time><button id="refreshBtn" class="icon-button" type="button" aria-label="Aggiorna sorgenti" data-tooltip="Aggiorna sorgenti"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#refresh"></use></svg></button><button id="showAddBtn" class="button primary" type="button"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#plus"></use></svg><span>Aggiungi sorgente</span></button></div></header>
+        <header class="page-header dashboard-head" data-motion><div><span class="suite-label">LIVEVAULT / MONITOR</span><h1>Regia live<span class="accent-period">.</span></h1><p>Sorgenti, acquisizioni e spazio disponibile.</p></div><div class="signal-art" data-orbit aria-hidden="true"><svg viewBox="0 0 240 180"><g fill="none" stroke="currentColor"><ellipse cx="120" cy="90" rx="108" ry="47" transform="rotate(-32 120 90)"/><ellipse cx="120" cy="90" rx="108" ry="47" transform="rotate(32 120 90)"/><circle cx="120" cy="90" r="55" stroke-dasharray="2 8"/><circle cx="120" cy="90" r="20"/></g><circle cx="213" cy="54" r="5" fill="currentColor"/></svg></div><div class="page-actions"><time id="lastRefresh" class="sr-only">—</time><button id="refreshBtn" class="icon-button" type="button" aria-label="Aggiorna sorgenti" data-tooltip="Aggiorna sorgenti"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#refresh"></use></svg></button><button id="showAddBtn" class="button primary" type="button"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#plus"></use></svg><span>Aggiungi sorgente</span></button></div></header>
 
         <section class="status-surface panel" data-motion aria-label="Stato del recorder">
           <div class="status-metrics">
@@ -84,7 +84,7 @@
       </div>
 
       <div id="libraryView" class="view-section hidden" data-page="library">
-        <header class="page-header" data-motion><div><span class="suite-label">02 / LIVEVAULT</span><h1>Libreria<span class="accent-period">.</span></h1><p>Creator, account, categorie e raccolte.</p></div><div class="page-actions"><button id="manageLibraryBtn" class="button secondary" type="button"><svg class="icon"><use href="/static/icons.svg#tags"></use></svg><span>Categorie</span></button><button id="libraryAddBtn" class="button primary" type="button"><svg class="icon"><use href="/static/icons.svg#plus"></use></svg><span>Aggiungi sorgente</span></button></div></header>
+        <header class="page-header" data-motion><div><span class="suite-label">LIVEVAULT / CREATOR</span><h1>Libreria<span class="accent-period">.</span></h1><p>Creator, account, categorie e raccolte.</p></div><div class="page-actions"><button id="manageLibraryBtn" class="button secondary" type="button"><svg class="icon"><use href="/static/icons.svg#tags"></use></svg><span>Categorie</span></button><button id="libraryAddBtn" class="button primary" type="button"><svg class="icon"><use href="/static/icons.svg#plus"></use></svg><span>Aggiungi sorgente</span></button></div></header>
         <section class="library-layout" data-motion>
           <aside class="library-sidebar filter-navigation panel" aria-label="Viste rapide">
             <div class="filter-nav-title">Viste</div>
@@ -100,7 +100,7 @@
       </div>
 
       <div id="archiveView" class="view-section hidden" data-page="archive">
-        <header class="page-header" data-motion><div><span class="suite-label">03 / LIVEVAULT</span><h1>Archivio<span class="accent-period">.</span></h1><p>Gestione rapida delle registrazioni locali e cloud.</p></div><button id="exportArchive" type="button" class="button secondary"><svg class="icon"><use href="/static/icons.svg#download"></use></svg><span>Esporta CSV</span></button></header>
+        <header class="page-header" data-motion><div><span class="suite-label">LIVEVAULT / ARCHIVIO</span><h1>Archivio<span class="accent-period">.</span></h1><p>Gestione rapida delle registrazioni locali e cloud.</p></div><button id="exportArchive" type="button" class="button secondary"><svg class="icon"><use href="/static/icons.svg#download"></use></svg><span>Esporta CSV</span></button></header>
         <section id="nsfwPanel" class="nsfw-panel panel hidden" aria-live="polite" aria-label="Analisi NSFW"></section>
         <section id="archive" class="archive-surface panel section" data-motion data-columns="1">
           <div class="archive-toolbar-row"><label class="search-control archive-search"><svg class="icon"><use href="/static/icons.svg#search"></use></svg><input id="recordingSearch" aria-label="Cerca registrazioni" type="search" placeholder="Cerca… es. creator:aurora &gt;1gb dal:2026-09-01" title="Filtri: creator:nome · stato:caricato|coda|fallito · &gt;1gb · durata&gt;30m · dal:/al:AAAA-MM-GG · oggi · ieri · settimana · is:locale|cloud|problema"></label><label class="select-control archive-status"><svg class="icon"><use href="/static/icons.svg#filter"></use></svg><select id="recordingStatus" aria-label="Stato registrazione"><option value="all">Tutti gli stati</option><option value="uploaded">Caricati</option><option value="pending">In attesa</option><option value="uploading">Upload</option><option value="failed">Falliti</option><option value="integrity_failed">Integrità fallita</option><option value="converting">Conversione MP4</option><option value="waiting_config">Config mancante</option><option value="discarded">Locale eliminato</option></select></label><div class="archive-bulk-actions"><button id="retryAllBtn" class="icon-button" type="button" aria-label="Riprova falliti" data-tooltip="Riprova falliti"><svg class="icon"><use href="/static/icons.svg#rotate-ccw"></use></svg></button><button id="cleanupBtn" class="icon-button" type="button" aria-label="Libera file caricati" data-tooltip="Libera caricati"><svg class="icon"><use href="/static/icons.svg#broom"></use></svg></button><button id="purgeLocalBtn" class="icon-button danger" type="button" aria-label="Pulisci file locali" data-tooltip="Pulisci locali"><svg class="icon"><use href="/static/icons.svg#trash"></use></svg></button></div></div>
@@ -110,7 +110,7 @@
       </div>
 
       <div id="statisticsView" class="view-section hidden" data-page="statistics">
-        <header class="page-header" data-motion><div><span class="suite-label">04 / LIVEVAULT</span><h1>Analisi<span class="accent-period">.</span></h1><p>Copertura, attività e movimentazione dati.</p></div><label class="stats-range select-control"><svg class="icon"><use href="/static/icons.svg#calendar"></use></svg><span class="sr-only">Periodo</span><select id="statisticsRange"><option value="7">7 giorni</option><option value="30" selected>30 giorni</option><option value="90">90 giorni</option><option value="365">365 giorni</option></select></label></header>
+        <header class="page-header" data-motion><div><span class="suite-label">LIVEVAULT / ANALISI</span><h1>Analisi<span class="accent-period">.</span></h1><p>Copertura, attività e movimentazione dati.</p></div><label class="stats-range select-control"><svg class="icon"><use href="/static/icons.svg#calendar"></use></svg><span class="sr-only">Periodo</span><select id="statisticsRange"><option value="7">7 giorni</option><option value="30" selected>30 giorni</option><option value="90">90 giorni</option><option value="365">365 giorni</option></select></label></header>
         <section id="statisticsSummary" class="stats-summary-grid"></section>
         <section class="stats-chart-grid" data-motion><article class="panel stats-chart-card wide-chart"><div class="surface-header section-head"><h2>Online e registrato</h2><div class="chart-legend"><span class="online">Online</span><span class="recorded">Registrato</span></div></div><div id="statisticsDailyChart" class="chart-host"></div></article><article class="panel stats-chart-card"><div class="surface-header section-head"><h2>Distribuzione oraria</h2></div><div id="statisticsHourlyChart" class="chart-host"></div></article><article class="panel stats-chart-card"><div class="surface-header section-head"><h2>Movimentazione dati</h2><span id="statisticsDataTotal" class="route">—</span></div><div id="statisticsDataChart" class="data-flow-chart"></div></article></section>
         <section class="stats-operations-grid" data-motion><article class="panel stats-chart-card"><div class="surface-header section-head"><h2>Riepilogo</h2></div><div id="statisticsInsights" class="stats-insights"></div></article><article class="panel stats-chart-card creator-ranking"><div class="surface-header section-head stats-leader-head"><h2>Creator</h2><label class="stats-range compact select-control"><span class="sr-only">Ordina per</span><select id="statisticsCreatorSort"><option value="videos">Video</option><option value="duration">Durata</option><option value="storage">Spazio</option><option value="coverage">Copertura</option></select></label></div><div id="statisticsLeaderboard" class="stats-leaderboard"></div><p id="statisticsNote" class="stats-note"></p></article></section>
@@ -135,14 +135,14 @@
   <aside id="livePauseAlert" class="live-pause-alert hidden" aria-live="assertive" aria-label="Creator live non registrate"></aside><div id="toastRegion" class="toasts" aria-live="polite"></div>
   <dialog id="nsfwDialog" class="nsfw-dialog" aria-labelledby="nsfwDialogTitle"></dialog>
   <dialog id="commandDialog" class="command-dialog" aria-labelledby="commandTitle"><div class="command-head"><div><svg class="icon"><use href="/static/icons.svg#search"></use></svg><h2 id="commandTitle">Cerca</h2></div><button id="closeCommands" class="icon-button" type="button" aria-label="Chiudi ricerca"><svg class="icon"><use href="/static/icons.svg#x"></use></svg></button></div><label class="command-input"><svg class="icon"><use href="/static/icons.svg#search"></use></svg><input id="commandSearch" type="search" aria-label="Cerca pagine o creator" placeholder="Creator o sezione" autocomplete="off"></label><div id="commandResults" class="command-results"></div><footer><span>Freccia su/giù: seleziona</span><span>Invio: apri</span><span>Esc: chiudi</span></footer></dialog>
-  <script src="/static/app.js?v=3.5.0" defer></script>
-  <script src="/static/creator-hover.js?v=3.5.0" defer></script>
-  <script src="/static/operations.js?v=3.5.0" defer></script>
-  <script src="/static/workspace.js?v=3.5.0" defer></script>
-  <script src="/static/ui.js?v=3.5.0" defer></script>
-  <script src="/static/pulse-tuning.js?v=3.5.0" defer></script>
-  <script src="/static/features.js?v=3.5.0" defer></script>
-  <script src="/static/nsfw.js?v=3.5.0" defer></script>
-  <script src="/static/motion.js?v=3.5.0" defer></script>
+  <script src="/static/app.js?v=3.5.1" defer></script>
+  <script src="/static/creator-hover.js?v=3.5.1" defer></script>
+  <script src="/static/operations.js?v=3.5.1" defer></script>
+  <script src="/static/workspace.js?v=3.5.1" defer></script>
+  <script src="/static/ui.js?v=3.5.1" defer></script>
+  <script src="/static/pulse-tuning.js?v=3.5.1" defer></script>
+  <script src="/static/features.js?v=3.5.1" defer></script>
+  <script src="/static/nsfw.js?v=3.5.1" defer></script>
+  <script src="/static/motion.js?v=3.5.1" defer></script>
 </body>
 </html>

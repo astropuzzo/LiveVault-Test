@@ -35,7 +35,7 @@ def test_expensive_views_are_lazy_loaded():
 
 def test_pwa_shell_contains_new_layout_css():
     assert '"/app.css"' in SW and '"/motion.js"' in SW
-    assert 'openastro-control-v3.5.0' in SW
+    assert 'openastro-control-v3.5.1' in SW
     assert '"/diagnostics.js"' in SW and '"/diagnostics.css"' in SW
     for retired in ['shell.css','theme.css','premium.css','magic.css','glass.css']:
         assert retired not in SW

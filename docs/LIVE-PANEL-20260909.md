@@ -1,15 +1,14 @@
 # Live panel and short reconnect files
 
-## UI 3.5.0 — sorgente verificato 2026-09-30
+## UI 3.5.1 — candidato 2026-09-30
 
-La shell, login, quattro viste e player sono ricostruiti in
-`app/static/{index.html,style.css,ui.js,player.css,motion.js}`. Le live precedono
-la cronologia; la libreria ha righe/schede responsive, l’archivio filtri
-progressivi e l’analisi grafici più ampi. Asset locali, animazioni finite,
-movimento ridotto e stop nelle schede nascoste. Le maschere NSFW, i byte range,
-AWAY/TIP-JAR e i contratti di acquisizione restano invariati.
-Runtime nell’immagine Coolify; candidata finché il rollout non è verificato.
-Evidenze visuali, limiti e rollback 3.4.31:
+Evoluzione cosmic glass in `app/static/{index.html,style.css,ui.js,player.css,motion.js}`:
+navigazione flottante, metriche compatte, card live affiancate, archivio e
+analisi responsive. Motion finito nelle viste, controlli, finestre/toast,
+filtri e grafici, senza replay dal polling. Font locali e movimento ridotto.
+Maschere NSFW, storyboard 3×3, byte range e distinzione AWAY/TIP-JAR conservati.
+Runtime corrente Coolify 3.5.0 `:103abbd...`; 3.5.1 da promuovere dopo CI/QA.
+Evidenze e rollback 3.4.31:
 [UI-REDESIGN-20260930](UI-REDESIGN-20260930.md).
 
 

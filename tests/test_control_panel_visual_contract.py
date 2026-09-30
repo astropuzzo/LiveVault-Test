@@ -5,8 +5,8 @@ ROOT = Path(__file__).parents[1] / 'control-panel' / 'static'
 
 def test_one_authoritative_theme_follows_only_functional_components():
     html = (ROOT / 'index.html').read_text(encoding='utf-8')
-    assert html.index('/diagnostics.css?v=') < html.index('/app.css?v=3.5.0')
-    assert html.index('/media-upload.css?v=') < html.index('/app.css?v=3.5.0')
+    assert html.index('/diagnostics.css?v=') < html.index('/app.css?v=3.5.1')
+    assert html.index('/media-upload.css?v=') < html.index('/app.css?v=3.5.1')
     for retired in ('shell.css', 'theme.css', 'premium.css', 'magic.css', 'glass.css'):
         assert retired not in html
 
@@ -47,5 +47,5 @@ def test_new_layout_keeps_progressive_disclosure_and_player_transport():
 def test_shared_motion_and_local_font_are_available_offline():
     html = (ROOT / 'index.html').read_text(encoding='utf-8')
     sw = (ROOT / 'sw.js').read_text(encoding='utf-8')
-    assert '/motion.js?v=3.5.0' in html
+    assert '/motion.js?v=3.5.1' in html
     assert '"/motion.js"' in sw and '"/fonts/mona-sans-latin-wght.woff2"' in sw
