@@ -15,10 +15,10 @@ def test_product_ui_is_dark_icon_driven_and_preserves_primary_hooks():
 
     assert '<meta name="color-scheme" content="dark">' in html
     assert has_css(css, "color-scheme:dark")
-    # Local type and solid surfaces form one design system; no remote font dependency.
+    # Local type and cosmic glass form one design system; no remote font dependency.
     assert has_css(css, 'font-family:"Mona Sans"')
     assert "/static/fonts/mona-sans-latin-wght.woff2" in css
-    assert has_css(css, "--primary:#d9ff82")
+    assert has_css(css, "--primary:#63b8ff")
     assert "prefers-reduced-motion" in css
     assert "prefers-reduced-transparency" in css
     assert "/static/icons.svg#monitor" in html

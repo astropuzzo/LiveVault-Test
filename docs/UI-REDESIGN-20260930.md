@@ -58,10 +58,13 @@ La policy del browser ha bloccato la ripresa dell’ultima anteprima: nessuna nu
 cattura del deploy 3.5.1 disponibile. QA player sintetico funzionale già completato
 in 3.5.0; 3.5.1 cambia soltanto il suo CSS, coperto anche dai test di contratto.
 
-Test locali: 48 Python mirati passati, 81 JavaScript passati (18 motion e
+Test locali: 52 Python mirati passati, 81 JavaScript passati (18 motion e
 annullamento immediato hold inclusi). Le suite verificano async/race, preview,
 player, qualità QSM, auth e contratti visuali. Sintassi/CI Linux completa
-obbligatorie prima di main. Il vecchio run 583 Python/69 JavaScript appartiene
+obbligatorie prima di main. Il primo run candidato ha rilevato tre contratti
+visuali rimasti al design 3.5.0 (lime, card grande, clip globale): aggiornati
+alla nuova palette, card compatta e contenimento locale della legenda già
+verificato su telefono, mantenendo i controlli dei menu e dei dati. Il vecchio run 583 Python/69 JavaScript appartiene
 al runtime 3.5.0, non certifica questo candidato.
 
 Prova JPEG reale NINA vincolata alla disponibilità PC/QSM. Placeholder e

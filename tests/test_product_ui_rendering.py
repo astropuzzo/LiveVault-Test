@@ -28,10 +28,10 @@ def test_product_ui_rendering_regressions_are_pinned():
     assert has_css(css, '.archive-surface .row-more[open] .row-menu')
     assert has_css(css, '.archive-surface .icon-button.recovery')
 
-    # A single live creator is promoted to a large preview + details card.
+    # A single live creator keeps a compact preview + details card.
     assert has_css(tuning, ':has(> .cr-live-card:only-child)')
-    assert has_css(tuning, 'grid-template-columns: minmax(0, 1.7fr) minmax(280px, 1fr)')
-    assert has_css(tuning, 'min-height: 300px')
+    assert has_css(tuning, 'grid-template-columns:minmax(170px,.55fr) minmax(0,1fr);max-width:780px')
+    assert has_css(tuning, 'min-height:210px')
 
     # Timeline states: quiet online bar, one semantic fill per state.
     assert has_css(tuning, '.cr-pulse-live-span {fill: #56627a')
