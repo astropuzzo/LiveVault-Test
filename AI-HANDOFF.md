@@ -1,5 +1,5 @@
 # OpenAstro — fonte di verità operativa
-Verifica host: **2026-09-09**. Leggere [AGENTS.md](AGENTS.md) prima di intervenire.
+Verifica host: **2026-09-30**. Leggere [AGENTS.md](AGENTS.md) prima di intervenire.
 Priorità corrente: [CPU 1,8 GHz, USB e buffer](docs/STABILITY-20260909.md).
 Recupero MP4 e resolver HLS: [diagnosi e rollback](docs/MP4-HLS-RECOVERY.md), verifica 2026-09-20.
 Verifica pannello e frammenti brevi: [LIVE-PANEL-20260909.md](docs/LIVE-PANEL-20260909.md).
@@ -11,19 +11,24 @@ Intervento prestazioni in corso: leggere [stato e ripresa](docs/OTTIMIZZAZIONE-S
 prima di continuare il [piano](docs/PIANO-OTTIMIZZAZIONE.md).
 Una copia distribuita su eMMC è in /opt/openastro-ops; gli ingressi AGENTS.md dei
 workspace del nodo puntano lì. Aggiornare quella copia insieme ai documenti Git;
-SOURCE.txt identifica la revisione (ultimo allineamento completo: 2026-09-25,
+SOURCE.txt identifica la revisione (ultimo allineamento completo: 2026-09-30,
 incluse le guide collegate da questo file). Il vecchio handoff duplicato è stato sostituito
 da un rinvio, con originale conservato nella directory rollback.
 
-## Handoff corrente — 2026-09-30 (LiveVault 3.4.30; candidato audit 3.4.31)
-Audit SSH di LiveVault, Control/Media e NINA:
-[risultati, sorgenti, rollout e rollback](docs/PANELS-AUDIT-20260929.md).
-Il codice candidato richiede CI e verifica runtime; non confonderlo con le
-immagini baseline `0242aa3`/`900ccd44`. Control installato ha due sorgenti più
-vecchi del repository (hash confrontati con la cronologia Git).
-Il candidato separa AWAY da TIP-JAR, chiude le corse sulle operazioni file e
-aggiunge diagnostica Control e preview NINA con tempo indipendente. Nessuna
-migrazione DB; evidenze e limiti sono nel verbale audit collegato sopra.
+## Handoff corrente — 2026-09-30 (LiveVault 3.4.31 in produzione)
+Audit SSH di LiveVault, Control/Media e NINA concluso sul commit sorgente
+`fc023fd8908d41fc897c78b73a65f97695ab26e0`: [evidenze e rollback](docs/PANELS-AUDIT-20260929.md).
+CI feature e main verdi: 582 test Python e 61 JavaScript, build/prova NINA isolato.
+LiveVault e NINA hanno immagini `:fc023fd...` healthy; Control è aggiornato in
+`/opt/openastro-control`, nove hash identici al sorgente testato. Le immagini
+`0242aa3`/`900ccd44` sono rollback, non il runtime corrente. Backup Control privato:
+`/var/backups/openastro/20260930-panels-audit/control-before.tar.gz`.
+AWAY è distinto da TIP-JAR; claim dei file, diagnostica Control e preview NINA
+con timestamp indipendente sono attivi. Nessuna migrazione DB. QSM non era
+raggiungibile nel controllo finale; prova di una preview reale ancora aperta.
+Il webhook manuale GitHub `674326069` accodava un secondo deploy LiveVault:
+disattivato, configurazione conservata. Resta il collegamento GitHub App con
+Watch Paths invariati. Procedura e ripristino in [HOSTING.md](HOSTING.md).
 Sessione locale con SSH al nodo. Misure, cause, procedure e rollback in
 [LIVE-PANEL-20260909.md](docs/LIVE-PANEL-20260909.md) (sezioni "Short captures
 in Cronologia" e NSFW 3.3/3.4) e [MP4-HLS-RECOVERY.md](docs/MP4-HLS-RECOVERY.md)

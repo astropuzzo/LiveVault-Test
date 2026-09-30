@@ -36,8 +36,8 @@ Tailscale sul telefono. Stato e comandi sono protetti da login, cookie sicuro,
 CSRF e limitazione dei tentativi. Il limite login usa l'IP del client solo come
 ultimo valore `X-Forwarded-For` aggiunto dal proxy locale (connessioni da
 loopback); valori precedenti o arrivati da altri peer vengono ignorati
-(`control-panel/server.py`, `Handler.client_key`, 2026-09-24). Attivo solo dopo
-il deploy host in `/opt/openastro-control`; rollback: ripristinare la copia
+(`control-panel/server.py`, `Handler.client_key`, 2026-09-24). Attivo nel runtime
+`/opt/openastro-control` verificato il 2026-09-30; rollback: ripristinare la copia
 precedente di `server.py` e riavviare solo `openastro-control.service`.
 Le credenziali sono nel file locale del precedente workspace di installazione (`outputs/OpenAstro-Control-access.txt`)
 e non vengono conservate in chiaro sul server o nel repository.
@@ -131,8 +131,11 @@ sovrascriversi: il perdente riceve HTTP 409 e la sola copia temporanea viene rim
 Se il filesystem/kernel non supporta la pubblicazione sicura, l'import fallisce
 conservando la destinazione. Non cambia il formato del catalogo né i media esistenti.
 
-Runtime previsto: `/opt/openastro-control/{upload_server.py,media_center.py,media_streaming.py}` e
-`/opt/openastro-control/static/app.js`; la verifica locale non prova il deploy host.
+Runtime verificato il 2026-09-30: `/opt/openastro-control/{upload_server.py,media_center.py,media_streaming.py}` e
+`/opt/openastro-control/static/app.js`, hash identici al commit `fc023fd` validato
+in CI. Backup completo privato `/var/backups/openastro/20260930-panels-audit/control-before.tar.gz`;
+manifest dei nove file installati nella stessa directory. Servizio attivo,
+HTTPS/diagnostica HTTP 200, stato senza sessione 401. [Prove e limiti](../docs/PANELS-AUDIT-20260929.md).
 Rollback: ripristinare questi quattro file dalla copia di `/opt/openastro-control`
 conservata prima del deploy e riavviare soltanto `openastro-control.service` per i
 moduli Python; il riavvio invalida le sessioni del pannello. Nessun riavvio delle

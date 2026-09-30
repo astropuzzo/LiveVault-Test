@@ -3,8 +3,8 @@
 Baseline verificata: GitHub `main=5fddda9`; LiveVault 3.4.30, immagine
 `ahul2vdjkyvjiwgzpcrmxzfe:0242aa3c8e5ee95d6e2a0cdfb61e003de28f1028`;
 NINA immagine `ctrzdfqqsdljdcb2sbdrc7ug:900ccd44f86e003877ab08b1893de565748fdfe5`.
-Le modifiche di questo audit sono candidate fino alla verifica del deploy indicata
-sotto. Worktree isolato; checkout Windows e checkout Harness preservati.
+Release 3.4.31 distribuita il 30 settembre dal commit `fc023fd8908d41fc897c78b73a65f97695ab26e0`;
+runtime e prove sono indicati sotto. Worktree isolato; checkout Windows e checkout Harness preservati.
 
 ## Verifiche sul nodo
 
@@ -51,6 +51,7 @@ cronologia Git. La copia di rollback resta privata sul nodo.
 | NINA inspector | Indici riutilizzati o cambi di snapshot mantengono valutazioni vecchie | Identità timestamp+indice, dettagli aggiornati, recuperi fotometrici visibili |
 | NINA polling | Richieste bloccate/logout applicano risposte tardive | Timeout/abort e identità della sessione UI |
 | Profili CPU | Testo MAX dichiara 1,5 GHz mentre il limite nodo è 1,8 GHz | Testo riferito al limite configurato, senza cambiare CPU o profili |
+| Deploy | Webhook manuale e GitHub App accodano due deploy LiveVault dello stesso commit | Disattivato il solo webhook manuale ridondante, con configurazione conservata |
 
 Procedure specifiche e limiti: [LiveVault](LIVE-PANEL-20260909.md),
 [Control](../control-panel/README.md), [NINA](NINA-MONITOR.md).
@@ -96,21 +97,60 @@ Verifica locale dell'intero insieme il 30 settembre con FFmpeg 7.1:
 namespace/mount/Pi-hole Linux, come documentato nell'handoff. Successivo gruppo
 scanner/claim/versione: 49 passati, uno saltato. Test Node delle quattro suite
 pannelli: 61 passati. Il candidato ha versione 3.4.31 coerente con PWA e documenti.
-Il conteggio CI Linux definitivo e la revisione validata vanno riportati
-prima della promozione; i risultati Windows non sostituiscono la CI.
+CI Linux/Python 3.13 sul commit sorgente `fc023fd8908d41fc897c78b73a65f97695ab26e0`:
+**582 test Python passati, zero saltati; 61 JavaScript passati**. Compilazione,
+lint shell/JS, build/prova container NINA isolato e controllo documentale verdi.
+[CI prima della promozione](https://github.com/astropuzzo/LiveVault-Test/actions/runs/36691071952),
+[CI main](https://github.com/astropuzzo/LiveVault-Test/actions/runs/36692037849).
 
-Stato del rollout: in preparazione. Solo dopo CI verde promuovere a `main`;
-Coolify deploya separatamente LiveVault e NINA con Watch Paths invariati.
-Control si aggiorna in `/opt/openastro-control` da sorgenti validati, con backup
-privato prima della sostituzione e riavvio del solo `openastro-control.service`.
-Confrontare gli hash LF dei file installati e verificare capture in crescita,
-health worker, API autenticate, NINA senza mount e report Control. Aggiornare
-anche `/opt/openastro-ops` e `SOURCE.txt` con la revisione verificata.
+Stato del rollout: completato, immagini finali healthy al controllo SSH del 30 settembre.
+
+| Componente | Runtime verificato |
+| --- | --- |
+| LiveVault | `ahul2vdjkyvjiwgzpcrmxzfe:fc023fd8908d41fc897c78b73a65f97695ab26e0`; container `ahul2vdjkyvjiwgzpcrmxzfe-084838649771`, avvio 08:54:43 UTC |
+| NINA | `ctrzdfqqsdljdcb2sbdrc7ug:fc023fd8908d41fc897c78b73a65f97695ab26e0`; container `ctrzdfqqsdljdcb2sbdrc7ug-085252364340`, avvio 08:53:57 UTC; utente `openastro`, zero mount |
+| Control | `/opt/openastro-control`, nove file Python/statici con SHA-256 identico al commit; solo `openastro-control.service` riavviato |
+
+Control: backup DB consistente completato prima della sostituzione; runtime precedente
+in `/var/backups/openastro/20260930-panels-audit/control-before.tar.gz` (root, 0600),
+manifest installato nella stessa directory. Login HTTPS e asset diagnostici HTTP 200,
+hash diagnostica identico; `/api/state` senza sessione HTTP 401. Raccolta stato con i
+moduli installati riuscita: due dispositivi Media, storage montato, tutti i servizi
+attivi. Questa prova non equivale a un nuovo login autenticato al processo Control:
+le credenziali e le sessioni dell'utente non sono state sostituite. Export JSON
+verificato dai test Node di allowlist; download browser non confermato nel replay.
+
+LiveVault: `/healthz` 3.4.31, nove task vivi, NVMe online, recovery finale idle.
+API autenticate `/api/status`, `/api/sources`, registrazioni e pulse HTTP 200.
+Singolo campione a runtime dopo il build: lista 703 ms, condizionale 304 in 14 ms;
+pulse 12 h 150 ms e 168 h 1443 ms. Sono campioni, senza confronto controllato prima/dopo.
+Capture sorgente 25: playlist HTTP 200 in 58 ms, 53 segmenti, target 3 s; range
+206 di 16 byte dal file annunciato. Target stabile e sequenza monotona nel secondo
+campione. Nessuna crescita osservata nei cinque secondi; il provider è poi passato
+`private` e la capture si è fermata. Controllo finale: 17 sorgenti offline, una privata,
+nessuna capture attiva o errore worker, nessun upload/integrità fallito, coda vuota.
+Non è una prova di crescita o seek continuo su una live Stripchat reale.
+
+NINA: health read-only/isolated HTTP 200; `/api/state` autenticato 200 con
+`configured=true`, `reachable=false`; preview 502 con messaggio generico senza URL.
+PC/QSM non raggiungibile nel campione finale: JPEG reale/ETag restano da osservare
+quando disponibile. Le risposte condizionali sono coperte dalla CI.
+
+Coolify aveva due code LiveVault per lo stesso commit alle 08:48:38 UTC.
+La consegna GitHub manuale conferma la coda `vedgbii45mtryhy9lg8rkutl`; la coda
+`yrvstczvejpvyzhyplr2swye` e NINA usano il collegamento GitHub App. Il webhook
+manuale `674326069` è disattivato senza cancellarlo. Sorgenti App, Auto Deploy,
+branch e Watch Paths restano invariati; ripristino in `HOSTING.md`.
+
+Copia dei documenti Git distribuita in `/opt/openastro-ops`; `SOURCE.txt` identifica
+la revisione documentale. Originali inclusi nel backup privato
+`/var/backups/openastro/20260930-panels-audit/ops-before.tar.gz`.
+Il documento OAuth fuori da Git e i checkout locali/host restano preservati.
 
 ## Rollback e limiti
 
 LiveVault: immagine 3.4.30 `0242aa3` sopra. NINA: immagine `900ccd44` sopra.
-Control: ripristinare i soli file modificati dal backup privato del runtime;
+Control: ripristinare i soli nove file del manifest dal backup privato del runtime;
 rimuovere i due nuovi asset diagnostici se assenti nel backup e riavviare il solo
 servizio. Nessuna migrazione DB; mantenere segreti, dati e immagini precedenti.
 

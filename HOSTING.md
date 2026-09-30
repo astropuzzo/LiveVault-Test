@@ -90,6 +90,18 @@ Keep existing credentials and system configuration. Never replace the LiveVault 
 A green GitHub run proves source validation, not live deployment. A queued Coolify deployment is also not enough: verify that the replacement becomes healthy.
 
 Coolify webhooks do not wait for CI: validate on a branch before promotion.
+Verified 2026-09-30: both applications use GitHub App source id 1. A redundant
+repository manual webhook (`674326069`, `/source/github/events/manual`) also
+queued LiveVault, producing two rebuilds/replacements for `fc023fd`. Its delivery
+response identifies deployment `vedgbii45mtryhy9lg8rkutl`; GitHub App queued
+`yrvstczvejpvyzhyplr2swye` and the separate NINA deployment. The manual hook is now
+inactive, with its configuration and secret retained. Keep the GitHub App route,
+Auto Deploy, `main` and the module Watch Paths; do not enable both webhook routes.
+The other legacy repository hook `673010860` was already inactive and stays so.
+Rollback if the GitHub App integration stops delivering: re-enable only hook
+`674326069` with `gh api --method PATCH repos/astropuzzo/LiveVault-Test/hooks/674326069 -F active=true` (one command), or its GitHub Settings toggle. Verify one intended
+queue per matching app; enabling it while the App route works restores duplicates.
+No Coolify secret, database setting or application environment was changed.
 Check the queued commit before any manual deployment and retain the previous
 image for rollback. Host panel updates remain separate and invalidate its
 in-memory login sessions; sign in again with the existing credentials.

@@ -7,6 +7,7 @@
 - Le operazioni manuali e i worker reclamano i file prima di upload, recupero, integrità o cancellazione; richieste concorrenti ricevono 409. Il recupero dello stato abbandonato conserva i dati.
 - Control aggiunge «Da controllare» e report JSON senza segreti; Media riduce sonde, decoder e salvataggi periodici, preserva cataloghi incompleti e rifiuta import concorrenti senza sovrascrivere. Percorso SMB e file mostrati seguono la libreria selezionata. Pulizia HLS indipendente dalle schede aperte.
 - NINA condivide le richieste QSM/JPEG, rifiuta redirect del token, mostra timestamp proprio della preview LIGHT e aggiorna inspector/recuperi fotometrici; timeout e logout invalidano risposte pendenti.
+- Disattivato il webhook manuale ridondante che causava due deploy LiveVault per ogni commit; resta GitHub App con gli stessi Watch Paths e rollback del collegamento.
 - Evidenze, runtime, deploy e rollback: [audit pannelli](docs/PANELS-AUDIT-20260929.md). Nessuna migrazione di database o modifica ai parametri di registrazione, QSM, storage o CPU.
 
 ## 3.4.30 — Segmenti live con box sidx

@@ -185,7 +185,21 @@ Validation: focused Python regressions cover concurrent slow fetches, preview ca
 redirect rejection, error redaction and conditional JPEG responses; JavaScript
 regressions cover selection reuse, independent preview identity/freshness, recovery
 history and logout/timeout races. Exact-commit Linux CI and browser QA are deployment
-gates. No persistent schema or N.I.N.A. control/threshold behavior changes.
+gates. Commit `fc023fd8908d41fc897c78b73a65f97695ab26e0` passed Linux CI
+(582 Python and 61 JavaScript tests across the repository) before promotion.
+Browser replay QA covered desktop 1440×1000 and mobile 412×915 with sanitized
+node data. No persistent schema or N.I.N.A. control/threshold behavior changes.
+
+Production verification, 2026-09-30: image
+`ctrzdfqqsdljdcb2sbdrc7ug:fc023fd8908d41fc897c78b73a65f97695ab26e0`, container
+`ctrzdfqqsdljdcb2sbdrc7ug-085252364340`, started 08:53:57 UTC, healthy,
+user `openastro`, zero mounts. `/healthz` is read-only/isolated; authenticated
+`/api/state` returns 200 with `configured=true`, `reachable=false`. The PC/QSM
+was unavailable: preview returned 502 with a generic error containing no endpoint.
+A real JPEG and conditional ETag remain unverified on the node in this check;
+CI covers preview caching/304. LiveVault was intentionally updated in the same
+audit, with its own Watch Paths and final startup 08:54:43 UTC. See the
+[audit report](PANELS-AUDIT-20260929.md) for precise evidence and limits.
 
 Rollback: redeploy the prior NINA image
 `ctrzdfqqsdljdcb2sbdrc7ug:900ccd44f86e003877ab08b1893de565748fdfe5` through this

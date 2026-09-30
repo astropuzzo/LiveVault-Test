@@ -166,7 +166,7 @@ dependency on the host (hls.js 1.7.2 is vendored in `app/static/vendor/`).
   `/api/recordings/{id}/stream.m3u8`, `/api/fragments/{id}/stream.m3u8`,
   `/api/sources/{id}/capture.m3u8` (409 when the file is not fragmented; the
   player then falls back to the direct file). CSP gains `media-src 'self' blob:`.
-  Il candidato audit del 2026-09-29 aggiunge `app/live_capture_playlist.py` per
+  La release audit 3.4.31 aggiunge `app/live_capture_playlist.py` per
   la rotazione della capture: playlist scorrevole, sequenze monotone e URL dei
   byte legati alla singola parte. I file VOD conservano l'indice precedente;
   verifiche e limiti nella sezione audit qui sotto.
@@ -488,15 +488,18 @@ These changes are not a production deployment. Merge only after green CI and
 review. Rollback is the preceding Coolify image `607a151`; no migration is added.
 Do not reset the dirty checkout at `/mnt/livevault-nvme/gpt-harness/work/LiveVault-Test`.
 
-## Audit player e richieste asincrone (candidato 2026-09-29)
+## Audit player e richieste asincrone (3.4.31, deploy 2026-09-30)
 
 Sorgenti: `app/static/app.js`, `app/live_capture_playlist.py`, `app/main.py`,
 `app/mp4_index.py`, `app/workers.py`, `app/storage_response.py`.
 Stati AWAY e claim scanner: `app/source_providers.py`,
 `app/stripchat_state.py`, `app/nsfw_worker.py`; verifica sorgente 2026-09-30.
 Baseline del clone audit: GitHub `main` `5fddda9`.
-Le verifiche riportate qui sono locali sul candidato; questa sezione non
-attesta il deploy o la continuità di una capture sul nodo.
+Deploy `fc023fd` healthy; CI Linux: 582 test Python e 61 JavaScript passati.
+Runtime `/app`, immagine `ahul2vdjkyvjiwgzpcrmxzfe:fc023fd8908d41fc897c78b73a65f97695ab26e0`.
+Playlist reale HTTP 200 e range 206, target stabile e sequenza monotona;
+nessuna crescita dimostrata prima che il provider passasse in privato.
+[evidenze runtime e limiti](PANELS-AUDIT-20260929.md).
 
 - Il player assegna una generazione a ogni apertura/chiusura e annulla la
   richiesta playlist precedente. Una risposta tardiva o il caricamento
@@ -591,8 +594,8 @@ Verifica aggiuntiva del 2026-09-30: 52 test passati nel gruppo
 `test_recording_action_concurrency.py`, `test_thumbnail_queue.py` e
 `test_worker_monitoring.py`, inclusi i claim di cancellazione e l'avvio
 con operazioni interrotte; questo gruppo non richiede FFmpeg.
-La CI Linux e la prova browser con capture
-reale devono ancora confermare il candidato.
+La CI Linux è verde sul commit distribuito; il seek prolungato nel browser
+su una capture Stripchat reale resta da osservare.
 Validazione finale locale 30 settembre: 512 test passati, 11 saltati nel gruppo
 che esclude cinque file di test dipendenti da host/mount Linux; controllo versione
 3.4.31 incluso. Successivo gruppo scanner/claim/versione: 49 passati, un test
