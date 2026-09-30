@@ -618,7 +618,7 @@ html.media-player-pseudo-fullscreen,html.media-player-pseudo-fullscreen body{ove
 .media-video-shell.media-video-shell--pseudo-fullscreen{position:fixed!important;inset:0!important;z-index:2147483000!important}
 /* A clear accessible entrance to the module. */
 .login-gate{position:fixed;inset:0;z-index:100;background:var(--bg);display:grid;place-items:center;padding:32px;overflow-y:auto}
-.locked .app-shell{visibility:hidden}
+.locked .app-shell{display:none}.locked{overflow:hidden}
 .locked .login-gate{visibility:visible}
 .login-card{display:grid;grid-template-columns:minmax(0,1fr) minmax(300px,.75fr);gap:48px 90px;align-items:center;width:min(1050px,100%);padding:54px;background:var(--surface);border:1px solid var(--line);border-radius:28px}
 .login-story{min-width:0}

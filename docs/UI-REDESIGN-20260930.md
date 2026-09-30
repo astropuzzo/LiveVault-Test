@@ -40,7 +40,11 @@ QA desktop 1440×1000, tablet 1024 e telefoni 412/360: viste Control e
 LiveVault, filtri, griglia/lista e profilo creator; selezione/revisione frame
 NINA. Il profilo mobile ora ridispone metriche, Live DNA e calendario senza
 overflow. Evidenziazione dei file problematici e preview touch ripristinate.
-Login, stati offline e smoke del runtime fanno parte del controllo finale. Prova di JPEG reale NINA ancora
+Login dei tre pannelli verificati anche a 360 px; Control nasconde la shell
+bloccata per eliminare il doppio scroll. Player HLS provato con clip sintetica
+640×360: readyState 4, durata 4,04 s, playback riuscito. Stato NINA offline
+e stato non configurato verificati senza simulare un’immagine astronomica.
+Smoke del runtime da completare dopo il deploy. Prova di JPEG reale NINA ancora
 vincolata alla disponibilità del PC/QSM; il placeholder non simula immagini.
 
 Test Node: regressioni frontend, player, async, NINA, diagnostica e otto
@@ -50,8 +54,10 @@ Verifica locale finale: 69 test JavaScript e 48 test Python mirati passati;
 sintassi di tutti i JavaScript e compileall Python riusciti. Suite completa
 Windows: 554 passati, 7 saltati dopo i due fix CSS; 22 casi host/storage non
 eseguibili correttamente su Windows (`pwd`, namespace/mount e path POSIX).
-Il conteggio 554 comprende il rerun dei tre test UI interessati. La CI Linux
-resta autoritativa; run e deploy vanno registrati dopo completamento.
+Il conteggio 554 comprende il rerun dei tre test UI interessati. CI Linux
+[36717455425](https://github.com/astropuzzo/LiveVault-Test/actions/runs/36717455425)
+verde: 583 Python, 69 JavaScript, sintassi shell, build e smoke NINA isolato.
+L’ultimo fix del login richiede una nuova CI prima della promozione.
 
 ## Deploy e rollback
 
