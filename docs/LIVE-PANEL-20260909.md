@@ -1,13 +1,14 @@
 # Live panel and short reconnect files
 
-## UI 3.5.1 — candidato 2026-09-30
+## UI 3.5.1 — verificata 2026-09-30
 
 Evoluzione cosmic glass in `app/static/{index.html,style.css,ui.js,player.css,motion.js}`:
 navigazione flottante, metriche compatte, card live affiancate, archivio e
 analisi responsive. Motion finito nelle viste, controlli, finestre/toast,
 filtri e grafici, senza replay dal polling. Font locali e movimento ridotto.
 Maschere NSFW, storyboard 3×3, byte range e distinzione AWAY/TIP-JAR conservati.
-Runtime corrente Coolify 3.5.0 `:103abbd...`; 3.5.1 da promuovere dopo CI/QA.
+Runtime Coolify 3.5.1 `:bee4949...` healthy, asset HTTPS verificati SHA-256;
+CI feature e main verdi, 583 Python e 81 JavaScript.
 Evidenze e rollback 3.4.31:
 [UI-REDESIGN-20260930](UI-REDESIGN-20260930.md).
 

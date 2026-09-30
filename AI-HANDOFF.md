@@ -15,19 +15,25 @@ SOURCE.txt identifica la revisione (ultimo allineamento completo: 2026-09-30,
 incluse le guide collegate da questo file). Il vecchio handoff duplicato è stato sostituito
 da un rinvio, con originale conservato nella directory rollback.
 
-## UI — runtime 3.5.0, revisione visiva 3.5.1 in preparazione
-Verifica **2026-09-30**: LiveVault e NINA `:103abbd349cb0f5fee6e062e41def90c412d6e0d`
-healthy; Control attivo, sei asset SHA-256 identici allo stesso sorgente in
-`/opt/openastro-control/static`, PID invariato 1589194. CI main
-[36718431842](https://github.com/astropuzzo/LiveVault-Test/actions/runs/36718431842)
-verde: 583 Python e 69 JavaScript. Backup Control privato:
-`/var/backups/openastro/20260930-ui-future/control-before.tar.gz`; immagini
-3.4.31 `:fc023fd...` conservate. Nessuna migrazione DB.
-Il primo design è stato respinto dall’utente: evoluzione dell’originale con
-vetro, blu cosmico e motion esteso in lavorazione su `codex/ui-future-20260930`.
+## UI — runtime 3.5.1 verificato
+Verifica **2026-09-30**: LiveVault e NINA
+`:bee494925048f52233951514b0ec206cc1042055` healthy; Control attivo, sette asset
+SHA-256 identici allo stesso sorgente in `/opt/openastro-control/static`,
+PID invariato 1589194. CI feature
+[36733526667](https://github.com/astropuzzo/LiveVault-Test/actions/runs/36733526667)
+e main [36734074221](https://github.com/astropuzzo/LiveVault-Test/actions/runs/36734074221)
+verdi: 583 Python e 81 JavaScript, build/prova NINA isolato.
+Vetro, blu cosmico e motion esteso nei tre pannelli; AWAY distinto da TIP-JAR,
+NINA con badge offline/standby corretti. Tutti i worker leader attivi, recorder 0,
+1358 registrazioni, 181,33 GB liberi alla verifica; nessuna migrazione DB.
+Backup Control privato originale 3.4.31 `control-before.tar.gz` e intermedio
+3.5.0 `control-350-assets.tar.gz` in `/var/backups/openastro/20260930-ui-future`;
+immagini precedenti conservate. `/opt/openastro-ops` distribuito contestualmente,
+SOURCE.txt identifica documento e runtime; OAuth privato preservato.
 Sorgenti, QA, rollout e rollback in [UI-REDESIGN-20260930](docs/UI-REDESIGN-20260930.md).
-La copia `/opt/openastro-ops` è ancora al precedente allineamento 3.4.31:
-allinearla insieme al prossimo rollout; non confonderla con il runtime verificato.
+QSM configurato ma PC non raggiungibile, preview reale HTTP 502: prova JPEG aperta.
+La policy del browser ha bloccato l’ultima cattura post-deploy; QA desktop/mobile
+della nuova UI completata prima della pubblicazione, hash HTTPS verificati dopo.
 
 ## Audit precedente — 2026-09-30 (release 3.4.31)
 Audit SSH di LiveVault, Control/Media e NINA concluso sul commit sorgente

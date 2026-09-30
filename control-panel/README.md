@@ -4,7 +4,7 @@ PWA mobile-first per monitorare e controllare il server ASIAIR/Debian. Il serviz
 vive sulla memoria interna, resta accessibile senza NVMe e viene pubblicato solo
 in HTTPS tramite Tailscale Funnel, con autenticazione applicativa.
 
-## Interfaccia 3.5.1 (candidato, 2026-09-30)
+## Interfaccia 3.5.1 (verificata, 2026-09-30)
 
 `static/index.html` e `static/app.css`: evoluzione cosmic glass dell’originale,
 rail flottante, stato operativo centrale, monitoraggio asimmetrico e Media Hub
@@ -14,8 +14,8 @@ finite, feedback dei controlli, filtri e grafici. Annullare una conferma ferma
 subito hold e comando prima dell’uscita visiva. Movimento ridotto e scheda
 nascosta cancellano le animazioni; la telemetria non ripete gli effetti.
 Font locali; skin storiche ritirate dalla pagina e dalla precache.
-Runtime corrente 3.5.0 da `103abbd...` in `/opt/openastro-control/static`;
-prossimo deploy di sette asset noti (incluso `app.js`), senza restart.
+Runtime 3.5.1 da `bee4949...` in `/opt/openastro-control/static`; sette asset
+(incluso `app.js`) verificati SHA-256, senza restart, PID 1589194 invariato.
 QA, stato rollout, limiti e rollback privato:
 [UI-REDESIGN-20260930](../docs/UI-REDESIGN-20260930.md).
 

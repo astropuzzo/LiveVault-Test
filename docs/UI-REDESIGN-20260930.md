@@ -1,10 +1,12 @@
 # UI OpenAstro 3.5.1 — verifica e rollout
 
-Verifica **2026-09-30**. Candidato `codex/ui-future-20260930`; runtime corrente
-3.5.0 `103abbd349cb0f5fee6e062e41def90c412d6e0d`, LiveVault/NINA healthy e
-Control attivo. CI del runtime [36718431842](https://github.com/astropuzzo/LiveVault-Test/actions/runs/36718431842)
-verde. Il primo design è stato respinto dall’utente; questa iterazione segue
-la scelta esplicita di evolvere l’originale con vetro, blu cosmico e motion.
+Verifica **2026-09-30**. Runtime 3.5.1 da
+`bee494925048f52233951514b0ec206cc1042055`; LiveVault/NINA healthy, Control
+attivo. CI feature [36733526667](https://github.com/astropuzzo/LiveVault-Test/actions/runs/36733526667)
+e main [36734074221](https://github.com/astropuzzo/LiveVault-Test/actions/runs/36734074221)
+verdi: 583 Python e 81 JavaScript, sintassi, shell, documentazione e
+build/smoke NINA non-root senza mount. L’iterazione segue la scelta
+dell’utente di evolvere l’originale con vetro, blu cosmico e motion.
 
 ## Sorgenti e comportamento
 
@@ -61,33 +63,52 @@ in 3.5.0; 3.5.1 cambia soltanto il suo CSS, coperto anche dai test di contratto.
 Test locali: 52 Python mirati passati, 81 JavaScript passati (18 motion e
 annullamento immediato hold inclusi). Le suite verificano async/race, preview,
 player, qualità QSM, auth e contratti visuali. Sintassi/CI Linux completa
-obbligatorie prima di main. Il primo run candidato ha rilevato tre contratti
+eseguite prima di main. Il primo run candidato ha rilevato tre contratti
 visuali rimasti al design 3.5.0 (lime, card grande, clip globale): aggiornati
 alla nuova palette, card compatta e contenimento locale della legenda già
-verificato su telefono, mantenendo i controlli dei menu e dei dati. Il vecchio run 583 Python/69 JavaScript appartiene
-al runtime 3.5.0, non certifica questo candidato.
+verificato su telefono, mantenendo i controlli dei menu e dei dati. La successiva
+CI completa e main sono verdi; il vecchio run 583/69 resta nella cronologia 3.5.0.
 
 Prova JPEG reale NINA vincolata alla disponibilità PC/QSM. Placeholder e
-stato offline non simulano una preview reale; resta un limite esplicito.
+stato offline non simulano una preview reale. Dopo il deploy: QSM configurato,
+PC non raggiungibile, sessione inattiva e preview HTTP 502; limite ancora aperto.
 
 ## Deploy e rollback
 
 LiveVault Coolify watch `app/**`; NINA watch `nina-monitor/**`, main dopo CI
 verde. Non riattivare il webhook manuale GitHub disabilitato `674326069`.
 Control: sette asset allowlist aggiornati atomicamente e verificati SHA-256
-in `/opt/openastro-control/static`, senza restart. Prima di scrivere,
-verificare gli asset correnti rispetto al runtime 3.5.0 per preservare
-modifiche impreviste. Sessioni, configurazioni, DB e registrazioni conservati.
+in `/opt/openastro-control/static`, senza restart; PID 1589194 invariato e hash
+dei due file credenziali di riferimento invariati. Guardia preliminare: sei
+asset uguali a Git 103abbd; `app.js` installato dall’audit aveva CRLF, contenuto
+identico al sorgente dopo sola normalizzazione. Usati i suoi byte reali nella
+guardia, senza accettare modifiche ignote. Sessioni e configurazioni conservate.
+
+Runtime:
+- LiveVault `ahul2vdjkyvjiwgzpcrmxzfe-150532228528`, immagine `:bee4949...`.
+- NINA `ctrzdfqqsdljdcb2sbdrc7ug-150532327135`, immagine `:bee4949...`,
+  utente `openastro`, zero mount e non privilegiato.
+- HTTPS pubblico: indice 3.5.1 nei tre pannelli, otto asset con SHA identico al
+  sorgente e API private HTTP 401 senza cookie. Nove asset Live/NINA verificati
+  anche sul filesystem dei container.
+- Live health 3.5.1, tutti i nove leader attivi, recorder 0, 1358 registrazioni,
+  spazio libero 181,33 GB. Nessuna migrazione DB o intervento su storage/media.
+- Checkout host: sedici voci sporche preservate; checkout Windows originale intatto.
 
 Backup privato originale 3.4.31 già presente e da non sovrascrivere:
 `/var/backups/openastro/20260930-ui-future/control-before.tar.gz` (0600).
 Manifest asset installati: `manifest-installed.json` nella stessa directory
-privata. Immagini 3.4.31 `:fc023fd8908d41fc897c78b73a65f97695ab26e0`
+privata. Rollback intermedio statico 3.5.0: `control-350-assets.tar.gz` (0600),
+con i sette asset effettivi prima del deploy; backup originale preservato.
+Immagini 3.4.31 `:fc023fd8908d41fc897c78b73a65f97695ab26e0`
 conservate per LiveVault/NINA; anche 3.5.0 `:103abbd...` è un rollback intermedio.
 Ripristinare gli asset Control dal backup e redeploy immagini corrispondenti,
 poi reload browser. Cache PWA `openastro-control-v3.5.1` / `livevault-shell-v3.5.1`;
 nessuna migrazione dati da annullare.
 
-`/opt/openastro-ops` è ancora all’allineamento precedente 3.4.31. Allineare
-insieme al rollout e aggiornare SOURCE.txt con sorgente/runtime verificati;
-il documento OAuth privato estraneo a Git deve restare intatto.
+`/opt/openastro-ops` distribuito contestualmente da tutti i Markdown tracciati,
+con verifica SHA e SOURCE.txt per revisione documentale e runtime. Albero
+precedente in `/var/backups/openastro/20260930-ui-future/ops-before.tar.gz` (0600).
+`docs/GPT-HARNESS-OAUTH.md` fuori Git preservato per hash, senza riconvalidare
+le sue informazioni Auth0 storiche. Per rollback documentale, ripristinare
+l’albero e SOURCE.txt da quell’archivio insieme al runtime corrispondente.
