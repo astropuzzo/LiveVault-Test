@@ -600,6 +600,7 @@ def main(action):
         backup_timer_was_active = service_active('livevault-backup.timer')
         share_was_mounted = os.path.ismount('/share')
         media_indexer_was_active = service_active('minidlna.service')
+        torrent_was_active = service_active('openastro-torrent.service')
         if action == 'eject' and previous == 'buffer' and not os.path.ismount(NVME):
             print('NVMe già espulso; buffer interno attivo.')
             return
@@ -629,6 +630,12 @@ def main(action):
                 verify_containers_detached_from_device(NVME.stat().st_dev)
                 os.sync()
                 subprocess.run(['smbcontrol', 'smbd', 'close-share', 'NVMeMedia'], capture_output=True)
+                if torrent_was_active:
+                    result = set_service('openastro-torrent.service', 'stop')
+                    if result.returncode != 0:
+                        raise RuntimeError(
+                            f'Impossibile fermare Torrent Manager: {result.stdout}{result.stderr}'.strip()
+                        )
                 if media_indexer_was_active:
                     subprocess.run(['systemctl', 'stop', 'minidlna.service'], capture_output=True)
                 if os.path.ismount('/share'):
@@ -663,10 +670,28 @@ def main(action):
                 subprocess.run(['mount', '/share'], capture_output=True)
                 if os.path.ismount('/share'):
                     Path('/share/Media').mkdir(parents=True, exist_ok=True)
-                    try:
-                        shutil.chown('/share/Media', user='astro', group='astro')
-                    except (LookupError, OSError):
-                        pass
+                    Path('/share/Media/Downloads').mkdir(parents=True, exist_ok=True)
+                    Path('/share/.openastro-torrents/incomplete').mkdir(parents=True, exist_ok=True)
+                    Path('/share/.openastro-torrents/complete').mkdir(parents=True, exist_ok=True)
+                    for managed_path in (
+                        '/share/Media',
+                        '/share/Media/Downloads',
+                        '/share/.openastro-torrents',
+                        '/share/.openastro-torrents/incomplete',
+                        '/share/.openastro-torrents/complete',
+                    ):
+                        try:
+                            shutil.chown(managed_path, user='astro', group='astro')
+                        except (LookupError, OSError):
+                            pass
+                    if subprocess.run(
+                        ['systemctl', 'is-enabled', '--quiet', 'openastro-torrent.service'],
+                        capture_output=True,
+                    ).returncode == 0:
+                        subprocess.run(
+                            ['systemctl', 'start', 'openastro-torrent.service'],
+                            capture_output=True,
+                        )
                 subprocess.run(['systemctl', 'start', 'livevault-backup.timer'], capture_output=True)
                 if media_indexer_was_active:
                     subprocess.run(['systemctl', 'try-restart', 'minidlna.service'], capture_output=True)
@@ -710,6 +735,11 @@ def main(action):
                         subprocess.run(['systemctl', 'start', 'livevault-backup.timer'], capture_output=True)
                     if media_indexer_was_active:
                         subprocess.run(['systemctl', 'start', 'minidlna.service'], capture_output=True)
+                    if torrent_was_active and os.path.ismount('/share'):
+                        subprocess.run(
+                            ['systemctl', 'start', 'openastro-torrent.service'],
+                            capture_output=True,
+                        )
             raise
 
 

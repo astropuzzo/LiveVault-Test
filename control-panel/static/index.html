@@ -14,6 +14,7 @@
   <link rel="preload" href="/fonts/mona-sans-latin-wght.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="/diagnostics.css?v=3.5.1">
   <link rel="stylesheet" href="/media-upload.css?v=3.5.1">
+  <link rel="stylesheet" href="/torrent-manager.css?v=3.5.1-torrent1">
   <link rel="stylesheet" href="/app.css?v=3.5.1">
 </head>
 <body data-view="dashboard" class="is-loading">
@@ -220,6 +221,50 @@
           </div>
 
 
+
+          <section class="torrent-panel" id="torrentPanel" aria-labelledby="torrentTitle">
+            <header class="torrent-head">
+              <div><span>TORRENT MANAGER</span><strong id="torrentTitle">Cerca e scarica</strong><small>Transmission headless · import automatico nella libreria Media</small></div>
+              <div class="torrent-head-meta"><span class="torrent-chip" id="torrentProviderChip">1337X</span><span class="torrent-chip" id="torrentClientChip">Verifica client…</span><button class="icon-button" id="torrentRefresh" type="button" title="Aggiorna torrent">↻</button></div>
+            </header>
+
+            <div class="torrent-stats">
+              <article class="torrent-stat"><span>DOWNLOAD</span><strong id="torrentRateDown">0 B/s</strong><small id="torrentRateDownSub">nessun download</small></article>
+              <article class="torrent-stat"><span>UPLOAD</span><strong id="torrentRateUp">0 B/s</strong><small id="torrentRateUpSub">upload inattivo</small></article>
+              <article class="torrent-stat"><span>ATTIVI</span><strong id="torrentActive">0</strong><small id="torrentActiveSub">0 in pausa</small></article>
+              <article class="torrent-stat"><span>CODA</span><strong id="torrentCount">0</strong><small id="torrentCountSub">job nel client</small></article>
+            </div>
+
+            <div class="torrent-search">
+              <div class="torrent-search-row">
+                <select id="torrentProvider" aria-label="Provider torrent"><option value="1337x" selected>1337x</option></select>
+                <input id="torrentSearchInput" type="search" placeholder="Cerca torrent…" autocomplete="off">
+                <button id="torrentSearchButton" type="button">Cerca</button>
+              </div>
+              <div class="torrent-manual">
+                <input id="torrentMagnet" type="text" placeholder="Oppure incolla un magnet link…" autocomplete="off">
+                <button id="torrentMagnetAdd" type="button">Aggiungi magnet</button>
+                <label class="torrent-file-label">Apri .torrent<input id="torrentFile" type="file" accept=".torrent,application/x-bittorrent" hidden></label>
+              </div>
+              <div class="torrent-note"><i></i><span>Completamento automatico: staging nascosta → <b>Media/Downloads</b> → rimozione del torrent dal client. Il file finale resta nella libreria.</span></div>
+              <div class="torrent-error" id="torrentStatusError" hidden></div>
+            </div>
+
+            <section id="torrentResultsWrap" hidden>
+              <div class="torrent-section-head"><span>RISULTATI 1337X</span><small id="torrentResultsCount"></small></div>
+              <div class="torrent-results" id="torrentResults"></div>
+            </section>
+
+            <section>
+              <div class="torrent-section-head"><span>DOWNLOAD</span><small id="torrentQueueCount">0 torrent</small></div>
+              <div class="torrent-queue" id="torrentQueue"><div class="torrent-empty">Nessun torrent in coda.</div></div>
+            </section>
+
+            <section id="torrentImportsWrap" hidden>
+              <div class="torrent-section-head"><span>IMPORTATI DI RECENTE</span><small>torrent rimosso · media conservato</small></div>
+              <div class="torrent-imports" id="torrentImports"></div>
+            </section>
+          </section>
 
           <div class="media-recent-wrap" id="mediaRecentWrap" hidden>
             <div class="media-section-title"><span>AGGIUNTI DI RECENTE</span><small id="mediaRecentCount"></small></div>
@@ -516,6 +561,7 @@
   <script src="/hls.min.js?v=1.7.2" defer></script>
   <script src="/diagnostics.js?v=3.5.1" defer></script>
   <script src="/app.js?v=3.5.1" defer></script>
+  <script src="/torrent-manager.js?v=3.5.1-torrent1" defer></script>
   <script src="/media-upload.js?v=3.5.1" defer></script>
   <script src="/motion.js?v=3.5.1" defer></script>
 </body>

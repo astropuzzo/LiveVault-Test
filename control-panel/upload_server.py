@@ -14,6 +14,7 @@ from urllib.parse import parse_qs, urlparse
 
 import media_center
 import media_streaming_patch
+import torrent_manager
 import server as panel
 
 
@@ -114,8 +115,77 @@ def _remember_uploaded_file(uuid: str, root: Path, target: Path, client: str) ->
 
 
 class Handler(panel.Handler):
+    def _torrent_session(self):
+        session = self.require_session()
+        if not session:
+            return None
+        if self.headers.get('X-CSRF-Token') != session['csrf']:
+            self.send_json({'ok': False, 'error': 'Sessione scaduta: ricarica la pagina.'}, 403)
+            return None
+        return session
+
+    def _torrent_json(self, limit: int = 16384) -> dict:
+        try:
+            length = int(self.headers.get('Content-Length', '0'))
+        except ValueError as exc:
+            raise ValueError('Content-Length non valido.') from exc
+        if not 0 < length <= limit:
+            raise ValueError('Payload torrent non valido.')
+        payload = json.loads(self.rfile.read(length).decode('utf-8'))
+        if not isinstance(payload, dict):
+            raise ValueError('Payload torrent non valido.')
+        return payload
+
+    def do_GET(self) -> None:
+        parsed = urlparse(self.path)
+        if parsed.path == '/api/torrents/status':
+            if not self.require_session():
+                return
+            self.send_json(torrent_manager.status())
+            return
+        if parsed.path == '/api/torrents/search':
+            if not self.require_session():
+                return
+            query = parse_qs(parsed.query)
+            try:
+                result = torrent_manager.search(
+                    str(query.get('provider', ['1337x'])[0]),
+                    str(query.get('q', [''])[0]),
+                    int(query.get('page', ['1'])[0]),
+                )
+                self.send_json(result)
+            except ValueError as exc:
+                self.send_json({'ok': False, 'error': str(exc)}, 400)
+            except torrent_manager.TorrentError as exc:
+                self.send_json({'ok': False, 'error': str(exc)}, 502)
+            return
+        return super().do_GET()
+
     def do_POST(self) -> None:
         parsed = urlparse(self.path)
+        if parsed.path in {'/api/torrents/add', '/api/torrents/add-file', '/api/torrents/action'}:
+            if not self._torrent_session():
+                return
+            try:
+                if parsed.path == '/api/torrents/add-file':
+                    length = int(self.headers.get('Content-Length', '0'))
+                    if not 0 < length <= 5 * 1024 * 1024:
+                        raise ValueError('File .torrent vuoto o troppo grande.')
+                    result = torrent_manager.add_torrent_file(self.rfile.read(length))
+                else:
+                    payload = self._torrent_json()
+                    if parsed.path == '/api/torrents/action':
+                        result = torrent_manager.action(int(payload.get('id', 0)), str(payload.get('action', '')))
+                    elif payload.get('detail_url'):
+                        result = torrent_manager.add_result(str(payload.get('detail_url', '')))
+                    else:
+                        result = torrent_manager.add_magnet(str(payload.get('magnet', '')))
+                self.send_json(result)
+            except (ValueError, json.JSONDecodeError) as exc:
+                self.send_json({'ok': False, 'error': str(exc)}, 400)
+            except torrent_manager.TorrentError as exc:
+                self.send_json({'ok': False, 'error': str(exc)}, 502)
+            return
         if parsed.path != '/api/media/upload':
             return super().do_POST()
 
@@ -209,6 +279,7 @@ if __name__ == '__main__':
     panel.load_availability()
     panel.threading.Thread(target=panel.history_loop, name='telemetry', daemon=True).start()
     panel.threading.Thread(target=panel.media_streaming.maintenance_loop, name='media-hls-cleanup', daemon=True).start()
+    panel.threading.Thread(target=torrent_manager.maintenance_loop, name='torrent-import', daemon=True).start()
     server = panel.ThreadingHTTPServer((panel.HOST, panel.PORT), Handler)
     print(f'OpenAstro Control listening on http://{panel.HOST}:{panel.PORT}', flush=True)
     server.serve_forever()
