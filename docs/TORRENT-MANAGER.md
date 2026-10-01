@@ -30,6 +30,32 @@ progresso, dimensione, ETA, peer, ratio, stato/errori e gli import recenti.
 La ricerca mostra nome, seed, leecher, dimensione, età e uploader quando forniti
 dal provider.
 
+## Verifica produzione 2026-10-01
+
+- `openastro-control.service`, `openastro-torrent.service` e
+  `openastro-torrent-search.service` attivi dopo il rollout;
+- RPC Transmission in ascolto su `127.0.0.1:9091`, solver su `127.0.0.1:9092`;
+  NINA continua separatamente su `192.168.1.27:9091`;
+- hash runtime uguali alla sorgente validata: `torrent_manager.py`
+  `63ca09ddd6a5b8702fb7b98a4d2978f58404f905ad0f795c1f0e3bf6414498e5`,
+  `static/index.html` `3436c8de123746cf254429144dbc169ad958017ea96e19d08ef1c0ff9be32328`,
+  solver `301b3a1eebfdaf885c1da6f8ca3774c6a9d19f1709491cca35d6262ba5d2989d`;
+- l'endpoint torrent senza sessione Control risponde `401`;
+- la richiesta HTTP semplice a 1337x riceve `403`; il solver reale ha risolto la
+  challenge e il journal ha registrato HTTP `200` sia per una ricerca `ubuntu` sia
+  per la pagina dettaglio di un risultato;
+- con `active_recorders=1`, il guard del Control blocca il fallback browser prima
+  dell'avvio di Chromium. Verificato anche che non restano processi browser attivi;
+- regressione mirata finale: 55 test passati; CI GitHub dei commit funzionali
+  completata con successo; QA visivo 1440×1000 e 412×915 senza overflow.
+
+Non è stato avviato un download reale soltanto per collaudo mentre LiveVault stava
+registrando. Il movimento atomico/import e la rimozione post-import sono coperti dai
+test automatici; un download utente completato seguirà lo stesso worker.
+
+Backup finali del rollout: `/var/backups/openastro/torrent-manager-final-20261001-072950`
+e `/var/backups/openastro/torrent-search-final-20261001-073511`.
+
 ## Completamento e cleanup
 
 Il worker del Control Center controlla i torrent ogni due secondi. Quando

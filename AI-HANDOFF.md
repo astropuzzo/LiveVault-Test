@@ -273,7 +273,7 @@ d'installazione precedente; esistenza non verificata.
 | Pi-hole | pihole-FTL.service; /etc/pihole | amministrazione LAN porta 80 |
 | DNS cifrato | openastro-dns.service; /opt/openastro-dns/dns_gateway.py | DoH tramite /dns-query sul Funnel Control |
 | Media LAN | smbd, nmbd, minidlna, wsdd2 | SMB OPENASTRO/Media; DLNA OpenAstro Media |
-| Torrent Manager *(verifica finale pending)* | `openastro-torrent.service` + `openastro-torrent-search.service` + Control worker | servizi installati; ricerca browser non ancora provata mentre recorder attivo |
+| Torrent Manager | `openastro-torrent.service` + `openastro-torrent-search.service` + Control worker | RPC `127.0.0.1:9091`; solver `127.0.0.1:9092`; provider 1337x verificato |
 
 Gli ingressi HTTPS pubblici principali hanno Funnel attivo. NINA non usa più una
 porta Funnel dedicata: `/nina/` sul Funnel `:8443` viene instradato direttamente
@@ -338,16 +338,22 @@ restano LAN-only. `NVMe Media` si espelle esclusivamente con l'intero NVMe.
 Non ripristinare le vecchie istruzioni read-only o guest.
 
 Torrent Manager usa Transmission headless con RPC solo loopback e un solver browser
-1337x su `127.0.0.1:9092`. I servizi host risultano installati e attivi il 2026-10-01;
-la prova reale della ricerca browser resta sospesa finché LiveVault ha un recorder
-attivo. Il backend non avvia il browser durante una registrazione. I parziali
-e i completati non ancora importati vivono in `/share/.openastro-torrents`, mai
-nel catalogo Media. Al 100% il Control ferma il job, sposta il payload in
-`/share/Media/Downloads`, salva un receipt e rimuove il torrent senza cancellare
-il media finale. 1337x è il provider di ricerca predefinito; magnet e `.torrent`
+1337x su `127.0.0.1:9092`. Verifica produzione **2026-10-01**: Control, Transmission
+e solver attivi; hash runtime uguali alla sorgente validata; `/api/torrents/status`
+senza sessione risponde 401. Il nodo riceve 403 dalla richiesta HTTP diretta a 1337x,
+ma il solver ha superato la challenge Cloudflare e registrato HTTP 200 sia per
+`/search/ubuntu/1/` sia per una pagina `/torrent/...`. Dopo l'hardening, con un
+recorder LiveVault attivo, la stessa ricerca viene fermata prima di Chromium con
+`Ricerca browser 1337x sospesa: 1 registrazione attiva su LiveVault.`; nessun processo
+browser resta in esecuzione. I parziali e i completati non ancora importati vivono in
+`/share/.openastro-torrents`, mai nel catalogo Media. Al 100% il Control ferma il job,
+sposta il payload in `/share/Media/Downloads`, salva un receipt e rimuove il torrent
+senza cancellare il media finale. 1337x è il provider predefinito; magnet e `.torrent`
 restano ingressi alternativi. Prima di smontare SHARE l'handoff ferma
-`openastro-torrent.service`; dopo attach lo riavvia se abilitato. Procedure e
-rollback: [docs/TORRENT-MANAGER.md](docs/TORRENT-MANAGER.md).
+`openastro-torrent.service`; dopo attach lo riavvia se abilitato. Backup finali:
+`/var/backups/openastro/torrent-manager-final-20261001-072950` e
+`/var/backups/openastro/torrent-search-final-20261001-073511`. Procedure e rollback:
+[docs/TORRENT-MANAGER.md](docs/TORRENT-MANAGER.md).
 
 ## Controlli, backup e pulizia
 Dal connettore, usare il namespace host:

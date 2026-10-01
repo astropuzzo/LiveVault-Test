@@ -137,6 +137,9 @@ mentre LiveVault ha recorder attivi. `scripts/install-torrent-manager.sh`
 installa/configura entrambi i servizi. L'eject NVMe ferma Transmission prima dello smontaggio SHARE e l'attach lo
 riprende dopo aver ricreato le directory gestite. Dettagli operativi, limiti del
 parser provider e rollback: [TORRENT-MANAGER](../docs/TORRENT-MANAGER.md).
+Verifica nodo 2026-10-01: i tre servizi sono attivi, RPC/solver restano loopback,
+il solver ha ottenuto HTTP 200 da ricerca e dettaglio 1337x dopo la challenge;
+con un recorder LiveVault attivo il Control impedisce invece l'avvio del browser.
 
 ### Media Hub Level 3
 
