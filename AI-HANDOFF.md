@@ -341,11 +341,9 @@ Torrent Manager usa Transmission headless con RPC solo loopback e un solver brow
 1337x su `127.0.0.1:9092`. Verifica produzione **2026-10-01**: Control, Transmission
 e solver attivi; hash runtime uguali alla sorgente validata; `/api/torrents/status`
 senza sessione risponde 401. Il nodo riceve 403 dalla richiesta HTTP diretta a 1337x,
-ma il solver ha superato la challenge Cloudflare e registrato HTTP 200 sia per
-`/search/ubuntu/1/` sia per una pagina `/torrent/...`. Dopo l'hardening, con un
-recorder LiveVault attivo, la stessa ricerca viene fermata prima di Chromium con
-`Ricerca browser 1337x sospesa: 1 registrazione attiva su LiveVault.`; nessun processo
-browser resta in esecuzione. I parziali e i completati non ancora importati vivono in
+quindi usa il solver locale. Il browser challenge è disponibile anche con recorder
+LiveVault attivi: il servizio resta `Nice=19`, `CPUWeight=10`, `CPUQuota=100%`,
+`IOWeight=10`, `IOSchedulingClass=idle` e Chromium può restare residente fino a 600 s di inattività per riusare la sessione Cloudflare in memoria. Verifica 2026-10-01: sessione fredda `time/desc` 38,4 s, seconda richiesta provider `size/desc` 3,3 s. Le risposte riuscite restano in cache 5 minuti e il cambio Data/Seed/Leech/Dimensione riordina localmente la pagina già caricata senza nuova richiesta. I parziali e i completati non ancora importati vivono in
 `/share/.openastro-torrents`, mai nel catalogo Media. Al 100% il Control ferma il job,
 sposta il payload in `/share/Media/Downloads`, salva un receipt e rimuove il torrent
 senza cancellare il media finale. 1337x è il provider predefinito; magnet e `.torrent`

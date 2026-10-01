@@ -135,15 +135,17 @@ WorkingDirectory=/opt/openastro-torrent-search
 Environment=HOME=/var/lib/openastro-torrent-search
 Environment=XDG_CACHE_HOME=/var/lib/openastro-torrent-search/cache
 Environment=PLAYWRIGHT_BROWSERS_PATH=/opt/openastro-torrent-search/browsers
-Environment=OPENASTRO_TORRENT_SEARCH_IDLE=120
+Environment=OPENASTRO_TORRENT_SEARCH_IDLE=600
 StateDirectory=openastro-torrent-search
 StateDirectoryMode=0750
 ExecStart=/opt/openastro-torrent-search/venv/bin/python /opt/openastro-torrent-search/service.py
 Restart=on-failure
 RestartSec=3
 TimeoutStopSec=15
-Nice=15
-CPUWeight=20
+Nice=19
+CPUWeight=10
+CPUQuota=100%
+IOWeight=10
 IOSchedulingClass=idle
 NoNewPrivileges=true
 PrivateTmp=true
@@ -170,7 +172,7 @@ fi
 
 echo 'OpenAstro Torrent Manager installed.'
 echo 'RPC: 127.0.0.1:9091 only'
-echo 'Search solver: 127.0.0.1:9092 only; browser closes after 120s idle'
+echo 'Search solver: 127.0.0.1:9092 only; browser stays warm for 600s idle'
 echo 'Staging: /share/.openastro-torrents'
 echo 'Library import: /share/Media/Downloads'
 echo "Backup: $BACKUP"

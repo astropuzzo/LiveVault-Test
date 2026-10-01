@@ -152,6 +152,8 @@ class Handler(panel.Handler):
                     str(query.get('provider', ['1337x'])[0]),
                     str(query.get('q', [''])[0]),
                     int(query.get('page', ['1'])[0]),
+                    str(query.get('sort', ['seeders'])[0]),
+                    str(query.get('order', ['desc'])[0]),
                 )
                 self.send_json(result)
             except ValueError as exc:

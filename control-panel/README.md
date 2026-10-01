@@ -132,14 +132,15 @@ in `/share/.openastro-torrents`; a completamento il payload viene spostato in
 Il servizio host è `openastro-torrent.service`, RPC esclusivamente su
 `127.0.0.1:9091`; `openastro-torrent-search.service` espone soltanto su
 `127.0.0.1:9092` il browser challenge per 1337x, avviato on-demand dalla prima
-richiesta bloccata e chiuso dopo 120 s di idle. Il fallback browser viene negato
-mentre LiveVault ha recorder attivi. `scripts/install-torrent-manager.sh`
+richiesta bloccata e mantenuto caldo fino a 600 s di inattività. Il fallback browser resta
+disponibile anche mentre LiveVault registra, ma gira a priorità CPU/I/O bassa e
+con limite complessivo a un core. `scripts/install-torrent-manager.sh`
 installa/configura entrambi i servizi. L'eject NVMe ferma Transmission prima dello smontaggio SHARE e l'attach lo
 riprende dopo aver ricreato le directory gestite. Dettagli operativi, limiti del
 parser provider e rollback: [TORRENT-MANAGER](../docs/TORRENT-MANAGER.md).
 Verifica nodo 2026-10-01: i tre servizi sono attivi, RPC/solver restano loopback,
-il solver ha ottenuto HTTP 200 da ricerca e dettaglio 1337x dopo la challenge;
-con un recorder LiveVault attivo il Control impedisce invece l'avvio del browser.
+il solver ha ottenuto HTTP 200 da ricerca e dettaglio 1337x dopo la challenge.
+La sessione challenge resta riutilizzabile fino a 600 s di inattività: sul nodo una prima ricerca a sessione fredda ha richiesto 38,4 s, mentre una seconda richiesta provider con sessione calda 3,3 s. Le risposte riuscite restano in cache 5 minuti; il cambio Data/Seed/Leech/Dimensione riordina istantaneamente la pagina già caricata senza una nuova challenge.
 
 ### Media Hub Level 3
 

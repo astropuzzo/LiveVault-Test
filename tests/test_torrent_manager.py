@@ -51,7 +51,7 @@ def test_1337x_search_parser_extracts_visible_fields():
 
 
 
-def test_search_uses_standard_page_and_sorts_results_by_seeders(monkeypatch):
+def test_search_uses_native_1337x_sort(monkeypatch):
     pages = []
     page_html = """
     <table class="table-list"><tbody>
@@ -63,18 +63,97 @@ def test_search_uses_standard_page_and_sorts_results_by_seeders(monkeypatch):
         pages.append(url)
         return page_html
     monkeypatch.setattr(torrent, '_fetch_html', fake_fetch)
-    result = torrent.search('1337x', 'linux', 1)
-    assert pages == ['https://1337x.to/search/linux/1/']
-    assert [item['name'] for item in result['results']] == ['B', 'A']
+    result = torrent.search('1337x', 'linux', 2, 'time', 'asc')
+    assert pages == ['https://1337x.to/sort-search/linux/time/asc/2/']
+    assert result['sort'] == 'time'
+    assert result['order'] == 'asc'
+    assert [item['name'] for item in result['results']] == ['A', 'B']
 
-def test_browser_solver_is_guarded_while_livevault_records(monkeypatch):
-    monkeypatch.setattr(torrent, '_livevault_active_recorders', lambda: 1)
+
+def test_search_cache_reuses_same_provider_result(monkeypatch):
+    calls = []
+    page_html = """
+    <table class="table-list"><tbody>
+      <tr><td class="coll-1"><a href="/torrent/1/A/">A</a></td><td class="coll-2">4</td><td class="coll-3">1</td><td class="coll-4">1 GB</td></tr>
+    </tbody></table>
+    """
+    torrent._SEARCH_CACHE.clear()
+    monkeypatch.setattr(torrent, '_fetch_html', lambda url, timeout=12: calls.append(url) or page_html)
+    first = torrent.search('1337x', 'cache-test', 1, 'seeders', 'desc')
+    second = torrent.search('1337x', 'cache-test', 1, 'seeders', 'desc')
+    assert len(calls) == 1
+    assert first['cached'] is False
+    assert second['cached'] is True
+    assert second['results'][0]['name'] == 'A'
+    torrent._SEARCH_CACHE.clear()
+
+
+def test_search_rejects_unknown_sort(monkeypatch):
+    monkeypatch.setattr(torrent, '_fetch_html', lambda url, timeout=12: '')
     try:
-        torrent._fetch_html_solver('https://1337x.to/search/ubuntu/1/')
-    except torrent.TorrentError as exc:
-        assert '1 registrazione attiva' in str(exc)
+        torrent.search('1337x', 'linux', 1, 'name', 'desc')
+    except ValueError as exc:
+        assert 'Ordinamento' in str(exc)
     else:
-        raise AssertionError('browser solver should be blocked during an active recording')
+        raise AssertionError('unsupported sort must be rejected')
+
+def test_browser_solver_has_no_livevault_recorder_gate(monkeypatch):
+    class Headers:
+        @staticmethod
+        def get_content_charset():
+            return "utf-8"
+
+    class Response:
+        headers = Headers()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        @staticmethod
+        def read(limit):
+            return b"<html>ok</html>"
+
+    class Opener:
+        @staticmethod
+        def open(request, timeout):
+            assert request.full_url.startswith("http://127.0.0.1:9092/fetch?")
+            assert timeout == 90
+            return Response()
+
+    monkeypatch.setattr(torrent, "build_opener", lambda *args: Opener())
+    assert torrent._fetch_html_solver("https://1337x.to/search/ubuntu/1/") == "<html>ok</html>"
+
+
+def test_browser_solver_retries_transient_startup(monkeypatch):
+    calls = {"count": 0}
+
+    class Headers:
+        @staticmethod
+        def get_content_charset():
+            return "utf-8"
+
+    class Response:
+        headers = Headers()
+        def __enter__(self): return self
+        def __exit__(self, exc_type, exc, tb): return False
+        @staticmethod
+        def read(limit): return b"<html>ready</html>"
+
+    class Opener:
+        @staticmethod
+        def open(request, timeout):
+            calls["count"] += 1
+            if calls["count"] < 3:
+                raise torrent.URLError(ConnectionRefusedError(111, "refused"))
+            return Response()
+
+    monkeypatch.setattr(torrent, "build_opener", lambda *args: Opener())
+    monkeypatch.setattr(torrent.time, "sleep", lambda value: None)
+    assert torrent._fetch_html_solver("https://1337x.to/search/ubuntu/1/") == "<html>ready</html>"
+    assert calls["count"] == 3
 
 
 def test_solver_endpoint_must_be_loopback(monkeypatch):
@@ -155,16 +234,23 @@ def test_install_and_ui_contracts():
     assert "127.0.0.1" in solver and 'PORT = int(os.environ.get("OPENASTRO_TORRENT_SEARCH_PORT", "9092"))' in solver
     assert 'parsed.scheme != "https" or host not in ALLOWED_HOSTS' in solver
     assert 'parsed.path.startswith("/torrent/")' in solver
-    assert "IDLE_SECONDS" in solver and "_close_session_locked()" in solver
+    assert "_close_session_locked()" in solver
+    assert "IDLE_SECONDS" in solver
+    assert 'user_data_dir=PROFILE_DIR' not in solver
     assert 'class SearchHTTPServer(HTTPServer)' in solver
     assert 'ThreadingHTTPServer' not in solver
     assert 'def service_actions(self)' in solver
+    assert 'OPENASTRO_TORRENT_SEARCH_IDLE=600' in installer
     assert '"rpc-bind-address": "127.0.0.1"' in installer
     assert "/share/.openastro-torrents/complete" in installer
     assert "/share/Media/Downloads" in installer
     assert "openastro-torrent.service" in handoff
     assert handoff.index("set_service('openastro-torrent.service', 'stop')") < handoff.index("run('umount', '/share')")
     assert "/api/torrents/search" in upload
+    assert "torrentSearchSort" in ui and "torrentSearchOrder" in ui
+    assert "sort:q('#torrentSearchSort')" in js
+    assert "lastGoodStatus" in js and "ultimo stato noto" in js
+    assert "Transmission riconnessione" in js and "Superamento protezione 1337x" in js
     assert "/api/torrents/add" in upload
     assert "/api/torrents/action" in upload
     assert 'id="torrentPanel"' in ui

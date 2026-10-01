@@ -14,10 +14,11 @@ la WebUI o l'RPC di Transmission su LAN/Internet.
 - challenge adapter: `openastro-torrent-search.service` su `127.0.0.1:9092`;
   usa Chromium/StealthySession soltanto quando la richiesta HTTP diretta riceve
   403/429/503 o una pagina challenge, serializza le richieste sul thread del browser
-  e chiude la sessione dopo 120 s di inattività;
-- protezione LiveVault: il fallback browser non parte se `healthz` segnala uno o
-  più recorder attivi o se lo stato recorder non è verificabile; magnet e download
-  già in coda continuano invece normalmente;
+  e mantiene la sessione Chromium riutilizzabile fino a 600 s di inattività;
+- coesistenza LiveVault: il fallback browser resta disponibile anche con recorder
+  attivi; il servizio usa `Nice=19`, `CPUWeight=10`, `CPUQuota=100%`,
+  `IOWeight=10` e scheduling I/O `idle`, quindi non può occupare più di un core
+  complessivo e resta deprioritizzato rispetto ai workload di registrazione;
 - input alternativi: magnet link e file `.torrent`;
 - staging: `/share/.openastro-torrents/{incomplete,complete}`, fuori da
   `/share/Media` e quindi fuori dal catalogo Media Hub;
@@ -36,25 +37,24 @@ dal provider.
   `openastro-torrent-search.service` attivi dopo il rollout;
 - RPC Transmission in ascolto su `127.0.0.1:9091`, solver su `127.0.0.1:9092`;
   NINA continua separatamente su `192.168.1.27:9091`;
-- hash runtime uguali alla sorgente validata: `torrent_manager.py`
-  `63ca09ddd6a5b8702fb7b98a4d2978f58404f905ad0f795c1f0e3bf6414498e5`,
-  `static/index.html` `3436c8de123746cf254429144dbc169ad958017ea96e19d08ef1c0ff9be32328`,
-  solver `301b3a1eebfdaf885c1da6f8ca3774c6a9d19f1709491cca35d6262ba5d2989d`;
-- l'endpoint torrent senza sessione Control risponde `401`;
-- la richiesta HTTP semplice a 1337x riceve `403`; il solver reale ha risolto la
-  challenge e il journal ha registrato HTTP `200` sia per una ricerca `ubuntu` sia
-  per la pagina dettaglio di un risultato;
-- con `active_recorders=1`, il guard del Control blocca il fallback browser prima
-  dell'avvio di Chromium. Verificato anche che non restano processi browser attivi;
-- regressione mirata finale: 55 test passati; CI GitHub dei commit funzionali
-  completata con successo; QA visivo 1440×1000 e 412×915 senza overflow.
+- la richiesta HTTP semplice a 1337x riceve la protezione del provider; il solver
+  reale risolve la challenge e serve anche le rotte `sort-search/...`;
+- ordinamento nativo 1337x disponibile per `time`, `seeders`, `leechers` e `size`,
+  in entrambe le direzioni `asc`/`desc`;
+- sessione Chromium riutilizzata fino a 600 s di inattività. Misura sul nodo:
+  prima ricerca a sessione fredda `time/desc` 38,4 s, richiesta successiva
+  `size/desc` 3,3 s, entrambe con 20 risultati; la prima challenge resta quindi
+  il costo dominante;
+- solver limitato a un core e deprioritizzato (`Nice=19`, `CPUWeight=10`,
+  `CPUQuota=100%`, `IOWeight=10`, I/O `idle`, `MemoryMax=640M`);
+- regressione locale: 49 test Python mirati e 43 test frontend passati. QA preview
+  1440×1000 e 412×915: nessun overflow di documento/body; gli 80 px interni
+  riportati da `scrollWidth` appartengono al globo decorativo `::after`, tagliato
+  da `overflow:hidden`, non al layout dei controlli.
 
-Non è stato avviato un download reale soltanto per collaudo mentre LiveVault stava
-registrando. Il movimento atomico/import e la rimozione post-import sono coperti dai
-test automatici; un download utente completato seguirà lo stesso worker.
-
-Backup finali del rollout: `/var/backups/openastro/torrent-manager-final-20261001-072950`
-e `/var/backups/openastro/torrent-search-final-20261001-073511`.
+La ricerca browser non viene più bloccata in base allo stato recorder. Non è stato
+eseguito un download reale soltanto per collaudo; movimento atomico/import e
+rimozione post-import restano coperti dai test automatici.
 
 ## Completamento e cleanup
 
@@ -108,9 +108,9 @@ ss -lntp | grep -E '127\.0\.0\.1:(9091|9092)'
 findmnt /share
 ```
 
-RPC e solver devono risultare in ascolto solo su loopback. Il solver può restare
-attivo con consumo minimo: il browser viene creato alla prima challenge e chiuso
-dopo l'idle configurato.
+RPC e solver devono risultare in ascolto solo su loopback. Il servizio solver può
+restare attivo con consumo minimo: Chromium viene creato alla prima challenge e può restare attivo fino a 600 s di
+inattività, così i successivi filtri e ordinamenti riusano la sessione già validata.
 
 ## API Control
 
@@ -134,14 +134,24 @@ a 2 MB.
 1337x non espone un contratto API stabile usato qui: una modifica al markup può
 richiedere un aggiornamento di `_SearchParser` o `_MagnetParser`. Un errore del
 provider non interrompe il client torrent e non tocca i job già esistenti. La ricerca
-usa la pagina standard `search/...` e ordina i risultati per seed nel backend, così
-non dipende dal sorting server-side che 1337x può disabilitare sotto carico. Quando
+usa `sort-search/...` e supporta ordinamento server-side per data, seed, leech e
+dimensione, sia crescente sia decrescente. Le risposte riuscite restano in cache
+per 5 minuti (massimo 32 query); cambiare l'ordinamento nella UI riordina subito
+la pagina già caricata senza rilanciare Turnstile, mentre un nuovo click su Cerca
+richiede al provider l'ordinamento selezionato. Quando
 la protezione del provider richiede il browser, la ricerca può impiegare più tempo.
-Durante una registrazione LiveVault il browser non viene avviato: il pannello mostra
-l'errore temporaneo e si può riprovare a recorder fermo.
+Durante una registrazione LiveVault la ricerca resta disponibile. Il browser è
+deprioritizzato e con sessione a tempo; la challenge può quindi richiedere più tempo quando il
+nodo è sotto carico, ma non viene più bloccata preventivamente.
+Durante un errore RPC transitorio il frontend conserva l'ultimo stato noto della coda e segnala che è stale; non rappresenta una coda vuota finché non arriva uno snapshot Transmission valido.
 
 La staging vive su SHARE: con NVMe espulso non si avviano nuovi download e il
-servizio resta fermo. La porta peer di Transmission resta soggetta al routing/NAT
+servizio resta fermo. I metadati di coda (`torrents/*.torrent`) e i checkpoint
+`resume/*.resume` sono invece persistenti su eMMC in `/var/lib/openastro-torrent`;
+dopo reboot o riattach di SHARE Transmission riapre i job e continua dai file
+parziali in `/share/.openastro-torrents/incomplete`. Il frontend conserva inoltre
+l'ultimo snapshot valido durante brevi errori RPC, evitando falsi "0 torrent".
+La porta peer di Transmission resta soggetta al routing/NAT
 e alle regole firewall del nodo; nessuna apertura firewall viene effettuata
 dall'installer.
 

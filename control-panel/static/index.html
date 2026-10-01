@@ -14,7 +14,7 @@
   <link rel="preload" href="/fonts/mona-sans-latin-wght.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="/diagnostics.css?v=3.5.1">
   <link rel="stylesheet" href="/media-upload.css?v=3.5.1">
-  <link rel="stylesheet" href="/torrent-manager.css?v=3.5.1-torrent1">
+  <link rel="stylesheet" href="/torrent-manager.css?v=3.5.1-torrent2">
   <link rel="stylesheet" href="/app.css?v=3.5.1">
 </head>
 <body data-view="dashboard" class="is-loading">
@@ -241,12 +241,25 @@
                 <input id="torrentSearchInput" type="search" placeholder="Cerca torrent…" autocomplete="off">
                 <button id="torrentSearchButton" type="button">Cerca</button>
               </div>
+              <div class="torrent-sort-row">
+                <span>Ordina risultati · cambio istantaneo sulla pagina caricata</span>
+                <select id="torrentSearchSort" aria-label="Ordina risultati torrent">
+                  <option value="time">Data</option>
+                  <option value="seeders" selected>Seed</option>
+                  <option value="leechers">Leech</option>
+                  <option value="size">Dimensione</option>
+                </select>
+                <select id="torrentSearchOrder" aria-label="Direzione ordinamento torrent">
+                  <option value="desc" selected>Decrescente</option>
+                  <option value="asc">Crescente</option>
+                </select>
+              </div>
               <div class="torrent-manual">
                 <input id="torrentMagnet" type="text" placeholder="Oppure incolla un magnet link…" autocomplete="off">
                 <button id="torrentMagnetAdd" type="button">Aggiungi magnet</button>
                 <label class="torrent-file-label">Apri .torrent<input id="torrentFile" type="file" accept=".torrent,application/x-bittorrent" hidden></label>
               </div>
-              <div class="torrent-note"><i></i><span>Completamento automatico: staging nascosta → <b>Media/Downloads</b> → rimozione del torrent dal client. Il file finale resta nella libreria. La ricerca 1337x usa il browser anti-challenge solo se necessario e lo sospende durante le registrazioni LiveVault.</span></div>
+              <div class="torrent-note"><i></i><span>Completamento automatico: staging nascosta → <b>Media/Downloads</b> → rimozione del torrent dal client. Il file finale resta nella libreria. La ricerca 1337x usa il browser anti-challenge solo se necessario; il browser gira a priorità ridotta e resta caldo per 10 minuti dopo una ricerca: la prima challenge può richiedere tempo, le ricerche successive sono molto più rapide.</span></div>
               <div class="torrent-error" id="torrentStatusError" hidden></div>
             </div>
 
@@ -561,7 +574,7 @@
   <script src="/hls.min.js?v=1.7.2" defer></script>
   <script src="/diagnostics.js?v=3.5.1" defer></script>
   <script src="/app.js?v=3.5.1" defer></script>
-  <script src="/torrent-manager.js?v=3.5.1-torrent1" defer></script>
+  <script src="/torrent-manager.js?v=3.5.1-torrent4" defer></script>
   <script src="/media-upload.js?v=3.5.1" defer></script>
   <script src="/motion.js?v=3.5.1" defer></script>
 </body>

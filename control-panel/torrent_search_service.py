@@ -12,7 +12,7 @@ from scrapling.fetchers import StealthySession
 
 HOST = "127.0.0.1"
 PORT = int(os.environ.get("OPENASTRO_TORRENT_SEARCH_PORT", "9092"))
-IDLE_SECONDS = max(30, int(os.environ.get("OPENASTRO_TORRENT_SEARCH_IDLE", "120")))
+IDLE_SECONDS = max(30, int(os.environ.get("OPENASTRO_TORRENT_SEARCH_IDLE", "600")))
 ALLOWED_HOSTS = {
     "1337x.to",
     "1337x.st",
