@@ -13,7 +13,8 @@ la WebUI o l'RPC di Transmission su LAN/Internet.
   vincolati; il frontend non contatta direttamente il provider;
 - challenge adapter: `openastro-torrent-search.service` su `127.0.0.1:9092`;
   usa Chromium/StealthySession soltanto quando la richiesta HTTP diretta riceve
-  403/429/503 o una pagina challenge, e chiude il browser dopo 120 s di inattività;
+  403/429/503 o una pagina challenge, serializza le richieste sul thread del browser
+  e chiude la sessione dopo 120 s di inattività;
 - protezione LiveVault: il fallback browser non parte se `healthz` segnala uno o
   più recorder attivi o se lo stato recorder non è verificabile; magnet e download
   già in coda continuano invece normalmente;

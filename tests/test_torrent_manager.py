@@ -156,6 +156,9 @@ def test_install_and_ui_contracts():
     assert 'parsed.scheme != "https" or host not in ALLOWED_HOSTS' in solver
     assert 'parsed.path.startswith("/torrent/")' in solver
     assert "IDLE_SECONDS" in solver and "_close_session_locked()" in solver
+    assert 'class SearchHTTPServer(HTTPServer)' in solver
+    assert 'ThreadingHTTPServer' not in solver
+    assert 'def service_actions(self)' in solver
     assert '"rpc-bind-address": "127.0.0.1"' in installer
     assert "/share/.openastro-torrents/complete" in installer
     assert "/share/Media/Downloads" in installer

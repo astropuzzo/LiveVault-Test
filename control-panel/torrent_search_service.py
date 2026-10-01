@@ -3,9 +3,8 @@ from __future__ import annotations
 
 import html
 import os
-import threading
 import time
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import parse_qs, urlparse
 
 from scrapling.fetchers import StealthySession
@@ -23,7 +22,6 @@ ALLOWED_HOSTS = {
 }
 MAX_BODY = 2_000_000
 
-_lock = threading.Lock()
 _session: StealthySession | None = None
 _cleared = False
 _last_used = 0.0
@@ -85,47 +83,44 @@ def _close_session_locked() -> None:
 def fetch_provider(url: str) -> str:
     global _session, _cleared, _last_used
     url = _safe_url(url)
-    with _lock:
-        if _session is None:
-            _session = _new_session()
-        try:
+    if _session is None:
+        _session = _new_session()
+    try:
+        response = _session.fetch(
+            url,
+            solve_cloudflare=not _cleared,
+            network_idle=False,
+            disable_resources=True,
+            wait=250,
+            timeout=60_000,
+        )
+        body = _body(response)
+        if _challenge(response, body):
             response = _session.fetch(
                 url,
-                solve_cloudflare=not _cleared,
+                solve_cloudflare=True,
                 network_idle=False,
                 disable_resources=True,
                 wait=250,
                 timeout=60_000,
             )
             body = _body(response)
-            if _challenge(response, body):
-                response = _session.fetch(
-                    url,
-                    solve_cloudflare=True,
-                    network_idle=False,
-                    disable_resources=True,
-                    wait=250,
-                    timeout=60_000,
-                )
-                body = _body(response)
-            if _challenge(response, body):
-                raise RuntimeError("Cloudflare challenge non risolto.")
-            _cleared = True
-            _last_used = time.monotonic()
-            return body
-        except Exception:
+        if _challenge(response, body):
+            raise RuntimeError("Cloudflare challenge non risolto.")
+        _cleared = True
+        _last_used = time.monotonic()
+        return body
+    except Exception:
+        _close_session_locked()
+        raise
+
+
+class SearchHTTPServer(HTTPServer):
+    def service_actions(self) -> None:
+        global _last_used
+        if _session is not None and _last_used and time.monotonic() - _last_used >= IDLE_SECONDS:
             _close_session_locked()
-            raise
-
-
-def _idle_loop() -> None:
-    global _last_used
-    while True:
-        time.sleep(15)
-        with _lock:
-            if _session is not None and _last_used and time.monotonic() - _last_used >= IDLE_SECONDS:
-                _close_session_locked()
-                _last_used = 0.0
+            _last_used = 0.0
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -163,8 +158,7 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main() -> None:
-    threading.Thread(target=_idle_loop, name="torrent-search-idle", daemon=True).start()
-    ThreadingHTTPServer((HOST, PORT), Handler).serve_forever()
+    SearchHTTPServer((HOST, PORT), Handler).serve_forever(poll_interval=1.0)
 
 
 if __name__ == "__main__":
