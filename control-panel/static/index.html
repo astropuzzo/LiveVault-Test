@@ -15,7 +15,7 @@
   <link rel="stylesheet" href="/diagnostics.css?v=3.5.1">
   <link rel="stylesheet" href="/media-upload.css?v=3.5.1">
   <link rel="stylesheet" href="/torrent-manager.css?v=3.5.1-torrent2">
-  <link rel="stylesheet" href="/app.css?v=3.5.1">
+  <link rel="stylesheet" href="/app.css?v=3.5.1-energy1">
 </head>
 <body data-view="dashboard" class="is-loading">
   <div class="app-shell">
@@ -361,6 +361,14 @@
         <div><span>ALIMENTAZIONE</span><strong id="powerHealth">—</strong></div>
         <div><span>ASSORBIMENTO</span><strong id="powerWatts">—</strong></div>
       </div>
+      <section class="monthly-energy" id="monthlyEnergy" aria-labelledby="monthlyEnergyTitle">
+        <div class="monthly-energy-head"><div><span>ENERGIA MISURATA</span><h3 id="monthlyEnergyTitle">Consumo mensile</h3></div><small id="monthlyEnergyCoverage">calcolo…</small></div>
+        <div class="monthly-energy-grid">
+          <div class="monthly-energy-current"><span id="monthlyEnergyMonth">MESE CORRENTE</span><strong id="monthlyEnergyValue">—</strong><small id="monthlyEnergyMeta">W medi e picco in calcolo…</small></div>
+          <div class="monthly-energy-history" id="monthlyEnergyHistory"><div class="monthly-energy-empty">Caricamento mesi precedenti…</div></div>
+        </div>
+        <p id="monthlyEnergyNote">Totale ricavato dai campioni reali del sensore ASIAIR. I periodi senza telemetria non vengono stimati.</p>
+      </section>
       <div class="power-controls">
         <label class="wifi-toggle"><input type="checkbox" id="wifiKeep" checked><span></span><div><strong>Hotspot Wi-Fi indipendente</strong><small id="wifiHint">Puoi attivarlo o spegnerlo con qualsiasi profilo.</small></div></label>
         <button class="button power-apply" id="applyPower">Applica profilo</button>
@@ -573,7 +581,7 @@
 
   <script src="/hls.min.js?v=1.7.2" defer></script>
   <script src="/diagnostics.js?v=3.5.1" defer></script>
-  <script src="/app.js?v=3.5.1" defer></script>
+  <script src="/app.js?v=3.5.1-energy1" defer></script>
   <script src="/torrent-manager.js?v=3.5.1-torrent4" defer></script>
   <script src="/media-upload.js?v=3.5.1" defer></script>
   <script src="/motion.js?v=3.5.1" defer></script>

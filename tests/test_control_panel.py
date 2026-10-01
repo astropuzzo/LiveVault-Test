@@ -180,6 +180,70 @@ def test_energy_integrates_samples_without_bridging_outages_or_estimates():
     assert panel.measured_energy([point(0, 0)])["wh"] is None
 
 
+def test_monthly_energy_integrates_compacted_samples_and_excludes_downtime():
+    now = 20 * 86400
+    points = [
+        {"t": now - 10, "watts": 10, "power_measurement": "measured"},
+        {"t": now, "watts": 10, "power_measurement": "measured"},
+        {"t": now - 2 * 86400 - 300, "watts": 20, "power_measurement": "measured"},
+        {"t": now - 2 * 86400, "watts": 20, "power_measurement": "measured"},
+        {"t": now - 10 * 86400 - 1800, "watts": 30, "power_measurement": "measured"},
+        {"t": now - 10 * 86400, "watts": 30, "power_measurement": "measured"},
+    ]
+    start = now - 11 * 86400
+    result = panel.measured_energy_window(
+        points, start, now, now=now,
+        excluded=[{"start": now - 2 * 86400 - 200, "end": now - 2 * 86400 - 100}],
+    )
+    expected_ws = 10 * 10 + 20 * 200 + 30 * 1800
+    assert result["covered_seconds"] == 2010
+    assert result["wh"] == round(expected_ws / 3600, 4)
+    assert result["kwh"] == round(expected_ws / 3_600_000, 5)
+    assert result["average_watts"] == round(expected_ws / 2010, 3)
+    assert result["peak_watts"] == 30
+
+
+def test_monthly_energy_does_not_bridge_missing_compacted_buckets():
+    now = 40 * 86400
+    points = [
+        {"t": now - 20 * 86400, "watts": 6, "power_measurement": "measured"},
+        {"t": now - 20 * 86400 + 3600, "watts": 6, "power_measurement": "measured"},
+    ]
+    result = panel.measured_energy_window(points, now - 30 * 86400, now, now=now)
+    assert result["covered_seconds"] == 0
+    assert result["wh"] is None
+
+
+def test_monthly_energy_payload_uses_calendar_month_and_browser_timezone(monkeypatch):
+    fixed_now = 1790870400  # 2026-10-01 16:00:00 UTC
+    start = int(panel.datetime(2026, 10, 1, tzinfo=panel.ZoneInfo("Europe/Rome")).timestamp())
+    monkeypatch.setattr(panel.time, "time", lambda: fixed_now)
+    monkeypatch.setattr(panel, "_history", [
+        {"t": start + 10, "watts": 5, "power_measurement": "measured"},
+        {"t": start + 20, "watts": 5, "power_measurement": "measured"},
+    ])
+    monkeypatch.setattr(panel, "availability_payload", lambda seconds, now=None: {"downtimes": []})
+    result = panel.monthly_energy_payload(2, "Europe/Rome")
+    assert result["timezone"] == "Europe/Rome"
+    assert result["months"][0]["month"] == "2026-10"
+    assert result["months"][0]["start"] == start
+    assert result["months"][0]["covered_seconds"] == 10
+    assert result["months"][0]["wh"] == round(50 / 3600, 4)
+    assert result["months"][1]["month"] == "2026-09"
+
+
+def test_monthly_energy_api_requires_session(control_server, monkeypatch):
+    with pytest.raises(urllib.error.HTTPError) as error:
+        urllib.request.urlopen(control_server + "/api/energy/monthly")
+    assert error.value.code == 401
+    monkeypatch.setattr(panel, "monthly_energy_payload", lambda months, timezone_name: {"ok": True, "months_arg": months, "timezone": timezone_name, "months": []})
+    request = urllib.request.Request(control_server + "/api/energy/monthly?months=4&tz=Europe%2FRome", headers={"Cookie": "openastro_session=test"})
+    with urllib.request.urlopen(request) as response:
+        payload = json.load(response)
+    assert payload["months_arg"] == 4
+    assert payload["timezone"] == "Europe/Rome"
+
+
 def test_old_energy_history_remains_estimated(tmp_path, monkeypatch):
     path = tmp_path / "history.json"
     path.write_text(json.dumps([{"t": time.time(), "watts": 6}]))

@@ -16,6 +16,8 @@ import subprocess
 import threading
 import time
 import urllib.request
+from datetime import datetime
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from contextlib import closing
 from http import HTTPStatus
 from http.cookies import SimpleCookie
@@ -327,6 +329,127 @@ def measured_energy(points: list[dict]) -> dict:
     return {"wh": round(watt_seconds / 3600, 4) if covered else None,
             "covered_seconds": round(covered),
             "average_watts": round(watt_seconds / covered, 3) if covered else None}
+
+
+def _energy_gap_limit(timestamp: float, now: float) -> int:
+    age = max(0.0, now - timestamp)
+    if age <= HISTORY_RAW_SECONDS + 3600:
+        return 45
+    if age <= 7 * 86400 + 3600:
+        return 420
+    return 2100
+
+
+def _subtract_intervals(start: float, end: float, excluded: list[dict]) -> list[tuple[float, float]]:
+    segments = [(start, end)]
+    for row in excluded:
+        cut_start = max(start, float(row.get("start", 0)))
+        cut_end = min(end, float(row.get("end", 0)))
+        if cut_end <= cut_start:
+            continue
+        next_segments = []
+        for left, right in segments:
+            if cut_end <= left or cut_start >= right:
+                next_segments.append((left, right))
+                continue
+            if left < cut_start:
+                next_segments.append((left, cut_start))
+            if cut_end < right:
+                next_segments.append((cut_end, right))
+        segments = next_segments
+        if not segments:
+            break
+    return segments
+
+
+def measured_energy_window(points: list[dict], start: float, end: float, *, now: float | None = None, excluded: list[dict] | None = None) -> dict:
+    """Integrate measured power across compacted history without bridging real gaps."""
+    now = float(time.time() if now is None else now)
+    excluded = excluded or []
+    rows = sorted((row for row in points if row.get("t") is not None), key=lambda row: float(row["t"]))
+    watt_seconds = covered = 0.0
+    measured_values = []
+    first_sample = last_sample = None
+    for row in rows:
+        t = float(row.get("t", 0))
+        if start <= t <= end and row.get("power_measurement") == "measured" and row.get("watts") is not None:
+            try:
+                watts = float(row["watts"])
+            except (TypeError, ValueError):
+                continue
+            measured_values.append(watts)
+            first_sample = t if first_sample is None else min(first_sample, t)
+            last_sample = t if last_sample is None else max(last_sample, t)
+    for left, right in zip(rows, rows[1:]):
+        if any(row.get("power_measurement") != "measured" or row.get("watts") is None for row in (left, right)):
+            continue
+        lt, rt = float(left["t"]), float(right["t"])
+        elapsed = rt - lt
+        if elapsed <= 0 or elapsed > max(_energy_gap_limit(lt, now), _energy_gap_limit(rt, now)):
+            continue
+        overlap_start, overlap_end = max(lt, start), min(rt, end)
+        if overlap_end <= overlap_start:
+            continue
+        try:
+            lw, rw = float(left["watts"]), float(right["watts"])
+        except (TypeError, ValueError):
+            continue
+        for seg_start, seg_end in _subtract_intervals(overlap_start, overlap_end, excluded):
+            fraction_start = (seg_start - lt) / elapsed
+            fraction_end = (seg_end - lt) / elapsed
+            sw = lw + (rw - lw) * fraction_start
+            ew = lw + (rw - lw) * fraction_end
+            seconds = seg_end - seg_start
+            watt_seconds += (sw + ew) * 0.5 * seconds
+            covered += seconds
+    return {
+        "wh": round(watt_seconds / 3600, 4) if covered else None,
+        "kwh": round(watt_seconds / 3_600_000, 5) if covered else None,
+        "covered_seconds": round(covered),
+        "average_watts": round(watt_seconds / covered, 3) if covered else None,
+        "peak_watts": round(max(measured_values), 3) if measured_values else None,
+        "first_sample_at": round(first_sample) if first_sample is not None else None,
+        "last_sample_at": round(last_sample) if last_sample is not None else None,
+    }
+
+
+def monthly_energy_payload(months: int = 3, timezone_name: str = "UTC") -> dict:
+    months = max(1, min(4, int(months)))
+    try:
+        tz = ZoneInfo(timezone_name)
+    except (ZoneInfoNotFoundError, ValueError):
+        timezone_name = "UTC"
+        tz = ZoneInfo("UTC")
+    now = float(time.time())
+    local_now = datetime.fromtimestamp(now, tz)
+    with _history_lock:
+        points = [row.copy() for row in _history]
+    rows = []
+    for offset in range(months):
+        total = local_now.year * 12 + (local_now.month - 1) - offset
+        year, month_index = divmod(total, 12)
+        month = month_index + 1
+        start_local = datetime(year, month, 1, tzinfo=tz)
+        next_total = total + 1
+        next_year, next_month_index = divmod(next_total, 12)
+        end_local = datetime(next_year, next_month_index + 1, 1, tzinfo=tz)
+        start = start_local.timestamp()
+        calendar_end = end_local.timestamp()
+        report_end = min(calendar_end, now)
+        period_seconds = max(0, report_end - start)
+        availability = availability_payload(max(1, int(period_seconds)), int(report_end)) if period_seconds else {"downtimes": []}
+        energy = measured_energy_window(points, start, report_end, now=now, excluded=availability.get("downtimes", [])) if period_seconds else measured_energy_window([], start, report_end, now=now)
+        energy.update({
+            "month": f"{year:04d}-{month:02d}",
+            "start": round(start),
+            "end": round(report_end),
+            "calendar_end": round(calendar_end),
+            "current": offset == 0,
+            "period_seconds": round(period_seconds),
+            "coverage_percent": round((energy["covered_seconds"] / period_seconds * 100), 2) if period_seconds else 0.0,
+        })
+        rows.append(energy)
+    return {"ok": True, "timezone": timezone_name, "months": rows}
 
 
 def sample_metrics() -> dict:
@@ -1181,6 +1304,17 @@ class Handler(BaseHTTPRequestHandler):
             except ValueError:
                 seconds = 3600
             self.send_json(history_payload(seconds))
+            return
+        if path == "/api/energy/monthly":
+            if not self.require_session():
+                return
+            query = parse_qs(parsed.query)
+            try:
+                months = int(query.get("months", ["3"])[0])
+            except ValueError:
+                months = 3
+            timezone_name = str(query.get("tz", ["UTC"])[0])[:80]
+            self.send_json(monthly_energy_payload(months, timezone_name))
             return
         if path == "/healthz":
             self.send_json({"ok": True, "version": "3.0.0"})
