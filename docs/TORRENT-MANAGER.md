@@ -11,6 +11,12 @@ la WebUI o l'RPC di Transmission su LAN/Internet.
   `control-panel/torrent_manager.py`;
 - provider ricerca predefinito: **1337x**, via parser server-side e URL/host
   vincolati; il frontend non contatta direttamente il provider;
+- challenge adapter: `openastro-torrent-search.service` su `127.0.0.1:9092`;
+  usa Chromium/StealthySession soltanto quando la richiesta HTTP diretta riceve
+  403/429/503 o una pagina challenge, e chiude il browser dopo 120 s di inattività;
+- protezione LiveVault: il fallback browser non parte se `healthz` segnala uno o
+  più recorder attivi o se lo stato recorder non è verificabile; magnet e download
+  già in coda continuano invece normalmente;
 - input alternativi: magnet link e file `.torrent`;
 - staging: `/share/.openastro-torrents/{incomplete,complete}`, fuori da
   `/share/Media` e quindi fuori dal catalogo Media Hub;
@@ -59,19 +65,25 @@ Dalla root del checkout host:
 sudo bash scripts/install-torrent-manager.sh
 ```
 
-Lo script installa il pacchetto Debian `transmission-daemon`, disabilita il
-servizio distro generico, crea il servizio OpenAstro ristretto e le directory di
-staging. Non cambia credenziali Control/LiveVault e non espone l'RPC.
+Lo script installa `transmission-daemon` e `python3-venv`, disabilita il servizio
+distro generico, crea il servizio OpenAstro ristretto e le directory di staging.
+Prepara inoltre `/opt/openastro-torrent-search` con una venv dedicata,
+`scrapling[fetchers]==0.4.15` e Chromium Playwright per il solo fallback challenge.
+Il solver ascolta esclusivamente su loopback e non espone una WebUI. Non cambia
+credenziali Control/LiveVault e non espone l'RPC Transmission.
 
 Dopo l'installazione verificare:
 
 ```sh
 systemctl is-active openastro-torrent.service
-ss -lntp | grep ':9091'
+systemctl is-active openastro-torrent-search.service
+ss -lntp | grep -E '127\.0\.0\.1:(9091|9092)'
 findmnt /share
 ```
 
-L'RPC deve risultare in ascolto solo su loopback.
+RPC e solver devono risultare in ascolto solo su loopback. Il solver può restare
+attivo con consumo minimo: il browser viene creato alla prima challenge e chiuso
+dopo l'idle configurato.
 
 ## API Control
 
@@ -85,17 +97,21 @@ il token CSRF esistente.
 - `POST /api/torrents/action` con `pause`, `resume` o `remove`
 
 La risoluzione di un risultato 1337x accetta solo URL del provider configurato e
-path `/torrent/...`; questo evita che il backend venga usato come fetcher
-arbitrario. Il parser usa solo standard library e ha un limite di risposta HTML.
+path `/torrent/...`; questo evita che il backend venga usato come fetcher arbitrario.
+Il solver locale applica una seconda allow-list a schema HTTPS, domini 1337x noti e
+soli path `/search/`, `/sort-search/` e `/torrent/`. Le risposte HTML sono limitate
+a 2 MB.
 
 ## Limiti
 
 1337x non espone un contratto API stabile usato qui: una modifica al markup può
 richiedere un aggiornamento di `_SearchParser` o `_MagnetParser`. Un errore del
 provider non interrompe il client torrent e non tocca i job già esistenti. La ricerca
-prova prima `sort-search/.../seeders/desc`; se 1337x disabilita temporaneamente il
-sort o restituisce zero righe, ripiega su `search/...` e ordina i risultati per
-seed nel backend.
+usa la pagina standard `search/...` e ordina i risultati per seed nel backend, così
+non dipende dal sorting server-side che 1337x può disabilitare sotto carico. Quando
+la protezione del provider richiede il browser, la ricerca può impiegare più tempo.
+Durante una registrazione LiveVault il browser non viene avviato: il pannello mostra
+l'errore temporaneo e si può riprovare a recorder fermo.
 
 La staging vive su SHARE: con NVMe espulso non si avviano nuovi download e il
 servizio resta fermo. La porta peer di Transmission resta soggetta al routing/NAT
@@ -104,7 +120,8 @@ dall'installer.
 
 ## Rollback
 
-1. fermare e disabilitare `openastro-torrent.service`;
+1. fermare e disabilitare `openastro-torrent.service` e
+   `openastro-torrent-search.service`;
 2. ripristinare `/opt/openastro-control` dal backup precedente al rollout e
    riavviare solo `openastro-control.service`;
 3. ripristinare la versione precedente di `scripts/nvme-handoff.py` nel helper

@@ -11,7 +11,7 @@ import time
 from html.parser import HTMLParser
 from pathlib import Path
 from urllib.error import HTTPError, URLError
-from urllib.parse import quote, urljoin, urlparse
+from urllib.parse import quote, urlencode, urljoin, urlparse
 from urllib.request import Request, build_opener, HTTPRedirectHandler
 
 import media_center
@@ -19,6 +19,8 @@ import media_center
 
 RPC_URL = os.environ.get("OPENASTRO_TRANSMISSION_RPC", "http://127.0.0.1:9091/transmission/rpc")
 SEARCH_BASE = os.environ.get("OPENASTRO_1337X_BASE", "https://1337x.to").rstrip("/")
+SEARCH_SOLVER = os.environ.get("OPENASTRO_TORRENT_SEARCH_SOLVER", "http://127.0.0.1:9092/fetch")
+LIVEVAULT_HEALTH = os.environ.get("OPENASTRO_LIVEVAULT_HEALTH", "http://127.0.0.1:8080/healthz")
 STATE_ROOT = Path("/var/lib/openastro-control")
 IMPORT_STATE = STATE_ROOT / "torrent-imports.json"
 SHARE_ROOT = Path("/share")
@@ -112,7 +114,7 @@ class _SearchParser(HTMLParser):
             elif "leeches" in classes or "coll-3" in classes:
                 self._row["leechers"] = _first_int(value)
             elif "size" in classes or "coll-4" in classes:
-                match = re.search(r"\b\d+(?:[.,]\d+)?\s*(?:B|KB|MB|GB|TB)\b", value, re.I)
+                match = re.search(r"\d+(?:[.,]\d+)?\s*(?:B|KB|MB|GB|TB)", value, re.I)
                 self._row["size"] = match.group(0).replace(",", ".") if match else value
             elif "coll-date" in classes:
                 self._row["age"] = value
@@ -169,11 +171,53 @@ def _fetch_html(url: str, timeout: int = 12) -> str:
         with opener.open(request, timeout=timeout) as response:
             body = response.read(2_000_000)
             charset = response.headers.get_content_charset() or "utf-8"
-        return body.decode(charset, "replace")
+        text = body.decode(charset, "replace")
+        if "Just a moment" in text or "cf-chl-" in text:
+            return _fetch_html_solver(url)
+        return text
     except HTTPError as exc:
+        if exc.code in {403, 429, 503}:
+            return _fetch_html_solver(url)
         raise TorrentError(f"1337x non disponibile (HTTP {exc.code}).") from exc
     except (URLError, TimeoutError, OSError) as exc:
         raise TorrentError(f"1337x non raggiungibile: {exc}") from exc
+
+
+def _livevault_active_recorders() -> int | None:
+    try:
+        request = Request(LIVEVAULT_HEALTH, headers={"Accept": "application/json"})
+        with build_opener().open(request, timeout=2) as response:
+            payload = json.loads(response.read(64 * 1024).decode("utf-8"))
+        return max(0, int((payload.get("worker") or {}).get("active_recorders") or 0))
+    except (HTTPError, URLError, TimeoutError, OSError, ValueError, TypeError):
+        return None
+
+
+def _solver_endpoint(url: str) -> str:
+    parsed = urlparse(SEARCH_SOLVER)
+    if parsed.scheme != "http" or (parsed.hostname or "").casefold() not in {"127.0.0.1", "localhost", "::1"}:
+        raise TorrentError("Solver 1337x non configurato su loopback.")
+    return SEARCH_SOLVER + ("&" if parsed.query else "?") + urlencode({"url": url})
+
+
+def _fetch_html_solver(url: str) -> str:
+    active = _livevault_active_recorders()
+    if active is None:
+        raise TorrentError("Ricerca browser 1337x sospesa: stato LiveVault non disponibile.")
+    if active > 0:
+        suffix = "registrazione attiva" if active == 1 else "registrazioni attive"
+        raise TorrentError(f"Ricerca browser 1337x sospesa: {active} {suffix} su LiveVault.")
+    request = Request(_solver_endpoint(url), headers={"Accept": "text/html"})
+    try:
+        with build_opener().open(request, timeout=70) as response:
+            body = response.read(2_000_000)
+            charset = response.headers.get_content_charset() or "utf-8"
+        return body.decode(charset, "replace")
+    except HTTPError as exc:
+        detail = exc.read(512).decode("utf-8", "replace").strip()
+        raise TorrentError(detail or f"1337x solver HTTP {exc.code}.") from exc
+    except (URLError, TimeoutError, OSError) as exc:
+        raise TorrentError(f"1337x solver non disponibile: {exc}") from exc
 
 
 def providers() -> list[dict]:
@@ -187,19 +231,10 @@ def search(provider: str, query: str, page: int = 1) -> dict:
     if not 2 <= len(query) <= 180:
         raise ValueError("Inserisci almeno 2 caratteri di ricerca.")
     page = max(1, min(50, int(page)))
-    sorted_url = f"{SEARCH_BASE}/sort-search/{quote(query)}/seeders/desc/{page}/"
-    fallback_url = f"{SEARCH_BASE}/search/{quote(query)}/{page}/"
+    url = f"{SEARCH_BASE}/search/{quote(query, safe='')}/{page}/"
     with _PROVIDER_LOCK:
         parser = _SearchParser(SEARCH_BASE)
-        try:
-            parser.feed(_fetch_html(sorted_url))
-        except TorrentError:
-            parser = _SearchParser(SEARCH_BASE)
-            parser.feed(_fetch_html(fallback_url))
-        if not parser.rows:
-            fallback = _SearchParser(SEARCH_BASE)
-            fallback.feed(_fetch_html(fallback_url))
-            parser = fallback
+        parser.feed(_fetch_html(url))
     rows = sorted(parser.rows, key=lambda item: int(item.get("seeders") or 0), reverse=True)
     return {
         "ok": True,

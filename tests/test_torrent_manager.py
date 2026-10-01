@@ -51,10 +51,9 @@ def test_1337x_search_parser_extracts_visible_fields():
 
 
 
-def test_search_falls_back_when_sorted_search_is_empty(monkeypatch):
+def test_search_uses_standard_page_and_sorts_results_by_seeders(monkeypatch):
     pages = []
-    sorted_html = '<table class="table-list"><tbody></tbody></table>'
-    fallback_html = """
+    page_html = """
     <table class="table-list"><tbody>
       <tr><td class="coll-1"><a href="/torrent/1/A/">A</a></td><td class="coll-2">4</td><td class="coll-3">1</td><td class="coll-4">1 GB</td></tr>
       <tr><td class="coll-1"><a href="/torrent/2/B/">B</a></td><td class="coll-2">40</td><td class="coll-3">2</td><td class="coll-4">2 GB</td></tr>
@@ -62,12 +61,31 @@ def test_search_falls_back_when_sorted_search_is_empty(monkeypatch):
     """
     def fake_fetch(url, timeout=12):
         pages.append(url)
-        return sorted_html if '/sort-search/' in url else fallback_html
+        return page_html
     monkeypatch.setattr(torrent, '_fetch_html', fake_fetch)
     result = torrent.search('1337x', 'linux', 1)
-    assert any('/sort-search/' in url for url in pages)
-    assert any('/search/linux/1/' in url for url in pages)
+    assert pages == ['https://1337x.to/search/linux/1/']
     assert [item['name'] for item in result['results']] == ['B', 'A']
+
+def test_browser_solver_is_guarded_while_livevault_records(monkeypatch):
+    monkeypatch.setattr(torrent, '_livevault_active_recorders', lambda: 1)
+    try:
+        torrent._fetch_html_solver('https://1337x.to/search/ubuntu/1/')
+    except torrent.TorrentError as exc:
+        assert '1 registrazione attiva' in str(exc)
+    else:
+        raise AssertionError('browser solver should be blocked during an active recording')
+
+
+def test_solver_endpoint_must_be_loopback(monkeypatch):
+    monkeypatch.setattr(torrent, 'SEARCH_SOLVER', 'https://example.org/fetch')
+    try:
+        torrent._solver_endpoint('https://1337x.to/search/ubuntu/1/')
+    except torrent.TorrentError as exc:
+        assert 'loopback' in str(exc)
+    else:
+        raise AssertionError('non-loopback solver must be rejected')
+
 
 def test_1337x_detail_parser_extracts_magnet():
     parser = torrent._MagnetParser()
@@ -129,8 +147,15 @@ def test_install_and_ui_contracts():
     upload = (ROOT / "control-panel" / "upload_server.py").read_text(encoding="utf-8")
     ui = (ROOT / "control-panel" / "static" / "index.html").read_text(encoding="utf-8")
     js = (ROOT / "control-panel" / "static" / "torrent-manager.js").read_text(encoding="utf-8")
+    solver = (ROOT / "control-panel" / "torrent_search_service.py").read_text(encoding="utf-8")
 
     assert "transmission-daemon" in installer
+    assert "scrapling[fetchers]==0.4.15" in installer
+    assert "openastro-torrent-search.service" in installer
+    assert "127.0.0.1" in solver and 'PORT = int(os.environ.get("OPENASTRO_TORRENT_SEARCH_PORT", "9092"))' in solver
+    assert 'parsed.scheme != "https" or host not in ALLOWED_HOSTS' in solver
+    assert 'parsed.path.startswith("/torrent/")' in solver
+    assert "IDLE_SECONDS" in solver and "_close_session_locked()" in solver
     assert '"rpc-bind-address": "127.0.0.1"' in installer
     assert "/share/.openastro-torrents/complete" in installer
     assert "/share/Media/Downloads" in installer

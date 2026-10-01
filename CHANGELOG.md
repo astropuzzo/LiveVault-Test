@@ -7,7 +7,8 @@
   annullamento con pulizia della staging.
 - 1337x è il provider di ricerca predefinito; restano disponibili magnet e file
   `.torrent`. La risoluzione dei risultati è server-side e vincolata all'host del
-  provider.
+  provider; su challenge 403/429/503 usa un browser locale loopback con idle 120 s,
+  mai avviato mentre LiveVault sta registrando.
 - I download incompleti restano in `/share/.openastro-torrents`; al 100% il media
   viene fermato, spostato in `/share/Media/Downloads`, registrato e il job viene
   rimosso da Transmission senza cancellare il file finale.

@@ -273,7 +273,7 @@ d'installazione precedente; esistenza non verificata.
 | Pi-hole | pihole-FTL.service; /etc/pihole | amministrazione LAN porta 80 |
 | DNS cifrato | openastro-dns.service; /opt/openastro-dns/dns_gateway.py | DoH tramite /dns-query sul Funnel Control |
 | Media LAN | smbd, nmbd, minidlna, wsdd2 | SMB OPENASTRO/Media; DLNA OpenAstro Media |
-| Torrent Manager *(rollout pending)* | `openastro-torrent.service` + Control worker | sorgente validata; non considerare attivo finché non è verificato sul nodo |
+| Torrent Manager *(verifica finale pending)* | `openastro-torrent.service` + `openastro-torrent-search.service` + Control worker | servizi installati; ricerca browser non ancora provata mentre recorder attivo |
 
 Gli ingressi HTTPS pubblici principali hanno Funnel attivo. NINA non usa più una
 porta Funnel dedicata: `/nina/` sul Funnel `:8443` viene instradato direttamente
@@ -337,9 +337,10 @@ di `/share` restano fuori dal catalogo. Import web/SMB è autenticato; SMB/DLNA
 restano LAN-only. `NVMe Media` si espelle esclusivamente con l'intero NVMe.
 Non ripristinare le vecchie istruzioni read-only o guest.
 
-La sorgente del Torrent Manager prepara Transmission headless con RPC solo loopback.
-Il rollout host è ancora da verificare: finché questa nota non viene aggiornata, non
-presumere che `openastro-torrent.service` esista o sia attivo sul nodo. I parziali
+Torrent Manager usa Transmission headless con RPC solo loopback e un solver browser
+1337x su `127.0.0.1:9092`. I servizi host risultano installati e attivi il 2026-10-01;
+la prova reale della ricerca browser resta sospesa finché LiveVault ha un recorder
+attivo. Il backend non avvia il browser durante una registrazione. I parziali
 e i completati non ancora importati vivono in `/share/.openastro-torrents`, mai
 nel catalogo Media. Al 100% il Control ferma il job, sposta il payload in
 `/share/Media/Downloads`, salva un receipt e rimuove il torrent senza cancellare

@@ -130,8 +130,11 @@ in `/share/.openastro-torrents`; a completamento il payload viene spostato in
 `delete-local-data=false`, quindi il media finale resta disponibile.
 
 Il servizio host è `openastro-torrent.service`, RPC esclusivamente su
-`127.0.0.1:9091`; `scripts/install-torrent-manager.sh` installa/configura il
-client. L'eject NVMe ferma Transmission prima dello smontaggio SHARE e l'attach lo
+`127.0.0.1:9091`; `openastro-torrent-search.service` espone soltanto su
+`127.0.0.1:9092` il browser challenge per 1337x, avviato on-demand dalla prima
+richiesta bloccata e chiuso dopo 120 s di idle. Il fallback browser viene negato
+mentre LiveVault ha recorder attivi. `scripts/install-torrent-manager.sh`
+installa/configura entrambi i servizi. L'eject NVMe ferma Transmission prima dello smontaggio SHARE e l'attach lo
 riprende dopo aver ricreato le directory gestite. Dettagli operativi, limiti del
 parser provider e rollback: [TORRENT-MANAGER](../docs/TORRENT-MANAGER.md).
 
