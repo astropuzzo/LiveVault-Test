@@ -86,6 +86,15 @@ misurati. I Wh coprono solo coppie di campioni misurati distanti al massimo 30 s
 Non sono una proiezione sulle 24 ore. Il modello software precedente rimane
 disponibile separatamente nell'API e nel CSV, mai come sostituto di un sensore.
 
+Il pannello **Sistema → Energia** espone anche un resoconto mensile dell'energia DC
+misurata. L'API autenticata `GET /api/energy/monthly?months=3&tz=<IANA>` usa i mesi
+calendario nel fuso del browser e restituisce Wh/kWh, potenza media, picco e
+percentuale di copertura. Il calcolo usa solo campioni `measured`: gap, downtime
+registrati e periodi senza sensore non vengono stimati. Per i dati oltre le ultime
+24 ore usa lo storico già compattato (5 min fino a 7 giorni, 30 min fino a 90
+giorni) con soglie di continuità coerenti con la granularità. I mesi parziali
+mostrano esplicitamente copertura e prima data disponibile.
+
 ## Media Center USB
 
 `sudo bash scripts/install-media-center.sh` abilita supporti USB rimovibili con import in scrittura autenticati.

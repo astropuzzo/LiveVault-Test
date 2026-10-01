@@ -11,6 +11,7 @@ let activePowerKey = 'balanced';
 let activeWifiOn = true;
 let refreshBusy = false;
 let historyBusy = false;
+let monthlyEnergyBusy = false;
 let signedIn = true;
 let actionBusy = false;
 let piholeBusy = false;
@@ -263,6 +264,43 @@ function renderAvailability(availability = {}, rangeSeconds = historyRange) {
   }).join('');
   const unknownWidth = Math.max(0, Math.min(100, Number(availability.unknown_seconds || 0) / rangeSeconds * 100));
   $('#availabilityTimeline').innerHTML = `<i class="availability-online"></i>${unknownWidth ? `<b class="availability-unknown" style="left:0;width:${unknownWidth.toFixed(4)}%" title="Periodo precedente all'inizio del monitoraggio"></b>` : ''}${segments}`;
+}
+
+function monthlyLabel(timestamp, timezone) {
+  return new Date(timestamp * 1000).toLocaleDateString('it-IT', {month:'long', year:'numeric', timeZone:timezone||undefined});
+}
+function monthlyKwh(value) {
+  if (value == null || !Number.isFinite(Number(value))) return '—';
+  const n=Number(value);
+  return `${n.toLocaleString('it-IT',{minimumFractionDigits:n<1?3:2,maximumFractionDigits:n<1?3:2})} kWh`;
+}
+function renderMonthlyEnergy(payload = {}) {
+  const months=payload.months||[], current=months[0], timezone=payload.timezone||undefined;
+  if(!current)return;
+  $('#monthlyEnergyMonth').textContent=monthlyLabel(current.start,timezone).toUpperCase();
+  $('#monthlyEnergyValue').textContent=monthlyKwh(current.kwh);
+  $('#monthlyEnergyMeta').textContent=current.average_watts!=null ? `${Number(current.average_watts).toFixed(1)} W medi · ${current.peak_watts!=null?Number(current.peak_watts).toFixed(1)+' W picco':'picco —'}` : 'Nessun campione misurato nel mese';
+  $('#monthlyEnergyCoverage').textContent=`${Number(current.coverage_percent||0).toFixed(1)}% del periodo coperto`;
+  $('#monthlyEnergyHistory').innerHTML=months.slice(1).filter(row=>row.kwh!=null).map(row=>{
+    const partial=Number(row.coverage_percent||0)<98;
+    const from=row.first_sample_at ? new Date(row.first_sample_at*1000).toLocaleDateString('it-IT',{day:'2-digit',month:'2-digit',timeZone:timezone}) : null;
+    return `<div class="monthly-energy-row"><span>${monthlyLabel(row.start,timezone)}</span><strong>${monthlyKwh(row.kwh)}</strong><small>${row.average_watts!=null?Number(row.average_watts).toFixed(1)+' W medi · ':''}${Number(row.coverage_percent||0).toFixed(1)}% coperto${partial&&from?' · dati dal '+from:''}</small></div>`;
+  }).join('') || '<div class="monthly-energy-empty">Nessun mese precedente disponibile.</div>';
+  const first=current.first_sample_at ? new Date(current.first_sample_at*1000).toLocaleDateString('it-IT',{day:'2-digit',month:'2-digit',year:'numeric',timeZone:timezone}) : null;
+  $('#monthlyEnergyNote').textContent=current.coverage_percent<98 && first ? `Totale dai campioni reali ASIAIR disponibili dal ${first}. I periodi senza telemetria non vengono stimati.` : 'Totale dai campioni reali del sensore ASIAIR. I periodi senza telemetria non vengono stimati.';
+}
+async function refreshMonthlyEnergy(){
+  if(monthlyEnergyBusy||document.hidden||!signedIn||currentView!=='system')return;
+  monthlyEnergyBusy=true;
+  try{
+    const tz=Intl.DateTimeFormat().resolvedOptions().timeZone||'UTC';
+    const response=await fetch(`/api/energy/monthly?months=3&tz=${encodeURIComponent(tz)}`,{cache:'no-store',signal:AbortSignal.timeout(15000)});
+    if(response.status===401)return showLogin();
+    if(!response.ok)throw new Error(`HTTP ${response.status}`);
+    renderMonthlyEnergy(await response.json());
+  }catch(_){
+    $('#monthlyEnergyCoverage').textContent='resoconto non aggiornato';
+  }finally{monthlyEnergyBusy=false;}
 }
 
 function renderHistory(points, energy = {}, availability = {}, rangeSeconds = historyRange) {
@@ -739,7 +777,7 @@ function selectView(view, updateHash = false) {
   document.title = `${labels[view] || 'Control'} · OpenAstro`;
   if (updateHash && location.hash !== `#${view}`) history.pushState(null, '', `#${view}`);
   window.scrollTo({top:0, behavior:'auto'});
-  if (view === 'system') refreshHistory();
+  if (view === 'system') { refreshHistory(); refreshMonthlyEnergy(); }
   if (view === 'media') {
     loadMediaHome(true);
     if (mediaUuid) { loadMediaDirectory(mediaPath); loadMediaLibrary(); }
@@ -1057,7 +1095,7 @@ $('#loginForm').addEventListener('submit', async event => {
     $('#loginPassword').value = '';
     hideLogin();
     await refresh();
-    if (currentView === 'system') await refreshHistory();
+    if (currentView === 'system') { await refreshHistory(); await refreshMonthlyEnergy(); }
     if (currentView === 'media') await loadMediaHome(true);
   } catch (error) { $('#loginError').textContent = error.message; }
   submit.disabled = false;
@@ -1072,12 +1110,12 @@ $$('[data-system-tab]').forEach(button=>button.addEventListener('click',()=>{
   grid.classList.toggle('system-tab-power',tab==='power'); grid.classList.toggle('system-tab-telemetry',tab==='telemetry');
   $$('[data-system-tab]').forEach(item=>item.classList.toggle('active',item===button));
   grid.querySelectorAll('[data-motion]').forEach(panel=>{if(panel.getClientRects().length)globalThis.OpenAstroMotion?.open(panel);});
-  if(tab==='telemetry') refreshHistory();
+  if(tab==='telemetry') refreshHistory(); else refreshMonthlyEnergy();
 }));
 $$('[data-route]').forEach(link => link.addEventListener('click', event => { event.preventDefault(); selectView(link.dataset.route, true); }));
 window.addEventListener('hashchange', () => selectView(location.hash.slice(1) || 'dashboard'));
-document.addEventListener('visibilitychange', () => { if (document.hidden) stopHold(); else { refresh(); if (currentView === 'system') refreshHistory(); if (currentView === 'media') loadMediaHome(true); } });
-$('#refreshAll').addEventListener('click', () => { refresh(); refreshHistory(); });
+document.addEventListener('visibilitychange', () => { if (document.hidden) stopHold(); else { refresh(); if (currentView === 'system') { refreshHistory(); refreshMonthlyEnergy(); } if (currentView === 'media') loadMediaHome(true); } });
+$('#refreshAll').addEventListener('click', () => { refresh(); refreshHistory(); refreshMonthlyEnergy(); });
 $('#exportMetrics').addEventListener('click', () => {
   if (!latestHistory.length) return toast('Nessun campione da esportare.', true);
   const keys = ['t', 'cpu', 'ram', 'temp', 'disk', 'rx', 'tx', 'watts', 'power_measurement', 'input_volts', 'input_amps', 'estimated_watts'];
@@ -1089,8 +1127,9 @@ if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').cat
 bindActionButtons();
 selectView(currentView);
 refresh();
-if (currentView === 'system') refreshHistory();
+if (currentView === 'system') { refreshHistory(); refreshMonthlyEnergy(); }
 if (currentView === 'media') loadMediaHome(true);
 setInterval(refresh, 5000);
 setInterval(() => { if (currentView === 'system') refreshHistory(); }, 30000);
+setInterval(() => { if (currentView === 'system') refreshMonthlyEnergy(); }, 60000);
 setInterval(() => { if (currentView === 'media') loadMediaHome(); }, 10000);

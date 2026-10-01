@@ -381,6 +381,21 @@ di rimuoverli. Conservare checkout sporchi, video originali, file ignoti e rollb
 Vietati come routine: docker system prune --volumes, git clean -fdx, chmod/chown
 ricorsivi indiscriminati, fsck su mount attivi, lazy unmount nell'eject manuale.
 
+### 2026-10-01 — resoconto mensile energia DC
+Il Control Panel espone in **Sistema → Energia** un riepilogo mensile basato sui
+campioni reali ADS1015 già persistiti in `/var/lib/openastro-control/history.sqlite3`.
+Sorgenti: `control-panel/server.py`, `control-panel/static/index.html`, `app.js` e
+`app.css`. Endpoint autenticato: `/api/energy/monthly?months=3&tz=<IANA>`. I confini
+del mese seguono il fuso IANA del browser, non il timezone Europe/London del nodo.
+L'integrazione supporta lo storico compattato 10 s / 5 min / 30 min e non attraversa
+gap oltre la cadenza attesa; inoltre sottrae i downtime registrati. Restituisce kWh,
+W medi, W di picco e copertura, senza stimare periodi mancanti o campioni legacy
+`estimated`. Verifica dati produzione prima del deploy: settembre 2026 ~3,721 kWh,
+6,2 W medi, 13,7 W picco, copertura 83,2% perché i campioni misurati iniziano il
+05/09; ottobre corrente ~0,097 kWh e ~99,6% coperto al momento della verifica.
+Rollback: revert del commit UI/API e restart del solo `openastro-control.service`;
+il database telemetria non cambia schema e non richiede migrazioni.
+
 ## Prestazioni e limiti
 Campione iniziale con recorder già bloccati: RAM disponibile 2,4 GiB, disco interno
 51%, CPU inattiva 82–93%, niente swap/I/O wait corrente, temperatura 48,2 C.
