@@ -119,6 +119,28 @@ la cache del service worker segue la versione del rollout. Nessuna modifica SMB,
 mount, media o schema del catalogo. Il suggerimento mostra la radice della libreria;
 la sottocartella scelta nell'import web resta indicata nel campo destinazione.
 
+### Torrent Manager
+
+Il Media Hub include un client Transmission headless controllato soltanto dal
+pannello autenticato. Il provider di ricerca predefinito è 1337x; sono accettati
+anche magnet link e file `.torrent`. Il pannello mostra coda, velocità, ETA, peer,
+seed/leecher dei risultati, progresso e stato. La staging resta fuori dal catalogo
+in `/share/.openastro-torrents`; a completamento il payload viene spostato in
+`/share/Media/Downloads` e il job Transmission viene rimosso con
+`delete-local-data=false`, quindi il media finale resta disponibile.
+
+Il servizio host è `openastro-torrent.service`, RPC esclusivamente su
+`127.0.0.1:9091`; `openastro-torrent-search.service` espone soltanto su
+`127.0.0.1:9092` il browser challenge per 1337x, avviato on-demand dalla prima
+richiesta bloccata e chiuso dopo 120 s di idle. Il fallback browser viene negato
+mentre LiveVault ha recorder attivi. `scripts/install-torrent-manager.sh`
+installa/configura entrambi i servizi. L'eject NVMe ferma Transmission prima dello smontaggio SHARE e l'attach lo
+riprende dopo aver ricreato le directory gestite. Dettagli operativi, limiti del
+parser provider e rollback: [TORRENT-MANAGER](../docs/TORRENT-MANAGER.md).
+Verifica nodo 2026-10-01: i tre servizi sono attivi, RPC/solver restano loopback,
+il solver ha ottenuto HTTP 200 da ricerca e dettaglio 1337x dopo la challenge;
+con un recorder LiveVault attivo il Control impedisce invece l'avvio del browser.
+
 ### Media Hub Level 3
 
 The media panel keeps a persistent SQLite catalog on eMMC (`/var/lib/openastro-control/media.sqlite3`). Playback progress, completion state, favorites, recent history and remembered/offline libraries are server-side and shared by every authenticated browser. Direct HTTP media streams are tracked while active. USB media remains authenticated for writes. The persistent NVMe library is limited to `/share/Media`, follows the main NVMe attach/eject lifecycle, and never exposes the backup directory through the Media Hub.

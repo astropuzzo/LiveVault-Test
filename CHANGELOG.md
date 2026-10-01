@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased — 2026-10-01 · Torrent Manager nel Media Hub
+
+- Media Hub integra Transmission headless con RPC solo loopback, coda e telemetria
+  completa nel pannello: progresso, velocità, ETA, peer, ratio, pausa/riprendi e
+  annullamento con pulizia della staging.
+- 1337x è il provider di ricerca predefinito; restano disponibili magnet e file
+  `.torrent`. La risoluzione dei risultati è server-side e vincolata all'host del
+  provider; su challenge 403/429/503 usa un browser locale loopback con idle 120 s,
+  mai avviato mentre LiveVault sta registrando.
+- I download incompleti restano in `/share/.openastro-torrents`; al 100% il media
+  viene fermato, spostato in `/share/Media/Downloads`, registrato e il job viene
+  rimosso da Transmission senza cancellare il file finale.
+- L'eject NVMe ferma il client torrent prima di smontare SHARE e l'attach ricrea
+  le directory e riavvia il servizio. Cache PWA dedicata al rollout torrent.
+- Architettura, installazione, limiti e rollback: [Torrent Manager](docs/TORRENT-MANAGER.md).
+
 ## 3.5.1 — 2026-09-30
 
 Evoluzione delle tre UI verso vetro e blu cosmico: shell flottanti, gerarchia
