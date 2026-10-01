@@ -140,7 +140,7 @@ riprende dopo aver ricreato le directory gestite. Dettagli operativi, limiti del
 parser provider e rollback: [TORRENT-MANAGER](../docs/TORRENT-MANAGER.md).
 Verifica nodo 2026-10-01: i tre servizi sono attivi, RPC/solver restano loopback,
 il solver ha ottenuto HTTP 200 da ricerca e dettaglio 1337x dopo la challenge.
-La sessione challenge resta riutilizzabile fino a 600 s di inattività: sul nodo una prima ricerca a sessione fredda ha richiesto 38,4 s, mentre una seconda richiesta provider con sessione calda 3,3 s. Le risposte riuscite restano in cache 5 minuti; il cambio Data/Seed/Leech/Dimensione riordina istantaneamente la pagina già caricata senza una nuova challenge.
+La sessione challenge resta riutilizzabile fino a 600 s di inattività: sul nodo una prima ricerca a sessione fredda ha richiesto 45,1 s, mentre una seconda richiesta provider con sessione calda 3,3 s. Le risposte riuscite restano in cache 5 minuti; il cambio Data/Seed/Leech/Dimensione riordina istantaneamente la pagina già caricata senza una nuova challenge.
 
 ### Media Hub Level 3
 

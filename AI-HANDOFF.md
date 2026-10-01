@@ -343,7 +343,7 @@ e solver attivi; hash runtime uguali alla sorgente validata; `/api/torrents/stat
 senza sessione risponde 401. Il nodo riceve 403 dalla richiesta HTTP diretta a 1337x,
 quindi usa il solver locale. Il browser challenge è disponibile anche con recorder
 LiveVault attivi: il servizio resta `Nice=19`, `CPUWeight=10`, `CPUQuota=100%`,
-`IOWeight=10`, `IOSchedulingClass=idle` e Chromium può restare residente fino a 600 s di inattività per riusare la sessione Cloudflare in memoria. Verifica 2026-10-01: sessione fredda `time/desc` 38,4 s, seconda richiesta provider `size/desc` 3,3 s. Le risposte riuscite restano in cache 5 minuti e il cambio Data/Seed/Leech/Dimensione riordina localmente la pagina già caricata senza nuova richiesta. I parziali e i completati non ancora importati vivono in
+`IOWeight=10`, `IOSchedulingClass=idle` e Chromium può restare residente fino a 600 s di inattività per riusare la sessione Cloudflare in memoria. Verifica 2026-10-01: sessione fredda `time/desc` 45,1 s, seconda richiesta provider `size/desc` 3,3 s. Le risposte riuscite restano in cache 5 minuti e il cambio Data/Seed/Leech/Dimensione riordina localmente la pagina già caricata senza nuova richiesta. I parziali e i completati non ancora importati vivono in
 `/share/.openastro-torrents`, mai nel catalogo Media. Al 100% il Control ferma il job,
 sposta il payload in `/share/Media/Downloads`, salva un receipt e rimuove il torrent
 senza cancellare il media finale. 1337x è il provider predefinito; magnet e `.torrent`

@@ -42,7 +42,7 @@ dal provider.
 - ordinamento nativo 1337x disponibile per `time`, `seeders`, `leechers` e `size`,
   in entrambe le direzioni `asc`/`desc`;
 - sessione Chromium riutilizzata fino a 600 s di inattività. Misura sul nodo:
-  prima ricerca a sessione fredda `time/desc` 38,4 s, richiesta successiva
+  prima ricerca a sessione fredda `time/desc` 45,1 s, richiesta successiva
   `size/desc` 3,3 s, entrambe con 20 risultati; la prima challenge resta quindi
   il costo dominante;
 - solver limitato a un core e deprioritizzato (`Nice=19`, `CPUWeight=10`,
