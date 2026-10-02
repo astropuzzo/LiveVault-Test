@@ -385,6 +385,131 @@ def list_directory(uuid: str, relative: str = '') -> dict:
     return {'ok': True, 'uuid': uuid, 'label': item['label'], 'path': rel_dir, 'parent': parent, 'items': entries[:4000]}
 
 
+def _safe_name(name: str) -> str:
+    name = str(name or '').strip()
+    if not name or name in {'.', '..'} or '\x00' in name or '/' in name or '\\' in name:
+        raise ValueError('Nome non valido')
+    if Path(name).name != name:
+        raise ValueError('Nome non valido')
+    return name
+
+
+def _new_target(root: Path, parent: Path, name: str) -> Path:
+    name = _safe_name(name)
+    target = (parent / name).resolve(strict=False)
+    if target != root and root not in target.parents:
+        raise PermissionError('Percorso fuori dal supporto')
+    if target.exists() or target.is_symlink():
+        raise FileExistsError(f'Esiste già: {name}')
+    return target
+
+
+def _mark_library_dirty(uuid: str) -> None:
+    _LIBRARY_CACHE.pop(uuid, None)
+    with _db() as conn:
+        conn.execute('UPDATE media_devices SET last_scan=0 WHERE uuid=?', (uuid,))
+
+
+def _migrate_metadata(uuid: str, old: str, new: str) -> None:
+    with _db() as conn:
+        for table in ('media_items', 'media_favorites', 'media_playback'):
+            # Filesystem destination was verified absent before rename. Drop any stale
+            # catalog row left by an old/incomplete scan so primary keys cannot clash.
+            conn.execute(f'DELETE FROM {table} WHERE uuid=? AND (path=? OR path LIKE ?)', (uuid, new, new + '/%'))
+            rows = conn.execute(f'SELECT path FROM {table} WHERE uuid=? AND (path=? OR path LIKE ?)', (uuid, old, old + '/%')).fetchall()
+            for row in sorted(rows, key=lambda x: len(str(x['path'])), reverse=True):
+                src = str(row['path']); dst = new + src[len(old):]
+                conn.execute(f'UPDATE {table} SET path=? WHERE uuid=? AND path=?', (dst, uuid, src))
+        conn.execute('UPDATE media_items SET name=? WHERE uuid=? AND path=?', (Path(new).name, uuid, new))
+        conn.execute('INSERT INTO media_events(ts,kind,uuid,path,detail) VALUES(?,?,?,?,?)',
+                     (int(time.time()), 'move', uuid, new, json.dumps({'from': old, 'to': new})))
+    _mark_library_dirty(uuid)
+
+
+def _drop_metadata(uuid: str, relative: str) -> None:
+    with _db() as conn:
+        for table in ('media_items', 'media_favorites', 'media_playback'):
+            conn.execute(f'DELETE FROM {table} WHERE uuid=? AND (path=? OR path LIKE ?)', (uuid, relative, relative + '/%'))
+        conn.execute('INSERT INTO media_events(ts,kind,uuid,path,detail) VALUES(?,?,?,?,?)',
+                     (int(time.time()), 'delete', uuid, relative, '{}'))
+    _mark_library_dirty(uuid)
+
+
+def create_folder(uuid: str, parent_relative: str, name: str) -> dict:
+    _item, root, parent = _safe_target(uuid, parent_relative, require_file=False)
+    if not os.access(parent, os.W_OK):
+        raise PermissionError('Supporto non scrivibile')
+    target = _new_target(root, parent, name)
+    target.mkdir(mode=0o775)
+    _mark_library_dirty(uuid)
+    return {'ok': True, 'path': target.relative_to(root).as_posix(), 'name': target.name}
+
+
+def rename_path(uuid: str, relative: str, name: str) -> dict:
+    _item, root, source = _safe_target(uuid, relative)
+    if source == root:
+        raise PermissionError('La radice non può essere rinominata')
+    if not os.access(source.parent, os.W_OK):
+        raise PermissionError('Supporto non scrivibile')
+    target = _new_target(root, source.parent, name)
+    old_rel = source.relative_to(root).as_posix(); new_rel = target.relative_to(root).as_posix()
+    os.rename(source, target)
+    _migrate_metadata(uuid, old_rel, new_rel)
+    return {'ok': True, 'from': old_rel, 'path': new_rel, 'name': target.name}
+
+
+def move_paths(uuid: str, paths: list[str], destination: str) -> dict:
+    if not isinstance(paths, list) or not paths or len(paths) > 200:
+        raise ValueError('Selezione non valida')
+    _item, root, folder = _safe_target(uuid, destination, require_file=False)
+    if not os.access(folder, os.W_OK):
+        raise PermissionError('Supporto non scrivibile')
+    prepared = []
+    names = set()
+    for relative in paths:
+        _i, _r, source = _safe_target(uuid, str(relative))
+        if source == root:
+            raise PermissionError('La radice non può essere spostata')
+        if source.name in names:
+            raise FileExistsError(f'Conflitto nella selezione: {source.name}')
+        names.add(source.name)
+        target = _new_target(root, folder, source.name)
+        if source.is_dir() and (target == source or source in target.parents):
+            raise ValueError('Una cartella non può essere spostata dentro se stessa')
+        prepared.append((source, target, source.relative_to(root).as_posix(), target.relative_to(root).as_posix()))
+    for source, target, _old, _new in prepared:
+        os.rename(source, target)
+    for _source, _target, old_rel, new_rel in prepared:
+        _migrate_metadata(uuid, old_rel, new_rel)
+    return {'ok': True, 'moved': len(prepared), 'destination': '' if folder == root else folder.relative_to(root).as_posix()}
+
+
+def delete_paths(uuid: str, paths: list[str]) -> dict:
+    if not isinstance(paths, list) or not paths or len(paths) > 200:
+        raise ValueError('Selezione non valida')
+    prepared = []
+    for relative in paths:
+        _item, root, target = _safe_target(uuid, str(relative))
+        if target == root:
+            raise PermissionError('La radice non può essere eliminata')
+        if not os.access(target.parent, os.W_OK):
+            raise PermissionError('Supporto non scrivibile')
+        prepared.append((root, target, target.relative_to(root).as_posix()))
+    # Remove deepest paths first if a caller selected both a folder and one of its children.
+    unique = {}
+    for root, target, rel in prepared:
+        unique[rel] = (root, target, rel)
+    rows = sorted(unique.values(), key=lambda row: len(row[2]), reverse=True)
+    deleted = 0
+    for root, target, rel in rows:
+        if not target.exists():
+            continue
+        if target.is_dir(): shutil.rmtree(target)
+        else: target.unlink()
+        _drop_metadata(uuid, rel); deleted += 1
+    return {'ok': True, 'deleted': deleted}
+
+
 def file_info(uuid: str, relative: str) -> dict:
     item, root, target = _safe_target(uuid, relative, require_file=True)
     st = target.stat()

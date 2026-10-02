@@ -115,6 +115,17 @@ OpenAstro Control includes a removable-media hub plus a persistent NVMe library.
 
 The Media Hub provides an authenticated remote browser, direct HTTP Range streaming/downloads, an integrated browser player with resume position, local favorites, search/sort/category filters, recent-media indexing, lazy video/image thumbnails, and ffprobe metadata. LAN clients can also use `\\OPENASTRO\\Media` for removable USB media, `\\OPENASTRO\\NVMeMedia` for the persistent SHARE library, and `OpenAstro Media` over DLNA. The Media upload panel displays and copies the SMB path of the currently selected library. SMB/DLNA are restricted to the LAN; remote access uses the existing HTTPS control-panel authentication.
 
+Il browser Media include anche un **file manager autenticato**. Su librerie scrivibili puoi
+selezionare fino a 200 file/cartelle, creare cartelle, rinominare un elemento, spostare
+la selezione in un'altra cartella della **stessa libreria** e cancellare definitivamente
+file o alberi di directory. La modalità Sposta conserva la selezione mentre navighi e
+mostra `Sposta qui` nella cartella destinazione. Le operazioni passano da
+`POST /api/media/manage` con sessione + CSRF. Il backend rifiuta `..`, symlink, root
+della libreria, destinazioni già esistenti e move ricorsivi dentro la stessa cartella;
+rename/move non sovrascrivono mai file esistenti. Preferiti, progresso playback e indice
+seguono rename/move. La cancellazione è permanente: non esiste un cestino e non sono
+supportati move tra librerie/dispositivi differenti.
+
 Verifica sorgente 2026-09-30: `control-panel/static/{app.js,index.html}` aggiorna
 anche il suggerimento LAN dell'import quando cambia la libreria selezionata:
 NVMe usa `\\OPENASTRO\NVMeMedia`, USB usa il percorso pubblicato dal dispositivo.
@@ -133,7 +144,12 @@ la sottocartella scelta nell'import web resta indicata nel campo destinazione.
 Il Media Hub include un client Transmission headless controllato soltanto dal
 pannello autenticato. Il provider di ricerca predefinito è 1337x; sono accettati
 anche magnet link e file `.torrent`. Il pannello mostra coda, velocità, ETA, peer,
-seed/leecher dei risultati, progresso e stato. La staging resta fuori dal catalogo
+seed/leecher dei risultati, progresso e stato. Ogni job espone controlli evidenti
+**Metti in pausa/Riprendi** e **Elimina download**; l'eliminazione manuale rimuove il
+job e i soli dati ancora nella staging, mentre non tocca media già importati.
+La sezione `Importati di recente` ha `Cancella lista`: nasconde lo storico completati
+senza eliminare i file e senza rimuovere i receipt interni usati per evitare doppi
+import. La staging resta fuori dal catalogo
 in `/share/.openastro-torrents`; a completamento il payload viene spostato in
 `/share/Media/Downloads` e il job Transmission viene rimosso con
 `delete-local-data=false`, quindi il media finale resta disponibile.

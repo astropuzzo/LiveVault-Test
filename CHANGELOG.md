@@ -19,6 +19,11 @@
 - L'eject NVMe ferma il client torrent prima di smontare SHARE e l'attach ricrea
   le directory e riavvia il servizio. Cache PWA dedicata al rollout torrent.
 - Architettura, installazione, limiti e rollback: [Torrent Manager](docs/TORRENT-MANAGER.md).
+- Media Hub aggiunge un file manager autenticato: selezione multipla, nuova cartella,
+  rename, move intra-libreria e delete ricorsivo, con path confinati, nessun overwrite
+  e metadati/favoriti/progresso aggiornati dopo rename/move.
+- I controlli torrent sono resi espliciti per ogni job (pausa/riprendi/elimina) e lo
+  storico `Importati di recente` può essere svuotato senza cancellare media o receipt.
 
 ## 3.5.1 — 2026-09-30
 

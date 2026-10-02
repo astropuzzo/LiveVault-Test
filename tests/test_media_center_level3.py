@@ -169,3 +169,81 @@ def test_concurrent_thumbnails_generate_one_complete_jpeg(store, monkeypatch):
     assert all(result['size'] == 120 for result in results)
     assert '-threads' in commands[0] and commands[0][commands[0].index('-threads') + 1] == '1'
     assert not list(media.THUMB_ROOT.glob('*.tmp.jpg'))
+
+
+def test_file_manager_rename_move_delete_and_metadata(store, monkeypatch):
+    root = store / 'library'
+    root.mkdir()
+    source_dir = root / 'Films'
+    source_dir.mkdir()
+    movie = source_dir / 'Movie.mp4'
+    movie.write_bytes(b'video')
+    target_dir = root / 'Archive'
+    target_dir.mkdir()
+    monkeypatch.setattr(media, '_device', lambda *a, **k: {'mountpoint': str(root), 'label': 'Films'})
+
+    # Existing fixture metadata follows rename/move instead of becoming orphaned.
+    media.update_progress('USB-1', 'Films/Movie.mp4', 120, 1000, client='phone')
+    media.set_favorite('USB-1', 'Films/Movie.mp4', True)
+
+    renamed = media.rename_path('USB-1', 'Films/Movie.mp4', 'Renamed.mp4')
+    assert renamed['path'] == 'Films/Renamed.mp4'
+    assert not movie.exists()
+    assert (source_dir / 'Renamed.mp4').exists()
+    with media._db() as conn:
+        assert conn.execute("SELECT 1 FROM media_items WHERE uuid='USB-1' AND path='Films/Renamed.mp4'").fetchone()
+        assert conn.execute("SELECT 1 FROM media_favorites WHERE uuid='USB-1' AND path='Films/Renamed.mp4'").fetchone()
+        assert conn.execute("SELECT position FROM media_playback WHERE uuid='USB-1' AND path='Films/Renamed.mp4'").fetchone()['position'] == pytest.approx(120)
+
+    moved = media.move_paths('USB-1', ['Films/Renamed.mp4'], 'Archive')
+    assert moved['moved'] == 1
+    assert (target_dir / 'Renamed.mp4').exists()
+    with media._db() as conn:
+        assert conn.execute("SELECT 1 FROM media_favorites WHERE uuid='USB-1' AND path='Archive/Renamed.mp4'").fetchone()
+        assert conn.execute("SELECT position FROM media_playback WHERE uuid='USB-1' AND path='Archive/Renamed.mp4'").fetchone()['position'] == pytest.approx(120)
+
+    deleted = media.delete_paths('USB-1', ['Archive/Renamed.mp4'])
+    assert deleted['deleted'] == 1
+    assert not (target_dir / 'Renamed.mp4').exists()
+    with media._db() as conn:
+        assert not conn.execute("SELECT 1 FROM media_items WHERE uuid='USB-1' AND path='Archive/Renamed.mp4'").fetchone()
+        assert not conn.execute("SELECT 1 FROM media_favorites WHERE uuid='USB-1' AND path='Archive/Renamed.mp4'").fetchone()
+        assert not conn.execute("SELECT 1 FROM media_playback WHERE uuid='USB-1' AND path='Archive/Renamed.mp4'").fetchone()
+
+
+def test_file_manager_rejects_conflicts_escape_and_recursive_move(store, monkeypatch):
+    root = store / 'library-safe'
+    root.mkdir()
+    src = root / 'Source'
+    src.mkdir()
+    (src / 'a.txt').write_text('a')
+    dest = root / 'Dest'
+    dest.mkdir()
+    (dest / 'a.txt').write_text('existing')
+    child = src / 'Child'
+    child.mkdir()
+    monkeypatch.setattr(media, '_device', lambda *a, **k: {'mountpoint': str(root), 'label': 'Safe'})
+
+    with pytest.raises(FileExistsError):
+        media.move_paths('USB-1', ['Source/a.txt'], 'Dest')
+    assert (src / 'a.txt').exists() and (dest / 'a.txt').read_text() == 'existing'
+
+    with pytest.raises((ValueError, PermissionError, FileNotFoundError)):
+        media.delete_paths('USB-1', ['../outside'])
+
+    with pytest.raises(ValueError, match='dentro se stessa'):
+        media.move_paths('USB-1', ['Source'], 'Source/Child')
+    assert src.exists()
+
+
+def test_file_manager_create_folder_and_no_overwrite(store, monkeypatch):
+    root = store / 'library-folders'
+    root.mkdir()
+    monkeypatch.setattr(media, '_device', lambda *a, **k: {'mountpoint': str(root), 'label': 'Folders'})
+    result = media.create_folder('USB-1', '', 'Nuova')
+    assert result['path'] == 'Nuova'
+    assert (root / 'Nuova').is_dir()
+    with pytest.raises(FileExistsError):
+        media.create_folder('USB-1', '', 'Nuova')
+    with pytest.raises(ValueError):
+        media.create_folder('USB-1', '', '../bad')

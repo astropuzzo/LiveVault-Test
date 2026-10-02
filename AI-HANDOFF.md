@@ -396,6 +396,28 @@ W medi, W di picco e copertura, senza stimare periodi mancanti o campioni legacy
 Rollback: revert del commit UI/API e restart del solo `openastro-control.service`;
 il database telemetria non cambia schema e non richiede migrazioni.
 
+### 2026-10-02 — Media file manager + controlli Torrent completi
+Il Media Hub ora gestisce direttamente i file della libreria selezionata. Endpoint
+autenticato/CSRF: `POST /api/media/manage` con azioni `mkdir`, `rename`, `move`,
+`delete`. La UI supporta selezione multipla (max 200), seleziona tutto, nuova cartella,
+rename singolo, modalità `Sposta qui` navigabile e cancellazione ricorsiva permanente.
+Le mutazioni restano confinate al mount della libreria tramite `_safe_target`; sono
+rifiutati `..`, symlink, root, destinazioni esistenti e una cartella dentro se stessa.
+Non esiste cestino e il move è solo intra-libreria, quindi nessun copy cross-device.
+`media_items`, `media_favorites` e `media_playback` seguono rename/move e vengono
+ripuliti dopo delete; nessuna migrazione schema.
+
+Torrent Manager rende visibili per ogni job `Metti in pausa/Riprendi` e `Elimina
+download`; remove manuale usa ancora `delete-local-data=true` e quindi elimina la
+staging parziale, mai un media già importato. `POST /api/torrents/history/clear` marca
+lo storico completati come nascosto mantenendo file finali e receipt anti-duplicazione.
+QA 2026-10-02 su NVMe reale: `/share/Media` rilevato `LETTURA / SCRITTURA`, 4 elementi,
+selettori 32x32 mobile / 28x28 desktop, pulsanti torrent 40 px mobile, nessun overflow;
+selezione → rename/move/delete e modalità `Sposta qui` verificate senza mutazioni reali.
+Rollback: ripristinare `media_center.py`, `torrent_manager.py`, `upload_server.py` e gli
+asset statici dal backup rollout, poi riavviare solo `openastro-control.service`.
+Transmission e LiveVault non richiedono restart.
+
 ## Prestazioni e limiti
 Campione iniziale con recorder già bloccati: RAM disponibile 2,4 GiB, disco interno
 51%, CPU inattiva 82–93%, niente swap/I/O wait corrente, temperatura 48,2 C.

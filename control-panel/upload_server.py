@@ -165,11 +165,13 @@ class Handler(panel.Handler):
 
     def do_POST(self) -> None:
         parsed = urlparse(self.path)
-        if parsed.path in {'/api/torrents/add', '/api/torrents/add-file', '/api/torrents/action'}:
+        if parsed.path in {'/api/torrents/add', '/api/torrents/add-file', '/api/torrents/action', '/api/torrents/history/clear'}:
             if not self._torrent_session():
                 return
             try:
-                if parsed.path == '/api/torrents/add-file':
+                if parsed.path == '/api/torrents/history/clear':
+                    result = torrent_manager.clear_recent_imports()
+                elif parsed.path == '/api/torrents/add-file':
                     length = int(self.headers.get('Content-Length', '0'))
                     if not 0 < length <= 5 * 1024 * 1024:
                         raise ValueError('File .torrent vuoto o troppo grande.')
@@ -188,6 +190,48 @@ class Handler(panel.Handler):
             except torrent_manager.TorrentError as exc:
                 self.send_json({'ok': False, 'error': str(exc)}, 502)
             return
+        if parsed.path == '/api/media/manage':
+            session = self.require_session()
+            if not session:
+                return
+            if self.headers.get('X-CSRF-Token') != session['csrf']:
+                self.send_json({'ok': False, 'error': 'Sessione scaduta: ricarica la pagina.'}, 403)
+                return
+            try:
+                try:
+                    length = int(self.headers.get('Content-Length', '0'))
+                except ValueError as exc:
+                    raise ValueError('Content-Length non valido.') from exc
+                if not 0 < length <= 128 * 1024:
+                    raise ValueError('Payload file manager non valido.')
+                payload = json.loads(self.rfile.read(length).decode('utf-8'))
+                if not isinstance(payload, dict):
+                    raise ValueError('Payload file manager non valido.')
+                uuid = str(payload.get('uuid', '')).strip()
+                action = str(payload.get('action', '')).strip()
+                if action == 'mkdir':
+                    result = media_center.create_folder(uuid, str(payload.get('path', '')), str(payload.get('name', '')))
+                elif action == 'rename':
+                    result = media_center.rename_path(uuid, str(payload.get('path', '')), str(payload.get('name', '')))
+                elif action == 'move':
+                    result = media_center.move_paths(uuid, payload.get('paths') or [], str(payload.get('destination', '')))
+                elif action == 'delete':
+                    result = media_center.delete_paths(uuid, payload.get('paths') or [])
+                else:
+                    raise ValueError('Azione file manager non valida.')
+                self.send_json(result)
+            except (ValueError, json.JSONDecodeError) as exc:
+                self.send_json({'ok': False, 'error': str(exc)}, 400)
+            except FileExistsError as exc:
+                self.send_json({'ok': False, 'error': str(exc)}, 409)
+            except (FileNotFoundError, NotADirectoryError) as exc:
+                self.send_json({'ok': False, 'error': str(exc)}, 404)
+            except PermissionError as exc:
+                self.send_json({'ok': False, 'error': str(exc)}, 403)
+            except OSError as exc:
+                self.send_json({'ok': False, 'error': f'Operazione file fallita: {exc}'}, 500)
+            return
+
         if parsed.path != '/api/media/upload':
             return super().do_POST()
 
