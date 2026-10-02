@@ -220,6 +220,23 @@ def test_completed_torrent_moves_to_media_then_removes_job_without_deleting_data
     assert receipt["path"] == "Downloads/Example.mkv"
 
 
+def test_clear_recent_imports_hides_history_but_keeps_dedup_receipts(tmp_path, monkeypatch):
+    state = tmp_path / "state"
+    monkeypatch.setattr(torrent, "STATE_ROOT", state)
+    monkeypatch.setattr(torrent, "IMPORT_STATE", state / "torrent-imports.json")
+    torrent._save_receipts({
+        "HASH1": {"name": "One.mkv", "path": "Downloads/One.mkv", "ts": 10},
+        "HASH2": {"name": "Two.mkv", "path": "Downloads/Two.mkv", "ts": 20},
+    })
+    assert len(torrent._recent_imports()) == 2
+    result = torrent.clear_recent_imports()
+    assert result == {"ok": True, "hidden": 2}
+    assert torrent._recent_imports() == []
+    receipts = torrent._load_receipts()
+    assert set(receipts) == {"HASH1", "HASH2"}
+    assert all(row["history_hidden"] is True for row in receipts.values())
+
+
 def test_install_and_ui_contracts():
     installer = (ROOT / "scripts" / "install-torrent-manager.sh").read_text(encoding="utf-8")
     handoff = (ROOT / "scripts" / "nvme-handoff.py").read_text(encoding="utf-8")

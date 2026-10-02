@@ -46,7 +46,7 @@
     q('#torrentStatusError').textContent=data.error||'';
 
     const jobs=data.torrents||[];
-    q('#torrentQueueCount').textContent=`${jobs.length} ${jobs.length===1?'torrent':'torrent'}`;
+    q('#torrentQueueCount').textContent=`${jobs.length} torrent · controlli sotto ogni download`;
     q('#torrentQueue').innerHTML=jobs.length?jobs.map(job=>{
       const progress=Number(job.size)>0?Number(job.percent||0):Number(job.metadata_percent||0);
       const paused=Number(job.status)===0;
@@ -54,7 +54,7 @@
       return `<article class="torrent-job">
         <div class="torrent-job-top"><div><strong title="${esc(job.name)}">${esc(job.name||'Recupero metadata…')}</strong><small>${fmtBytes(job.downloaded)} / ${fmtBytes(job.size)} · ${Number(job.percent||0).toFixed(1)}%</small></div><span class="torrent-job-state">${esc(state)}</span></div>
         <div class="torrent-progress" style="--progress:${Math.max(0,Math.min(100,progress))}%"><i></i></div>
-        <div class="torrent-job-meta"><div class="torrent-job-metrics"><span>↓ <b>${fmtRate(job.rate_down)}</b></span><span>↑ <b>${fmtRate(job.rate_up)}</b></span><span>ETA <b>${fmtEta(job.eta)}</b></span><span>Peer <b>${job.peers}</b></span><span>Ratio <b>${Number(job.ratio||0).toFixed(2)}</b></span></div><div class="torrent-job-actions"><button data-torrent-action="${paused?'resume':'pause'}" data-torrent-id="${job.id}">${paused?'Riprendi':'Pausa'}</button><button class="danger" data-torrent-action="remove" data-torrent-id="${job.id}">Annulla</button></div></div>
+        <div class="torrent-job-meta"><div class="torrent-job-metrics"><span>↓ <b>${fmtRate(job.rate_down)}</b></span><span>↑ <b>${fmtRate(job.rate_up)}</b></span><span>ETA <b>${fmtEta(job.eta)}</b></span><span>Peer <b>${job.peers}</b></span><span>Ratio <b>${Number(job.ratio||0).toFixed(2)}</b></span></div><div class="torrent-job-actions"><button data-torrent-action="${paused?'resume':'pause'}" data-torrent-id="${job.id}">${paused?'▶ Riprendi':'⏸ Metti in pausa'}</button><button class="danger" data-torrent-action="remove" data-torrent-id="${job.id}">✕ Elimina download</button></div></div>
       </article>`;
     }).join(''):'<div class="torrent-empty">Nessun torrent in coda.</div>';
     q('#torrentQueue').querySelectorAll('[data-torrent-action]').forEach(button=>button.addEventListener('click',()=>torrentAction(button)));
@@ -191,10 +191,25 @@
   async function torrentAction(button){
     const id=Number(button.dataset.torrentId),action=button.dataset.torrentAction;
     if(!id)return;
-    if(action==='remove'&&!window.confirm('Annullare il torrent e cancellare i dati parziali dalla staging?'))return;
+    if(action==='remove'&&!window.confirm('Eliminare questo download da Transmission e cancellare i dati parziali dalla staging? I file già importati in Media non vengono toccati.'))return;
     button.disabled=true;
     try{
       await api('/api/torrents/action',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:JSON.stringify({id,action})});
+      await refreshStatus(true);
+    }catch(error){if(typeof toast==='function')toast(error.message,true);}
+    finally{button.disabled=false;}
+  }
+
+
+  async function clearImportHistory(){
+    const button=q('#torrentClearImports');
+    if(!window.confirm('Cancellare la lista dei download completati? I file nella libreria Media resteranno intatti.'))return;
+    button.disabled=true;
+    try{
+      await api('/api/torrents/history/clear',{method:'POST',headers:{'X-CSRF-Token':csrf},body:''});
+      if(lastGoodStatus)lastGoodStatus={...lastGoodStatus,recent_imports:[]};
+      q('#torrentImportsWrap').hidden=true; q('#torrentImports').innerHTML='';
+      if(typeof toast==='function')toast('Lista download completati cancellata.');
       await refreshStatus(true);
     }catch(error){if(typeof toast==='function')toast(error.message,true);}
     finally{button.disabled=false;}
@@ -210,6 +225,7 @@
   q('#torrentMagnet').addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();addMagnet();}});
   q('#torrentFile').addEventListener('change',event=>{const file=event.target.files?.[0];event.target.value='';addTorrentFile(file);});
   q('#torrentRefresh').addEventListener('click',()=>refreshStatus(true));
+  q('#torrentClearImports').addEventListener('click',clearImportHistory);
   refreshStatus(true);
   setInterval(refreshStatus,2000);
 })();

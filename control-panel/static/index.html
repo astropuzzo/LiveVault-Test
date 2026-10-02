@@ -14,8 +14,8 @@
   <link rel="preload" href="/fonts/mona-sans-latin-wght.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="/diagnostics.css?v=3.5.1">
   <link rel="stylesheet" href="/media-upload.css?v=3.5.1">
-  <link rel="stylesheet" href="/torrent-manager.css?v=3.5.1-torrent2">
-  <link rel="stylesheet" href="/app.css?v=3.5.1-energy1">
+  <link rel="stylesheet" href="/torrent-manager.css?v=3.5.1-torrent5">
+  <link rel="stylesheet" href="/app.css?v=3.5.1-filemanager1">
 </head>
 <body data-view="dashboard" class="is-loading">
   <div class="app-shell">
@@ -269,12 +269,12 @@
             </section>
 
             <section>
-              <div class="torrent-section-head"><span>DOWNLOAD</span><small id="torrentQueueCount">0 torrent</small></div>
+              <div class="torrent-section-head"><span>DOWNLOAD</span><small id="torrentQueueCount">0 torrent · usa Pausa/Riprendi o Elimina su ogni riga</small></div>
               <div class="torrent-queue" id="torrentQueue"><div class="torrent-empty">Nessun torrent in coda.</div></div>
             </section>
 
             <section id="torrentImportsWrap" hidden>
-              <div class="torrent-section-head"><span>IMPORTATI DI RECENTE</span><small>torrent rimosso · media conservato</small></div>
+              <div class="torrent-section-head torrent-import-head"><span>IMPORTATI DI RECENTE</span><div><small>torrent rimosso · media conservato</small><button id="torrentClearImports" type="button">Cancella lista</button></div></div>
               <div class="torrent-imports" id="torrentImports"></div>
             </section>
           </section>
@@ -291,6 +291,18 @@
               <div class="media-filter-row">
                 <button class="active" data-media-filter="all">Tutto</button><button data-media-filter="video">Video</button><button data-media-filter="audio">Audio</button><button data-media-filter="image">Foto</button><button data-media-filter="favorite">Preferiti</button>
                 <span class="media-view-switch"><button id="mediaGridView" class="active" title="Griglia">GRID</button><button id="mediaListView" title="Lista">LIST</button></span>
+              </div>
+              <div class="media-manager-bar" id="mediaManagerBar">
+                <div class="media-manager-status"><strong>FILE MANAGER</strong><span id="mediaSelectionCount">0 selezionati</span></div>
+                <div class="media-manager-actions">
+                  <button id="mediaNewFolder" type="button">Nuova cartella</button>
+                  <button id="mediaSelectAll" type="button">Seleziona tutto</button>
+                  <button id="mediaRename" type="button" disabled>Rinomina</button>
+                  <button id="mediaMove" type="button" disabled>Sposta</button>
+                  <button id="mediaDelete" class="danger" type="button" disabled>Elimina</button>
+                  <button id="mediaSelectionCancel" type="button" disabled>Annulla selezione</button>
+                </div>
+                <small id="mediaManagerHint">Seleziona file o cartelle per gestirli.</small>
               </div>
             </div>
             <div id="mediaFiles" class="media-files-v2 grid"><div class="media-empty"><strong>Nessun supporto</strong><small>Collega un'unità USB per iniziare.</small></div></div>
@@ -581,8 +593,8 @@
 
   <script src="/hls.min.js?v=1.7.2" defer></script>
   <script src="/diagnostics.js?v=3.5.1" defer></script>
-  <script src="/app.js?v=3.5.1-energy1" defer></script>
-  <script src="/torrent-manager.js?v=3.5.1-torrent4" defer></script>
+  <script src="/app.js?v=3.5.1-filemanager1" defer></script>
+  <script src="/torrent-manager.js?v=3.5.1-torrent5" defer></script>
   <script src="/media-upload.js?v=3.5.1" defer></script>
   <script src="/motion.js?v=3.5.1" defer></script>
 </body>

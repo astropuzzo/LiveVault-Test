@@ -608,6 +608,8 @@ let mediaFilter = 'all';
 let mediaView = 'grid';
 let mediaSearchText = '';
 let mediaSort = 'name';
+let mediaSelection = new Set();
+let mediaMoveMode = false;
 let mediaPlayerPath = '';
 let mediaPlayerName = '';
 let mediaPlayerUuid = '';
@@ -625,11 +627,76 @@ function mediaFilteredItems() {
   else items.sort((a,b) => (a.type !== b.type ? (a.type === 'dir' ? -1 : 1) : a.name.localeCompare(b.name, 'it', {numeric:true})));
   return items;
 }
+function currentMediaDevice(){ return (latestState?.media?.devices||[]).find(item=>item.uuid===mediaUuid) || null; }
+function mediaWritable(){ return Boolean(currentMediaDevice()?.mounted && currentMediaDevice()?.writable); }
+function mediaSelectionButton(item){
+  const selected=mediaSelection.has(item.path);
+  return `<button class="media-select-toggle" type="button" data-media-select="${escapeHtml(item.path)}" aria-pressed="${selected?'true':'false'}" title="${selected?'Deseleziona':'Seleziona'} ${escapeHtml(item.name)}"></button>`;
+}
+function clearMediaSelection(){ mediaSelection.clear(); mediaMoveMode=false; renderMediaManager(); }
+function renderMediaManager(){
+  const count=mediaSelection.size, writable=mediaWritable(), bar=$('#mediaManagerBar');
+  if(!bar)return;
+  bar.classList.toggle('readonly',!writable); bar.classList.toggle('move-mode',mediaMoveMode);
+  $('#mediaSelectionCount').textContent=`${count} selezionat${count===1?'o':'i'}`;
+  $('#mediaNewFolder').disabled=!writable||mediaMoveMode;
+  $('#mediaSelectAll').disabled=!writable||mediaMoveMode||!mediaFilteredItems().length;
+  $('#mediaRename').disabled=!writable||mediaMoveMode||count!==1;
+  $('#mediaDelete').disabled=!writable||mediaMoveMode||count<1;
+  $('#mediaSelectionCancel').disabled=count<1&&!mediaMoveMode;
+  $('#mediaMove').disabled=!writable||count<1;
+  $('#mediaMove').textContent=mediaMoveMode?'Sposta qui':'Sposta';
+  $('#mediaManagerHint').textContent=!writable?'Supporto in sola lettura: gestione file disabilitata.':mediaMoveMode?`Naviga nella cartella destinazione e premi “Sposta qui”. Selezione: ${count}.`:'Seleziona file o cartelle per rinominare, spostare o eliminare.';
+}
+async function mediaManage(payload){
+  const response=await fetch('/api/media/manage',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:JSON.stringify({uuid:mediaUuid,...payload}),signal:AbortSignal.timeout(30000)});
+  if(response.status===401){showLogin();throw new Error('Sessione scaduta.');}
+  let result={};try{result=await response.json();}catch(_){}
+  if(!response.ok||result.ok===false)throw new Error(result.error||`HTTP ${response.status}`);
+  return result;
+}
+async function refreshMediaAfterMutation(){
+  mediaSelection.clear(); mediaMoveMode=false;
+  await loadMediaDirectory(mediaPath);
+  await loadMediaLibrary(true);
+  await loadMediaHome(true);
+  renderMediaManager();
+}
+async function mediaCreateFolder(){
+  const name=window.prompt('Nome della nuova cartella:','Nuova cartella'); if(name===null)return;
+  try{await mediaManage({action:'mkdir',path:mediaPath,name});toast(`Cartella “${name.trim()}” creata.`);await refreshMediaAfterMutation();}
+  catch(error){toast(error.message,true);}
+}
+async function mediaRenameSelected(){
+  if(mediaSelection.size!==1)return; const path=[...mediaSelection][0]; const item=mediaItems.find(row=>row.path===path);
+  const oldName=item?.name||path.split('/').at(-1); const name=window.prompt('Nuovo nome:',oldName); if(name===null||name===oldName)return;
+  try{await mediaManage({action:'rename',path,name});toast('Elemento rinominato.');await refreshMediaAfterMutation();}
+  catch(error){toast(error.message,true);}
+}
+async function mediaDeleteSelected(){
+  const paths=[...mediaSelection];if(!paths.length)return;
+  if(!window.confirm(`Eliminare definitivamente ${paths.length} element${paths.length===1?'o':'i'}? Le cartelle verranno eliminate con tutto il contenuto.`))return;
+  try{const result=await mediaManage({action:'delete',paths});toast(`${result.deleted||paths.length} elementi eliminati.`);await refreshMediaAfterMutation();}
+  catch(error){toast(error.message,true);}
+}
+async function mediaMoveSelected(){
+  if(!mediaSelection.size)return;
+  if(!mediaMoveMode){mediaMoveMode=true;renderMediaManager();return;}
+  try{const result=await mediaManage({action:'move',paths:[...mediaSelection],destination:mediaPath});toast(`${result.moved||mediaSelection.size} elementi spostati.`);await refreshMediaAfterMutation();}
+  catch(error){toast(error.message,true);}
+}
+function toggleMediaSelection(path){
+  if(!mediaWritable())return;
+  if(mediaSelection.has(path))mediaSelection.delete(path);else if(mediaSelection.size<200)mediaSelection.add(path);else return toast('Puoi selezionare al massimo 200 elementi.',true);
+  renderMediaFiles(); renderMediaManager();
+}
+
 function mediaCard(item) {
-  if (item.type === 'dir') return `<button class="media-card media-dir" data-media-path="${escapeHtml(item.path)}"><div class="media-art folder-art"><span>DIR</span></div><div class="media-card-copy"><strong>${escapeHtml(item.name)}</strong><small>Cartella</small></div></button>`;
+  const selected=mediaSelection.has(item.path), select=mediaWritable()?mediaSelectionButton(item):'';
+  if (item.type === 'dir') return `<article class="media-card media-dir ${selected?'selected':''}" data-category="dir">${select}<button class="media-dir-open" type="button" data-media-path="${escapeHtml(item.path)}"><div class="media-art folder-art"><span>DIR</span></div><div class="media-card-copy"><strong>${escapeHtml(item.name)}</strong><small>Cartella</small></div></button></article>`;
   const favorite = isMediaFavorite(item.path);
   const art = item.thumbnail ? `<div class="media-art has-thumb"><img loading="lazy" src="${escapeHtml(mediaThumbUrl(item.path))}" alt=""><span>${mediaCategoryLabel(item.category)}</span></div>` : `<div class="media-art type-art ${escapeHtml(item.category)}"><span>${mediaCategoryLabel(item.category)}</span></div>`;
-  return `<article class="media-card" data-category="${escapeHtml(item.category)}">${art}<div class="media-card-copy"><strong title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</strong><small>${bytes(item.size)} · ${mediaDate(item.modified)}</small></div><div class="media-card-actions">${item.streamable ? `<button data-media-play="${escapeHtml(item.path)}" data-media-name="${escapeHtml(item.name)}" data-media-category="${escapeHtml(item.category)}">Riproduci</button>` : `<a href="${escapeHtml(mediaUrl(item.path))}" target="_blank" rel="noopener">Apri</a>`}<a href="${escapeHtml(mediaUrl(item.path,true))}">Download</a><button class="media-fav ${favorite?'active':''}" data-media-fav="${escapeHtml(item.path)}" data-media-name="${escapeHtml(item.name)}" title="Preferito">${favorite?'★':'☆'}</button></div></article>`;
+  return `<article class="media-card ${selected?'selected':''}" data-category="${escapeHtml(item.category)}">${select}${art}<div class="media-card-copy"><strong title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</strong><small>${bytes(item.size)} · ${mediaDate(item.modified)}</small></div><div class="media-card-actions">${item.streamable ? `<button data-media-play="${escapeHtml(item.path)}" data-media-name="${escapeHtml(item.name)}" data-media-category="${escapeHtml(item.category)}">Riproduci</button>` : `<a href="${escapeHtml(mediaUrl(item.path))}" target="_blank" rel="noopener">Apri</a>`}<a href="${escapeHtml(mediaUrl(item.path,true))}">Download</a><button class="media-fav ${favorite?'active':''}" data-media-fav="${escapeHtml(item.path)}" data-media-name="${escapeHtml(item.name)}" title="Preferito">${favorite?'★':'☆'}</button></div></article>`;
 }
 function renderMediaFiles() {
   const host = $('#mediaFiles');
@@ -637,9 +704,11 @@ function renderMediaFiles() {
   const items = mediaItemsUuid === mediaUuid ? mediaFilteredItems() : [];
   host.className = `media-files-v2 ${mediaView}`;
   host.innerHTML = items.length ? items.map(mediaCard).join('') : '<div class="media-empty"><strong>Nessun risultato</strong><small>Prova a cambiare ricerca o filtro.</small></div>';
-  $$('.media-dir').forEach(button => button.addEventListener('click', () => loadMediaDirectory(button.dataset.mediaPath)));
+  $$('.media-dir-open').forEach(button => button.addEventListener('click', () => loadMediaDirectory(button.dataset.mediaPath)));
+  $$('[data-media-select]').forEach(button => button.addEventListener('click', event => {event.stopPropagation();toggleMediaSelection(button.dataset.mediaSelect);}));
   $$('[data-media-play]').forEach(button => button.addEventListener('click', () => openMediaPlayer(button.dataset.mediaPlay, button.dataset.mediaName, button.dataset.mediaCategory)));
   $$('[data-media-fav]').forEach(button => button.addEventListener('click', () => toggleMediaFavorite(button.dataset.mediaFav, button.dataset.mediaName)));
+  if(typeof renderMediaManager==='function')renderMediaManager();
   globalThis.OpenAstroMotion?.render($('#mediaFiles'));
 }
 function renderMediaLibrary(library) {
@@ -671,6 +740,7 @@ async function loadMediaLibrary(force = false) {
 }
 async function loadMediaDirectory(path = mediaPath) {
   const uuid = mediaUuid;
+  if((typeof mediaMoveMode==='undefined'||!mediaMoveMode) && String(path||'')!==String(mediaPath||'') && typeof mediaSelection!=='undefined')mediaSelection.clear();
   if (!uuid) return;
   const request = ++mediaDirectoryRequest;
   mediaBusy = true;
@@ -750,10 +820,10 @@ function renderMedia(media = {}) {
     const usage = device.usage, usedPct = usage?.total ? usage.used/usage.total*100 : 0;
     return `<div class="media-device ${device.uuid === mediaUuid ? 'selected' : ''} ${device.mounted?'':'offline'}"><button class="media-select" data-media-uuid="${escapeHtml(device.uuid)}" ${device.mounted?'':'disabled'}><strong>${escapeHtml(device.label || 'USB')}</strong><small>${escapeHtml(device.model || '')}</small><span>${usage ? `${bytes(usage.free)} liberi · ${escapeHtml(device.fstype.toUpperCase())}` : `${escapeHtml(device.fstype.toUpperCase())} · ricordato / offline`}</span><div class="mini-capacity"><i style="width:${usedPct.toFixed(1)}%"></i></div></button>${device.mounted ? (device.ejectable === false ? '<span class="media-offline-chip">NVME</span>' : `<button class="media-eject" data-media-eject="${escapeHtml(device.uuid)}" title="Espelli in sicurezza">EJECT</button>`) : '<span class="media-offline-chip">OFFLINE</span>'}</div>`;
   }).join('') : '<div class="media-empty side"><strong>Nessuna USB</strong><small>Collega un supporto rimovibile.</small></div>';
-  $$('.media-select').forEach(button => button.addEventListener('click', () => { mediaUuid = button.dataset.mediaUuid; mediaPath=''; mediaSignature=''; mediaItems=[]; mediaItemsUuid=mediaUuid; renderMediaLibrary(null); renderMediaFiles(); renderMedia(media); }));
+  $$('.media-select').forEach(button => button.addEventListener('click', () => { if(typeof mediaSelection!=='undefined')mediaSelection.clear(); if(typeof mediaMoveMode!=='undefined')mediaMoveMode=false; mediaUuid = button.dataset.mediaUuid; mediaPath=''; mediaSignature=''; mediaItems=[]; mediaItemsUuid=mediaUuid; renderMediaLibrary(null); renderMediaFiles(); renderMedia(media); }));
   $$('.media-eject').forEach(button => button.addEventListener('click', event => { event.stopPropagation(); openConfirm('media_eject',{uuid:button.dataset.mediaEject}); }));
   if (selected) {
-    $('#mediaDriveModel').textContent = `${selected.model || 'USB STORAGE'} · ${String(selected.fstype||'').toUpperCase()} · READ-ONLY`;
+    $('#mediaDriveModel').textContent = `${selected.model || 'USB STORAGE'} · ${String(selected.fstype||'').toUpperCase()} · ${selected.writable?'LETTURA / SCRITTURA':'SOLA LETTURA'}`;
     $('#mediaDriveName').textContent = selected.label || 'Media USB'; const usage=selected.usage;
     $('#mediaDriveMeta').textContent = `${bytes(usage?.used||0)} usati su ${bytes(usage?.total||selected.size||0)}`; $('#mediaDriveFree').textContent = bytes(usage?.free||0); $('#mediaDriveBar').style.width = `${usage?.total ? usage.used/usage.total*100 : 0}%`;
   } else { $('#mediaDriveModel').textContent='NESSUN SUPPORTO'; $('#mediaDriveName').textContent='Media USB'; $('#mediaDriveMeta').textContent='Inserisci un dispositivo USB rimovibile.'; $('#mediaDriveFree').textContent='—'; $('#mediaDriveBar').style.width='0%'; }
@@ -1024,6 +1094,12 @@ $('#mediaSearch').addEventListener('input', event => { mediaSearchText = event.t
 $('#mediaSort').addEventListener('change', event => { mediaSort = event.target.value || 'name'; renderMediaFiles(); });
 $('#mediaGridView').addEventListener('click', () => { mediaView='grid'; $('#mediaGridView').classList.add('active'); $('#mediaListView').classList.remove('active'); renderMediaFiles(); });
 $('#mediaListView').addEventListener('click', () => { mediaView='list'; $('#mediaListView').classList.add('active'); $('#mediaGridView').classList.remove('active'); renderMediaFiles(); });
+$('#mediaNewFolder').addEventListener('click',mediaCreateFolder);
+$('#mediaSelectAll').addEventListener('click',()=>{for(const item of mediaFilteredItems().slice(0,200))mediaSelection.add(item.path);renderMediaFiles();renderMediaManager();});
+$('#mediaRename').addEventListener('click',mediaRenameSelected);
+$('#mediaMove').addEventListener('click',mediaMoveSelected);
+$('#mediaDelete').addEventListener('click',mediaDeleteSelected);
+$('#mediaSelectionCancel').addEventListener('click',()=>{clearMediaSelection();renderMediaFiles();});
 $('#mediaLibraryRefresh').addEventListener('click', () => loadMediaLibrary(true));
 $('#mediaPlayerClose').addEventListener('click', closeMediaPlayer);
 $('#mediaPlayerDialog').addEventListener('close', () => { const media=$('#mediaPlayerStage').querySelector('video,audio'); if(media) saveMediaProgress(media,true); if(mediaResumeTimer) clearInterval(mediaResumeTimer); mediaResumeTimer=null; mediaSubtitleController?.destroy?.(); mediaSubtitleController=null; stopMediaHls(); mediaPlaybackBase=0; mediaPlaybackDuration=0; $('#mediaPlayerStage').innerHTML=''; setTimeout(()=>loadMediaHome(true),500); });

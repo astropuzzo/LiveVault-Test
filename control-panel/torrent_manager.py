@@ -453,9 +453,22 @@ def _save_receipts(value: dict) -> None:
 
 def _recent_imports() -> list[dict]:
     with _IMPORT_LOCK:
-        values = list(_load_receipts().values())
+        values = [item for item in _load_receipts().values() if not (item or {}).get("history_hidden")]
     values.sort(key=lambda item: int((item or {}).get("ts") or 0), reverse=True)
     return values[:8]
+
+
+def clear_recent_imports() -> dict:
+    """Hide completed-download history without removing media or dedup receipts."""
+    with _IMPORT_LOCK:
+        receipts = _load_receipts()
+        hidden = 0
+        for item in receipts.values():
+            if isinstance(item, dict) and not item.get("history_hidden"):
+                item["history_hidden"] = True
+                hidden += 1
+        _save_receipts(receipts)
+    return {"ok": True, "hidden": hidden}
 
 
 def _safe_source(name: str) -> Path:

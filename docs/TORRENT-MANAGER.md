@@ -112,6 +112,18 @@ RPC e solver devono risultare in ascolto solo su loopback. Il servizio solver pu
 restare attivo con consumo minimo: Chromium viene creato alla prima challenge e può restare attivo fino a 600 s di
 inattività, così i successivi filtri e ordinamenti riusano la sessione già validata.
 
+## Gestione coda e storico completati
+
+La UI espone su ogni job Transmission i controlli `Metti in pausa` / `Riprendi` e
+`Elimina download`. La rimozione manuale invoca `torrent-remove` con
+`delete-local-data=true`, quindi cancella il payload ancora in staging. Il flusso
+automatico a completamento continua invece a importare prima in `Media/Downloads` e
+poi rimuove il job con `delete-local-data=false`.
+
+`POST /api/torrents/history/clear` nasconde le righe `Importati di recente` marcando i
+receipt `history_hidden=true`. Non elimina il media finale e non elimina il receipt
+stesso, che resta necessario per impedire un secondo import dello stesso info-hash.
+
 ## API Control
 
 Tutti gli endpoint richiedono una sessione Control; le mutazioni richiedono anche
@@ -122,6 +134,7 @@ il token CSRF esistente.
 - `POST /api/torrents/add` con `magnet` oppure `detail_url`
 - `POST /api/torrents/add-file` con corpo `.torrent`
 - `POST /api/torrents/action` con `pause`, `resume` o `remove`
+- `POST /api/torrents/history/clear` per nascondere lo storico completati senza eliminare i media
 
 La risoluzione di un risultato 1337x accetta solo URL del provider configurato e
 path `/torrent/...`; questo evita che il backend venga usato come fetcher arbitrario.
