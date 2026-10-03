@@ -475,7 +475,8 @@
     const rows = items.map(m => {
       const image = safeUrl(m.image_url || '');
       const start = timestamp(m.started_at);
-      return `<button type="button" class="nsfw-group-row ${esc(m.label)}" data-nsfw-pulse="${esc(m.key)}">${image ? `<img src="${esc(image)}" alt="" loading="lazy">` : `<span class="nsfw-group-icon">${icon(classIcon(m.class))}</span>`}<span><strong>${wallClock(start)}${m.ended_at ? ` – ${wallClock(timestamp(m.ended_at))}` : ''}</strong><span class="nsfw-cat-chips">${classChips(m.class)}</span><small>${esc(MARK_TEXT[m.label] || m.label)}${m.count > 1 ? ` · ${m.count} fotogrammi` : ''}</small></span>${icon('chevron-right', 'mini-icon')}</button>`;
+      const position = m.file_time != null ? `Nel file: ${clock(m.file_time, true)}` : m.part_time != null ? `Nella parte locale: ${clock(m.part_time, true)}` : '';
+      return `<button type="button" class="nsfw-group-row ${esc(m.label)}" data-nsfw-pulse="${esc(m.key)}">${image ? `<img src="${esc(image)}" alt="" loading="lazy">` : `<span class="nsfw-group-icon">${icon(classIcon(m.class))}</span>`}<span><strong>${wallClock(start)}${m.ended_at ? ` – ${wallClock(timestamp(m.ended_at))}` : ''}</strong><small>${esc(position)}</small><span class="nsfw-cat-chips">${classChips(m.class)}</span><small>${esc(MARK_TEXT[m.label] || m.label)}${m.count > 1 ? ` · ${m.count} fotogrammi` : ''}</small></span>${icon('chevron-right', 'mini-icon')}</button>`;
     }).join('');
     setMarkup(dialog, `<div class="nsfw-dialog-head"><div><h2 id="nsfwDialogTitle">${esc(items[0].name || '')}</h2><small>${items.length} momenti ravvicinati</small></div><button type="button" class="icon-button" data-nsfw-close aria-label="Chiudi">${icon('x')}</button></div><div class="nsfw-group-list">${rows}</div>`);
     if (!dialog.open) dialog.showModal();
@@ -494,10 +495,12 @@
     if (recording) {
       openDialog(recording.id);
       // Jump straight to the clicked moment: frame, time and cloud link.
-      const at = Number(mark.file_time);
+      const at = mark.file_time == null ? null : Number(mark.file_time);
       const nearest = (recording.nsfw_moments || []).reduce((best, m) => (!best || Math.abs(m.start - at) < Math.abs(best.start - at) ? m : best), null);
+      if (at != null) {
+        openShot(recording, at, false);
+      }
       if (nearest) {
-        openShot(recording, nearest.start, false);
         const card = document.querySelector(`#nsfwDialog [data-moment-at="${CSS.escape(String(nearest.start))}"]`);
         card?.classList.add('flash');
         setTimeout(() => card?.classList.remove('flash'), 1400);
@@ -510,14 +513,16 @@
     dialogRecordingId = null;
     const image = safeUrl(mark.image_url || '');
     const start = timestamp(mark.started_at);
+    const position = mark.part_time == null ? '' : `<p><strong>Nella parte locale: ${clock(mark.part_time, true)}</strong><br>${esc(mark.part_filename || '')}</p><p>Il tempo nel file GoFile sarà aggiornato dopo l’unione delle parti; può essere diverso da quello di questa parte.</p><button type="button" class="button primary compact" data-nsfw-live-play="${Number(mark.mark_id)}" data-at="${Number(mark.part_time)}">${icon('play', 'button-icon')}<span>Guarda il momento nella parte locale</span></button>`;
+    const whole = mark.source_id ? `<button type="button" class="button secondary compact" data-local-video="/api/sources/${Number(mark.source_id)}/capture" data-local-title="${esc(mark.name || '')} · REC locale">Apri tutta la registrazione locale</button>` : '';
     const shot = image ? `<img src="${esc(image)}" alt="">` : `<div class="nsfw-noshot">${icon(classIcon(mark.class))}<span>Anteprima non disponibile</span></div>`;
     setMarkup(dialog, `<div class="nsfw-dialog-head"><div><h2 id="nsfwDialogTitle">${esc(mark.name || '')}</h2><small>Live in corso · il momento sarà collegato al file quando la registrazione si chiude</small></div><span class="nsfw-badge ${esc(mark.label === 'pending' ? 'verifying' : mark.label)}">${esc(MARK_TEXT[mark.label] || mark.label)}</span><button type="button" class="icon-button" data-nsfw-close aria-label="Chiudi">${icon('x')}</button></div>
-      <div class="nsfw-lightbox">${shot}<div><strong>${wallClock(start)}${mark.ended_at ? ` – ${wallClock(timestamp(mark.ended_at))}` : ''}</strong><span class="nsfw-cat-chips">${classChips(mark.class)}</span><span>${mark.count > 1 ? `${mark.count} fotogrammi` : ''}</span></div></div>`);
+      <div class="nsfw-lightbox">${shot}<div><strong>Ora: ${wallClock(start)}${mark.ended_at ? ` – ${wallClock(timestamp(mark.ended_at))}` : ''}</strong><span class="nsfw-cat-chips">${classChips(mark.class)}</span><span>${mark.count > 1 ? `${mark.count} fotogrammi` : ''}</span>${position}<div class="nsfw-lightbox-actions">${whole}</div></div></div>`);
     if (!dialog.open) dialog.showModal();
   }
 
   function openShot(recording, seconds, copy = true) {
-    const moment = (recording.nsfw_moments || []).find(m => Number(m.start) === Number(seconds));
+    const moment = (recording.nsfw_moments || []).find(m => Number(m.start) <= Number(seconds) && Number(m.end) >= Number(seconds));
     const long = Number(recording.duration_seconds || 0) >= 3600;
     const time = clock(seconds, long);
     if (copy) navigator.clipboard?.writeText(time).catch(() => {});
@@ -622,6 +627,17 @@
   }
 
   document.addEventListener('click', event => {
+    const livePlay = event.target.closest('[data-nsfw-live-play]');
+    if (livePlay) {
+      event.preventDefault();
+      $('#nsfwDialog')?.close();
+      playVideo(`/api/nsfw/marks/${Number(livePlay.dataset.nsfwLivePlay)}/view`, 'Momento nella parte locale').then(() => {
+        const player = $('#videoPlayer');
+        const seek = () => { player.currentTime = Number(livePlay.dataset.at); };
+        if (player.readyState >= 1) seek(); else player.addEventListener('loadedmetadata', seek, {once: true});
+      }).catch(error => toast(error.message || 'Parte locale non disponibile', 'bad'));
+      return;
+    }
     const open = event.target.closest('[data-nsfw-open]');
     const action = event.target.closest('[data-nsfw-action]');
     const play = event.target.closest('[data-nsfw-play]');
