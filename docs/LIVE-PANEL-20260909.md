@@ -21,9 +21,10 @@ la playlist esistente (parti chiuse ancora presenti più parte crescente), mentr
 i simboli NSFW continuano ad aprire i momenti. Parti già eliminate dopo upload
 non sono disponibili nella playlist locale. Nessun cambiamento a DB o sampler.
 
-Validazione e rollout: test di regressione per offset zero, confini dei file e
-assenza di percorsi privati; CI Linux e QA desktop/mobile richieste prima della
-promozione. Rollback: redeploy immagine `bee494925048f52233951514b0ec206cc1042055`
+Validazione locale 2026-10-03: 26 test Python mirati passati, uno saltato
+(FFmpeg locale assente); 31 test JavaScript passati. QA con Chrome headless
+a 1440 e 390 px su dialogo e dati sintetici: posizione e comandi insieme,
+senza overflow. CI Linux richiesta sul commit finale prima della promozione. Rollback: redeploy immagine `bee494925048f52233951514b0ec206cc1042055`
 o revert della 3.5.2; nessuna migrazione e nessuna modifica ai media.
 
 # Live panel and short reconnect files
