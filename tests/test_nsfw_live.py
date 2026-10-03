@@ -33,6 +33,26 @@ def test_cluster_marks_groups_by_wall_clock_and_keeps_strongest_label():
     assert moments[0]["ended_at"] == "2026-09-24T20:00:25+00:00"
 
 
+def test_live_seek_position_is_media_time_and_bands_split_at_file_boundaries():
+    first, second, third = _mark(0), _mark(10), _mark(20)
+    for mark in (first, second, third):
+        mark.source_id = 7
+        mark.part_path = "/private/recordings/part001.mp4"
+        mark.part_time = 42.5
+    second.part_path = third.part_path = "/private/recordings/part002.mp4"
+    second.part_time, third.part_time = 0.0, 10.0
+    bands = cluster_marks([first, second, third], step=4)
+    assert [band["part_time"] for band in bands] == [42.5, 0.0]
+    assert [band["count"] for band in bands] == [1, 2]
+    assert bands[0]["part_filename"] == "part001.mp4"
+    assert bands[0]["source_id"] == 7
+    assert bands[0]["file_time"] is None
+    assert "/private/" not in json.dumps(bands)
+    second.recording_id, second.file_time = 99, 300.0
+    third.recording_id, third.file_time = 100, 0.0
+    assert [band["file_time"] for band in cluster_marks([second, third])] == [300.0, 0.0]
+
+
 @pytest.fixture()
 def live_env(tmp_path, monkeypatch):
     engine = create_engine(f"sqlite:///{tmp_path / 'live.db'}")

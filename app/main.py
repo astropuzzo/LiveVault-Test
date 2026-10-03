@@ -51,7 +51,7 @@ from .mp4_index import NotFragmented, cached_index, hls_playlist
 from .live_capture_playlist import capture_part_identity, capture_part_path, capture_playlist_snapshot
 from .predictions import forecast, rank_upcoming
 from .nsfw_scan import LABELS as NSFW_LABELS
-from .nsfw_live_worker import cluster_marks
+from .nsfw_live_worker import cluster_marks, live_aliases
 from .http_compression import TextCompressionMiddleware
 from .storage_response import StorageFileResponse
 from .recorder import (
@@ -74,7 +74,7 @@ BASE = Path(__file__).parent
 LOGIN_FAILURES: dict[str, deque[float]] = defaultdict(deque)
 LOGIN_WINDOW = 10 * 60
 LOGIN_MAX_FAILURES = 6
-VERSION = "3.5.1"
+VERSION = "3.5.2"
 
 
 class LoginBody(BaseModel):
@@ -1663,6 +1663,7 @@ _PULSE_RECORDING_COLUMNS = (
 _PULSE_MARK_COLUMNS = (
     NsfwMark.id, NsfwMark.source_id, NsfwMark.wall_at, NsfwMark.state, NsfwMark.cls, NsfwMark.verified_cls,
     NsfwMark.image, NsfwMark.recording_id, NsfwMark.file_time,
+    NsfwMark.part_path, NsfwMark.part_time,
 )
 
 
@@ -2520,6 +2521,40 @@ def view_recording_fragment(fragment_id: int, request: Request):
                             f"/api/fragments/{fragment_id}/view?raw=1", live=False)
     media_type = _video_media_type(path)
     return StorageFileResponse(path, media_type=media_type, headers={"Cache-Control": "private, no-store"})
+
+
+def _nsfw_mark_local_path(mark_id: int) -> Path:
+    with db_session() as db:
+        mark = db.get(NsfwMark, mark_id)
+        if not mark:
+            raise HTTPException(404, "Momento non trovato")
+        paths = live_aliases(mark.part_path)
+        raw_part = Path(mark.part_path)
+        if ".capture." in raw_part.name:
+            paths.append(str(raw_part.with_name(raw_part.name.replace(".capture.", "."))))
+    for candidate in paths:
+        try:
+            return _local_media_path(candidate)
+        except HTTPException:
+            continue
+    raise HTTPException(404, "Parte locale già unita o caricata: aggiorna la Cronologia")
+
+
+@app.get("/api/nsfw/marks/{mark_id}/view")
+def view_nsfw_mark_part(mark_id: int, request: Request):
+    require_auth(request)
+    path = _nsfw_mark_local_path(mark_id)
+    if _wants_player_page(request) and _has_stream_index(path):
+        return _player_page(path.name, f"/api/nsfw/marks/{mark_id}/stream.m3u8",
+                            f"/api/nsfw/marks/{mark_id}/view?raw=1", live=False)
+    return StorageFileResponse(path, media_type=_video_media_type(path),
+                               headers={"Cache-Control": "private, no-store"})
+
+
+@app.get("/api/nsfw/marks/{mark_id}/stream.m3u8")
+def stream_nsfw_mark_part(mark_id: int, request: Request):
+    require_auth(request)
+    return _stream_playlist(_nsfw_mark_local_path(mark_id), f"/api/nsfw/marks/{mark_id}/view")
 
 
 @app.get("/api/sources/{source_id}/capture")

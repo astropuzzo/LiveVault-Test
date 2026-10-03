@@ -1,3 +1,31 @@
+## Posizioni NSFW e riproduzione locale — 3.5.2, 2026-10-03
+
+Sorgenti: `app/nsfw_live_worker.py`, `app/main.py`, `app/static/nsfw.js` e
+`app/static/app.js`. Runtime verificato prima del cambiamento: 3.5.1,
+immagine LiveVault `bee494925048f52233951514b0ec206cc1042055`.
+La Cronologia espone `part_time` (secondi media nella parte, non differenza tra
+orologi), nome della parte e sorgente. Il dialogo live distingue ora civile e
+posizione nella parte; il pulsante del momento apre la parte completa al secondo
+rilevato tramite endpoint autenticati `/api/nsfw/marks/{id}/view` e `stream.m3u8`.
+Il remux Stripchat viene risolto anche dopo la rimozione del grezzo. File spariti
+rispondono 404, senza sostituirli con la nuova parte attiva. I percorsi host non
+vengono esposti nel payload.
+
+Bande separate ai confini delle parti e delle registrazioni: una banda non può
+fornire un solo offset per file diversi. Dopo l’unione resta autorevole `file_time`,
+calcolato con le durate media delle parti, che vale per la stessa copia caricata
+su GoFile. Prima dell’unione il tempo finale non è promesso: unioni, limiti di
+dimensione e file precedenti già caricati possono cambiarne l’origine.
+“REC locale” accanto al creator apre l’intera capture locale disponibile con
+la playlist esistente (parti chiuse ancora presenti più parte crescente), mentre
+i simboli NSFW continuano ad aprire i momenti. Parti già eliminate dopo upload
+non sono disponibili nella playlist locale. Nessun cambiamento a DB o sampler.
+
+Validazione e rollout: test di regressione per offset zero, confini dei file e
+assenza di percorsi privati; CI Linux e QA desktop/mobile richieste prima della
+promozione. Rollback: redeploy immagine `bee494925048f52233951514b0ec206cc1042055`
+o revert della 3.5.2; nessuna migrazione e nessuna modifica ai media.
+
 # Live panel and short reconnect files
 
 ## UI 3.5.1 — verificata 2026-09-30
