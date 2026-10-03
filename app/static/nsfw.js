@@ -517,12 +517,12 @@
     const whole = mark.source_id ? `<button type="button" class="button secondary compact" data-local-video="/api/sources/${Number(mark.source_id)}/capture" data-local-title="${esc(mark.name || '')} · REC locale">Apri tutta la registrazione locale</button>` : '';
     const shot = image ? `<img src="${esc(image)}" alt="">` : `<div class="nsfw-noshot">${icon(classIcon(mark.class))}<span>Anteprima non disponibile</span></div>`;
     setMarkup(dialog, `<div class="nsfw-dialog-head"><div><h2 id="nsfwDialogTitle">${esc(mark.name || '')}</h2><small>Live in corso · il momento sarà collegato al file quando la registrazione si chiude</small></div><span class="nsfw-badge ${esc(mark.label === 'pending' ? 'verifying' : mark.label)}">${esc(MARK_TEXT[mark.label] || mark.label)}</span><button type="button" class="icon-button" data-nsfw-close aria-label="Chiudi">${icon('x')}</button></div>
-      <div class="nsfw-lightbox">${shot}<div><strong>Ora: ${wallClock(start)}${mark.ended_at ? ` – ${wallClock(timestamp(mark.ended_at))}` : ''}</strong><span class="nsfw-cat-chips">${classChips(mark.class)}</span><span>${mark.count > 1 ? `${mark.count} fotogrammi` : ''}</span></div>${position}<div class="nsfw-lightbox-actions">${whole}</div></div>`);
+      <div class="nsfw-lightbox">${shot}<div><strong>Ora: ${wallClock(start)}${mark.ended_at ? ` – ${wallClock(timestamp(mark.ended_at))}` : ''}</strong><span class="nsfw-cat-chips">${classChips(mark.class)}</span><span>${mark.count > 1 ? `${mark.count} fotogrammi` : ''}</span>${position}<div class="nsfw-lightbox-actions">${whole}</div></div></div>`);
     if (!dialog.open) dialog.showModal();
   }
 
   function openShot(recording, seconds, copy = true) {
-    const moment = (recording.nsfw_moments || []).find(m => Number(m.start) === Number(seconds));
+    const moment = (recording.nsfw_moments || []).find(m => Number(m.start) <= Number(seconds) && Number(m.end) >= Number(seconds));
     const long = Number(recording.duration_seconds || 0) >= 3600;
     const time = clock(seconds, long);
     if (copy) navigator.clipboard?.writeText(time).catch(() => {});
