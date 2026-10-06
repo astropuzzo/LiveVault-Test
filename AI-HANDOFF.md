@@ -466,16 +466,20 @@ capture pubblica MFC: 8,022 s, H.264 720p + AAC. Capture preesistente ripresa e
 in crescita di 4,08 MB in 4 s su NVMe; NINA e PID Control 2334859 invariati.
 Backup DB completato; immagine 3.5.1 conservata. Supporto beta delle sole live
 pubbliche; sessioni lunghe e più capture MFC simultanee non provate.
-Follow-up verificato **2026-10-06**, candidato 3.5.3: Iam_Sasha ha AAC quasi
+Follow-up verificato **2026-10-06**, 3.5.3 distribuita `:62d5f2029a7c88c25042c8e5fc604ff60e12b254`
+healthy: Iam_Sasha ha AAC quasi
 silenziosa o dichiarata senza pacchetti, mentre l'utente sente il sito MFC.
 Link corretto con maiuscole `#Iam_Sasha`, login ospite standard e guardia
-iniziale che richiede pacchetti A/V; 113 test locali mirati/versione passati.
+iniziale che richiedeva pacchetti A/V; 113 test locali mirati/versione passati.
 Il recupero del suono dal profilo nativo WebRTC H.264/Opus resta aperto;
-nessuna nuova dipendenza o modifica ai file/DB. CI e deploy del candidato
-finale da verificare. Primo candidato CI verde (649 Python, 81 JavaScript),
+nessuna nuova dipendenza o modifica ai file/DB. CI branch/PR/main verde (649 Python, 81 JavaScript),
 guardia candidata provata in sola lettura: MollyMayhem accettata, Iam_Sasha 257
 rifiutata per audio vuoto. Alle 14:38 UTC Iam_Sasha offline; l'utente sente il
-sito anche come ospite. Limiti e rollback 3.5.2 nella guida collegata.
+sito anche come ospite. **Policy utente successiva: nessun rifiuto per audio
+vuoto/silenzioso**, anche se il microfono della creator è disattivato.
+Candidato 3.5.4 rimuove la regola sui pacchetti vuoti; conserva link e login
+corretti. CI e rollout del candidato da completare. Limiti e rollback 3.5.2
+nella guida collegata; evitare rollback 3.5.3 che ripristina il rifiuto.
 
 ## Provider Stripchat
 Verifica 2026-09-13: la risoluzione username → model ID usa

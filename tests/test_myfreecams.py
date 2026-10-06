@@ -244,8 +244,8 @@ def test_mfc_pts_setting_reaches_recorder_and_audio_guard(monkeypatch):
     assert "audio assente" in audit.error
 
 
-@pytest.mark.parametrize("audio_packets,expected", [(None, False), ("0", False), ("12", True)])
-def test_mfc_audio_guard_requires_real_audio_packets(monkeypatch, audio_packets, expected):
+@pytest.mark.parametrize("audio_packets", [None, "0", "12"])
+def test_mfc_empty_audio_track_does_not_block_recording(monkeypatch, audio_packets):
     monkeypatch.setattr(mfc, "hls_options", lambda _program: ())
     item = providers.ResolvedInput("https://video300.myfreecams.com/live.m3u8", {}, "media", allow_mfc_pts=True)
     class Process:
@@ -254,9 +254,9 @@ def test_mfc_audio_guard_requires_real_audio_packets(monkeypatch, audio_packets,
             payload = {"streams": [{"codec_type": "video", "nb_read_packets": "10"}, {"codec_type": "audio", "nb_read_packets": audio_packets}]}
             return json.dumps(payload).encode(), b""
     async def launch(*args, **_kwargs):
-        assert args[args.index("-read_intervals") + 1] == "%+3"
-        assert "-count_packets" in args
+        assert "-count_packets" not in args
         return Process()
     monkeypatch.setattr(providers.asyncio, "create_subprocess_exec", launch)
     audit = asyncio.run(providers.audit_inputs([item]))
-    assert audit.has_video and audit.has_audio == expected
+    assert audit.has_video and audit.has_audio
+    assert not audit.error

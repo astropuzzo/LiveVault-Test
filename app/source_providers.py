@@ -1332,13 +1332,9 @@ async def _audit_input(item: ResolvedInput, timeout: float) -> InputAudit:
     headers = _ffprobe_headers(item.http_headers)
     if headers:
         cmd += ["-headers", headers]
-    entries = "stream=codec_type"
-    if item.allow_mfc_pts:
-        # MFC's TS program map can advertise AAC with no audio packets at all.
-        # Reading the track declaration alone falsely passes the Audio Guard.
-        cmd += ["-read_intervals", "%+3", "-count_packets"]
-        entries += ",nb_read_packets"
-    cmd += ["-show_entries", entries, "-of", "json", item.url]
+    # Empty/silent audio is allowed: the creator may have disabled the mic.
+    # Packet counts and loudness must not become recording admission rules.
+    cmd += ["-show_entries", "stream=codec_type", "-of", "json", item.url]
     proc = await asyncio.create_subprocess_exec(
         *cmd,
         stdout=asyncio.subprocess.PIPE,
@@ -1361,11 +1357,7 @@ async def _audit_input(item: ResolvedInput, timeout: float) -> InputAudit:
         return InputAudit(False, False, f"Audio Guard: {error}")
     try:
         payload = json.loads(stdout.decode(errors="replace"))
-        kinds = {
-            str(stream.get("codec_type") or "")
-            for stream in payload.get("streams", [])
-            if not item.allow_mfc_pts or int(stream.get("nb_read_packets") or 0) > 0
-        }
+        kinds = {str(stream.get("codec_type") or "") for stream in payload.get("streams", [])}
     except Exception as exc:
         item.kind = "unknown"
         return InputAudit(False, False, f"Audio Guard: risposta ffprobe non valida ({exc})")
