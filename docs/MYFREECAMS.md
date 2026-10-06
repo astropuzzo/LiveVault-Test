@@ -101,7 +101,8 @@ non rileva un guasto iniziato dopo l'avvio e non ricrea audio assente alla sorge
 - Verifica successiva sull'audio di Iam_Sasha, UID 37174323, 2026-10-06:
   frammento locale 255 con AAC decodificabile ma quasi silenzioso (media -85,5 dB,
   massimo -78,3 dB); frammento 257 con AAC dichiarata ma zero pacchetti/campioni.
-  Nessuna registrazione o riga DB è stata modificata. L'utente sente audio sul sito.
+  Nessuna registrazione o riga DB è stata modificata. L'utente sente audio sul sito
+  anche come ospite: non attribuire il problema alla mancanza di un account.
   Gli HLS pubblici 1080p esaminati hanno zero pacchetti audio; le qualità inferiori
   contengono AAC quasi silenziosa. La variante CMAF con audio separato esponeva
   una playlist audio ferma mentre il video proseguiva. Cambiare solo container,
@@ -110,12 +111,18 @@ non rileva un guasto iniziato dopo l'avvio e non ricrea audio assente alla sorge
   La prova del ricevitore in ambiente isolato non ha ricevuto media: nessun
   supporto WebRTC o dipendenza aiortc è incluso nella 3.5.3. Il browser ospite
   di diagnosi richiede verifica dell'età e non permette il confronto con il
-  player dell'utente. Il recupero dell'audio Iam_Sasha resta non verificato;
+  player dell'utente. Alle 14:38 UTC la stanza risultava offline; una nuova prova
+  del flusso nativo richiede una live pubblica. Il recupero dell'audio resta non verificato;
   non considerare la presenza di AAC una prova di audio udibile né la 3.5.3
   una correzione completa dell'audio. I file già muti non contengono suono recuperabile.
-- Test locali del candidato 3.5.3: 104 mirati passati, inclusi link API salvato e
+- Test locali del candidato 3.5.3: 113 mirati/versione passati, inclusi link API salvato e
   ispezione, AAC dichiarata senza pacchetti e AAC con pacchetti. CI e rollout
-  del candidato ancora da verificare.
+  finale ancora da verificare; CI del primo candidato
+  [37480462386](https://github.com/astropuzzo/LiveVault-Test/actions/runs/37480462386)
+  verde, 649 Python e 81 JavaScript, shell, NINA isolato e controllo documentale.
+  La funzione candidata eseguita in un processo separato del container 3.5.2
+  accetta il campione MollyMayhem e rileva `has_audio=false` nel frammento 257
+  di Iam_Sasha, senza modificare il servizio o scrivere sul DB/media.
 
 ## Rollout e rollback
 
