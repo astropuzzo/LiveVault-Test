@@ -37,15 +37,26 @@ a yt-dlp con Origin/Referer MFC per scegliere la qualità configurata e al
 recorder FFmpeg esistente: copia A/V, segmentazione, unione e guardia ffprobe
 audio/video restano operative. Nessuna migrazione di dati o schema.
 
+MFC serve frammenti CMAF `.pts`, anche quando il contenuto è MP4. I demuxer HLS
+FFmpeg recenti li rifiutano con `extension_picky=1`. Solo gli input risolti
+dall'adapter portano `allow_mfc_pts`: ffprobe e recorder usano `-extension_picky 0`
+quando disponibile; nei binari precedenti si aggiunge `.pts` all'elenco ristretto
+di estensioni. La presenza dell'opzione è rilevata una volta per binario tramite
+`-h demuxer=hls`; gli altri provider mantengono le proprie opzioni. La guardia A/V
+continua a rifiutare video senza audio.
+
 ## Evidenze e limiti
 
 - Dal container produzione precedente 3.5.1: serverconfig e script ufficiali
   rispondono HTTP 200; WebSocket ospite restituisce UID 3111899, `lv=4`, `vs=127`
   per AspenRae. yt-dlp 2026.08.19 non contiene un estrattore MFC.
-- Test locali Windows/Python 3.14: 120 test mirati passati (provider MFC,
+- Test locali Windows/Python 3.14: 131 test mirati passati (provider MFC,
   normalizzazione, metadata, stati e recorder). CI Linux/Python 3.13 e prova A/V
   pubblica: da completare prima della promozione. Non dichiarare verificata una capture reale
   sulla base della sola risposta di stato.
+- Prova pubblica locale: MollyMayhem UID 29845158, `vs=0`, edge annunciato
+  `video1103`, playlist CMAF HTTP 200; ffprobe con opzione `.pts` rileva H.264
+  1280×720 e AAC. Da completare prova con il flusso completo del recorder.
 - MFC Share è accettato come link al profilo; l'adapter registra solo live
   pubbliche MFC, non acquisti, replay Share, show privati o club.
 

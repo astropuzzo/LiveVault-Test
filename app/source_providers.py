@@ -60,6 +60,7 @@ class ResolvedInput:
     url: str
     http_headers: dict[str, str]
     kind: str
+    allow_mfc_pts: bool = False
 
 
 @dataclass
@@ -1294,6 +1295,9 @@ async def resolve_inputs(platform: str, slug: str, quality: str = "best") -> lis
         result.append(ResolvedInput(str(info["url"]), dict(info.get("http_headers") or {}), kind))
     if not result:
         raise RuntimeError("No playable stream URL returned by yt-dlp")
+    if platform == "myfreecams":
+        for item in result:
+            item.allow_mfc_pts = True
     return result
 
 
@@ -1315,6 +1319,10 @@ async def _audit_input(item: ResolvedInput, timeout: float) -> InputAudit:
         "-analyzeduration", "7000000",
         "-probesize", "7000000",
     ]
+    if item.allow_mfc_pts:
+        from .myfreecams import hls_options
+
+        cmd += await asyncio.to_thread(hls_options, "ffprobe")
     headers = _ffprobe_headers(item.http_headers)
     if headers:
         cmd += ["-headers", headers]

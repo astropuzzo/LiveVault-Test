@@ -67,7 +67,7 @@ class Socket:
 
 def test_guest_lookup_handles_fragmented_and_batched_protocol_messages(monkeypatch):
     payload = {"uid": 42, "lv": 4, "vs": 0, "nm": "Example", "u": {"camserv": 800}}
-    wire = frame({}, "311") + frame(payload)
+    wire = frame({}, "1", "1") + frame({}, "14") + frame(payload)
     ws = Socket([wire[:2], wire[2:31], wire[31:]])
     monkeypatch.setattr(mfc, "server_config", lambda: {"websocket_servers": {"wchat1": "rfc6455"}})
     monkeypatch.setattr(mfc, "connect", lambda *_args, **_kwargs: ws)
@@ -172,3 +172,46 @@ def test_mfc_inputs_pass_quality_headers_and_actual_audio_guard(monkeypatch):
     inputs = asyncio.run(providers.resolve_inputs("myfreecams", "example", "720p"))
     assert len(inputs) == 1 and inputs[0].kind == "media"
     assert inputs[0].http_headers == headers
+    assert inputs[0].allow_mfc_pts
+
+
+@pytest.mark.parametrize("help_text, expected", [
+    ("-extension_picky <boolean>", ("-extension_picky", "0")),
+    ("-allowed_extensions <string>", ("-allowed_extensions", "aac,m3u8,m4s,mp4,ts,pts,cmfv,cmfa")),
+])
+def test_mfc_hls_options_support_current_and_older_ffmpeg(help_text, expected, monkeypatch):
+    mfc.hls_options.cache_clear()
+    calls = []
+    class Result:
+        stdout, stderr = help_text, ""
+    def run(*_args, **_kwargs):
+        calls.append(1)
+        return Result()
+    monkeypatch.setattr(mfc.subprocess, "run", run)
+    try:
+        assert mfc.hls_options("ffprobe") == expected
+        assert mfc.hls_options("ffprobe") == expected
+        assert len(calls) == 1
+    finally:
+        mfc.hls_options.cache_clear()
+
+
+def test_mfc_pts_setting_reaches_recorder_and_audio_guard(monkeypatch):
+    from app.recorder import build_ffmpeg_command
+    monkeypatch.setattr(mfc, "hls_options", lambda _program: ("-extension_picky", "0"))
+    item = providers.ResolvedInput("https://video300.myfreecams.com/live.m3u8", {}, "media", allow_mfc_pts=True)
+    command = build_ffmpeg_command([item], "/tmp/mfc-%03d.mp4")
+    assert command[command.index("-extension_picky") + 1] == "0"
+    assert command.index("-extension_picky") < command.index("-i")
+    assert "-extension_picky" not in build_ffmpeg_command([providers.ResolvedInput("https://cdn.example/live.m3u8", {}, "media")], "/tmp/normal-%03d.mp4")
+    class Process:
+        returncode = 0
+        async def communicate(self):
+            return b'{"streams":[{"codec_type":"video"}]}', b""
+    async def launch(*args, **_kwargs):
+        assert args[args.index("-extension_picky") + 1] == "0"
+        return Process()
+    monkeypatch.setattr(providers.asyncio, "create_subprocess_exec", launch)
+    audit = asyncio.run(providers.audit_inputs([item]))
+    assert audit.has_video and not audit.has_audio
+    assert "audio assente" in audit.error

@@ -323,6 +323,10 @@ def build_ffmpeg_command(
         is_http_input = item.url.lower().startswith(("http://", "https://"))
         if is_http_input:
             cmd += ["-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "5"]
+        if item.allow_mfc_pts:
+            from .myfreecams import hls_options
+
+            cmd += hls_options("ffmpeg")
         if synchronized_hls:
             cmd += [
                 "-protocol_whitelist", "file,http,https,tcp,tls,crypto,data",

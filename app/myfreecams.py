@@ -8,9 +8,11 @@ from __future__ import annotations
 import json
 import random
 import re
+import subprocess
 import threading
 import time
 from dataclasses import dataclass
+from functools import lru_cache
 from urllib.parse import unquote
 
 import requests
@@ -132,8 +134,9 @@ def lookup(slug: str) -> Room:
                 ws.send(f"1 0 0 20071025 0 {random.randrange(10_000_000, 100_000_000)}@guest:guest\n")
                 ws.send(f"10 0 0 20 0 {slug.lower()}\n")
                 for fields in _messages(ws, time.monotonic() + 10):
-                    if fields[0] == "1" and fields[3] != "0":
-                        raise RuntimeError("Accesso ospite MyFreeCams rifiutato")
+                    # Guest LOGIN can return a notice/error while public name
+                    # lookups remain available. The lookup's own response is
+                    # authoritative; no authenticated operation is requested.
                     if fields[0] == "10" and fields[3] == "20":
                         return _room(fields, slug)
         except Exception as exc:
@@ -166,3 +169,20 @@ def public_playlist(slug: str) -> tuple[str, dict[str, str]]:
         except requests.RequestException:
             continue
     raise RuntimeError("MyFreeCams pubblica, ma playlist HLS non disponibile")
+
+
+@lru_cache(maxsize=2)
+def hls_options(program: str) -> tuple[str, ...]:
+    """Accept MFC's real CMAF .pts segments on old and current FFmpeg.
+
+    Current HLS demuxers check whether the filename matches the detected
+    container. MFC names MP4 fragments .pts; disable that check only for inputs
+    resolved by this adapter. Protocol and actual A/V validation still apply.
+    """
+    result = subprocess.run(
+        [program, "-hide_banner", "-h", "demuxer=hls"],
+        capture_output=True, text=True, timeout=4, check=True,
+    )
+    if "-extension_picky" in result.stdout + result.stderr:
+        return ("-extension_picky", "0")
+    return ("-allowed_extensions", "aac,m3u8,m4s,mp4,ts,pts,cmfv,cmfa")
