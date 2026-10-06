@@ -1,8 +1,10 @@
 # MyFreeCams / MFC
 
-Verifica protocollo dal nodo: **2026-10-06**. Sorgenti:
+Verifica protocollo e runtime dal nodo: **2026-10-06**. Sorgenti:
 `app/myfreecams.py`, `app/source_providers.py`; runtime nell'immagine LiveVault
-Coolify sotto `/app/app`. Versione candidata: **3.5.2**.
+Coolify sotto `/app/app`. Versione distribuita: **3.5.2**, commit runtime
+`5ca0275cbaa3ac2801281380106f3236708d76c8`, PR
+[47](https://github.com/astropuzzo/LiveVault-Test/pull/47).
 
 ## Contratto
 
@@ -54,6 +56,9 @@ continua a rifiutare video senza audio.
   normalizzazione, metadata, stati e recorder). CI Linux/Python 3.13 verde:
   [37432438293](https://github.com/astropuzzo/LiveVault-Test/actions/runs/37432438293),
   643 Python, 81 JavaScript, shell, build/smoke NINA isolato e controllo documentale.
+  CI del branch finale [37432820048](https://github.com/astropuzzo/LiveVault-Test/actions/runs/37432820048),
+  PR [37432902903](https://github.com/astropuzzo/LiveVault-Test/actions/runs/37432902903)
+  e main [37433229205](https://github.com/astropuzzo/LiveVault-Test/actions/runs/37433229205) verdi.
 - Prova pubblica locale: MollyMayhem UID 29845158, `vs=0`, edge annunciato
   `video1103`, playlist CMAF HTTP 200; ffprobe con opzione `.pts` rileva H.264
   1280×720 e AAC.
@@ -64,8 +69,21 @@ continua a rifiutare video senza audio.
   `/tmp/mfc-public-validation-20261006-000.mp4` nel container precedente:
   1484725 byte, 8,024333 s, H.264 1280×720 e AAC. Nessuna sorgente aggiunta al DB;
   non prova ancora il rollout dell'immagine applicativa.
+- Rollout verificato nel container `ahul2vdjkyvjiwgzpcrmxzfe-080016657928`:
+  HTTPS `/healthz` 200, versione 3.5.2, tutti i worker leader attivi, catalogo
+  MyFreeCams disponibile, link `#MollyMayhem` normalizzato e guardia A/V passata.
+  Comando recorder distribuito, senza opzioni aggiunte dal test: MP4
+  `/tmp/mfc-production-validation-20261006-000.mp4`, 1651687 byte, 8,021667 s,
+  H.264 1280×720 e AAC. La prova non ha aggiunto sorgenti al DB.
+- La capture preesistente risulta ripresa: un media aperto cresce di 4075043
+  byte in 4 s; worker `active_recorders=1`, storage NVMe. NINA mantiene container
+  e immagine 3.5.1; Control mantiene PID 2334859. Il rilascio ha sostituito solo
+  LiveVault con la normale chiusura/ripresa delle capture; la crescita non prova
+  assenza di un buco temporale durante la sostituzione.
 - MFC Share è accettato come link al profilo; l'adapter registra solo live
   pubbliche MFC, non acquisti, replay Share, show privati o club.
+- Supporto beta: una live pubblica breve verificata; durata lunga e più MFC
+  simultanee restano da provare. Lo stato è quello visibile dall'IP del nodo.
 
 ## Rollout e rollback
 
@@ -74,9 +92,15 @@ tramite i Watch Paths esistenti. Verificare versione `/healthz`, catalogo nel
 container, query ospite e guardia A/V. Conservare file, DB, segreti e immagini.
 Aggiornare questa guida e AI-HANDOFF.md nella copia `/opt/openastro-ops`, con
 backup mirato e riferimento sorgente in SOURCE.txt, dopo verifica runtime.
+Per questo rollout: backup DB completato con `openastro-action backup_now`;
+backup documentale mirato in `/opt/openastro-ops/.rollback-20261006-mfc`.
+La copia operativa include solo questa guida, AI-HANDOFF.md e SOURCE.txt;
+HOSTING.md e i documenti non pertinenti mantengono le rispettive revisioni.
 
 Rollback: revert del commit MFC e redeploy del solo LiveVault, oppure ripristino
 dell'immagine precedente `ahul2vdjkyvjiwgzpcrmxzfe:bee494925048f52233951514b0ec206cc1042055`
 (3.5.1). Le sorgenti MFC eventualmente aggiunte restano nel DB: metterle in pausa
 prima del rollback, senza cancellarle. Control/NINA, storage e APP_SECRET non
 richiedono modifiche.
+Rollback documentale: ripristinare AI-HANDOFF.md e SOURCE.txt dal backup mirato;
+MYFREECAMS.md era assente e può essere rimosso solo nel rollback di questo rollout.

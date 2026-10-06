@@ -55,6 +55,8 @@ Categorie, preferiti, note e raccolte modificano soltanto i metadati della Libre
 ### Monitor sorgenti
 
 - Provider AutoPilot: incolla un URL e LiveVault seleziona l'adapter disponibile;
+- MyFreeCams (MFC): live pubbliche con adapter nativo, username o URL `#username`
+  ([contratto e limiti](docs/MYFREECAMS.md));
 - adapter inclusi per Chaturbate e, in beta con preflight, Stripchat, BongaCams, CamSoda, CAM4, Twitch, Kick e YouTube Live;
 - test sorgente dalla dashboard con stato e verifica reale audio/video quando la live è online;
 - stato online/offline aggiornato anche quando le registrazioni sono in pausa;

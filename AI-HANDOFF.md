@@ -13,8 +13,8 @@ prima di continuare il [piano](docs/PIANO-OTTIMIZZAZIONE.md).
 Una copia distribuita su eMMC è in /opt/openastro-ops; gli ingressi AGENTS.md dei
 workspace del nodo puntano lì. Aggiornare quella copia insieme ai documenti Git;
 SOURCE.txt identifica la revisione (ultimo allineamento completo: 2026-09-30,
-incluse le guide collegate da questo file; aggiornamento mirato di AI-HANDOFF.md
-e HOSTING.md per il Funnel: 2026-10-06). Il vecchio handoff duplicato è stato sostituito
+incluse le guide collegate da questo file; aggiornamenti mirati per il Funnel
+e MyFreeCams: 2026-10-06). Il vecchio handoff duplicato è stato sostituito
 da un rinvio, con originale conservato nella directory rollback.
 
 ## Accesso pubblico — ripristinato 2026-10-06
@@ -29,8 +29,8 @@ Il blocco è nel percorso Funnel; causa iniziale esatta non dimostrata.
 Evidenze private e rollback: `/var/backups/openastro/20261006-funnel`.
 Diagnosi, limiti e procedura: [HOSTING.md](HOSTING.md#public-ingress-diagnosis-and-recovery).
 
-## UI — runtime 3.5.1 verificato
-Verifica **2026-09-30**: LiveVault e NINA
+## UI — verifica 2026-09-30 (release 3.5.1)
+Alla verifica **2026-09-30**: LiveVault e NINA
 `:bee494925048f52233951514b0ec206cc1042055` healthy; Control attivo, sette asset
 SHA-256 identici allo stesso sorgente in `/opt/openastro-control/static`,
 PID invariato 1589194. CI feature
@@ -455,14 +455,17 @@ telefonica/IPv6 esterna; tale verifica resta distinta.
 
 ## Provider MyFreeCams / MFC
 
-Adapter nativo candidato **3.5.2**, protocollo ospite verificato dal runtime il
-**2026-10-06**. Riconosce username, URL `#username`, profili e MFC Share; alias
+Adapter nativo **3.5.2** in produzione, immagine LiveVault `:5ca0275cbaa3ac2801281380106f3236708d76c8`
+healthy, verificata **2026-10-06**. Riconosce username, URL `#username`, profili e MFC Share; alias
 `mfc` → `myfreecams`. Stato FCS autorevole, HLS solo per `vs=0`, errore di rete
 distinto da offline, qualità e guardia A/V nel recorder esistente. Sorgenti,
 evidenze, limiti, rollout e rollback: [MYFREECAMS.md](docs/MYFREECAMS.md).
-131 test mirati passati su Windows; CI Linux/Python 3.13 verde (643 Python,
-81 JavaScript). Capture pubblica sul nodo verificata: 8,024 s, H.264 720p + AAC;
-prova in processo separato, rollout della nuova immagine ancora da completare.
+131 test mirati passati su Windows; CI feature e main verdi (643 Python,
+81 JavaScript). Catalogo/AutoPilot e guardia A/V verificati nel runtime distribuito;
+capture pubblica MFC: 8,022 s, H.264 720p + AAC. Capture preesistente ripresa e
+in crescita di 4,08 MB in 4 s su NVMe; NINA e PID Control 2334859 invariati.
+Backup DB completato; immagine 3.5.1 conservata. Supporto beta delle sole live
+pubbliche; sessioni lunghe e più capture MFC simultanee non provate.
 
 ## Provider Stripchat
 Verifica 2026-09-13: la risoluzione username → model ID usa
