@@ -25,6 +25,15 @@
 - I controlli torrent sono resi espliciti per ogni job (pausa/riprendi/elimina) e lo
   storico `Importati di recente` può essere svuotato senza cancellare media o receipt.
 
+## 3.5.4 — 2026-10-06
+
+- Rimossa la regola introdotta in 3.5.3 che rifiutava tracce MFC con zero
+  pacchetti audio. Su richiesta utente, una traccia vuota o silenziosa può
+  essere registrata: la creator può avere il microfono disattivato.
+- Conservati link `#Iam_Sasha` e login ospite corretto. Il recupero del suono
+  presente nel player MFC ma assente in HLS resta aperto; nessuna nuova dipendenza.
+- Policy, prove e rollback: [MyFreeCams](docs/MYFREECAMS.md).
+
 ## 3.5.3 — 2026-10-06
 
 - Link MFC con il nome pubblico corretto, ad esempio `#Iam_Sasha`, anche nella

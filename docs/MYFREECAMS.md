@@ -2,11 +2,12 @@
 
 Verifica protocollo e runtime dal nodo: **2026-10-06**. Sorgenti:
 `app/myfreecams.py`, `app/source_providers.py`; runtime nell'immagine LiveVault
-Coolify sotto `/app/app`. Versione distribuita: **3.5.2**, commit runtime
-`5ca0275cbaa3ac2801281380106f3236708d76c8`, PR
-[47](https://github.com/astropuzzo/LiveVault-Test/pull/47).
-Candidato **3.5.3**: link con maiuscole del nome pubblico, login ospite corretto
-e verifica dei pacchetti A/V. Il recupero dell'audio nativo di Iam_Sasha resta aperto.
+Coolify sotto `/app/app`. Versione distribuita: **3.5.3**, commit runtime
+`62d5f2029a7c88c25042c8e5fc604ff60e12b254`, PR
+[48](https://github.com/astropuzzo/LiveVault-Test/pull/48).
+Candidato **3.5.4**: rimozione del controllo bloccante sui pacchetti audio vuoti,
+richiesta esplicita dell'utente il 2026-10-06. Link con maiuscole e login ospite
+corretto sono conservati. Il recupero dell'audio nativo di Iam_Sasha resta aperto.
 
 ## Contratto
 
@@ -54,12 +55,14 @@ dall'adapter portano `allow_mfc_pts`: ffprobe e recorder usano `-extension_picky
 quando disponibile; nei binari precedenti si aggiunge `.pts` all'elenco ristretto
 di estensioni. La presenza dell'opzione è rilevata una volta per binario tramite
 `-h demuxer=hls`; gli altri provider mantengono le proprie opzioni. La guardia A/V
-continua a rifiutare video senza audio. Dalla 3.5.3 legge tre secondi e conta i
-pacchetti di ciascuna traccia: una dichiarazione AAC nella PMT TS, senza pacchetti
-audio, non supera il controllo. La lettura mantiene il timeout complessivo e
-la chiusura del processo in caso di timeout/cancellazione. Gli altri provider
-mantengono il controllo precedente. Questo controllo non misura l'udibilità,
-non rileva un guasto iniziato dopo l'avvio e non ricrea audio assente alla sorgente.
+continua a verificare le tracce dichiarate e gli errori di lettura. **Policy utente
+dal 2026-10-06: il silenzio o una traccia audio vuota non devono bloccare la
+registrazione**, perché la creator può avere disattivato il microfono. La 3.5.4
+non conta i pacchetti e non applica soglie di volume per ammettere una capture;
+AAC dichiarata con zero pacchetti viene accettata come nelle versioni precedenti
+alla 3.5.3. Il controllo introdotto in 3.5.3 è ritirato. Una traccia audio
+completamente assente rimane distinta da una traccia vuota nel controllo
+preesistente. Nessuna ricostruzione artificiale di audio mancante.
 
 ## Evidenze e limiti
 
@@ -113,16 +116,24 @@ non rileva un guasto iniziato dopo l'avvio e non ricrea audio assente alla sorge
   di diagnosi richiede verifica dell'età e non permette il confronto con il
   player dell'utente. Alle 14:38 UTC la stanza risultava offline; una nuova prova
   del flusso nativo richiede una live pubblica. Il recupero dell'audio resta non verificato;
-  non considerare la presenza di AAC una prova di audio udibile né la 3.5.3
+  non considerare la presenza di AAC una prova di audio udibile né la 3.5.4
   una correzione completa dell'audio. I file già muti non contengono suono recuperabile.
-- Test locali del candidato 3.5.3: 113 mirati/versione passati, inclusi link API salvato e
-  ispezione, AAC dichiarata senza pacchetti e AAC con pacchetti. CI e rollout
-  finale ancora da verificare; CI del primo candidato
+- Test locali 3.5.3: 113 mirati/versione passati, inclusi link API salvato e
+  ispezione. CI del primo candidato
   [37480462386](https://github.com/astropuzzo/LiveVault-Test/actions/runs/37480462386)
   verde, 649 Python e 81 JavaScript, shell, NINA isolato e controllo documentale.
   La funzione candidata eseguita in un processo separato del container 3.5.2
   accetta il campione MollyMayhem e rileva `has_audio=false` nel frammento 257
-  di Iam_Sasha, senza modificare il servizio o scrivere sul DB/media.
+  di Iam_Sasha, senza modificare il servizio o scrivere sul DB/media. Questa
+  regola di ammissione è stata poi rifiutata dall'utente e rimossa nella 3.5.4.
+- CI finale 3.5.3 branch [37480933656](https://github.com/astropuzzo/LiveVault-Test/actions/runs/37480933656),
+  PR [37480942793](https://github.com/astropuzzo/LiveVault-Test/actions/runs/37480942793)
+  e main [37481365144](https://github.com/astropuzzo/LiveVault-Test/actions/runs/37481365144) verdi.
+  Deploy 14:43:30–14:44:01 UTC; container `ahul2vdjkyvjiwgzpcrmxzfe-144330611594`
+  healthy, HTTPS `/healthz` 200/3.5.3, nove worker attivi, una capture su NVMe.
+  NINA mantiene immagine/container/start time e Control PID 2334859.
+- Candidato 3.5.4: test che AAC dichiarata con conteggio assente, zero o positivo
+  non produce un rifiuto. CI e verifica distribuita del candidato ancora da completare.
 
 ## Rollout e rollback
 
@@ -141,9 +152,11 @@ dell'immagine precedente `ahul2vdjkyvjiwgzpcrmxzfe:bee494925048f52233951514b0ec2
 (3.5.1). Le sorgenti MFC eventualmente aggiunte restano nel DB: metterle in pausa
 prima del rollback, senza cancellarle. Control/NINA, storage e APP_SECRET non
 richiedono modifiche.
-Per la sola 3.5.3, conservare l'immagine 3.5.2
+Per il follow-up sui link/audio, conservare l'immagine 3.5.2
 `ahul2vdjkyvjiwgzpcrmxzfe:5ca0275cbaa3ac2801281380106f3236708d76c8`:
 il rollback ripristina i link precedenti e la guardia basata sulle sole tracce
-dichiarate; non risolve l'audio mancante. Nessuna migrazione o modifica credenziali.
+dichiarate; non risolve l'audio mancante. Evitare 3.5.3 come rollback operativo:
+reintrodurrebbe il rifiuto delle tracce vuote contrario alla policy dell'utente.
+Nessuna migrazione o modifica credenziali.
 Rollback documentale: ripristinare AI-HANDOFF.md e SOURCE.txt dal backup mirato;
 MYFREECAMS.md era assente e può essere rimosso solo nel rollback di questo rollout.
