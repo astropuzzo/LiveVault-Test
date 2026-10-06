@@ -2,10 +2,10 @@
 
 Verifica protocollo e runtime dal nodo: **2026-10-06**. Sorgenti:
 `app/myfreecams.py`, `app/source_providers.py`; runtime nell'immagine LiveVault
-Coolify sotto `/app/app`. Versione distribuita: **3.5.3**, commit runtime
-`62d5f2029a7c88c25042c8e5fc604ff60e12b254`, PR
-[48](https://github.com/astropuzzo/LiveVault-Test/pull/48).
-Candidato **3.5.4**: rimozione del controllo bloccante sui pacchetti audio vuoti,
+Coolify sotto `/app/app`. Versione distribuita: **3.5.4**, commit runtime
+`4016eb953b9ed039c9e862e39645c998e924fe96`, PR
+[49](https://github.com/astropuzzo/LiveVault-Test/pull/49).
+La **3.5.4** rimuove il controllo bloccante sui pacchetti audio vuoti,
 richiesta esplicita dell'utente il 2026-10-06. Link con maiuscole e login ospite
 corretto sono conservati. Il recupero dell'audio nativo di Iam_Sasha resta aperto.
 
@@ -132,8 +132,22 @@ preesistente. Nessuna ricostruzione artificiale di audio mancante.
   Deploy 14:43:30–14:44:01 UTC; container `ahul2vdjkyvjiwgzpcrmxzfe-144330611594`
   healthy, HTTPS `/healthz` 200/3.5.3, nove worker attivi, una capture su NVMe.
   NINA mantiene immagine/container/start time e Control PID 2334859.
-- Candidato 3.5.4: test che AAC dichiarata con conteggio assente, zero o positivo
-  non produce un rifiuto. CI e verifica distribuita del candidato ancora da completare.
+- 3.5.4: 113 test locali mirati/versione passati, inclusi i casi con AAC dichiarata
+  e conteggio assente, zero o positivo, tutti accettati. CI branch
+  [37482021435](https://github.com/astropuzzo/LiveVault-Test/actions/runs/37482021435),
+  PR [37482172647](https://github.com/astropuzzo/LiveVault-Test/actions/runs/37482172647)
+  e main [37482595344](https://github.com/astropuzzo/LiveVault-Test/actions/runs/37482595344)
+  verdi: 649 Python, 81 JavaScript, shell, NINA isolato e controllo documentale.
+  Deploy 14:52:20–14:52:48 UTC; container `ahul2vdjkyvjiwgzpcrmxzfe-145221063245`
+  healthy, HTTPS `/healthz` 200/3.5.4, nove worker attivi, un recorder e storage NVMe.
+  Verifica nel runtime: sorgente DB 34 → `https://www.myfreecams.com/#Iam_Sasha`,
+  lookup ospite → nome Iam_Sasha/offline; preflight distribuito esercitato in un
+  processo separato con risposta ffprobe simulata AAC/zero pacchetti → accettato.
+  Il frammento originale 257 non era più disponibile localmente per ripetere
+  la prova diretta, dopo l'elaborazione ordinaria dei media da parte dell'app.
+  Un media aperto cresce di 3145728 byte in 4 s; la crescita non prova assenza
+  di buco durante la sostituzione. NINA conserva container/start time/immagine
+  e Control PID 2334859. L'audio nativo di Iam_Sasha resta non recuperato.
 
 ## Rollout e rollback
 
@@ -143,7 +157,8 @@ container, query ospite e guardia A/V. Conservare file, DB, segreti e immagini.
 Aggiornare questa guida e AI-HANDOFF.md nella copia `/opt/openastro-ops`, con
 backup mirato e riferimento sorgente in SOURCE.txt, dopo verifica runtime.
 Per questo rollout: backup DB completato con `openastro-action backup_now`;
-backup documentale mirato in `/opt/openastro-ops/.rollback-20261006-mfc`.
+backup documentale iniziale in `/opt/openastro-ops/.rollback-20261006-mfc`;
+follow-up 3.5.4 in `/opt/openastro-ops/.rollback-20261006-mfc-audio`.
 La copia operativa include solo questa guida, AI-HANDOFF.md e SOURCE.txt;
 HOSTING.md e i documenti non pertinenti mantengono le rispettive revisioni.
 
@@ -160,3 +175,5 @@ reintrodurrebbe il rifiuto delle tracce vuote contrario alla policy dell'utente.
 Nessuna migrazione o modifica credenziali.
 Rollback documentale: ripristinare AI-HANDOFF.md e SOURCE.txt dal backup mirato;
 MYFREECAMS.md era assente e può essere rimosso solo nel rollback di questo rollout.
+Per il follow-up 3.5.4 ripristinare anche MYFREECAMS.md dalla copia
+`.rollback-20261006-mfc-audio`; la guida esisteva già prima del follow-up.

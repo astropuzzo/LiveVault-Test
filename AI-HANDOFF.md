@@ -455,31 +455,34 @@ telefonica/IPv6 esterna; tale verifica resta distinta.
 
 ## Provider MyFreeCams / MFC
 
-Adapter nativo **3.5.2** in produzione, immagine LiveVault `:5ca0275cbaa3ac2801281380106f3236708d76c8`
-healthy, verificata **2026-10-06**. Riconosce username, URL `#username`, profili e MFC Share; alias
-`mfc` → `myfreecams`. Stato FCS autorevole, HLS solo per `vs=0`, errore di rete
-distinto da offline, qualità e guardia A/V nel recorder esistente. Sorgenti,
-evidenze, limiti, rollout e rollback: [MYFREECAMS.md](docs/MYFREECAMS.md).
-131 test mirati passati su Windows; CI feature e main verdi (643 Python,
-81 JavaScript). Catalogo/AutoPilot e guardia A/V verificati nel runtime distribuito;
-capture pubblica MFC: 8,022 s, H.264 720p + AAC. Capture preesistente ripresa e
-in crescita di 4,08 MB in 4 s su NVMe; NINA e PID Control 2334859 invariati.
-Backup DB completato; immagine 3.5.1 conservata. Supporto beta delle sole live
-pubbliche; sessioni lunghe e più capture MFC simultanee non provate.
-Follow-up verificato **2026-10-06**, 3.5.3 distribuita `:62d5f2029a7c88c25042c8e5fc604ff60e12b254`
-healthy: Iam_Sasha ha AAC quasi
-silenziosa o dichiarata senza pacchetti, mentre l'utente sente il sito MFC.
-Link corretto con maiuscole `#Iam_Sasha`, login ospite standard e guardia
-iniziale che richiedeva pacchetti A/V; 113 test locali mirati/versione passati.
-Il recupero del suono dal profilo nativo WebRTC H.264/Opus resta aperto;
-nessuna nuova dipendenza o modifica ai file/DB. CI branch/PR/main verde (649 Python, 81 JavaScript),
-guardia candidata provata in sola lettura: MollyMayhem accettata, Iam_Sasha 257
-rifiutata per audio vuoto. Alle 14:38 UTC Iam_Sasha offline; l'utente sente il
-sito anche come ospite. **Policy utente successiva: nessun rifiuto per audio
-vuoto/silenzioso**, anche se il microfono della creator è disattivato.
-Candidato 3.5.4 rimuove la regola sui pacchetti vuoti; conserva link e login
-corretti. CI e rollout del candidato da completare. Limiti e rollback 3.5.2
-nella guida collegata; evitare rollback 3.5.3 che ripristina il rifiuto.
+Adapter nativo **3.5.4** in produzione, immagine LiveVault
+`:4016eb953b9ed039c9e862e39645c998e924fe96` healthy, verificata **2026-10-06**.
+Username/URL `#username`, profili, MFC Share e alias `mfc` → `myfreecams`;
+stato FCS autorevole e HLS solo per `vs=0`. Link della sorgente DB 34 verificato
+`https://www.myfreecams.com/#Iam_Sasha`; lookup ospite standard restituisce
+nome Iam_Sasha/offline. L'utente sente audio sul sito anche come ospite.
+**Policy utente: nessun rifiuto per audio vuoto/silenzioso**, anche quando la
+creator ha il microfono disattivato. La regola sui pacchetti della 3.5.3 è stata
+ritirata in 3.5.4; AAC dichiarata con zero pacchetti è accettata dal preflight
+nel runtime distribuito. Nessuna nuova dipendenza, migrazione o modifica a
+registrazioni/segreti. Resta il controllo preesistente sulle tracce dichiarate.
+
+113 test locali mirati/versione passati; CI branch/PR/main verde (649 Python,
+81 JavaScript). Deploy 14:52:20–14:52:48 UTC: HTTPS `/healthz` 200/3.5.4,
+nove worker attivi, un recorder su NVMe, crescita media 3,15 MB in 4 s.
+La crescita non prova assenza di buco durante la sostituzione. NINA conserva
+container/start time/immagine 3.5.1 e Control PID 2334859. Backup DB completato;
+immagini precedenti conservate. Follow-up documentale mirato su
+`/opt/openastro-ops`, rollback `.rollback-20261006-mfc-audio`, revisioni in SOURCE.txt.
+
+**Aperto: recuperare il suono presente nel player MFC ma assente nell'HLS
+esaminato di Iam_Sasha.** Alcuni frammenti hanno AAC quasi silenziosa o senza
+pacchetti; il ricevitore sperimentale WebRTC H.264/Opus non ha ricevuto media
+e non è distribuito. Nessun audio inventato nei file precedenti. Alla verifica
+Iam_Sasha offline; la prova richiede una nuova live pubblica. Supporto beta;
+le registrazioni lunghe e più MFC simultanee restano non provate.
+Sorgenti, evidenze, limiti e rollback 3.5.2: [MYFREECAMS.md](docs/MYFREECAMS.md).
+Evitare rollback 3.5.3, che reintrodurrebbe la regola rifiutata dall'utente.
 
 ## Provider Stripchat
 Verifica 2026-09-13: la risoluzione username → model ID usa
