@@ -74,7 +74,7 @@ BASE = Path(__file__).parent
 LOGIN_FAILURES: dict[str, deque[float]] = defaultdict(deque)
 LOGIN_WINDOW = 10 * 60
 LOGIN_MAX_FAILURES = 6
-VERSION = "3.5.2"
+VERSION = "3.5.3"
 
 
 class LoginBody(BaseModel):
@@ -279,7 +279,7 @@ def _unique_positive_ids(values: list[int] | None, label: str) -> list[int]:
 
 def _source_public_url(source: Source) -> str:
     try:
-        return source_url(source.platform, source.slug)
+        return source_url(source.platform, source.slug, display_name=source.name)
     except ValueError:
         return ""
 
@@ -846,7 +846,7 @@ async def inspect_source(body: SourceInspect, request: Request):
         "platform": platform,
         "provider_label": provider_label(platform),
         "slug": slug,
-        "source_url": source_url(platform, slug),
+        "source_url": source_url(platform, slug, display_name=result.title),
         "live": result.live,
         "recordable": result.recordable,
         "status": result.status,

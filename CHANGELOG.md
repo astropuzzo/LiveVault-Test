@@ -25,6 +25,15 @@
 - I controlli torrent sono resi espliciti per ogni job (pausa/riprendi/elimina) e lo
   storico `Importati di recente` può essere svuotato senza cancellare media o receipt.
 
+## 3.5.3 — 2026-10-06
+
+- Link MFC con il nome pubblico corretto, ad esempio `#Iam_Sasha`, anche nella
+  risposta di ispezione; login ospite nel formato standard del provider.
+- Audio Guard MFC conta i pacchetti reali e rifiuta AAC dichiarata senza dati.
+  Il suono mancante nel flusso HLS di Iam_Sasha resta da recuperare: questo
+  rilascio non aggiunge un ricevitore WebRTC né ricostruisce registrazioni mute.
+- Prove, limiti e rollback: [MyFreeCams](docs/MYFREECAMS.md).
+
 ## 3.5.2 — 2026-10-06
 
 - MyFreeCams (MFC) nel catalogo e AutoPilot, con link `#username`, profili e

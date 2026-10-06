@@ -542,7 +542,7 @@ def normalize_source(platform: str, value: str) -> tuple[str, str]:
     return selected, _public_https_url(value, allowed_hosts=spec.hosts)
 
 
-def source_url(platform: str, slug: str) -> str:
+def source_url(platform: str, slug: str, *, display_name: str = "") -> str:
     value = slug.strip()
     spec = PROVIDER_BY_ID.get(platform)
     if spec is None:
@@ -551,6 +551,12 @@ def source_url(platform: str, slug: str) -> str:
         return value
     if not spec.url_template:
         raise ValueError(f"Provider URL builder missing: {platform}")
+    if platform == "myfreecams":
+        # Keep the normalized lookup key, but use the matching public username
+        # casing in the website's fragment route. A custom label is not a slug.
+        name = display_name.strip()
+        if re.fullmatch(r"[A-Za-z0-9_]{1,100}", name) and name.lower() == value.lower():
+            value = name
     return spec.url_template.format(slug=value.strip("/"))
 
 
@@ -1326,7 +1332,13 @@ async def _audit_input(item: ResolvedInput, timeout: float) -> InputAudit:
     headers = _ffprobe_headers(item.http_headers)
     if headers:
         cmd += ["-headers", headers]
-    cmd += ["-show_entries", "stream=codec_type", "-of", "json", item.url]
+    entries = "stream=codec_type"
+    if item.allow_mfc_pts:
+        # MFC's TS program map can advertise AAC with no audio packets at all.
+        # Reading the track declaration alone falsely passes the Audio Guard.
+        cmd += ["-read_intervals", "%+3", "-count_packets"]
+        entries += ",nb_read_packets"
+    cmd += ["-show_entries", entries, "-of", "json", item.url]
     proc = await asyncio.create_subprocess_exec(
         *cmd,
         stdout=asyncio.subprocess.PIPE,
@@ -1349,7 +1361,11 @@ async def _audit_input(item: ResolvedInput, timeout: float) -> InputAudit:
         return InputAudit(False, False, f"Audio Guard: {error}")
     try:
         payload = json.loads(stdout.decode(errors="replace"))
-        kinds = {str(stream.get("codec_type") or "") for stream in payload.get("streams", [])}
+        kinds = {
+            str(stream.get("codec_type") or "")
+            for stream in payload.get("streams", [])
+            if not item.allow_mfc_pts or int(stream.get("nb_read_packets") or 0) > 0
+        }
     except Exception as exc:
         item.kind = "unknown"
         return InputAudit(False, False, f"Audio Guard: risposta ffprobe non valida ({exc})")
