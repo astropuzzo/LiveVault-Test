@@ -51,12 +51,19 @@ continua a rifiutare video senza audio.
   rispondono HTTP 200; WebSocket ospite restituisce UID 3111899, `lv=4`, `vs=127`
   per AspenRae. yt-dlp 2026.08.19 non contiene un estrattore MFC.
 - Test locali Windows/Python 3.14: 131 test mirati passati (provider MFC,
-  normalizzazione, metadata, stati e recorder). CI Linux/Python 3.13 e prova A/V
-  pubblica: da completare prima della promozione. Non dichiarare verificata una capture reale
-  sulla base della sola risposta di stato.
+  normalizzazione, metadata, stati e recorder). CI Linux/Python 3.13 verde:
+  [37432438293](https://github.com/astropuzzo/LiveVault-Test/actions/runs/37432438293),
+  643 Python, 81 JavaScript, shell, build/smoke NINA isolato e controllo documentale.
 - Prova pubblica locale: MollyMayhem UID 29845158, `vs=0`, edge annunciato
   `video1103`, playlist CMAF HTTP 200; ffprobe con opzione `.pts` rileva H.264
-  1280×720 e AAC. Da completare prova con il flusso completo del recorder.
+  1280×720 e AAC.
+- Prova sul nodo, con il solo modulo pubblico `79e7ea4` caricato in memoria
+  in un processo separato e senza installazioni/modifiche al runtime: camera
+  pubblica riletta, selezione 720p, guardia ffprobe, comando recorder esistente
+  con opzioni MFC e registrazione MP4 terminata con exit 0. File QA temporaneo
+  `/tmp/mfc-public-validation-20261006-000.mp4` nel container precedente:
+  1484725 byte, 8,024333 s, H.264 1280×720 e AAC. Nessuna sorgente aggiunta al DB;
+  non prova ancora il rollout dell'immagine applicativa.
 - MFC Share è accettato come link al profilo; l'adapter registra solo live
   pubbliche MFC, non acquisti, replay Share, show privati o club.
 
