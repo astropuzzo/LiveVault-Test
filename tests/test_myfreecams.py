@@ -27,6 +27,32 @@ def test_native_provider_and_alias_do_not_require_yt_dlp_extractor(monkeypatch):
     assert providers.normalize_source("mfc", "@Some_Model") == ("myfreecams", "some_model")
 
 
+def test_public_link_uses_matching_mfc_name_casing():
+    assert providers.source_url("myfreecams", "iam_sasha", display_name="Iam_Sasha") == "https://www.myfreecams.com/#Iam_Sasha"
+    assert providers.source_url("myfreecams", "iam_sasha", display_name="My favourite") == "https://www.myfreecams.com/#iam_sasha"
+    assert providers.source_url("chaturbate", "example", display_name="Example") == "https://chaturbate.com/example/"
+
+
+def test_source_api_link_uses_saved_mfc_username():
+    from types import SimpleNamespace
+    from app import main
+
+    source = SimpleNamespace(platform="myfreecams", slug="iam_sasha", name="Iam_Sasha")
+    assert main._source_public_url(source) == "https://www.myfreecams.com/#Iam_Sasha"
+
+
+def test_inspection_link_uses_official_mfc_username(monkeypatch):
+    from app import main
+
+    async def probe(*_args):
+        return providers.ProbeResult(False, "offline", title="Iam_Sasha")
+
+    monkeypatch.setattr(main, "require_auth", lambda _request: None)
+    monkeypatch.setattr(main, "probe", probe)
+    result = asyncio.run(main.inspect_source(main.SourceInspect(platform="mfc", slug="Iam_Sasha"), None))
+    assert result["source_url"] == "https://www.myfreecams.com/#Iam_Sasha"
+
+
 @pytest.mark.parametrize("value", [
     "https://www.myfreecams.com/", "https://www.myfreecams.com/#",
     "https://www.myfreecams.com/#name%0Acommand",
@@ -75,6 +101,7 @@ def test_guest_lookup_handles_fragmented_and_batched_protocol_messages(monkeypat
     assert (room.uid, room.status, room.server) == (42, "live", "800")
     assert ws.closed
     assert ws.sent[0] == "hello fcserver\n\0"
+    assert ws.sent[1] == "1 0 0 20080909 0 guest:guest\n"
     assert ws.sent[-1] == "10 0 0 20 0 example\n"
 
 
@@ -207,7 +234,7 @@ def test_mfc_pts_setting_reaches_recorder_and_audio_guard(monkeypatch):
     class Process:
         returncode = 0
         async def communicate(self):
-            return b'{"streams":[{"codec_type":"video"}]}', b""
+            return b'{"streams":[{"codec_type":"video","nb_read_packets":"10"}]}', b""
     async def launch(*args, **_kwargs):
         assert args[args.index("-extension_picky") + 1] == "0"
         return Process()
@@ -215,3 +242,21 @@ def test_mfc_pts_setting_reaches_recorder_and_audio_guard(monkeypatch):
     audit = asyncio.run(providers.audit_inputs([item]))
     assert audit.has_video and not audit.has_audio
     assert "audio assente" in audit.error
+
+
+@pytest.mark.parametrize("audio_packets,expected", [(None, False), ("0", False), ("12", True)])
+def test_mfc_audio_guard_requires_real_audio_packets(monkeypatch, audio_packets, expected):
+    monkeypatch.setattr(mfc, "hls_options", lambda _program: ())
+    item = providers.ResolvedInput("https://video300.myfreecams.com/live.m3u8", {}, "media", allow_mfc_pts=True)
+    class Process:
+        returncode = 0
+        async def communicate(self):
+            payload = {"streams": [{"codec_type": "video", "nb_read_packets": "10"}, {"codec_type": "audio", "nb_read_packets": audio_packets}]}
+            return json.dumps(payload).encode(), b""
+    async def launch(*args, **_kwargs):
+        assert args[args.index("-read_intervals") + 1] == "%+3"
+        assert "-count_packets" in args
+        return Process()
+    monkeypatch.setattr(providers.asyncio, "create_subprocess_exec", launch)
+    audit = asyncio.run(providers.audit_inputs([item]))
+    assert audit.has_video and audit.has_audio == expected

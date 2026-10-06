@@ -131,12 +131,11 @@ def lookup(slug: str) -> Room:
                 close_timeout=1, max_size=2 * 1024 * 1024,
             ) as ws:
                 ws.send("hello fcserver\n\0")
-                ws.send(f"1 0 0 20071025 0 {random.randrange(10_000_000, 100_000_000)}@guest:guest\n")
+                ws.send("1 0 0 20080909 0 guest:guest\n")
                 ws.send(f"10 0 0 20 0 {slug.lower()}\n")
                 for fields in _messages(ws, time.monotonic() + 10):
-                    # Guest LOGIN can return a notice/error while public name
-                    # lookups remain available. The lookup's own response is
-                    # authoritative; no authenticated operation is requested.
+                    # The lookup's own response is authoritative, independently
+                    # of unrelated session messages; no account is requested.
                     if fields[0] == "10" and fields[3] == "20":
                         return _room(fields, slug)
         except Exception as exc:
@@ -173,10 +172,10 @@ def public_playlist(slug: str) -> tuple[str, dict[str, str]]:
 
 @lru_cache(maxsize=2)
 def hls_options(program: str) -> tuple[str, ...]:
-    """Accept MFC's real CMAF .pts segments on old and current FFmpeg.
+    """Accept MFC's .pts segments on old and current FFmpeg.
 
     Current HLS demuxers check whether the filename matches the detected
-    container. MFC names MP4 fragments .pts; disable that check only for inputs
+    container. MFC uses .pts for TS or MP4 fragments; disable that check only for inputs
     resolved by this adapter. Protocol and actual A/V validation still apply.
     """
     result = subprocess.run(

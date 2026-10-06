@@ -5,6 +5,8 @@ Verifica protocollo e runtime dal nodo: **2026-10-06**. Sorgenti:
 Coolify sotto `/app/app`. Versione distribuita: **3.5.2**, commit runtime
 `5ca0275cbaa3ac2801281380106f3236708d76c8`, PR
 [47](https://github.com/astropuzzo/LiveVault-Test/pull/47).
+Candidato **3.5.3**: link con maiuscole del nome pubblico, login ospite corretto
+e verifica dei pacchetti A/V. Il recupero dell'audio nativo di Iam_Sasha resta aperto.
 
 ## Contratto
 
@@ -14,12 +16,18 @@ AutoPilot riconosce gli URL HTTPS `www.myfreecams.com/#username`, `/username`,
 `m.myfreecams.com/#username`, `profiles.myfreecams.com/username` e
 `share.myfreecams.com/username`. La scelta esplicita accetta anche lo username.
 Il link canonico conserva il frammento `#username`: non eliminarlo come fosse
-un normale anchor. URL con credenziali, porte diverse da 443 o username con
+un normale anchor. Dalla 3.5.3 usa le maiuscole del nome salvato, quando coincide
+con lo username normalizzato, e del nome ufficiale nella risposta di ispezione:
+`https://www.myfreecams.com/#Iam_Sasha`. Un'etichetta personalizzata non sostituisce
+lo username. URL con credenziali, porte diverse da 443 o username con
 separatori/caratteri di controllo sono rifiutati prima del collegamento.
 
 Il resolver legge `https://www.myfreecams.com/_js/serverconfig.js` (cache 1 h),
 apre un WebSocket TLS ospite `/fcsl` su un server annunciato dal provider e
 interroga il nome con `USERNAMELOOKUP`. Non usa account, password utente o DB.
+Il login ospite standard è `1 0 0 20080909 0 guest:guest`; il comando 3.5.2
+con versione 20071025 e nome numerico era rifiutato dal server, anche se la
+ricerca pubblica del nome rispondeva comunque.
 `websockets>=14,<18`, già presente nel runtime tramite Uvicorn/yt-dlp, è ora
 una dipendenza esplicita dell'adapter. Due server al massimo, apertura 6 s,
 risposta 10 s per tentativo e chiusura 1 s; framing FCS incrementale con limite
@@ -39,13 +47,19 @@ a yt-dlp con Origin/Referer MFC per scegliere la qualità configurata e al
 recorder FFmpeg esistente: copia A/V, segmentazione, unione e guardia ffprobe
 audio/video restano operative. Nessuna migrazione di dati o schema.
 
-MFC serve frammenti CMAF `.pts`, anche quando il contenuto è MP4. I demuxer HLS
+MFC usa `.pts` per segmenti TS o MP4; il nome del percorso `cmaf` non prova
+che il contenuto sia CMAF. I demuxer HLS
 FFmpeg recenti li rifiutano con `extension_picky=1`. Solo gli input risolti
 dall'adapter portano `allow_mfc_pts`: ffprobe e recorder usano `-extension_picky 0`
 quando disponibile; nei binari precedenti si aggiunge `.pts` all'elenco ristretto
 di estensioni. La presenza dell'opzione è rilevata una volta per binario tramite
 `-h demuxer=hls`; gli altri provider mantengono le proprie opzioni. La guardia A/V
-continua a rifiutare video senza audio.
+continua a rifiutare video senza audio. Dalla 3.5.3 legge tre secondi e conta i
+pacchetti di ciascuna traccia: una dichiarazione AAC nella PMT TS, senza pacchetti
+audio, non supera il controllo. La lettura mantiene il timeout complessivo e
+la chiusura del processo in caso di timeout/cancellazione. Gli altri provider
+mantengono il controllo precedente. Questo controllo non misura l'udibilità,
+non rileva un guasto iniziato dopo l'avvio e non ricrea audio assente alla sorgente.
 
 ## Evidenze e limiti
 
@@ -84,6 +98,31 @@ continua a rifiutare video senza audio.
   pubbliche MFC, non acquisti, replay Share, show privati o club.
 - Supporto beta: una live pubblica breve verificata; durata lunga e più MFC
   simultanee restano da provare. Lo stato è quello visibile dall'IP del nodo.
+- Verifica successiva sull'audio di Iam_Sasha, UID 37174323, 2026-10-06:
+  frammento locale 255 con AAC decodificabile ma quasi silenzioso (media -85,5 dB,
+  massimo -78,3 dB); frammento 257 con AAC dichiarata ma zero pacchetti/campioni.
+  Nessuna registrazione o riga DB è stata modificata. L'utente sente audio sul sito
+  anche come ospite: non attribuire il problema alla mancanza di un account.
+  Gli HLS pubblici 1080p esaminati hanno zero pacchetti audio; le qualità inferiori
+  contengono AAC quasi silenziosa. La variante CMAF con audio separato esponeva
+  una playlist audio ferma mentre il video proseguiva. Cambiare solo container,
+  mappe FFmpeg o qualità non ha dimostrato un recupero del suono.
+- Il servizio del player ufficiale annuncia un profilo H.264/Opus WebRTC.
+  La prova del ricevitore in ambiente isolato non ha ricevuto media: nessun
+  supporto WebRTC o dipendenza aiortc è incluso nella 3.5.3. Il browser ospite
+  di diagnosi richiede verifica dell'età e non permette il confronto con il
+  player dell'utente. Alle 14:38 UTC la stanza risultava offline; una nuova prova
+  del flusso nativo richiede una live pubblica. Il recupero dell'audio resta non verificato;
+  non considerare la presenza di AAC una prova di audio udibile né la 3.5.3
+  una correzione completa dell'audio. I file già muti non contengono suono recuperabile.
+- Test locali del candidato 3.5.3: 113 mirati/versione passati, inclusi link API salvato e
+  ispezione, AAC dichiarata senza pacchetti e AAC con pacchetti. CI e rollout
+  finale ancora da verificare; CI del primo candidato
+  [37480462386](https://github.com/astropuzzo/LiveVault-Test/actions/runs/37480462386)
+  verde, 649 Python e 81 JavaScript, shell, NINA isolato e controllo documentale.
+  La funzione candidata eseguita in un processo separato del container 3.5.2
+  accetta il campione MollyMayhem e rileva `has_audio=false` nel frammento 257
+  di Iam_Sasha, senza modificare il servizio o scrivere sul DB/media.
 
 ## Rollout e rollback
 
@@ -102,5 +141,9 @@ dell'immagine precedente `ahul2vdjkyvjiwgzpcrmxzfe:bee494925048f52233951514b0ec2
 (3.5.1). Le sorgenti MFC eventualmente aggiunte restano nel DB: metterle in pausa
 prima del rollback, senza cancellarle. Control/NINA, storage e APP_SECRET non
 richiedono modifiche.
+Per la sola 3.5.3, conservare l'immagine 3.5.2
+`ahul2vdjkyvjiwgzpcrmxzfe:5ca0275cbaa3ac2801281380106f3236708d76c8`:
+il rollback ripristina i link precedenti e la guardia basata sulle sole tracce
+dichiarate; non risolve l'audio mancante. Nessuna migrazione o modifica credenziali.
 Rollback documentale: ripristinare AI-HANDOFF.md e SOURCE.txt dal backup mirato;
 MYFREECAMS.md era assente e può essere rimosso solo nel rollback di questo rollout.
