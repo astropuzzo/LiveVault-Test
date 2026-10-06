@@ -9,7 +9,64 @@ The active server is the OpenAstro home node (`astro@192.168.1.27`).
 - Coolify HTTPS: https://openastro.tailf2871c.ts.net:10000/
 - NINA Monitor: https://openastro.tailf2871c.ts.net:8443/nina/ (remote, via the Control Funnel; no dedicated Funnel port) · LAN http://192.168.1.27:9091/
 
-Application URLs, including Coolify, use HTTPS through Tailscale Funnel and application authentication (verified 2026-09-08). The retired TierHive/CapRover instance is not a deployment target. Read [AGENTS.md](AGENTS.md) and [AI-HANDOFF.md](AI-HANDOFF.md) before administration.
+Application URLs, including Coolify, use HTTPS through Tailscale Funnel and application authentication (public access reverified 2026-10-06). The retired TierHive/CapRover instance is not a deployment target. Read [AGENTS.md](AGENTS.md) and [AI-HANDOFF.md](AI-HANDOFF.md) before administration.
+
+## Public ingress diagnosis and recovery
+
+Verified **2026-10-06** on the home node, Tailscale 1.102.3. LiveVault and Control
+were reachable locally (HTTP 200 on `127.0.0.1:8080` and `127.0.0.1:9090`),
+and HTTPS to the private Tailscale address had a valid certificate. Public
+connections to all three Funnel ports failed during TLS with an immediate EOF.
+Forced requests to each public DNS A record reproduced the failure; the node's
+`peerapi_ingress` counter did not increase during those attempts. Funnel status
+still reported all ports enabled, with no health warning or expired node key.
+
+The disruption was in the public Funnel path. Logs show control-session
+reconnections on 2026-10-05 at 22:22 and 22:45 UTC. A stale ingress registration
+after a reconnect is a plausible cause, also described by a Tailscale maintainer
+in [issue 20739](https://github.com/tailscale/tailscale/issues/20739);
+the exact initial trigger is not established by this audit. A requested netmap
+refresh did not restore access. Restarting **only `tailscaled.service`** at
+06:02 UTC (08:02 Europe/Rome), followed by relay propagation, restored it.
+No Funnel reset, reauthentication, package update or application deploy was used.
+
+Post-recovery checks through public DNS from Windows and forced public relay
+addresses from the node: LiveVault 200, Control 200, NINA `/nina/` 200, Coolify
+302 to login. Unauthenticated LiveVault `/api/settings` and Control `/api/state`
+returned 401. The serialized Funnel configuration was identical before/after,
+including `/nina` and `/dns-query`. LiveVault and NINA retained their 2026-09-30
+container start times; Control retained PID 2334859, started 2026-10-02.
+LiveVault 3.5.1 reported all workers active, one recorder and NVMe storage;
+the same capture inode grew by 85,870,019 bytes between post-recovery samples.
+
+Runtime: `/usr/sbin/tailscaled`, `tailscaled.service`, existing state under
+`/var/lib/tailscale`; application source remains `bee494925048f52233951514b0ec206cc1042055`
+for LiveVault/NINA. This intervention changed no application source or settings.
+Private incident evidence and configuration snapshots:
+`/var/backups/openastro/20261006-funnel` (root-only).
+
+For a recurrence:
+
+1. Check local backends, container health, disk space, `tailscale status`,
+   `tailscale funnel status`, `tailscale netcheck` and the tailscaled journal.
+2. Resolve the public DNS A records from outside Tailscale. Test with
+   `curl --resolve openastro.tailf2871c.ts.net:443:<public-A-record> https://openastro.tailf2871c.ts.net/`
+   and the corresponding `:8443` URL. MagicDNS on the node resolves to its private
+   address, so a successful ordinary curl there does **not** verify Funnel.
+3. Preserve the current Funnel JSON and logs in a private backup. If only public
+   ingress is broken, reconnect the existing tunnel by restarting tailscaled
+   through the established host root bridge over LAN SSH. This briefly interrupts
+   Tailscale connections; leave Docker, recorders, Control and storage running.
+4. Allow relay propagation, verify public HTTPS and authentication, compare the
+   saved configuration, and check the active capture's growth. Persistent failure
+   requires further ingress/control diagnosis, not repeated service restarts.
+
+Rollback: this recovery changed no persistent configuration or installed version,
+so no application/image/database rollback is required. Retain the original Funnel
+snapshot; do not replace identities, keys or routes to undo a reconnect. Operational
+document backups are kept in the incident directory. Limits: external HTTP checks
+verify availability/authentication at that moment, not a guarantee against future
+Funnel failures or a complete recording-integrity audit.
 
 ## Deployment model
 

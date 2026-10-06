@@ -1,5 +1,6 @@
 # OpenAstro — fonte di verità operativa
-Verifica host: **2026-09-30**. Leggere [AGENTS.md](AGENTS.md) prima di intervenire.
+Verifica accesso pubblico: **2026-10-06**; audit host completo: **2026-09-30**.
+Leggere [AGENTS.md](AGENTS.md) prima di intervenire.
 Priorità corrente: [CPU 1,8 GHz, USB e buffer](docs/STABILITY-20260909.md).
 Recupero MP4 e resolver HLS: [diagnosi e rollback](docs/MP4-HLS-RECOVERY.md), verifica 2026-09-20.
 Verifica pannello e frammenti brevi: [LIVE-PANEL-20260909.md](docs/LIVE-PANEL-20260909.md).
@@ -12,8 +13,21 @@ prima di continuare il [piano](docs/PIANO-OTTIMIZZAZIONE.md).
 Una copia distribuita su eMMC è in /opt/openastro-ops; gli ingressi AGENTS.md dei
 workspace del nodo puntano lì. Aggiornare quella copia insieme ai documenti Git;
 SOURCE.txt identifica la revisione (ultimo allineamento completo: 2026-09-30,
-incluse le guide collegate da questo file). Il vecchio handoff duplicato è stato sostituito
+incluse le guide collegate da questo file; aggiornamento mirato di AI-HANDOFF.md
+e HOSTING.md per il Funnel: 2026-10-06). Il vecchio handoff duplicato è stato sostituito
 da un rinvio, con originale conservato nella directory rollback.
+
+## Accesso pubblico — ripristinato 2026-10-06
+
+LiveVault e Control erano sani in locale ma il Funnel chiudeva le connessioni
+pubbliche durante TLS. Ripristinato con restart del solo `tailscaled.service`
+alle 06:02 UTC (08:02 Europe/Rome) e successiva propagazione ai relay. Verifica pubblica: LiveVault,
+Control e NINA HTTP 200, Coolify 302 al login; API protette ancora 401.
+Configurazione Funnel identica prima/dopo, container e PID Control invariati,
+una capture attiva su NVMe. Nessun deploy applicativo o cambio di storage/segreti.
+Il blocco è nel percorso Funnel; causa iniziale esatta non dimostrata.
+Evidenze private e rollback: `/var/backups/openastro/20261006-funnel`.
+Diagnosi, limiti e procedura: [HOSTING.md](HOSTING.md#public-ingress-diagnosis-and-recovery).
 
 ## UI — runtime 3.5.1 verificato
 Verifica **2026-09-30**: LiveVault e NINA
