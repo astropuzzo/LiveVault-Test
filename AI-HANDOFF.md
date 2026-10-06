@@ -453,6 +453,17 @@ autenticazione/rate limit DoH e openastro-dot-network.timer per IPv6 DoT.
 Non eseguire flush ruleset. Servizi locali attivi non provano accessibilità
 telefonica/IPv6 esterna; tale verifica resta distinta.
 
+## Provider MyFreeCams / MFC
+
+Adapter nativo candidato **3.5.2**, protocollo ospite verificato dal runtime il
+**2026-10-06**. Riconosce username, URL `#username`, profili e MFC Share; alias
+`mfc` → `myfreecams`. Stato FCS autorevole, HLS solo per `vs=0`, errore di rete
+distinto da offline, qualità e guardia A/V nel recorder esistente. Sorgenti,
+evidenze, limiti, rollout e rollback: [MYFREECAMS.md](docs/MYFREECAMS.md).
+131 test mirati passati su Windows; CI Linux/Python 3.13 verde (643 Python,
+81 JavaScript). Capture pubblica sul nodo verificata: 8,024 s, H.264 720p + AAC;
+prova in processo separato, rollout della nuova immagine ancora da completare.
+
 ## Provider Stripchat
 Verifica 2026-09-13: la risoluzione username → model ID usa
 `https://stripchat.com/api/front/users/user-ids/{username}`; il precedente

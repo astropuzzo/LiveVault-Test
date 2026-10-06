@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from functools import lru_cache
 from typing import Any
-from urllib.parse import parse_qs, urljoin, urlparse
+from urllib.parse import parse_qs, unquote, urljoin, urlparse
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import requests
@@ -60,6 +60,7 @@ class ResolvedInput:
     url: str
     http_headers: dict[str, str]
     kind: str
+    allow_mfc_pts: bool = False
 
 
 @dataclass
@@ -83,6 +84,7 @@ class ProviderSpec:
     support_level: str = "beta"
     # For sites whose channel id is not the first URL path segment.
     slug_regex: str = ""
+    native: bool = False
 
 
 PROVIDERS = (
@@ -105,6 +107,16 @@ PROVIDERS = (
         "es. https://stripchat.com/nome",
         "Stripchat",
         url_template="https://stripchat.com/{slug}",
+    ),
+    ProviderSpec(
+        "myfreecams",
+        "MyFreeCams (MFC)",
+        ("myfreecams.com", "www.myfreecams.com", "m.myfreecams.com", "profiles.myfreecams.com", "share.myfreecams.com"),
+        "Username o URL MyFreeCams",
+        "es. https://www.myfreecams.com/#nome",
+        "native:myfreecams",
+        url_template="https://www.myfreecams.com/#{slug}",
+        native=True,
     ),
     ProviderSpec(
         "bongacams",
@@ -413,11 +425,11 @@ def provider_catalog() -> list[dict[str, Any]]:
                 "placeholder": item.placeholder,
                 "last_broadcast": item.last_broadcast,
                 "support_level": item.support_level,
-                "extractor_available": item.extractor in available,
+                "extractor_available": item.native or item.extractor in available,
                 "audio_verified": item.id == "chaturbate",
             }
             for item in PROVIDERS
-            if item.extractor in available
+            if item.native or item.extractor in available
         ],
     ]
 
@@ -453,6 +465,12 @@ def _username_from_value(value: str, spec: ProviderSpec) -> str:
     raw = value.strip()
     if "://" in raw:
         url = _public_https_url(raw, allowed_hosts=spec.hosts)
+        if spec.id == "myfreecams":
+            parsed = urlparse(value.strip())
+            raw = unquote(parsed.fragment or urlparse(url).path).strip("/")
+            if not re.fullmatch(r"[A-Za-z0-9_]{1,100}", raw):
+                raise ValueError("URL MyFreeCams senza username valido")
+            return raw.lower()
         if spec.slug_regex:
             match = re.match(spec.slug_regex, urlparse(url).path)
             if not match:
@@ -466,6 +484,8 @@ def _username_from_value(value: str, spec: ProviderSpec) -> str:
             raise ValueError("l'URL non contiene il nome del canale")
         raw = parts[0]
     raw = raw.strip().lstrip("@").strip("/")
+    if spec.id == "myfreecams" and not re.fullmatch(r"[A-Za-z0-9_]{1,100}", raw):
+        raise ValueError("Username MyFreeCams non valido")
     if not USERNAME_RE.fullmatch(raw):
         raise ValueError(f"nome canale {spec.label} non valido")
     return raw.lower()
@@ -506,12 +526,14 @@ def detect_provider(value: str) -> str:
 
 def normalize_source(platform: str, value: str) -> tuple[str, str]:
     selected = (platform or "auto").strip().lower()
+    if selected == "mfc":
+        selected = "myfreecams"
     if selected == "auto":
         selected = detect_provider(value)
     spec = PROVIDER_BY_ID.get(selected)
     if spec is None:
         raise ValueError("provider non supportato")
-    if spec.extractor not in _available_extractors():
+    if not spec.native and spec.extractor not in _available_extractors():
         raise ValueError(f"adapter {spec.label} non disponibile in questa build")
     if spec.username_based:
         return selected, _username_from_value(value, spec)
@@ -566,7 +588,7 @@ def _probe_ydl_class():
     return ProbeYoutubeDL
 
 
-def _extract(url: str, quality: str, *, quiet: bool = True) -> dict[str, Any]:
+def _extract(url: str, quality: str, *, quiet: bool = True, http_headers: dict[str, str] | None = None) -> dict[str, Any]:
     params = {
         "quiet": quiet,
         "no_warnings": quiet,
@@ -577,6 +599,8 @@ def _extract(url: str, quality: str, *, quiet: bool = True) -> dict[str, Any]:
         "retries": 2,
         "logger": _QuietLogger(),
     }
+    if http_headers:
+        params["http_headers"] = http_headers
     with _probe_ydl_class()(params) as ydl:
         return ydl.extract_info(url, download=False)
 
@@ -1034,6 +1058,18 @@ async def _probe_ytdlp(platform: str, slug: str, quality: str) -> ProbeResult:
 
 
 async def probe(platform: str, slug: str, quality: str = "best") -> ProbeResult:
+    if platform == "myfreecams":
+        from .myfreecams import lookup
+
+        try:
+            room = await asyncio.to_thread(lookup, slug)
+            return ProbeResult(
+                room.status in {"live", "private", "away"}, room.status,
+                recordable=room.status == "live", title=room.title,
+                metadata_status="unsupported",
+            )
+        except Exception as exc:
+            return ProbeResult(False, "error", recordable=False, error=str(exc)[-700:], metadata_status="unsupported")
     if platform == "stripchat":
         return await _probe_stripchat(slug, quality)
     if platform != "chaturbate":
@@ -1209,8 +1245,14 @@ async def probe(platform: str, slug: str, quality: str = "best") -> ProbeResult:
 async def resolve_inputs(platform: str, slug: str, quality: str = "best") -> list[ResolvedInput]:
     if platform == "stripchat":
         raise RuntimeError("Stripchat uses the dedicated WebRTC recorder")
-    url = source_url(platform, slug)
-    info = await asyncio.to_thread(_extract, url, quality, quiet=False)
+    if platform == "myfreecams":
+        from .myfreecams import public_playlist
+
+        url, headers = await asyncio.to_thread(public_playlist, slug)
+        info = await asyncio.to_thread(_extract, url, quality, quiet=False, http_headers=headers)
+    else:
+        url = source_url(platform, slug)
+        info = await asyncio.to_thread(_extract, url, quality, quiet=False)
     formats = info.get("requested_formats") or []
     result: list[ResolvedInput] = []
     seen: set[str] = set()
@@ -1253,6 +1295,9 @@ async def resolve_inputs(platform: str, slug: str, quality: str = "best") -> lis
         result.append(ResolvedInput(str(info["url"]), dict(info.get("http_headers") or {}), kind))
     if not result:
         raise RuntimeError("No playable stream URL returned by yt-dlp")
+    if platform == "myfreecams":
+        for item in result:
+            item.allow_mfc_pts = True
     return result
 
 
@@ -1274,6 +1319,10 @@ async def _audit_input(item: ResolvedInput, timeout: float) -> InputAudit:
         "-analyzeduration", "7000000",
         "-probesize", "7000000",
     ]
+    if item.allow_mfc_pts:
+        from .myfreecams import hls_options
+
+        cmd += await asyncio.to_thread(hls_options, "ffprobe")
     headers = _ffprobe_headers(item.http_headers)
     if headers:
         cmd += ["-headers", headers]

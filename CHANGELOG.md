@@ -25,6 +25,16 @@
 - I controlli torrent sono resi espliciti per ogni job (pausa/riprendi/elimina) e lo
   storico `Importati di recente` può essere svuotato senza cancellare media o receipt.
 
+## 3.5.2 — 2026-10-06
+
+- MyFreeCams (MFC) nel catalogo e AutoPilot, con link `#username`, profili e
+  alias `mfc`; adapter nativo ospite indipendente dagli estrattori yt-dlp.
+- Stati pubblica, away, privata/gruppo/club e offline dal protocollo FCS;
+  errori di trasporto separati da offline e nessuna richiesta HLS non pubblica.
+- HLS CMAF/mobile dagli edge pubblicati da MFC, qualità configurata, Origin e
+  Referer preservati e verifica audio/video con il recorder esistente.
+- Contratto, prove e rollback: [MyFreeCams](docs/MYFREECAMS.md).
+
 ## 3.5.1 — 2026-09-30
 
 Evoluzione delle tre UI verso vetro e blu cosmico: shell flottanti, gerarchia
