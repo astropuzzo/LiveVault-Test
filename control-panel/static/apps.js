@@ -115,6 +115,7 @@
     setText('#appsLoadState','Aggiornamento del riepilogo…');
     try {
       const response=await fetch('/api/apps/summary',{cache:'no-store',signal:activeController.signal});
+      if(requestGeneration!==generation||!canLoad())return;
       if(response.status===401){ if(typeof showLogin==='function')showLogin(); else setAuthenticated(false); return; }
       const data=await response.json();
       if(requestGeneration!==generation||!canLoad())return;

@@ -61,6 +61,14 @@ test('logout erases counters and prevents a late authenticated response restorin
   s.pending[1].resolve(response());await tick();assert.equal(s.node('#appsActive').textContent,'1');
 });
 
+test('an old 401 cannot log out a newly authenticated session',async()=>{
+  const s=setup();s.ctx.OpenAstroApps.setView('apps');
+  s.ctx.OpenAstroApps.setAuthenticated(false);s.ctx.OpenAstroApps.setAuthenticated(true);
+  assert.equal(s.pending.length,2);
+  s.pending[0].resolve(response({},401));await tick();assert.equal(s.loginCalls(),0);
+  s.pending[1].resolve(response());await tick();assert.equal(s.node('#appsTotal').textContent,'3');
+});
+
 test('service unavailable is unknown, while an empty ledger shows real zero',async()=>{
   const s=setup();s.ctx.OpenAstroApps.setView('apps');
   const unavailable=sample();Object.assign(unavailable.apps[0],{available:false,purchases:null,users:{purchasing_accounts:null},daily_utc:[]});

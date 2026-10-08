@@ -57,7 +57,7 @@ grafico, campioni e possibilità di esportazione. Il browser limita l'attesa a
 8 s. Il grafico offre una tabella accessibile con tutti i valori giornalieri.
 **Esporta JSON** scarica soltanto conteggi aggregati e provenienza; i link Coolify
 e Google Play restano esclusi. Coolify usa il link pubblico `:10000` fuori LAN e
-il link LAN `192.168.1.27:8000` quando il pannello è aperto da quella LAN.
+il link LAN `192.168.1.27:8000` quando il pannello è aperto dall'indirizzo LAN.
 
 Percorsi sorgente: `control-panel/{server.py,app_management.py}` e
 `control-panel/static/{index.html,app.js,apps.js,apps.css,sw.js}`. Runtime previsto:
