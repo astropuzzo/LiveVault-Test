@@ -1,0 +1,11 @@
+.env
+.env.*
+!.env.example
+**/*service-account*.json
+**/*.sqlite3*
+**/__pycache__
+.pytest_cache
+.pytest_tmp*
+.test-runs
+.venv
+tests

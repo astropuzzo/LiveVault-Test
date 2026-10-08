@@ -1,0 +1,67 @@
+name: Bonsai Sensei backend
+
+on:
+  push:
+    paths:
+      - 'bonsai-sensei-billing/**'
+      - '.github/workflows/bonsai-billing.yml'
+  pull_request:
+    paths:
+      - 'bonsai-sensei-billing/**'
+      - '.github/workflows/bonsai-billing.yml'
+
+concurrency:
+  group: bonsai-billing-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  billing:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: bonsai-sensei-billing
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install isolated backend dependencies
+        run: pip install -r requirements-dev.txt
+      - name: Verify transaction and authentication safety
+        run: pytest -q
+      - name: Build separate service image
+        run: docker build -t bonsai-sensei-billing:ci .
+      - name: Verify deployment isolation
+        run: |
+          docker compose config --format json > /tmp/bonsai-compose.json
+          python - <<'PY'
+          import json
+          service = json.load(open('/tmp/bonsai-compose.json'))['services']['billing']
+          assert service['user'] == '10001:10001'
+          assert service['read_only'] is True and service['cap_drop'] == ['ALL']
+          assert 'no-new-privileges:true' in service['security_opt']
+          assert service['environment']['BILLING_ENABLED'] == 'false'
+          assert service['mem_limit'] == 268435456 and float(service['cpus']) == 0.5
+          assert service['ports'][0]['host_ip'] == '127.0.0.1'
+          mounts = {m['target']: m for m in service['volumes']}
+          assert set(mounts) == {'/data/bonsai-sensei', '/config', '/run/secrets'}
+          assert mounts['/config']['read_only'] and mounts['/run/secrets']['read_only']
+          PY
+      - name: Verify staging container
+        run: |
+          docker run -d --name bonsai-sensei-billing-ci \
+            -p 127.0.0.1:18095:8095 \
+            --read-only \
+            --tmpfs /tmp:rw,noexec,nosuid,size=16m \
+            --tmpfs /data/bonsai-sensei:rw,noexec,nosuid,uid=10001,gid=10001,mode=0700,size=16m \
+            --cap-drop ALL --security-opt no-new-privileges:true \
+            --memory 256m --cpus 0.5 bonsai-sensei-billing:ci
+          trap 'docker logs bonsai-sensei-billing-ci; docker rm -f bonsai-sensei-billing-ci >/dev/null' EXIT
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:18095/healthz >/dev/null; then break; fi
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:18095/healthz > /tmp/bonsai-health.json
+          python -c 'import json; h=json.load(open("/tmp/bonsai-health.json")); assert h["billing_enabled"] is False'
+          test "$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:18095/readyz)" = 503
+          test "$(docker inspect -f '{{.Config.User}}' bonsai-sensei-billing-ci)" = '10001:10001'

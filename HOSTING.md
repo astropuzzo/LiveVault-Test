@@ -79,10 +79,53 @@ Current/canonical model:
 | LiveVault | Coolify application | `main` + LiveVault Watch Paths | heavy recordings may use the SERVER NVMe through the established storage layer |
 | NINA Monitor | **separate Coolify application** | `main` + `nina-monitor/**` | no NVMe/USB mounts, no Docker socket, read-only app |
 | Future normal web apps | separate Coolify applications | `main` + module-specific Watch Paths | no cross-module mounts unless explicitly required |
+| Bonsai Sensei billing | separate Coolify application, staging | `main` + `bonsai-sensei-billing/**` | own database/config/secrets on internal storage; billing disabled pending Google setup |
 | OpenAstro host-control helpers | host systemd / narrow helpers | host deployment only | need host access for power, storage, firewall, sensors or systemd |
 | Docker/Coolify itself | host service | platform-managed | never exposed inside application containers |
 
 Do not force host-control code into Coolify merely for uniformity. Mounting `/var/run/docker.sock`, giving `privileged: true`, or exposing unrestricted host paths would make an application compromise equivalent to host compromise. If the Control Center is later moved behind Coolify, split it into an unprivileged web frontend plus a narrow host agent first.
+
+## Bonsai Sensei purchase service
+
+Preparation started 2026-10-08 at the user's request. Source is
+`bonsai-sensei-billing/`; no Bonsai game directory or game files are changed.
+The Coolify application is named `Bonsai Sensei Billing` (UUID
+`jxjbyszqndfoefprrxztv3fu`), Docker Compose build from `docker-compose.yml`, base
+directory `/bonsai-sensei-billing`, container port 8095 and host mapping
+`127.0.0.1:8095:8095`. Healthcheck is `/healthz`; `/readyz` is deliberately 503
+until package ID, Google service account, player authentication and catalog
+are configured. Leave `BILLING_ENABLED=false` during preparation.
+
+Own persistent paths on internal storage:
+
+- `/data/bonsai-sensei` mounted at `/data/bonsai-sensei`, writable only by uid 10001;
+- `/data/bonsai-sensei-config` mounted read-only at `/config`, catalog initially empty;
+- `/data/bonsai-sensei-secrets` mounted read-only at `/run/secrets`, including
+  separate generated account-binding and receipt-encryption keys. Never publish
+  or print these keys. Google credentials are not present during preparation.
+
+Use a single process, 256 MiB memory limit, half a CPU and no elevated container
+capabilities. Updates must deploy only this application. Do not share LiveVault
+databases, environment secrets, recording mounts, Docker socket or host-control
+helpers with the purchase service. Client requests authenticate players and
+bind purchases to Google's obfuscated account ID; a shared APK secret is not
+player authentication.
+
+The Compose file explicitly applies read-only root filesystem, protected bind
+mounts, dropped capabilities, no-new-privileges and resource limits. Coolify
+4.4.2's Dockerfile custom-options converter does not support all those options;
+do not switch back to a Dockerfile-only deployment assuming they remain active.
+
+Public routing and deployment verification are recorded in the module's
+`README.md` when completed. Google configuration and actual Play test purchases
+remain required before enabling billing. The service does not implement game
+currency prices or gameplay effects. It records permanent entitlements and
+consumable receipts for the later game integration.
+
+Before installation, the established `openastro-action backup_now` was run on
+2026-10-08. Rollback: stop only the Bonsai Sensei application in Coolify, remove
+only its dedicated HTTPS route, and preserve its database and keys for recovery.
+No existing application needs a restart or database rollback.
 
 ## Automatic deployment policy
 

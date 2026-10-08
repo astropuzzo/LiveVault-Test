@@ -1,0 +1,44 @@
+services:
+  billing:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    user: "10001:10001"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 256m
+    memswap_limit: 256m
+    cpus: 0.5
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m
+    ports:
+      - "127.0.0.1:8095:8095"
+    environment:
+      BILLING_ENABLED: ${BILLING_ENABLED:-false}
+      PORT: "8095"
+      DATABASE_PATH: /data/bonsai-sensei/billing.sqlite3
+      CATALOG_PATH: /config/catalog.json
+      PLAY_PACKAGE_NAME: ${PLAY_PACKAGE_NAME:-}
+      FIREBASE_PROJECT_ID: ${FIREBASE_PROJECT_ID:-}
+      GOOGLE_APPLICATION_CREDENTIALS: /run/secrets/play-service-account.json
+      ACCOUNT_HMAC_KEY_FILE: /run/secrets/account-hmac.key
+      TOKEN_ENCRYPTION_KEY_FILE: /run/secrets/token-encryption.key
+      RTDN_AUDIENCE: ${RTDN_AUDIENCE:-}
+      RTDN_SERVICE_ACCOUNT_EMAIL: ${RTDN_SERVICE_ACCOUNT_EMAIL:-}
+      RTDN_SUBSCRIPTION: ${RTDN_SUBSCRIPTION:-}
+    volumes:
+      - type: bind
+        source: /data/bonsai-sensei
+        target: /data/bonsai-sensei
+      - type: bind
+        source: /data/bonsai-sensei-config
+        target: /config
+        read_only: true
+      - type: bind
+        source: /data/bonsai-sensei-secrets
+        target: /run/secrets
+        read_only: true

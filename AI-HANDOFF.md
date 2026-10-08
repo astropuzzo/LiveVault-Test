@@ -232,6 +232,12 @@ in Cronologia" e NSFW 3.3/3.4) e [MP4-HLS-RECOVERY.md](docs/MP4-HLS-RECOVERY.md)
   co-autore nei commit, agire senza chiedere conferme per ogni passo.
 
 ## Accesso e repository
+Predisposizione Bonsai Sensei, 2026-10-08: modulo server separato
+`bonsai-sensei-billing/`, descritto in [HOSTING.md](HOSTING.md#bonsai-sensei-purchase-service).
+L'app Google Play non è ancora registrata: `BILLING_ENABLED=false`, catalogo
+vuoto, nessuna credenziale Google. `/readyz` restituisce 503 per configurazione
+incompleta. Non modificare la cartella del gioco durante questa predisposizione.
+
 - Nodo attivo: ASIAIR Plus / Raspberry Pi CM4, Debian, 4 core, 4 GiB RAM,
   eMMC interna da 32 GB. È il server domestico; il vecchio VPS è dismesso.
 - SSH LAN: `ssh -o BatchMode=yes astro@192.168.1.27`. Tailscale: `100.85.86.96`.
