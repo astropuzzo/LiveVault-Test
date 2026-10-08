@@ -87,7 +87,7 @@ Do not force host-control code into Coolify merely for uniformity. Mounting `/va
 
 ## Bonsai Sensei purchase service
 
-Preparation started 2026-10-08 at the user's request. Source is
+Installed and checked 2026-10-08 at the user's request. Source is
 `bonsai-sensei-billing/`; no Bonsai game directory or game files are changed.
 The Coolify application is named `Bonsai Sensei Billing` (UUID
 `jxjbyszqndfoefprrxztv3fu`), Docker Compose build from `docker-compose.yml`, base
@@ -104,21 +104,30 @@ Own persistent paths on internal storage:
   separate generated account-binding and receipt-encryption keys. Never publish
   or print these keys. Google credentials are not present during preparation.
 
-Use a single process, 256 MiB memory limit, half a CPU and no elevated container
+Use a single process, a requested 256 MiB memory limit, half a CPU and no elevated container
 capabilities. Updates must deploy only this application. Do not share LiveVault
 databases, environment secrets, recording mounts, Docker socket or host-control
 helpers with the purchase service. Client requests authenticate players and
 bind purchases to Google's obfuscated account ID; a shared APK secret is not
 player authentication.
 
-The Compose file explicitly applies read-only root filesystem, protected bind
+The deployed host kernel lacks memory/swap cgroup support: Docker discards the
+256 MiB request (`Memory=0`, `MemorySwap=-1`). This is **not an enforced RAM cap**;
+CPU quota is enforced (`cpu.max=50000 100000`). A read-only sample was about
+62 MiB RSS, not a peak guarantee. Keep billing disabled; assess supported memory
+isolation before enabling production purchases. No host/kernel change or reboot
+was performed for this preparation.
+
+The Compose file requests read-only root filesystem, protected bind
 mounts, dropped capabilities, no-new-privileges and resource limits. Coolify
 4.4.2's Dockerfile custom-options converter does not support all those options;
 do not switch back to a Dockerfile-only deployment assuming they remain active.
+Its Compose parser v5 drops long-form bind `read_only`; use short-form `:ro`
+for config/secrets and verify actual `docker inspect` mount `RW=false` after deploy.
 
 CI runs this module with its own pinned dependencies and vulnerability audit;
 the core suite excludes its folder and continues to cover LiveVault, Control and
-NINA. The host Control console will expose an authenticated `App e ricavi` view,
+NINA. The host Control console exposes an authenticated `App e ricavi` view,
 with a separate server-only read credential for aggregate ledger statistics.
 Registered players, advertising and financial figures remain unavailable until
 their authoritative sources are configured. No financial estimates are created.
@@ -129,8 +138,11 @@ credential permits only reading aggregate statistics, never purchase mutation
 or Google access, and is never supplied to the browser. Ledger snapshots are
 read-only and statistics responses are not cached.
 
-Public routing and deployment verification are recorded in the module's
-`README.md` when completed. Google configuration and actual Play test purchases
+Public API prefix is `https://openastro.tailf2871c.ts.net/bonsai-sensei/`,
+added to the existing port 443 Funnel without changing its root or any
+8443/10000 handler. Health is 200, readiness is intentionally 503, and the
+aggregate endpoint without its credential is 401. Deployment verification is
+recorded in the module's `README.md`. Google configuration and actual Play test purchases
 remain required before enabling billing. The service does not implement game
 currency prices or gameplay effects. It records permanent entitlements and
 consumable receipts for the later game integration.
@@ -138,7 +150,9 @@ consumable receipts for the later game integration.
 Before installation, the established `openastro-action backup_now` was run on
 2026-10-08. Rollback: stop only the Bonsai Sensei application in Coolify, remove
 only its dedicated HTTPS route, and preserve its database and keys for recovery.
-No existing application needs a restart or database rollback.
+No existing Coolify application needs a restart or database rollback. The new
+Control adapter requires a targeted restart of `openastro-control.service`;
+it invalidates panel sessions. Its rollback is documented in `control-panel/README.md`.
 
 ## Automatic deployment policy
 

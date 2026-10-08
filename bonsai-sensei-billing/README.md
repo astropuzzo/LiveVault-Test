@@ -18,9 +18,23 @@ base `python:3.13.16-slim-bookworm`, verificata il 2026-10-08 rispetto
 alle [immagini ufficiali Python](https://hub.docker.com/_/python),
 porta `8095`. Il Dockerfile nella presente cartella è il punto di build;
 Coolify distribuisce l'applicazione separata tramite `docker-compose.yml`
-per applicare esattamente mount, filesystem in sola lettura, privilegi e
-limiti di risorse. La distribuzione e l'ingresso pubblico sono descritti
+per applicare mount, filesystem in sola lettura e privilegi. Per i bind di
+configurazione e segreti usare la sintassi breve `:ro`: il parser v5 di Coolify
+4.4.2 perde `read_only` nella forma lunga. Verificare `RW=false` nel container
+effettivo dopo ogni cambio di deploy. La distribuzione e l'ingresso pubblico sono descritti
 in `../HOSTING.md`.
+
+Sul nodo ASIAIR il limite CPU a mezzo core è attivo; il limite RAM/swap richiesto
+di 256 MiB **non è applicato**, perché il kernel non offre il controller memoria
+necessario. Docker riporta `Memory=0`, `MemorySwap=-1`. Il campione di circa
+62 MiB RSS non è una garanzia di consumo massimo. La preparazione rimane
+disattivata; prima degli acquisti in produzione verificare un isolamento RAM
+supportato. Nessuna modifica al kernel né riavvio del nodo in questo intervento.
+
+Ingresso HTTPS predisposto: `https://openastro.tailf2871c.ts.net/bonsai-sensei/`.
+`/healthz` è pubblico e non contiene segreti; `/internal/admin/summary` senza
+credenziale risponde 401. La console autenticata è
+`https://openastro.tailf2871c.ts.net:8443/#apps`.
 
 I mount devono restare separati dai dati LiveVault, Control e NINA:
 

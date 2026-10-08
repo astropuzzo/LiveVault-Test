@@ -31,14 +31,7 @@ services:
       RTDN_SERVICE_ACCOUNT_EMAIL: ${RTDN_SERVICE_ACCOUNT_EMAIL:-}
       RTDN_SUBSCRIPTION: ${RTDN_SUBSCRIPTION:-}
     volumes:
-      - type: bind
-        source: /data/bonsai-sensei
-        target: /data/bonsai-sensei
-      - type: bind
-        source: /data/bonsai-sensei-config
-        target: /config
-        read_only: true
-      - type: bind
-        source: /data/bonsai-sensei-secrets
-        target: /run/secrets
-        read_only: true
+      # Coolify 4.4.2 parser v5 preserves :ro but drops long-form bind read_only.
+      - /data/bonsai-sensei:/data/bonsai-sensei
+      - /data/bonsai-sensei-config:/config:ro
+      - /data/bonsai-sensei-secrets:/run/secrets:ro
