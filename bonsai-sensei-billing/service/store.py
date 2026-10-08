@@ -3,6 +3,7 @@ import hashlib
 import sqlite3
 import time
 import uuid
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from .config import BillingError
@@ -193,3 +194,40 @@ class Store:
         with self.connection() as db:
             db.execute("UPDATE push_messages SET attempts=attempts+1,next_attempt=? WHERE message_id=?",
                        (time.time()+min(3600, 5*2**min(attempts, 10)), message_id))
+
+    def admin_summary(self, now=None):
+        """One consistent read-only snapshot; counts receipt rows, never sales values."""
+        now = now or datetime.now(timezone.utc)
+        today = now.astimezone(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+        first = today - timedelta(days=29)
+        end = today + timedelta(days=1)
+        bounds = (first.timestamp(), end.timestamp())
+        # A distinct read-only connection prevents this operational route from
+        # changing receipt rows, queue state or journal configuration.
+        db = sqlite3.connect(Path(self.path).resolve().as_uri() + "?mode=ro", uri=True, timeout=15)
+        db.row_factory = sqlite3.Row
+        try:
+            db.execute("BEGIN")
+            row = db.execute("""SELECT COUNT(*) AS total,
+                COALESCE(SUM(state='active'),0) AS active,
+                COALESCE(SUM(state='pending_purchase'),0) AS pending_purchase,
+                COALESCE(SUM(state='processing'),0) AS processing,
+                COALESCE(SUM(state='revoked'),0) AS revoked,
+                COALESCE(SUM(kind='permanent'),0) AS permanent,
+                COALESCE(SUM(kind='consumable'),0) AS consumable,
+                COUNT(DISTINCT owner) AS purchasing_accounts FROM purchases""").fetchone()
+            created = {item["day"]: item["count"] for item in db.execute(
+                "SELECT date(created,'unixepoch') AS day,COUNT(*) AS count FROM purchases "
+                "WHERE created>=? AND created<? GROUP BY day", bounds)}
+            revoked = {item["day"]: item["count"] for item in db.execute(
+                "SELECT date(revoked_at,'unixepoch') AS day,COUNT(*) AS count FROM purchases "
+                "WHERE revoked_at>=? AND revoked_at<? GROUP BY day", bounds)}
+        finally:
+            db.close()
+        purchases = {key: row[key] for key in ("total", "active", "pending_purchase", "processing",
+                                               "revoked", "permanent", "consumable")}
+        days = [(first + timedelta(days=offset)).date().isoformat() for offset in range(30)]
+        return {"purchases": purchases, "counted_total": row["total"],
+                "users": {"purchasing_accounts": row["purchasing_accounts"], "registered": None, "active": None},
+                "daily_utc": [{"date": day, "purchases": created.get(day, 0), "revocations": revoked.get(day, 0)}
+                              for day in days]}

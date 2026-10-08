@@ -11,6 +11,8 @@ finché Bonsai Sensei non è registrato nella Play Console.
 
 Python 3.13, FastAPI, SQLite WAL con transazioni `FULL`, un solo processo
 Uvicorn e un worker interno. Immagine eseguita come UID/GID `10001:10001`,
+base `python:3.13.16-slim-bookworm`, verificata il 2026-10-08 rispetto
+alle [immagini ufficiali Python](https://hub.docker.com/_/python),
 porta `8095`. Il Dockerfile nella presente cartella è il punto di build;
 Coolify distribuisce l'applicazione separata tramite `docker-compose.yml`
 per applicare esattamente mount, filesystem in sola lettura, privilegi e
@@ -26,6 +28,7 @@ I mount devono restare separati dai dati LiveVault, Control e NINA:
 | `/run/secrets/play-service-account.json` | Service account Google Play | Sola lettura |
 | `/run/secrets/account-hmac.key` | Chiave base64 HMAC, almeno 32 byte casuali | Sola lettura |
 | `/run/secrets/token-encryption.key` | Chiave Fernet per i purchase token | Sola lettura |
+| `/run/secrets/admin-stats.key` | Chiave base64, almeno 32 byte casuali, per le sole statistiche interne | Sola lettura |
 
 Non inserire segreti nell'immagine o nel repository. Le due chiavi sono
 diverse e persistenti: cambiarle senza una migrazione rompe l'associazione
@@ -99,6 +102,7 @@ restano documentate dal deploy e dalla CI.
 | `POST /v1/purchases/verify` | Corpo con `purchase_token` e `product_id`; risposta con `receipt_id`, `product_id`, `state`, `granted` |
 | `GET /v1/entitlements` | Prodotti permanenti attivi e registro dei consumabili dell'account autenticato |
 | `POST /v1/notifications/google-play` | Push Pub/Sub autenticato, disabilitato senza configurazione RTDN completa |
+| `GET /internal/admin/summary` | Aggregati riservati alla console OpenAstro, con chiave amministrativa separata |
 
 Prima di aprire il pagamento, il client deve recuperare `/v1/account` e
 passare quel valore a `BillingFlowParams.Builder.setObfuscatedAccountId`.
@@ -115,6 +119,39 @@ il gioco dovrà applicarla una sola volta e gestire gli storni. Questo modulo
 non aggiunge monete, non modifica salvataggi e non contiene regole di gioco.
 Il ledger dei consumabili include anche stati pendenti/revocati per rendere
 esplicito il risultato; il client non deve trattare ogni riga come un premio.
+
+### Statistiche riservate della console OpenAstro — 2026-10-08
+
+`GET /internal/admin/summary` richiede `Authorization: Bearer …` con la
+chiave esatta caricata da `ADMIN_STATS_KEY_FILE`, il cui percorso predefinito
+è `/run/secrets/admin-stats.key`. La chiave deve essere base64 valida con
+almeno 32 byte casuali. Il confronto è costante nel tempo; chiave assente,
+debole o errata produce 401 anche quando il billing è disabilitato.
+La chiave rimane sul server/pannello e non deve arrivare al browser.
+Un file mancante non impedisce l'avvio dello stato di preparazione.
+
+Il servizio apre una connessione SQLite separata in modalità `mode=ro`
+e legge un solo snapshot: non cambia ricevute, premi o code. La risposta
+comprende nome/versione, stato `preparing` o `ready`, configurazioni ancora
+mancanti, catalogo con soli identificativo e tipo, conteggi delle righe
+per stato/tipo e una serie di 30 giorni UTC. `generated_at` indica l'istante
+UTC della lettura; `source=sqlite_purchase_ledger` e
+`count_unit=receipt_rows` identificano l'origine dei numeri.
+
+`purchases.total` e `counted_total` sono il numero effettivo di ricevute
+registrate, incluse quelle pendenti/revocate: **non sono vendite pagate**.
+`users.purchasing_accounts` conta gli owner distinti nel ledger e va
+presentato come **Account con ricevute**. Il numero di tutti gli utenti
+registrati o attivi non è disponibile; i campi `registered` e `active`
+valgono `null`. Gli ID account, purchase token e receipt ID non sono
+restituiti. `daily_utc` contiene `date`, `purchases` (ricevute create) e
+`revocations` (revoche registrate), con giorni vuoti a zero.
+
+Ricavi e pubblicità restano `available=false`: mancano report finanziari
+Google e configurazione AdMob. Il servizio non moltiplica acquisti per
+prezzi presunti e non inventa incassi netti. Dopo questa aggiunta il totale
+locale è **51 test passati**, comprese autorizzazione, statistiche nello
+stato disabilitato, aggregati reali, finestre UTC e assenza di identificativi.
 
 ## Sicurezza delle transazioni e recupero
 

@@ -43,7 +43,7 @@ jobs:
           assert service['read_only'] is True and service['cap_drop'] == ['ALL']
           assert 'no-new-privileges:true' in service['security_opt']
           assert service['environment']['BILLING_ENABLED'] == 'false'
-          assert service['mem_limit'] == 268435456 and float(service['cpus']) == 0.5
+          assert int(service['mem_limit']) == 268435456 and float(service['cpus']) == 0.5
           assert service['ports'][0]['host_ip'] == '127.0.0.1'
           mounts = {m['target']: m for m in service['volumes']}
           assert set(mounts) == {'/data/bonsai-sensei', '/config', '/run/secrets'}

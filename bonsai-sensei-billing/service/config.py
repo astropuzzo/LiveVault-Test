@@ -21,6 +21,7 @@ class Settings:
     rtdn_audience: str = ""
     rtdn_email: str = ""
     rtdn_subscription: str = ""
+    admin_key: str = ""
 
     @classmethod
     def from_env(cls):
@@ -39,8 +40,8 @@ class Settings:
                 catalog[item["id"]] = item["kind"]
         except (OSError, ValueError, TypeError, KeyError):
             invalid = True
-        def secret(name):
-            path = os.environ.get(name + "_FILE", "")
+        def secret(name, default_file=""):
+            path = os.environ.get(name + "_FILE", default_file)
             if path:
                 try:
                     return Path(path).read_text().strip()
@@ -57,7 +58,8 @@ class Settings:
                    catalog=catalog, catalog_error=invalid,
                    rtdn_audience=os.environ.get("RTDN_AUDIENCE", ""),
                    rtdn_email=os.environ.get("RTDN_SERVICE_ACCOUNT_EMAIL", ""),
-                   rtdn_subscription=os.environ.get("RTDN_SUBSCRIPTION", ""))
+                   rtdn_subscription=os.environ.get("RTDN_SUBSCRIPTION", ""),
+                   admin_key=secret("ADMIN_STATS_KEY", "/run/secrets/admin-stats.key"))
 
     def missing(self):
         problems = []

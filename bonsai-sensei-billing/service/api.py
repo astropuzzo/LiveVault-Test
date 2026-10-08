@@ -1,6 +1,8 @@
 import base64
 import json
+import hmac
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from typing import Annotated
 
 from fastapi import Depends, FastAPI, Header, Request
@@ -89,6 +91,30 @@ def create_app(settings=None, engine=None, start_worker=True):
     def player(service=Depends(backend), authorization: str | None = Header(default=None)):
         service.require_ready()
         return service.identity.player(bearer(authorization))
+
+    def administrator(service=Depends(backend), authorization: str | None = Header(default=None)):
+        secret = service.settings.admin_key
+        try:
+            valid_key = len(base64.b64decode(secret, validate=True)) >= 32
+        except (ValueError, TypeError):
+            valid_key = False
+        candidate = authorization[7:] if authorization and authorization.startswith("Bearer ") else ""
+        if not valid_key or not hmac.compare_digest(candidate.encode(), secret.encode()):
+            raise BillingError("invalid_admin_identity", 401)
+
+    @application.get("/internal/admin/summary", dependencies=[Depends(administrator)])
+    def summary(service=Depends(backend)):
+        now = datetime.now(timezone.utc)
+        missing = service.missing()
+        data = service.store.admin_summary(now)
+        data.update({"service": "bonsai-sensei-billing", "name": "Bonsai Sensei", "version": VERSION,
+                     "generated_at": now.isoformat(timespec="seconds").replace("+00:00", "Z"),
+                     "source": "sqlite_purchase_ledger", "count_unit": "receipt_rows",
+                     "status": "preparing" if missing else "ready", "missing_configuration": missing,
+                     "catalog": [{"id": product, "kind": kind} for product, kind in sorted(service.settings.catalog.items())],
+                     "revenue": {"available": False, "reason": "google_financial_reports_not_configured"},
+                     "ads": {"available": False, "reason": "admob_not_configured"}})
+        return JSONResponse(data, headers={"Cache-Control": "no-store"})
 
     @application.get("/healthz")
     def health(service=Depends(backend)):

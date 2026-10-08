@@ -122,6 +122,12 @@ NINA. The host Control console will expose an authenticated `App e ricavi` view,
 with a separate server-only read credential for aggregate ledger statistics.
 Registered players, advertising and financial figures remain unavailable until
 their authoritative sources are configured. No financial estimates are created.
+The aggregate endpoint `/internal/admin/summary` requires its own random
+credential in `/run/secrets/admin-stats.key`; host Control reads the matching
+private `/etc/openastro-billing-admin.key` (mode 0600, owned by `astro`). This
+credential permits only reading aggregate statistics, never purchase mutation
+or Google access, and is never supplied to the browser. Ledger snapshots are
+read-only and statistics responses are not cached.
 
 Public routing and deployment verification are recorded in the module's
 `README.md` when completed. Google configuration and actual Play test purchases
