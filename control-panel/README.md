@@ -19,7 +19,7 @@ Runtime 3.5.1 da `bee4949...` in `/opt/openastro-control/static`; sette asset
 QA, stato rollout, limiti e rollback privato:
 [UI-REDESIGN-20260930](../docs/UI-REDESIGN-20260930.md).
 
-## App e ricavi — sorgente verificato 2026-10-08
+## App e ricavi — installata 2026-10-08
 
 La nuova ottava vista `#apps`, raggiungibile dal rail, dal dock mobile e dal tile
 Dashboard, gestisce un registro estendibile di app. L'unica app configurata è
@@ -66,9 +66,32 @@ Percorsi sorgente: `control-panel/{server.py,app_management.py}` e
 chiave mancante, errori sicuri, conteggi reali, esclusione dati privati),
 `tests/test_apps_panel_frontend.cjs` (navigazione, richieste sospese e risposte in
 ritardo, logout/401, esportazione) e contratti delle viste Control. La verifica
-visiva desktop/mobile con dati del nodo resta richiesta prima del rollout.
+visiva locale desktop 1440×1000 e mobile 412×915 è stata eseguita con il payload
+aggregato reale del nodo, senza overflow orizzontale mobile. Gli altri endpoint
+host nella preview locale restano indisponibili; la preview non è distribuita.
+La verifica autenticata nel browser pubblico attende il nuovo login dopo il
+riavvio del pannello e non è dichiarata completata.
 
-Rollback: ripristinare `server.py` e tutti gli asset modificati dalla copia privata
+Runtime installato dalla revisione `12e624c0c047dad1cf809f8d6084a9a377d781f9`:
+sette file verificati SHA-256, unico restart `openastro-control.service`
+(PID 73098 alla verifica). Il ponte reale `apps_summary()` restituisce HTTP 200
+con registro vuoto e 30 giorni UTC. L'API pubblica senza sessione restituisce 401
+e `Cache-Control: no-store`. LiveVault e NINA conservano ID e ora di avvio rispetto
+al campione preso prima del deploy. Il riavvio del nodo osservato prima di questo
+intervento non è stato richiesto né eseguito da questa preparazione.
+CI [37747927476](https://github.com/astropuzzo/LiveVault-Test/actions/runs/37747927476)
+verde; verifica successiva della stessa UI: 664 test Python core e 88 JavaScript.
+Il modulo acquisti separato ha 52 test, build/container e audit dipendenze verdi.
+
+Il pannello offre consultazione, aggiornamento, esportazione e link di gestione;
+non include ancora un modulo di inserimento della configurazione Google né
+connettori ai report finanziari/AdMob o al totale utenti Firebase. Le variabili
+server si configurano in Coolify; catalogo e credenziali restano file sul server.
+Non basta attivare billing per popolare le tre fonti statistiche mancanti.
+
+Backup privato: `/var/backups/openastro/20261008-bonsai-apps/control-before.tar.gz`,
+con `manifest.json`, `new-files.json`, `services-before.json` e i due snapshot
+Funnel nella stessa directory. Rollback: ripristinare `server.py` e tutti gli asset modificati dalla copia privata
 precedente, rimuovere il modulo `app_management.py` e gli asset `apps.js/apps.css`
 solo dopo avere ripristinato i riferimenti e la cache PWA, quindi riavviare soltanto
 `openastro-control.service` per il modulo Python. Il riavvio invalida le sessioni

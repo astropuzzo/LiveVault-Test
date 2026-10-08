@@ -36,6 +36,18 @@ Ingresso HTTPS predisposto: `https://openastro.tailf2871c.ts.net/bonsai-sensei/`
 credenziale risponde 401. La console autenticata è
 `https://openastro.tailf2871c.ts.net:8443/#apps`.
 
+Verifica runtime 2026-10-08, immagine Coolify
+`jxjbyszqndfoefprrxztv3fu_billing:78cc4df12a03743ee6a557d700ef556353da588c`:
+healthy, UID 10001, rootfs in sola lettura, capabilities rimosse,
+`no-new-privileges`, bind `/config` e `/run/secrets` effettivamente `RW=false`,
+database separato RW e porta host soltanto loopback. CI del modulo
+[37783467469](https://github.com/astropuzzo/LiveVault-Test/actions/runs/37783467469):
+52 test, audit runtime senza vulnerabilità note, build, verifica Compose e
+smoke test disattivato riusciti. Statistiche autenticate interne: 200/no-store,
+zero ricevute reali e 30 giorni UTC; i contatori mancanti restano `null`.
+Queste prove non comprendono un acquisto reale Google, l'integrazione del gioco
+o stabilità sotto traffico commerciale.
+
 I mount devono restare separati dai dati LiveVault, Control e NINA:
 
 | Percorso nel container | Uso | Accesso |

@@ -14,7 +14,7 @@ Una copia distribuita su eMMC è in /opt/openastro-ops; gli ingressi AGENTS.md d
 workspace del nodo puntano lì. Aggiornare quella copia insieme ai documenti Git;
 SOURCE.txt identifica la revisione (ultimo allineamento completo: 2026-09-30,
 incluse le guide collegate da questo file; aggiornamenti mirati per il Funnel
-e MyFreeCams: 2026-10-06). Il vecchio handoff duplicato è stato sostituito
+e MyFreeCams: 2026-10-06; Bonsai Sensei e console App e ricavi: 2026-10-08). Il vecchio handoff duplicato è stato sostituito
 da un rinvio, con originale conservato nella directory rollback.
 
 ## Accesso pubblico — ripristinato 2026-10-06
@@ -232,7 +232,7 @@ in Cronologia" e NSFW 3.3/3.4) e [MP4-HLS-RECOVERY.md](docs/MP4-HLS-RECOVERY.md)
   co-autore nei commit, agire senza chiedere conferme per ogni passo.
 
 ## Accesso e repository
-Predisposizione Bonsai Sensei, 2026-10-08: modulo server separato
+Predisposizione Bonsai Sensei installata, 2026-10-08: modulo server separato
 `bonsai-sensei-billing/`, descritto in [HOSTING.md](HOSTING.md#bonsai-sensei-purchase-service).
 L'app Google Play non è ancora registrata: `BILLING_ENABLED=false`, catalogo
 vuoto, nessuna credenziale Google. `/readyz` restituisce 503 per configurazione
@@ -243,6 +243,20 @@ Il ponte server legge una chiave privata dedicata, senza esporla al browser.
 Ricavi Play, pubblicità, utenti registrati e attivi restano da collegare alle
 fonti reali; non sono stimati dal catalogo. Sorgenti e rollback del pannello in
 [control-panel/README.md](control-panel/README.md).
+Backend healthy da `78cc4df12a03743ee6a557d700ef556353da588c`, Coolify
+`jxjbyszqndfoefprrxztv3fu`, `main`/HEAD e Watch Paths del solo modulo.
+HTTPS `/bonsai-sensei/healthz` 200, `/readyz` 503, statistiche interne senza
+credenziale 401; tutte le rotte Funnel precedenti conservate. Config/segreti
+`RW=false`, uid 10001, rootfs in sola lettura e mezzo core verificati. Il kernel
+non supporta il controller memoria: **256 MiB non è un limite applicato**.
+Valutare isolamento RAM supportato prima dell'attivazione commerciale.
+Control da `12e624c...`, sette file verificati, unico restart del pannello
+(PID 73098); LiveVault/NINA invariati rispetto alla baseline immediata.
+QA locale desktop/mobile con aggregati reali eseguito; login pubblico dopo
+restart ancora necessario per la verifica visiva autenticata. Non leggere o
+chiedere password in chat. Backup e snapshot in
+`/var/backups/openastro/20261008-bonsai-apps`. CI: 664 Python core, 88 JavaScript,
+52 backend; audit delle dipendenze runtime senza vulnerabilità note.
 
 - Nodo attivo: ASIAIR Plus / Raspberry Pi CM4, Debian, 4 core, 4 GiB RAM,
   eMMC interna da 32 GB. È il server domestico; il vecchio VPS è dismesso.
