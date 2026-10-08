@@ -237,6 +237,12 @@ Predisposizione Bonsai Sensei, 2026-10-08: modulo server separato
 L'app Google Play non è ancora registrata: `BILLING_ENABLED=false`, catalogo
 vuoto, nessuna credenziale Google. `/readyz` restituisce 503 per configurazione
 incompleta. Non modificare la cartella del gioco durante questa predisposizione.
+La console OpenAstro include la vista `#apps` / `App e ricavi`: statistiche
+aggregate di ricevute e account con ricevute, protette dalla sessione esistente.
+Il ponte server legge una chiave privata dedicata, senza esporla al browser.
+Ricavi Play, pubblicità, utenti registrati e attivi restano da collegare alle
+fonti reali; non sono stimati dal catalogo. Sorgenti e rollback del pannello in
+[control-panel/README.md](control-panel/README.md).
 
 - Nodo attivo: ASIAIR Plus / Raspberry Pi CM4, Debian, 4 core, 4 GiB RAM,
   eMMC interna da 32 GB. È il server domestico; il vecchio VPS è dismesso.

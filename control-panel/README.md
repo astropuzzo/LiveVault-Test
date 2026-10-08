@@ -19,6 +19,63 @@ Runtime 3.5.1 da `bee4949...` in `/opt/openastro-control/static`; sette asset
 QA, stato rollout, limiti e rollback privato:
 [UI-REDESIGN-20260930](../docs/UI-REDESIGN-20260930.md).
 
+## App e ricavi — sorgente verificato 2026-10-08
+
+La nuova ottava vista `#apps`, raggiungibile dal rail, dal dock mobile e dal tile
+Dashboard, gestisce un registro estendibile di app. L'unica app configurata è
+**Bonsai Sensei**. Il selettore non introduce app dimostrative. La vista mostra
+ricevute totali, attive, revocate, in attesa e in elaborazione, permanenti e
+consumabili, account distinti con ricevute, catalogo e attività giornaliera degli
+ultimi 30 giorni UTC. Il totale conta righe del registro, incluse le ricevute in
+attesa: non rappresenta vendite incassate, installazioni o tutti gli utenti.
+Utenti registrati/attivi restano **Da collegare**. Ricavi Google Play e AdMob
+restano **Da configurare**: servono report finanziari Google Play per importi,
+commissioni e ricavi netti, e l'autorizzazione AdMob per i report pubblicitari.
+Non vengono stimati ricavi dai prezzi del catalogo o dagli acquisti registrati.
+
+`GET /api/apps/summary` richiede la sessione Control esistente. Il modulo
+`app_management.py` chiama soltanto l'endpoint fisso loopback
+`http://127.0.0.1:8095/internal/admin/summary`, con timeout di 3 s, senza proxy di
+ambiente o redirect. La chiave Bearer rimane sul server nel file
+`/etc/openastro-billing-admin.key`: file regolare, permessi `0600`, proprietario
+uguale all'utente del servizio Control. Non è letta da parametri HTTP, restituita
+al browser o inserita negli asset. Il registro degli endpoint si modifica solo
+nel sorgente; il client non può scegliere URL arbitrari. Il payload usa una lista
+esplicita di campi aggregati, senza token acquisto, ID account o errori grezzi.
+Chiave assente, permessi errati, payload malformato o servizio non raggiungibile
+producono HTTP 503 con errore generico e contatori `null`; un registro vuoto
+raggiungibile conserva gli zero reali. Sessione assente produce HTTP 401 prima
+di leggere la chiave o chiamare il backend.
+
+Gli asset `static/apps.js` e `static/apps.css` riusano il tema cosmic glass.
+`static/index.html`, `static/app.js` e `static/sw.js` contengono soltanto gli
+agganci necessari alla vista e alla cache PWA `openastro-control-v3.5.1-apps1`.
+La vista carica i dati all'ingresso, al ritorno in una scheda visibile e con
+**Aggiorna**; non aggiunge polling in background. Uscita dalla vista, scheda
+nascosta e logout interrompono la richiesta; logout/401 cancellano contatori,
+grafico, campioni e possibilità di esportazione. Il browser limita l'attesa a
+8 s. Il grafico offre una tabella accessibile con tutti i valori giornalieri.
+**Esporta JSON** scarica soltanto conteggi aggregati e provenienza; i link Coolify
+e Google Play restano esclusi. Coolify usa il link pubblico `:10000` fuori LAN e
+il link LAN `192.168.1.27:8000` quando il pannello è aperto da quella LAN.
+
+Percorsi sorgente: `control-panel/{server.py,app_management.py}` e
+`control-panel/static/{index.html,app.js,apps.js,apps.css,sw.js}`. Runtime previsto:
+`/opt/openastro-control` e `/opt/openastro-control/static`, servizio
+`openastro-control.service`. Test mirati: `tests/test_apps_panel.py` (guardia HTTP,
+chiave mancante, errori sicuri, conteggi reali, esclusione dati privati),
+`tests/test_apps_panel_frontend.cjs` (navigazione, richieste sospese e risposte in
+ritardo, logout/401, esportazione) e contratti delle viste Control. La verifica
+visiva desktop/mobile con dati del nodo resta richiesta prima del rollout.
+
+Rollback: ripristinare `server.py` e tutti gli asset modificati dalla copia privata
+precedente, rimuovere il modulo `app_management.py` e gli asset `apps.js/apps.css`
+solo dopo avere ripristinato i riferimenti e la cache PWA, quindi riavviare soltanto
+`openastro-control.service` per il modulo Python. Il riavvio invalida le sessioni
+del pannello. Nessuna modifica a DB, credenziali degli utenti, acquisti o servizi
+Coolify è necessaria per il rollback di questa vista. La chiave amministrativa
+non deve essere inclusa nei backup pubblici o nel repository.
+
 ## Funzioni
 
 - CPU, memoria, temperatura, uptime, rete e dischi in tempo reale

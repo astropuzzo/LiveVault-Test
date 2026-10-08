@@ -10,11 +10,11 @@ SW = (ROOT / 'control-panel/static/sw.js').read_text(encoding='utf-8')
 
 def test_control_center_has_exact_primary_views():
     views = re.findall(r'data-view-panel="([a-z]+)"', HTML)
-    assert views == ['dashboard', 'media', 'storage', 'system', 'nina', 'pihole', 'advanced']
+    assert views == ['dashboard', 'media', 'apps', 'storage', 'system', 'nina', 'pihole', 'advanced']
 
 
 def test_desktop_and_mobile_navigation_match_views():
-    expected = ['dashboard','media','storage','system','nina','pihole','advanced']
+    expected = ['dashboard','media','apps','storage','system','nina','pihole','advanced']
     side = re.search(r'<nav class="side-nav".*?</nav>', HTML, re.S)
     mobile = re.search(r'<nav class="mobile-nav".*?</nav>', HTML, re.S)
     assert side and mobile

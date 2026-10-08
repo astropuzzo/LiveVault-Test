@@ -33,6 +33,7 @@ import media_center
 import media_streaming
 import remote_dns
 import pihole_status as pihole_runtime
+import app_management
 
 
 ROOT = Path(__file__).resolve().parent
@@ -1116,6 +1117,12 @@ class Handler(BaseHTTPRequestHandler):
         path = parsed.path
         if path == "/api/session":
             self.send_json({"authenticated": self.authenticated_session() is not None})
+            return
+        if path == "/api/apps/summary":
+            if not self.require_session():
+                return
+            payload, status = app_management.apps_summary()
+            self.send_json(payload, status)
             return
         if path == "/api/state":
             session = self.require_session()

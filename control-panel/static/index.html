@@ -16,6 +16,7 @@
   <link rel="stylesheet" href="/media-upload.css?v=3.5.1">
   <link rel="stylesheet" href="/torrent-manager.css?v=3.5.1-torrent5">
   <link rel="stylesheet" href="/app.css?v=3.5.1-filemanager1">
+  <link rel="stylesheet" href="/apps.css?v=3.5.1-apps1">
 </head>
 <body data-view="dashboard" class="is-loading">
   <div class="app-shell">
@@ -28,6 +29,7 @@
       <nav class="side-nav" aria-label="Sezioni principali">
         <a href="#dashboard" data-route="dashboard" class="active"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 13h6V4H4v9Zm0 7h6v-5H4v5Zm10 0h6v-9h-6v9Zm0-16v5h6V4h-6Z"/></svg><span>Dashboard</span></a>
         <a href="#media" data-route="media"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v14H4V5Zm6 3v8l6-4-6-4Z"/></svg><span>Media</span></a>
+        <a href="#apps" data-route="apps"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 3h6v7H4V3Zm10 0h6v7h-6V3ZM4 14h6v7H4v-7Zm10 0h2v5h5v2h-7v-7Zm4 0h3v3h-3v-3Z"/></svg><span>App e ricavi</span></a>
         <a href="#storage" data-route="storage"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14l2 4v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8l2-4Zm1.2 2L5.5 8h13l-.7-2H6.2ZM6 12h12v5H6v-5Zm9 1.5h2v2h-2v-2Z"/></svg><span>Storage</span></a>
         <a href="#system" data-route="system"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a2 2 0 0 1 2 2v1.1a7 7 0 0 1 1.9.8l.8-.8a2 2 0 1 1 2.8 2.8l-.8.8c.4.6.6 1.2.8 1.9H21a2 2 0 1 1 0 4h-1.1a7 7 0 0 1-.8 1.9l.8.8a2 2 0 1 1-2.8 2.8l-.8-.8a7 7 0 0 1-1.9.8V21a2 2 0 1 1-4 0v-1.1a7 7 0 0 1-1.9-.8l-.8.8a2 2 0 1 1-2.8-2.8l.8-.8a7 7 0 0 1-.8-1.9H3a2 2 0 1 1 0-4h1.1a7 7 0 0 1 .8-1.9l-.8-.8a2 2 0 1 1 2.8-2.8l.8.8a7 7 0 0 1 1.9-.8V5a2 2 0 0 1 2-2Zm0 6a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z"/></svg><span>Sistema</span></a>
         <a href="#nina" data-route="nina"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v12H4V5Zm2 2v8h12V7H6Zm3 12h6v2H9v-2Zm2-10h2v2h2v2h-2v2h-2v-2H9v-2h2V9Z"/></svg><span>NINA</span></a>
@@ -121,6 +123,13 @@
             <a href="#media" data-route="media" aria-label="Apri OpenAstro Media">
               <div class="media-feature-copy"><span>MEDIA HUB</span><h2>La tua libreria, senza confini.</h2><p class="media-feature-description">Video, musica e foto da tutti i tuoi supporti.</p><div class="media-feature-status"><strong id="dashMediaState">Verifica…</strong><small id="dashMediaDetail">In attesa delle librerie</small></div></div>
               <div class="media-feature-orb" aria-hidden="true"><i></i><i></i><b>▶</b></div><span class="media-feature-arrow" aria-hidden="true">↗</span>
+            </a>
+          </article>
+          <article class="app-tile apps-feature-card" data-motion>
+            <a href="#apps" data-route="apps" aria-label="Apri App e ricavi per Bonsai Sensei">
+              <div class="apps-feature-icon" aria-hidden="true"><svg viewBox="0 0 64 64"><path d="M17 47h30l-4 9H21l-4-9ZM31 47V28m0 13-10-9m10 3 10-10M12 29c-3-7 1-12 8-12 0-9 13-13 18-6 10-4 18 6 13 13 6 7-2 14-10 11-5 7-14 5-17 0-6 3-12 0-12-6Z"/></svg></div>
+              <div class="apps-feature-copy"><span>LE TUE APP</span><h2>App e ricavi</h2><p>Ricevute, account e stato dei servizi.</p></div>
+              <span class="apps-feature-app">Bonsai Sensei</span><span class="apps-feature-arrow" aria-hidden="true">↗</span>
             </a>
           </article>
         </div>
@@ -325,6 +334,45 @@
     </section>
 
 
+      </section>
+
+      <section class="app-view" data-view-panel="apps" aria-labelledby="view-apps-title">
+        <header class="view-heading" data-motion><div><p class="eyebrow">LE TUE APP</p><h1 id="view-apps-title">App e ricavi</h1><p>Un posto per seguire gli acquisti e collegare i risultati delle tue app.</p></div><div class="apps-heading-actions"><button id="appsRefresh" class="button secondary" type="button">Aggiorna</button><button id="appsExport" class="button secondary" type="button" disabled>Esporta JSON</button></div></header>
+        <div id="appsWorkspace" class="apps-workspace" aria-busy="false">
+          <article class="panel apps-app-hero" data-motion>
+            <div class="apps-brand-art" aria-hidden="true"><svg viewBox="0 0 64 64"><path d="M17 47h30l-4 9H21l-4-9ZM31 47V28m0 13-10-9m10 3 10-10M12 29c-3-7 1-12 8-12 0-9 13-13 18-6 10-4 18 6 13 13 6 7-2 14-10 11-5 7-14 5-17 0-6 3-12 0-12-6Z"/></svg></div>
+            <div class="apps-app-identity"><div class="apps-app-topline"><span class="eyebrow">APP COLLEGATA</span><span id="appsStatus" class="status-chip" role="status">Da verificare</span></div><h2 id="appsName">Bonsai Sensei</h2><p id="appsServiceNote">Riepilogo dal registro acquisti del server.</p></div>
+            <div class="apps-selection"><label for="appsSelector">La tua app</label><select id="appsSelector"><option value="">Seleziona app</option></select></div>
+          </article>
+          <div class="apps-sample"><span id="appsSample">In attesa del servizio</span><span id="appsVersion">Servizio da verificare</span></div>
+          <p id="appsLoadState" class="apps-status-message" role="status" aria-live="polite">Caricamento del riepilogo…</p>
+          <div class="apps-metrics" aria-label="Statistiche del registro acquisti">
+            <article class="panel apps-metric" data-motion><span>Ricevute registrate</span><strong id="appsTotal">—</strong><small>Totale del registro, incluse le attese.</small></article>
+            <article class="panel apps-metric" data-motion><span>Acquisti attivi</span><strong id="appsActive">—</strong><small>Ricevute verificate e non revocate.</small></article>
+            <article class="panel apps-metric" data-motion><span>Ricevute revocate</span><strong id="appsRevoked">—</strong><small>Revoche rilevate dal servizio.</small></article>
+            <article class="panel apps-metric" data-motion><span>Account con ricevute</span><strong id="appsAccounts">—</strong><small>Account distinti presenti nel registro.</small></article>
+          </div>
+          <div class="apps-main-grid">
+            <article class="panel apps-chart-panel" data-motion aria-labelledby="appsChartTitle">
+              <div class="panel-head"><div><p class="eyebrow">ATTIVITÀ NEL TEMPO</p><h2 id="appsChartTitle">Il ritmo degli acquisti</h2></div><span class="apps-period">Ultimi 30 giorni</span></div>
+              <p id="appsChartSummary" class="apps-chart-summary">In attesa dell’attività del registro.</p>
+              <div id="appsChart" class="apps-chart"></div>
+              <div class="apps-chart-legend" aria-hidden="true"><span><i></i>Ricevute create</span><span><i></i>Revoche</span></div>
+              <p class="apps-chart-note">Le ricevute create includono gli acquisti in attesa. Le revoche sono conteggiate nel giorno del rilevamento. Giorni in UTC.</p>
+              <details class="apps-daily-details"><summary>Consulta i valori giornalieri</summary><div class="apps-table-scroll"><table><thead><tr><th scope="col">Giorno UTC</th><th scope="col">Ricevute</th><th scope="col">Revoche</th></tr></thead><tbody id="appsDailyRows"></tbody></table></div></details>
+            </article>
+            <article class="panel apps-ledger-panel" data-motion><p class="eyebrow">DETTAGLIO DEL REGISTRO</p><h2>Acquisti e utenti</h2><div class="apps-ledger-grid"><div><span>Acquisti in attesa</span><strong id="appsPending">—</strong></div><div><span>In elaborazione</span><strong id="appsProcessing">—</strong></div><div><span>Permanenti</span><strong id="appsPermanent">—</strong></div><div><span>Consumabili</span><strong id="appsConsumable">—</strong></div></div><div class="apps-users-link"><div><span>Utenti registrati</span><b>Da collegare</b></div><div><span>Utenti attivi</span><b>Da collegare</b></div><p>Il registro acquisti conta gli account con ricevute. I totali degli utenti richiedono una fonte dedicata.</p></div></article>
+          </div>
+          <div class="apps-finance-grid">
+            <article class="panel apps-finance" data-motion><div class="apps-finance-top"><div><p class="eyebrow">GOOGLE PLAY</p><h2>Ricavi degli acquisti</h2></div><span class="status-chip">Da configurare</span></div><strong class="apps-finance-value" aria-label="Ricavi non disponibili">—</strong><p>Collega i report finanziari Google Play per conoscere importi, commissioni, rimborsi e ricavi netti. Le ricevute da sole non indicano il guadagno.</p><a id="appsPlay" href="https://play.google.com/console/" target="_blank" rel="noopener noreferrer">Apri Google Play Console ↗</a></article>
+            <article class="panel apps-finance" data-motion><div class="apps-finance-top"><div><p class="eyebrow">PUBBLICITÀ</p><h2>Ricavi AdMob</h2></div><span class="status-chip">Da configurare</span></div><strong class="apps-finance-value" aria-label="Ricavi pubblicitari non disponibili">—</strong><p>Serve l’autorizzazione del tuo account AdMob per collegare i report. Ricavi pubblicitari e impression saranno visibili quando la fonte sarà configurata.</p></article>
+          </div>
+          <div class="apps-footer-grid">
+            <article class="panel apps-catalog-panel" data-motion><p class="eyebrow">PRODOTTI</p><h2>Catalogo dell’app</h2><div id="appsCatalog" class="apps-catalog">In attesa del catalogo</div></article>
+            <article class="panel apps-catalog-panel" data-motion><p class="eyebrow">GESTIONE</p><h2>Servizio sul server</h2><p>Apri l’app in Coolify per consultarne configurazione, distribuzioni e stato operativo.</p><div class="apps-service-links"><a id="appsCoolify" class="button secondary" href="https://openastro.tailf2871c.ts.net:10000/project/8obr1exooiiaart70zgjlycw/environment/xnn2qsphju8xva9pnkljee2s/application/jxjbyszqndfoefprrxztv3fu" target="_blank" rel="noopener noreferrer">Apri in Coolify ↗</a></div></article>
+          </div>
+          <details id="appsSetup" class="apps-setup" hidden><summary>Configurazione acquisti da completare</summary><ul id="appsSetupList"></ul></details>
+        </div>
       </section>
 
       <section class="app-view" data-view-panel="storage" aria-labelledby="view-storage-title">
@@ -544,6 +592,7 @@
     <nav class="mobile-nav" aria-label="Navigazione mobile">
       <a href="#dashboard" data-route="dashboard" class="active"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 13h6V4H4v9Zm0 7h6v-5H4v5Zm10 0h6v-9h-6v9Zm0-16v5h6V4h-6Z"/></svg><span>Home</span></a>
       <a href="#media" data-route="media"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v14H4V5Zm6 3v8l6-4-6-4Z"/></svg><span>Media</span></a>
+      <a href="#apps" data-route="apps" aria-label="App e ricavi"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 3h6v7H4V3Zm10 0h6v7h-6V3ZM4 14h6v7H4v-7Zm10 0h2v5h5v2h-7v-7Zm4 0h3v3h-3v-3Z"/></svg><span>App</span></a>
       <a href="#storage" data-route="storage"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14l2 4v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8l2-4Zm1.2 2L5.5 8h13l-.7-2H6.2ZM6 12h12v5H6v-5Zm9 1.5h2v2h-2v-2Z"/></svg><span>Storage</span></a>
       <a href="#system" data-route="system"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a2 2 0 0 1 2 2v1.1a7 7 0 0 1 1.9.8l.8-.8a2 2 0 1 1 2.8 2.8l-.8.8c.4.6.6 1.2.8 1.9H21a2 2 0 1 1 0 4h-1.1a7 7 0 0 1-.8 1.9l.8.8a2 2 0 1 1-2.8 2.8l-.8-.8a7 7 0 0 1-1.9.8V21a2 2 0 1 1-4 0v-1.1a7 7 0 0 1-1.9-.8l-.8.8a2 2 0 1 1-2.8-2.8l.8-.8a7 7 0 0 1-.8-1.9H3a2 2 0 1 1 0-4h1.1a7 7 0 0 1 .8-1.9l-.8-.8a2 2 0 1 1 2.8-2.8l.8.8a7 7 0 0 1 1.9-.8V5a2 2 0 0 1 2-2Zm0 6a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z"/></svg><span>Sistema</span></a>
       <a href="#nina" data-route="nina"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v12H4V5Zm2 2v8h12V7H6Zm3 12h6v2H9v-2Zm2-10h2v2h2v2h-2v2h-2v-2H9v-2h2V9Z"/></svg><span>NINA</span></a>
@@ -593,7 +642,8 @@
 
   <script src="/hls.min.js?v=1.7.2" defer></script>
   <script src="/diagnostics.js?v=3.5.1" defer></script>
-  <script src="/app.js?v=3.5.1-filemanager1" defer></script>
+  <script src="/apps.js?v=3.5.1-apps1" defer></script>
+  <script src="/app.js?v=3.5.1-apps1" defer></script>
   <script src="/torrent-manager.js?v=3.5.1-torrent5" defer></script>
   <script src="/media-upload.js?v=3.5.1" defer></script>
   <script src="/motion.js?v=3.5.1" defer></script>
