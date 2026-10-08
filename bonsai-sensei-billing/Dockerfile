@@ -1,4 +1,4 @@
-FROM python:3.13.12-slim-bookworm
+FROM python:3.13.16-slim-bookworm
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PORT=8095 DATABASE_PATH=/data/bonsai-sensei/billing.sqlite3 CATALOG_PATH=/config/catalog.json BILLING_ENABLED=false
 WORKDIR /app
 COPY requirements.txt ./

@@ -76,6 +76,19 @@ nei test.
    riavvio. Queste prove reali restano aperte: i test locali usano risposte
    controllate e non dimostrano che permessi e prodotti Google siano attivi.
 
+### Verifica delle dipendenze — 2026-10-08
+
+Audit mirato delle dipendenze runtime con `pip-audit` 2.10.1: la
+configurazione iniziale aveva segnalazioni note in cryptography, requests
+e Starlette. Applicate soltanto le correzioni necessarie: cryptography
+`50.0.0`, requests `2.33.0`, Starlette `1.3.1`; FastAPI `0.135.0`
+permette quella versione di Starlette, mentre la versione iniziale ne
+impediva l'uso. Uvicorn e google-auth sono rimasti invariati.
+Il nuovo audit di `requirements.txt` copre 25 dipendenze risolte e
+non segnala vulnerabilità note; **41 test passati** dopo gli aggiornamenti
+nell'ambiente locale isolato. Le prove del container ARM64/Python 3.13
+restano documentate dal deploy e dalla CI.
+
 ## Contratto API per la futura integrazione Godot
 
 | Metodo e percorso | Risposta e significato |

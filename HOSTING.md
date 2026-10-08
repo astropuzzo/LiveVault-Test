@@ -116,6 +116,13 @@ mounts, dropped capabilities, no-new-privileges and resource limits. Coolify
 4.4.2's Dockerfile custom-options converter does not support all those options;
 do not switch back to a Dockerfile-only deployment assuming they remain active.
 
+CI runs this module with its own pinned dependencies and vulnerability audit;
+the core suite excludes its folder and continues to cover LiveVault, Control and
+NINA. The host Control console will expose an authenticated `App e ricavi` view,
+with a separate server-only read credential for aggregate ledger statistics.
+Registered players, advertising and financial figures remain unavailable until
+their authoritative sources are configured. No financial estimates are created.
+
 Public routing and deployment verification are recorded in the module's
 `README.md` when completed. Google configuration and actual Play test purchases
 remain required before enabling billing. The service does not implement game

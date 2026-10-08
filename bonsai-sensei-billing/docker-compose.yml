@@ -10,8 +10,8 @@ services:
       - ALL
     security_opt:
       - no-new-privileges:true
-    mem_limit: 256m
-    memswap_limit: 256m
+    mem_limit: 268435456
+    memswap_limit: 268435456
     cpus: 0.5
     tmpfs:
       - /tmp:rw,noexec,nosuid,size=16m
