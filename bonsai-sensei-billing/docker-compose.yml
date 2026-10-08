@@ -18,7 +18,7 @@ services:
     ports:
       - "127.0.0.1:8095:8095"
     environment:
-      BILLING_ENABLED: ${BILLING_ENABLED:-false}
+      BILLING_ENABLED: "${BILLING_ENABLED:-false}"
       PORT: "8095"
       DATABASE_PATH: /data/bonsai-sensei/billing.sqlite3
       CATALOG_PATH: /config/catalog.json
