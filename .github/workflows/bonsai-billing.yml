@@ -28,7 +28,7 @@ jobs:
       - name: Install isolated backend dependencies
         run: pip install -r requirements-dev.txt
       - name: Verify transaction and authentication safety
-        run: pytest -q
+        run: python -m pytest -q
       - name: Build separate service image
         run: docker build -t bonsai-sensei-billing:ci .
       - name: Verify deployment isolation
