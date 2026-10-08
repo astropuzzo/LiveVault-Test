@@ -27,6 +27,7 @@ def test_disabled_empty_statistics_are_available_only_to_admin(backend):
     data = response.json()
     assert data["name"] == "Bonsai Sensei" and data["service"] == "bonsai-sensei-billing"
     assert data["status"] == "preparing" and "BILLING_ENABLED" in data["missing_configuration"]
+    assert data["billing_enabled"] is False
     assert data["purchases"] == {"total": 0, "active": 0, "pending_purchase": 0,
                                  "processing": 0, "revoked": 0, "permanent": 0, "consumable": 0}
     assert data["users"] == {"purchasing_accounts": 0, "registered": None, "active": None}
@@ -36,6 +37,22 @@ def test_disabled_empty_statistics_are_available_only_to_admin(backend):
     assert data["count_unit"] == "receipt_rows" and data["catalog"] == []
     assert data["revenue"]["available"] is False and data["ads"]["available"] is False
     assert "amount" not in data["revenue"]
+
+
+def test_real_summary_matches_control_console_contract(backend):
+    import importlib.util
+    from pathlib import Path
+
+    path = Path(__file__).resolve().parents[2] / "control-panel" / "app_management.py"
+    spec = importlib.util.spec_from_file_location("billing_control_contract", path)
+    control = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(control)
+    with TestClient(create_app(backend.settings, engine=backend, start_worker=False)) as client:
+        response = client.get("/internal/admin/summary", headers=headers())
+    assert response.status_code == 200
+    summary = control._sanitize(response.json())
+    assert summary["available"] is True and summary["billing_enabled"] is False
+    assert summary["purchases"]["total"] == 0 and len(summary["daily_utc"]) == 30
 
 
 @pytest.mark.parametrize("provided", [None, "wrong-key", "", "alice"])

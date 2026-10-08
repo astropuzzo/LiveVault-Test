@@ -5,10 +5,12 @@ on:
     paths:
       - 'bonsai-sensei-billing/**'
       - '.github/workflows/bonsai-billing.yml'
+      - 'control-panel/app_management.py'
   pull_request:
     paths:
       - 'bonsai-sensei-billing/**'
       - '.github/workflows/bonsai-billing.yml'
+      - 'control-panel/app_management.py'
 
 concurrency:
   group: bonsai-billing-${{ github.ref }}

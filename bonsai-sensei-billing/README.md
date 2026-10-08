@@ -1,5 +1,8 @@
 # Bonsai Sensei — servizio acquisti
 
+Il riepilogo amministrativo include `billing_enabled` e viene verificato anche
+contro l'adattatore effettivo della console OpenAstro, oltre ai test del ledger.
+
 Preparazione verificata il **2026-10-08**. Servizio indipendente dal gioco e
 dalle altre applicazioni OpenAstro. La configurazione distribuita ha
 `BILLING_ENABLED=false`, catalogo `[]` e nessuna credenziale Google:

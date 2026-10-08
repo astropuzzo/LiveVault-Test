@@ -108,6 +108,7 @@ def create_app(settings=None, engine=None, start_worker=True):
         missing = service.missing()
         data = service.store.admin_summary(now)
         data.update({"service": "bonsai-sensei-billing", "name": "Bonsai Sensei", "version": VERSION,
+                     "billing_enabled": not bool(missing),
                      "generated_at": now.isoformat(timespec="seconds").replace("+00:00", "Z"),
                      "source": "sqlite_purchase_ledger", "count_unit": "receipt_rows",
                      "status": "preparing" if missing else "ready", "missing_configuration": missing,
