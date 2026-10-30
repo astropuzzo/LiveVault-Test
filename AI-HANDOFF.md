@@ -520,9 +520,16 @@ leggere JSON e produce un falso errore con invito generico all'aggiornamento.
 `offline`, senza errore e senza tentare una registrazione. Le risposte HTTP di
 errore, i guasti di rete e un HTTP 200 malformato restano errori; una risposta
 200 valida mantiene risoluzione stream e scelta qualità tramite yt-dlp.
-Test Linux/Python 3.13 isolati: 23 passati (CAM4 e catalogo provider).
+Test Linux/Python 3.13 isolati: 23 mirati e 671 della suite completa passati.
+La prima CI con dipendenze flottanti scaricava FastAPI 0.162.0 / Starlette 1.10.0:
+fallimento riprodotto nel test range ASGI con `receive=None`, poi attesa indefinita
+nella suite dei file response. Si conservano esplicitamente FastAPI 0.142.2 e
+Starlette 1.7.0, le versioni del runtime esistente con suite completa verde.
+Un futuro aggiornamento richiede validare nuovamente i contratti ASGI/streaming.
+La CI ora emette stack dopo 60 s e limita la fase test a 5 minuti.
 Runtime interessato: applicazione Coolify `ahul2vdjkyvjiwgzpcrmxzfe`, modulo
-`/app/app/source_providers.py`; nessuna migrazione DB o modifica dipendenze.
+`/app/app/source_providers.py`; nessuna migrazione DB. Le due versioni web sono
+vincolate a quelle già installate, senza aggiornamento del runtime web.
 Rollback: revert del fix CAM4 e redeploy della sola applicazione LiveVault;
 immagine precedente conservata `ahul2vdjkyvjiwgzpcrmxzfe:4016eb953b9ed039c9e862e39645c998e924fe96`.
 Limite: la cattura CAM4 reale va verificata durante una futura diretta pubblica;
