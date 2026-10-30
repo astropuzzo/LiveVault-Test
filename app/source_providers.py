@@ -1030,6 +1030,17 @@ async def _probe_ytdlp(platform: str, slug: str, quality: str) -> ProbeResult:
             pass
     url = source_url(platform, slug)
     try:
+        if platform == "cam4":
+            # CAM4 returns HTTP 204 when there is no public broadcast. yt-dlp
+            # tries to parse the empty body as JSON and misreports an update error.
+            response = await asyncio.to_thread(
+                requests.get,
+                f"https://www.cam4.com/rest/v1.0/profile/{slug}/streamInfo",
+                timeout=15,
+            )
+            response.raise_for_status()
+            if response.status_code == 204:
+                return ProbeResult(False, "offline", recordable=False, metadata_status="unsupported")
         info = await asyncio.to_thread(_extract, url, quality)
     except Exception as exc:
         message = str(exc)

@@ -510,6 +510,24 @@ le registrazioni lunghe e più MFC simultanee restano non provate.
 Sorgenti, evidenze, limiti e rollback 3.5.2: [MYFREECAMS.md](docs/MYFREECAMS.md).
 Evitare rollback 3.5.3, che reintrodurrebbe la regola rifiutata dall'utente.
 
+## Provider CAM4 — verifica 2026-10-30
+
+Il profilo `bbsitaaaaa` esiste; la pagina CAM4 dichiara `isBroadcasting=false`
+mentre `/rest/v1.0/profile/bbsitaaaaa/streamInfo` risponde HTTP 204 senza corpo.
+L'estrattore yt-dlp 2026.08.19 (e quello upstream verificato oggi) tenta di
+leggere JSON e produce un falso errore con invito generico all'aggiornamento.
+`app/source_providers.py` ora verifica HTTP 204 prima dell'estrattore e restituisce
+`offline`, senza errore e senza tentare una registrazione. Le risposte HTTP di
+errore, i guasti di rete e un HTTP 200 malformato restano errori; una risposta
+200 valida mantiene risoluzione stream e scelta qualità tramite yt-dlp.
+Test Linux/Python 3.13 isolati: 23 passati (CAM4 e catalogo provider).
+Runtime interessato: applicazione Coolify `ahul2vdjkyvjiwgzpcrmxzfe`, modulo
+`/app/app/source_providers.py`; nessuna migrazione DB o modifica dipendenze.
+Rollback: revert del fix CAM4 e redeploy della sola applicazione LiveVault;
+immagine precedente conservata `ahul2vdjkyvjiwgzpcrmxzfe:4016eb953b9ed039c9e862e39645c998e924fe96`.
+Limite: la cattura CAM4 reale va verificata durante una futura diretta pubblica;
+la verifica offline e i test di regressione non dimostrano una cattura live.
+
 ## Provider Stripchat
 Verifica 2026-09-13: la risoluzione username → model ID usa
 `https://stripchat.com/api/front/users/user-ids/{username}`; il precedente
