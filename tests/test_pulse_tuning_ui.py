@@ -50,7 +50,7 @@ def test_pulse_has_patterns_real_time_scale_and_selectable_window():
     assert "svgNode('circle'" in js
     assert 'M9 3.2L10 8L14.8 9' in js
 
-    assert "['remote', 'CLOUD', 'url(#lv-pulse-cloud)']" in js
+    assert "['remote', 'Cloud', 'url(#lv-pulse-cloud)']" in js
     assert 'cr-pulse-legend-swatch' in js
     # The legend spans its own row under the title and window selector.
     assert has_css(css, '.cr-pulse-legend {grid-column: 1 / -1; grid-row: 2;')
@@ -59,7 +59,7 @@ def test_pulse_has_patterns_real_time_scale_and_selectable_window():
 def test_pulse_legend_names_every_supported_state_without_vague_recovery_copy():
     js = (ROOT / 'app/static/pulse-tuning.js').read_text(encoding='utf-8')
     app = (ROOT / 'app/static/app.js').read_text(encoding='utf-8')
-    assert "['processing', 'IN ELABORAZIONE', 'url(#lv-pulse-processing)']" in js
-    assert "['restricted', 'LIMITATA', 'url(#lv-pulse-restricted)']" in js
+    assert "['processing', 'In elaborazione', 'url(#lv-pulse-processing)']" in js
+    assert "['restricted', 'Limitata', 'url(#lv-pulse-restricted)']" in js
     assert 'RECUPERO' not in js
-    assert '<i class="restricted"></i>LIMITATA' in app
+    assert '<i class="restricted"></i>Limitata' in app

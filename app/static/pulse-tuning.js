@@ -230,16 +230,16 @@
   }
 
   const LEGEND = [
-    ['online', 'ONLINE', '#56627a'],
-    ['rec', 'REC', '#ff5c5c'],
-    ['remote', 'CLOUD', 'url(#lv-pulse-cloud)'],
-    ['processing', 'IN ELABORAZIONE', 'url(#lv-pulse-processing)'],
-    ['missed', 'NON REC', 'url(#lv-pulse-missed)'],
-    ['unrecorded', 'INTERVALLO SENZA REC', 'url(#lv-pulse-unrecorded)'],
-    ['private', 'PRIVATA', 'url(#lv-pulse-private)'],
-    ['away', 'AWAY', 'url(#lv-pulse-away)'],
-    ['tipjar', 'TIP-JAR', 'url(#lv-pulse-tipjar)'],
-    ['restricted', 'LIMITATA', 'url(#lv-pulse-restricted)'],
+    ['online', 'Online', '#56627a'],
+    ['rec', 'Registrazione', '#ff5c5c'],
+    ['remote', 'Cloud', 'url(#lv-pulse-cloud)'],
+    ['processing', 'In elaborazione', 'url(#lv-pulse-processing)'],
+    ['missed', 'Non registrato', 'url(#lv-pulse-missed)'],
+    ['unrecorded', 'Intervallo senza registrazione', 'url(#lv-pulse-unrecorded)'],
+    ['private', 'Privata', 'url(#lv-pulse-private)'],
+    ['away', 'Away', 'url(#lv-pulse-away)'],
+    ['tipjar', 'Tip jar', 'url(#lv-pulse-tipjar)'],
+    ['restricted', 'Limitata', 'url(#lv-pulse-restricted)'],
   ];
 
   function legendSwatch(tone, fill) {
