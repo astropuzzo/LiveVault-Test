@@ -1,0 +1,30 @@
+services:
+  instavault:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    stop_grace_period: 45s
+    user: "10002:10002"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    cpus: 0.75
+    cpu_shares: 256
+    mem_limit: 402653184
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=32m
+    ports:
+      - "127.0.0.1:8096:8096"
+    environment:
+      PORT: "8096"
+      INSTAVAULT_DATA: /data
+      INSTAVAULT_MEDIA: /media
+      INSTAVAULT_SECRETS: /run/secrets
+      INSTAVAULT_COOKIE_SECURE: "true"
+    labels:
+      openastro.module: instavault
+    volumes:
+      - /data/instavault:/data
+      - /mnt/livevault-nvme/instavault-media:/media
+      - /data/instavault-secrets:/run/secrets:ro

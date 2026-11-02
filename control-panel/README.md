@@ -335,3 +335,16 @@ Fonte, evidenze e rollback completo della suite in
 ripristinare gli asset dal backup privato del rollout; rimuovere un solo link
 CSS non basta, perché il redesign ricompone anche il DOM. Nessun restart del
 servizio per il ripristino statico.
+
+## Scheda InstaVault (2026-11-02)
+
+La dashboard ha una seconda scheda app, `instavault-feature-card`, dopo «App e
+ricavi»: un link esterno a `https://instavault.tailf2871c.ts.net/` (dominio del
+nodo Tailscale dedicato, vedi [HOSTING.md](../HOSTING.md#instavault)). Occupa la
+riga 5 della griglia su desktop e la riga 6 sotto i 960 px. Cache PWA e query
+degli asset passano a `3.5.1-apps2`. Il pannello legge i file statici dal disco a
+ogni richiesta: nessun restart. Lo script `scripts/instavault-host-install.sh`
+installa `index.html`, `apps.css` e `sw.js` mantenendo proprietario e permessi,
+sostituisce il dominio con quello reale stampato da Tailscale e salva gli
+originali in `/var/backups/openastro/20261102-instavault/*.before`. Rollback:
+ripristinare quei tre file dal backup.

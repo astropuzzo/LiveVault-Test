@@ -21,6 +21,7 @@ BUFFER_LIMIT_BYTES = 4 * 1024**3
 RECORDINGS = ROOT / 'recordings'
 DATA_UUID = '5fe2d0f6-b485-44e9-8e26-31fb0d217db2'
 GPT_HARNESS_SERVICE = 'gpt-harness.service'
+INSTAVAULT_STORAGE_HELPER = Path('/usr/local/libexec/instavault-storage.py')
 CONTAINER_VIEW_SETTLE_SECONDS = 1.0
 CONTAINER_VIEW_REPAIR_SECONDS = 3.0
 CONTAINER_VIEW_POLL_SECONDS = 0.20
@@ -35,6 +36,23 @@ MOVE_MOUNT_F_EMPTY_PATH = 0x00000004
 
 def run(*args):
     return subprocess.run(args, check=True, text=True, capture_output=True).stdout.strip()
+
+
+def instavault_storage(action, strict=True):
+    """Optional module lifecycle; never roll back primary recovery for a resume."""
+    if not INSTAVAULT_STORAGE_HELPER.exists():
+        return
+    try:
+        result = subprocess.run(
+            [sys.executable, str(INSTAVAULT_STORAGE_HELPER), action],
+            check=True, text=True, capture_output=True, timeout=150,
+        )
+        return result.stdout.strip()
+    except (OSError, subprocess.SubprocessError) as error:
+        detail = str(getattr(error, 'stderr', '') or error).strip()[-1000:]
+        if strict:
+            raise RuntimeError(f'InstaVault storage {action} failed: {detail}') from error
+        print(f'InstaVault storage {action} pending: {detail}', file=sys.stderr)
 
 
 def enter_host_mount_namespace():
@@ -83,6 +101,7 @@ def recover_interrupted():
                 pass
         run('systemctl', 'start', 'livevault-backup.timer')
         subprocess.run(['systemctl', 'try-restart', 'minidlna.service'], capture_output=True)
+        instavault_storage('resume', strict=False)
     return mode
 
 
@@ -521,6 +540,10 @@ def emergency_failover(reason='NVMe fault'):
         if stopped:
             verify_container_view()
 
+        # Primary LiveVault buffer recovery is complete before stopping a module
+        # whose media namespace still refers to the failed NVMe filesystem.
+        instavault_storage('pause', strict=False)
+
         # SHARE is on the same physical server disk. GPT Harness has an optional
         # NVMe workspace view, so restart it from eMMC after detaching the disk.
         harness_was_active = service_active(GPT_HARNESS_SERVICE)
@@ -605,6 +628,7 @@ def main(action):
             print('NVMe già espulso; buffer interno attivo.')
             return
         if action == 'attach' and previous == 'nvme':
+            instavault_storage('resume', strict=False)
             print('NVMe già operativo.')
             return
         if action not in {'eject', 'attach'}:
@@ -623,6 +647,7 @@ def main(action):
                     raise RuntimeError('Disco errato: nessun file trasferito')
             quiesce()
             if action == 'eject':
+                instavault_storage('pause')
                 run('systemctl', 'stop', 'livevault-backup.timer', 'livevault-backup.service')
                 mount_change_started = True
                 switch(BUFFER)
@@ -667,6 +692,7 @@ def main(action):
                 switch(NVME / 'livevault/recordings')
                 verify_container_view()
                 publish('nvme')
+                instavault_storage('resume', strict=False)
                 subprocess.run(['mount', '/share'], capture_output=True)
                 if os.path.ismount('/share'):
                     Path('/share/Media').mkdir(parents=True, exist_ok=True)
@@ -705,6 +731,8 @@ def main(action):
                 # Quiesce timeout leaves existing jobs holding files. Rebinding
                 # the untouched mount here fails EBUSY and strands quiesce.
                 publish(previous)
+                if previous == 'nvme':
+                    instavault_storage('resume', strict=False)
                 if backup_timer_was_active:
                     set_service('livevault-backup.timer', 'start')
                 raise
@@ -729,6 +757,7 @@ def main(action):
                     raise
                 publish(previous)
                 if previous == 'nvme':
+                    instavault_storage('resume', strict=False)
                     if share_was_mounted and not os.path.ismount('/share'):
                         subprocess.run(['mount', '/share'], capture_output=True)
                     if backup_timer_was_active:

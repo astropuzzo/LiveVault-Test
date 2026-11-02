@@ -1,0 +1,51 @@
+[Unit]
+Description=Dedicated Tailscale node for InstaVault
+After=network-online.target tailscaled.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=instavault-ts
+Group=instavault-ts
+
+Environment=HOME=/data/instavault-tailscale/home
+
+RuntimeDirectory=instavault-tailscale
+# 0755 lets the operator account (astro) reach the socket for funnel status and changes.
+RuntimeDirectoryMode=0755
+
+ExecStart=/usr/sbin/tailscaled \
+  --tun=userspace-networking \
+  --socket=/run/instavault-tailscale/tailscaled.sock \
+  --statedir=/data/instavault-tailscale/node \
+  --port=0
+
+Restart=on-failure
+RestartSec=3
+
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+LockPersonality=yes
+CapabilityBoundingSet=
+
+ReadWritePaths=/data/instavault-tailscale/node /data/instavault-tailscale/home
+
+Nice=5
+CPUWeight=20
+IOWeight=20
+MemoryMax=256M
+TasksMax=128
+
+[Install]
+WantedBy=multi-user.target

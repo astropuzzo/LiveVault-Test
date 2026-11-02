@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#121213" media="(prefers-color-scheme: dark)">
+<title>InstaVault</title>
+<link rel="icon" href="./icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="./app.css">
+<script src="./app.js" defer></script>
+</head>
+<body>
+<svg class="svg-defs" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs>
+<symbol id="i-grid" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.5"/></symbol>
+<symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="8" r="4"/><path d="M2.5 20.5v-1a6.5 6.5 0 0 1 13 0v1M16.5 4.2a4 4 0 0 1 0 7.6M21.5 20.5v-1a6 6 0 0 0-3-5.2"/></symbol>
+<symbol id="i-heart" viewBox="0 0 24 24"><path d="M20.6 4.9a5.2 5.2 0 0 0-7.4 0L12 6.1l-1.2-1.2a5.2 5.2 0 1 0-7.4 7.4L12 20.9l8.6-8.6a5.2 5.2 0 0 0 0-7.4Z"/></symbol>
+<symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></symbol>
+<symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="18" r="2"/></symbol>
+<symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+<symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 5v5h-5M4 19v-5h5"/><path d="M5.6 9a7 7 0 0 1 12-2.3L20 10M4 14l2.4 3.3A7 7 0 0 0 18.4 15"/></symbol>
+<symbol id="i-left" viewBox="0 0 24 24"><path d="m15 5-7 7 7 7"/></symbol>
+<symbol id="i-right" viewBox="0 0 24 24"><path d="m9 5 7 7-7 7"/></symbol>
+<symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></symbol>
+<symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v11m-4.5-4.5L12 15l4.5-4.5M5 19.5h14"/></symbol>
+<symbol id="i-external" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-8.5 8.5M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></symbol>
+<symbol id="i-stack" viewBox="0 0 24 24"><rect x="3.5" y="7.5" width="13" height="13" rx="2"/><path d="M7.5 3.5h11a2 2 0 0 1 2 2v11"/></symbol>
+<symbol id="i-reel" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="17" height="17" rx="4"/><path d="m10 8.5 5.5 3.5-5.5 3.5Z"/></symbol>
+<symbol id="i-story" viewBox="0 0 24 24"><path d="M12 3.5a8.5 8.5 0 1 1-8.5 8.5"/><path d="M4 8.6a8.6 8.6 0 0 1 1.6-2.4M8.4 4.3a8.4 8.4 0 0 1 1.3-.5"/><path d="M12 8v8M8 12h8"/></symbol>
+<symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.4-4.4"/></symbol>
+<symbol id="i-logout" viewBox="0 0 24 24"><path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4M9.5 16.5 5 12l4.5-4.5M5 12h10"/></symbol>
+</defs></svg>
+
+<main id="loginGate" class="login" hidden>
+  <form id="vaultLogin" class="login-card">
+    <img class="login-mark" src="./icon.svg" width="48" height="48" alt="">
+    <h1>InstaVault</h1>
+    <p class="login-lede">Accedi con le credenziali del pannello OpenAstro</p>
+    <label for="loginUsername">Nome utente</label>
+    <input id="loginUsername" name="username" autocomplete="username" autocapitalize="none" required>
+    <label for="loginPassword">Password</label>
+    <input id="loginPassword" name="password" type="password" autocomplete="current-password" required>
+    <p id="loginError" class="form-error" role="alert"></p>
+    <button class="button primary" type="submit">Accedi</button>
+    <p class="login-note">Foto e video restano sul server OpenAstro</p>
+  </form>
+</main>
+
+<div id="appShell" class="shell" hidden>
+  <header class="mobile-bar">
+    <a class="brand" href="#archive" data-view="archive"><img src="./icon.svg" width="28" height="28" alt=""><span>InstaVault</span></a>
+    <span class="sync-status" data-sync-status><i></i><span>Verifica</span></span>
+  </header>
+
+  <nav class="sidebar" aria-label="Sezioni">
+    <a class="brand" href="#archive" data-view="archive"><img src="./icon.svg" width="28" height="28" alt=""><span>InstaVault</span></a>
+    <div class="nav-items">
+      <a class="nav-item" href="#archive" data-view="archive"><svg aria-hidden="true"><use href="#i-grid"/></svg><span>Archivio</span><small id="navCount" class="nav-count"></small></a>
+      <a class="nav-item" href="#profiles" data-view="profiles"><svg aria-hidden="true"><use href="#i-users"/></svg><span>Profili</span></a>
+      <a class="nav-item" href="#favorites" data-view="favorites"><svg aria-hidden="true"><use href="#i-heart"/></svg><span>Salvati</span></a>
+      <a class="nav-item" href="#activity" data-view="activity"><svg aria-hidden="true"><use href="#i-clock"/></svg><span>Attività</span><i id="activityDot" class="nav-dot" hidden></i></a>
+      <a class="nav-item" href="#settings" data-view="settings"><svg aria-hidden="true"><use href="#i-sliders"/></svg><span>Impostazioni</span></a>
+    </div>
+    <div class="sidebar-foot">
+      <span class="sync-status" data-sync-status><i></i><span>Verifica</span></span>
+      <div class="storage">
+        <p class="storage-label">Spazio usato</p>
+        <p class="storage-figure" data-storage-used></p>
+        <progress data-storage-meter max="100" value="0" aria-label="Spazio usato rispetto al limite"></progress>
+        <p class="storage-note" data-storage-note>Verifica dello spazio</p>
+      </div>
+      <a class="foot-link" href="https://openastro.tailf2871c.ts.net:8443/" target="_blank" rel="noopener"><svg aria-hidden="true"><use href="#i-external"/></svg><span>Pannello OpenAstro</span></a>
+      <button class="foot-link" type="button" data-action="logout"><svg aria-hidden="true"><use href="#i-logout"/></svg><span>Esci</span></button>
+    </div>
+  </nav>
+
+  <main class="main" id="main">
+    <div id="notice" class="notice" role="status" hidden></div>
+
+    <section id="archiveView" class="view" aria-labelledby="archiveTitle">
+      <header id="archiveHeader" class="page-head">
+        <div>
+          <h1 id="archiveTitle">Archivio</h1>
+          <p id="archiveMeta" class="page-meta"></p>
+        </div>
+        <div class="page-actions">
+          <button id="syncAll" class="button" type="button"><svg aria-hidden="true"><use href="#i-refresh"/></svg>Aggiorna tutti</button>
+          <button class="button primary" type="button" data-action="add-profile"><svg aria-hidden="true"><use href="#i-plus"/></svg>Aggiungi profilo</button>
+        </div>
+      </header>
+
+      <header id="profileHeader" class="profile-head" hidden></header>
+
+      <div id="tray" class="tray" role="group" aria-label="Profili archiviati"></div>
+
+      <div class="toolbar">
+        <div class="tabs" role="group" aria-label="Tipo di contenuto">
+          <button type="button" data-kind="" aria-pressed="true"><svg aria-hidden="true"><use href="#i-grid"/></svg>Tutto</button>
+          <button type="button" data-kind="post" aria-pressed="false"><svg aria-hidden="true"><use href="#i-stack"/></svg>Post</button>
+          <button type="button" data-kind="reel" aria-pressed="false"><svg aria-hidden="true"><use href="#i-reel"/></svg>Reel</button>
+          <button type="button" data-kind="story" aria-pressed="false"><svg aria-hidden="true"><use href="#i-story"/></svg>Storie</button>
+        </div>
+        <div class="filters">
+          <label class="search"><span class="sr-only">Cerca nelle didascalie e nei profili</span><svg aria-hidden="true"><use href="#i-search"/></svg><input id="search" type="search" placeholder="Cerca" autocomplete="off"></label>
+          <label class="sr-only" for="sortOrder">Ordine</label>
+          <select id="sortOrder"><option value="newest">Più recenti</option><option value="oldest">Meno recenti</option></select>
+        </div>
+      </div>
+
+      <p id="gridStatus" class="sr-only" aria-live="polite"></p>
+      <div id="mediaGrid" class="grid"></div>
+      <div id="emptyState" class="empty" hidden>
+        <h2 id="emptyTitle"></h2>
+        <p id="emptyText"></p>
+        <button id="emptyAction" class="button primary" type="button" hidden></button>
+      </div>
+      <button id="loadMore" class="button load-more" type="button" hidden>Carica altri</button>
+    </section>
+
+    <section id="profilesView" class="view" aria-labelledby="profilesTitle" hidden>
+      <header class="page-head">
+        <div>
+          <h1 id="profilesTitle">Profili</h1>
+          <p class="page-meta">Ogni profilo si aggiorna con la sua frequenza. In pausa, i contenuti già archiviati restano</p>
+        </div>
+        <div class="page-actions"><button class="button primary" type="button" data-action="add-profile"><svg aria-hidden="true"><use href="#i-plus"/></svg>Aggiungi profilo</button></div>
+      </header>
+      <div id="profilesList" class="rows"></div>
+    </section>
+
+    <section id="activityView" class="view" aria-labelledby="activityTitle" hidden>
+      <header class="page-head">
+        <div>
+          <h1 id="activityTitle">Attività</h1>
+          <p class="page-meta">Un download alla volta, per non caricare il server</p>
+        </div>
+      </header>
+      <div id="jobsList" class="rows"></div>
+    </section>
+
+    <section id="settingsView" class="view" aria-labelledby="settingsTitle" hidden>
+      <header class="page-head">
+        <div><h1 id="settingsTitle">Impostazioni</h1></div>
+      </header>
+      <div class="settings">
+        <section class="card" aria-labelledby="igTitle">
+          <h2 id="igTitle">Account Instagram</h2>
+          <p id="instagramState" class="card-state">Non collegato</p>
+          <p class="help">Serve per i profili che Instagram mostra solo dopo l’accesso, per le storie e per i contenuti in evidenza. La password viene usata una volta per accedere e non viene salvata: sul server resta solo la sessione, cifrata.</p>
+          <p class="help">Instagram può limitare gli account che scaricano molti contenuti. Se ne hai uno, usa un account secondario.</p>
+          <form id="instagramLogin" class="form">
+            <label for="igUsername">Username Instagram</label>
+            <input id="igUsername" autocomplete="off" autocapitalize="none" spellcheck="false" required>
+            <label for="igPassword">Password</label>
+            <input id="igPassword" type="password" autocomplete="off">
+            <div id="twoFactorBox" class="two-factor" hidden>
+              <label for="igCode">Codice di verifica</label>
+              <input id="igCode" inputmode="numeric" autocomplete="one-time-code">
+              <button id="resetTwoFactor" class="link" type="button">Ricomincia l’accesso</button>
+            </div>
+            <p id="igError" class="form-error" role="alert"></p>
+            <div class="form-actions">
+              <button class="button primary" type="submit">Collega account</button>
+              <button id="disconnectInstagram" class="button" type="button" hidden>Scollega</button>
+            </div>
+          </form>
+          <details class="cookies">
+            <summary>Importa i cookie del browser</summary>
+            <p class="help">Se Instagram chiede una verifica, completala nel browser ed esporta i cookie di instagram.com in formato JSON o Netscape.</p>
+            <form id="cookieImport" class="form">
+              <label for="cookieUsername">Username Instagram</label>
+              <input id="cookieUsername" autocomplete="off" autocapitalize="none" spellcheck="false" required>
+              <label for="cookieText">Cookie</label>
+              <textarea id="cookieText" rows="5" autocomplete="off" spellcheck="false" required></textarea>
+              <div class="form-actions"><button class="button" type="submit">Importa sessione</button></div>
+            </form>
+          </details>
+        </section>
+
+        <section class="card" aria-labelledby="storageTitle">
+          <h2 id="storageTitle">Archivio</h2>
+          <p class="card-state" data-storage-sentence>Verifica dello spazio</p>
+          <p class="help" data-storage-note>Verifica dello spazio</p>
+          <form id="settingsForm" class="form">
+            <label class="switch" for="automatic"><span>Aggiornamenti automatici<small>Ogni profilo segue la frequenza che hai scelto</small></span><input id="automatic" type="checkbox" role="switch"></label>
+            <label for="quotaGb">Spazio massimo per l’archivio (GB)</label>
+            <input id="quotaGb" type="number" inputmode="numeric" min="1" max="10000" required>
+            <label for="reserveGb">Spazio da lasciare libero sul disco (GB)</label>
+            <input id="reserveGb" type="number" inputmode="numeric" min="2" max="1000" required>
+            <p class="help">Raggiunto il limite, i download si fermano. I contenuti già archiviati restano disponibili.</p>
+            <div class="form-actions"><button class="button primary" type="submit">Salva</button></div>
+          </form>
+          <div class="form compact">
+            <label for="themeSelect">Tema</label>
+            <select id="themeSelect"><option value="">Come il sistema</option><option value="light">Chiaro</option><option value="dark">Scuro</option></select>
+          </div>
+          <p class="help">Griglia e anteprime usano copie leggere. Il visualizzatore apre l’originale, nella qualità scaricata da Instagram, e lo può scaricare.</p>
+          <div class="form-actions"><button class="button" type="button" data-action="logout"><svg aria-hidden="true"><use href="#i-logout"/></svg>Esci da InstaVault</button></div>
+        </section>
+      </div>
+    </section>
+  </main>
+</div>
+
+<dialog id="profileDialog" class="sheet" aria-labelledby="profileDialogTitle">
+  <form id="profileForm" class="form">
+    <div class="sheet-head">
+      <h2 id="profileDialogTitle">Aggiungi un profilo</h2>
+      <button type="button" class="icon-button" data-close="profileDialog" aria-label="Chiudi"><svg aria-hidden="true"><use href="#i-close"/></svg></button>
+    </div>
+    <input id="profileId" type="hidden">
+    <label for="profileUsername">Username o link Instagram</label>
+    <input id="profileUsername" placeholder="nomeprofilo" autocomplete="off" autocapitalize="none" spellcheck="false" required>
+    <fieldset class="options">
+      <legend>Da archiviare</legend>
+      <label><input id="pPosts" type="checkbox" checked><span>Post e caroselli</span></label>
+      <label><input id="pReels" type="checkbox" checked><span>Reel</span></label>
+      <label><input id="pStories" type="checkbox" checked><span>Storie<small>Serve l’account Instagram</small></span></label>
+      <label><input id="pHighlights" type="checkbox"><span>In evidenza<small>Serve l’account Instagram</small></span></label>
+    </fieldset>
+    <label for="pInterval">Frequenza di aggiornamento</label>
+    <select id="pInterval"><option value="1">Ogni ora</option><option value="3">Ogni 3 ore</option><option value="6" selected>Ogni 6 ore</option><option value="12">Ogni 12 ore</option><option value="24">Ogni 24 ore</option></select>
+    <p id="profileError" class="form-error" role="alert"></p>
+    <div class="form-actions">
+      <button id="profileSubmit" class="button primary" type="submit">Aggiungi profilo</button>
+      <button class="button" type="button" data-close="profileDialog">Annulla</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="postDialog" class="viewer" aria-label="Contenuto archiviato">
+  <div class="viewer-layout">
+    <div class="viewer-stage">
+      <div id="viewerMedia" class="viewer-media"></div>
+      <button id="previousMedia" class="round-button previous" type="button" aria-label="Precedente"><svg aria-hidden="true"><use href="#i-left"/></svg></button>
+      <button id="nextMedia" class="round-button next" type="button" aria-label="Successivo"><svg aria-hidden="true"><use href="#i-right"/></svg></button>
+      <span id="carouselCount" class="carousel-count"></span>
+    </div>
+    <aside class="viewer-info">
+      <header id="postAuthor" class="viewer-author"></header>
+      <p id="postCaption" class="viewer-caption"></p>
+      <p id="postMetadata" class="stamp viewer-stamp"></p>
+      <div class="viewer-actions">
+        <button id="favoritePost" class="icon-button" type="button" aria-label="Aggiungi ai salvati" aria-pressed="false"><svg aria-hidden="true"><use href="#i-heart"/></svg></button>
+        <a id="downloadOriginal" class="icon-button" download aria-label="Scarica l’originale"><svg aria-hidden="true"><use href="#i-download"/></svg></a>
+        <a id="openInstagram" class="icon-button" target="_blank" rel="noopener noreferrer" aria-label="Apri su Instagram"><svg aria-hidden="true"><use href="#i-external"/></svg></a>
+      </div>
+    </aside>
+  </div>
+  <button id="closePost" class="close-viewer" type="button" aria-label="Chiudi"><svg aria-hidden="true"><use href="#i-close"/></svg></button>
+</dialog>
+
+<div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+</body>
+</html>

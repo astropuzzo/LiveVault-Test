@@ -1,0 +1,36 @@
+name: InstaVault
+on:
+  push:
+    paths: ['instavault/**', '.github/workflows/instavault.yml', 'scripts/instavault-storage.py']
+  pull_request:
+    paths: ['instavault/**', '.github/workflows/instavault.yml', 'scripts/instavault-storage.py']
+concurrency:
+  group: instavault-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: pip install -r instavault/requirements.txt 'pytest>=8.4,<9'
+      - run: python -m compileall -q instavault/vault scripts/instavault-storage.py
+      - run: PYTHONPATH=instavault pytest -q instavault/tests
+      - run: node --check instavault/static/app.js
+      - run: docker build -t instavault:ci instavault
+      - name: Isolated app health
+        run: |
+          docker run -d --name instavault-ci --read-only --tmpfs /data --tmpfs /tmp -p 127.0.0.1:18096:8096 instavault:ci
+          trap 'docker logs instavault-ci; docker rm -f instavault-ci' EXIT
+          for attempt in $(seq 1 20); do
+            if curl -fsS http://127.0.0.1:18096/healthz; then break; fi
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:18096/healthz
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:18096/api/summary)" = 401

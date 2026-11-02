@@ -14,8 +14,18 @@ Una copia distribuita su eMMC è in /opt/openastro-ops; gli ingressi AGENTS.md d
 workspace del nodo puntano lì. Aggiornare quella copia insieme ai documenti Git;
 SOURCE.txt identifica la revisione (ultimo allineamento completo: 2026-09-30,
 incluse le guide collegate da questo file; aggiornamenti mirati per il Funnel
-e MyFreeCams: 2026-10-06; Bonsai Sensei e console App e ricavi: 2026-10-08). Il vecchio handoff duplicato è stato sostituito
+e MyFreeCams: 2026-10-06; Bonsai Sensei e console App e ricavi: 2026-10-08;
+InstaVault: 2026-11-02). Il vecchio handoff duplicato è stato sostituito
 da un rinvio, con originale conservato nella directory rollback.
+
+InstaVault (2026-11-02): archivio dei profili Instagram scelti dall'utente,
+applicazione Coolify separata dal modulo `instavault/`, dominio proprio
+`https://instavault.tailf2871c.ts.net/` da un nodo Tailscale dedicato
+(`instavault-tailscale.service`); il Funnel `openastro` non cambia. Media su NVMe
+in `/mnt/livevault-nvme/instavault-media`, con pausa e ripresa dentro
+`nvme-handoff.py`. Percorsi, installazione host, limiti e rollback in
+[HOSTING.md](HOSTING.md#instavault). Il download reale richiede una sessione
+Instagram collegata dall'utente nelle Impostazioni di InstaVault.
 
 ## Accesso pubblico — ripristinato 2026-10-06
 

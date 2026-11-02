@@ -30,7 +30,7 @@ jobs:
         run: python -m compileall -q app control-panel nina-monitor tests
       - name: Run tests
         timeout-minutes: 5
-        run: PYTHONPATH=. pytest -q -o faulthandler_timeout=60 --ignore=bonsai-sensei-billing
+        run: PYTHONPATH=. pytest -q -o faulthandler_timeout=60 --ignore=bonsai-sensei-billing --ignore=instavault
       - name: Check JavaScript
         run: |
           for file in app/static/*.js control-panel/static/*.js nina-monitor/static/*.js; do node --check "$file"; done

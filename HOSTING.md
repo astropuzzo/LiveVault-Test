@@ -154,6 +154,73 @@ No existing Coolify application needs a restart or database rollback. The new
 Control adapter requires a targeted restart of `openastro-control.service`;
 it invalidates panel sessions. Its rollback is documented in `control-panel/README.md`.
 
+## InstaVault
+
+Prepared 2026-11-02 at the user's request. Source is `instavault/` (module notes
+in `instavault/README.md`). It archives posts, carousels and Reels of the
+Instagram profiles the user picks, plus stories and highlights when an Instagram
+session is connected, through instaloader 4.16, one download job at a time.
+
+Separate Coolify application `InstaVault`: Docker Compose from
+`docker-compose.yml`, base directory `/instavault`, branch `main`, Auto Deploy on,
+Watch Paths `instavault/**` only, same GitHub App source as Bonsai Sensei.
+Container port 8096 is published only on `127.0.0.1:8096`. The Compose file
+requests uid 10002, read-only rootfs, no capabilities, no-new-privileges and
+0.75 CPU; the 384 MiB memory request is not enforced on this kernel (see Bonsai
+Sensei above). The container label `openastro.module=instavault` is what the
+NVMe helper uses to find it, so check it survives each Coolify deploy.
+
+Own persistent paths:
+
+- `/data/instavault` (eMMC) at `/data`: SQLite database, encrypted Instagram
+  session `instagram.enc`, download lease. Owned by uid 10002, mode 0700.
+- `/mnt/livevault-nvme/instavault-media` (NVMe UUID
+  `5fe2d0f6-b485-44e9-8e26-31fb0d217db2`) at `/media`: originals and thumbnails.
+  The marker `.instavault-volume` must read `instavault-v1`; without it the app
+  pauses downloads and serves no media.
+- `/data/instavault-secrets` read-only at `/run/secrets`: `auth.json` copied from
+  `/etc/openastro-control-auth.json` (same login as Control) and `secret`
+  (random bytes that sign cookies and encrypt the Instagram session). Never
+  print, copy into Git or publish these files.
+
+Public access uses a dedicated Tailscale node, not a path on the `openastro`
+Funnel, which is left unchanged. `instavault-tailscale.service`
+(`scripts/instavault-tailscale.service`) runs a userspace `tailscaled` as user
+`instavault-ts`, state in `/data/instavault-tailscale/node`, socket
+`/run/instavault-tailscale/tailscaled.sock`, operator `astro`, the same pattern
+as `gpt-harness-tailscale`. Its Funnel serves `https://instavault.tailf2871c.ts.net/`
+and proxies to `http://127.0.0.1:8096`. Check with
+`tailscale --socket=/run/instavault-tailscale/tailscaled.sock funnel status`.
+The app trusts `X-Forwarded-For` and `X-Forwarded-Host` only from loopback or
+private peers. The node was approved interactively, so its key expires unless
+key expiry is disabled for `instavault` in the Tailscale admin console.
+
+NVMe handoff: `scripts/instavault-storage.py` is installed at
+`/usr/local/libexec/instavault-storage.py`. `nvme-handoff.py` calls `pause`
+before an eject (stops containers labelled `openastro.module=instavault`, state
+in `/var/lib/openastro-instavault`) and `resume` after attach (checks the UUID
+and the marker, then restarts the container on a fresh bind). The helper must be
+installed before the container first starts.
+
+Host installation is `scripts/instavault-host-install.sh`, run once as root from
+a bundle folder on the node. It is idempotent and stops at the first error:
+backup to `/var/backups/openastro/20261102-instavault`, helper and handoff
+script, Tailscale user, unit, login and Funnel, Control tile, then the
+`/opt/openastro-ops` document copy.
+
+Limits: Instagram refuses anonymous profile reads from this node (2026-11-02,
+public profile reported as not found), so downloads need a session connected in
+InstaVault Settings, by login with optional two-factor code or by importing
+browser cookies. Instagram can rate-limit or flag accounts that download a lot.
+
+Rollback: stop or delete only the InstaVault application in Coolify; run
+`systemctl disable --now instavault-tailscale.service` (state is kept; use
+`tailscale --socket=/run/instavault-tailscale/tailscaled.sock logout` to remove
+the device); restore `nvme-handoff.py` and the Control files from the backup
+folder and delete `/usr/local/libexec/instavault-storage.py`. Keep
+`/data/instavault*` and the media folder unless the user asks to delete the
+archive.
+
 ## Automatic deployment policy
 
 For Coolify-managed applications:
