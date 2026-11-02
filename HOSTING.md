@@ -254,7 +254,7 @@ produce distinct safe errors. No public profile lookup proves authentication.
 The phone identity (no authorization or password) is kept encrypted in
 `/data/instavault/instagram-device.enc`. Manual checkpoints must be completed in
 the official Instagram app/browser. Failed password logins log only the
-exception class and an allowlisted step name, never tokens. Validation 2026-11-02: 111 automated tests pass locally; the first live user login
+exception class and an allowlisted step name, never tokens. Validation 2026-11-02: 112 automated tests pass locally; the first live user login
 and ensuing download remain to be verified with the user’s actual Instagram session.
 Profiles are checked every 10
 minutes by default (choice from 10 minutes to 24 hours) with a random offset of

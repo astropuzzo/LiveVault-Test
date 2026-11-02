@@ -497,3 +497,20 @@ def test_mobile_header_only_login_obtains_real_web_csrf(instagram, monkeypatch):
     assert result['configured'] and len(called)==1 and 'csrftoken' not in called[0]
     saved = security.decrypt_json((store.DATA/'instagram.enc').read_bytes())
     assert saved['cookies']['csrftoken']=='real-web-csrf'
+
+
+def test_cancel_during_session_commit_reports_connection_accurately(instagram, monkeypatch):
+    first = wait_login(login.password_login({'username':'owner_account','password':'secret-pass'}), 'code_required')
+    entered, release = threading.Event(), threading.Event()
+    original = sync.save_session
+    def delayed_save(*args, **kwargs):
+        entered.set(); assert release.wait(5)
+        return original(*args, **kwargs)
+    monkeypatch.setattr(sync, 'save_session', delayed_save)
+    login.password_login({'attempt_id':first['attempt_id'],'code':'123456'})
+    assert entered.wait(5)
+    result = []
+    cancellation = threading.Thread(target=lambda: result.append(login.cancel(first['attempt_id'])))
+    cancellation.start(); release.set(); cancellation.join(5)
+    assert result == [{'ok':True,'already_connected':True}]
+    assert wait_login(first,'done')['configured']

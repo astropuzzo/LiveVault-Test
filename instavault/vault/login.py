@@ -57,7 +57,7 @@ def save_device(value):
     temporary.replace(device_path())
 
 
-def finish(value, cancelled=None):
+def finish(value, cancelled=None, committed=None):
     # Client.login() already obtained an authenticated mobile session. Requiring
     # Instaloader's old GraphQL probe here incorrectly rejects that valid login.
     data = value.authorization_data or {}
@@ -81,7 +81,10 @@ def finish(value, cancelled=None):
         with sync.SESSION_LOCK:
             if cancelled and cancelled.is_set():
                 raise ValueError('Accesso annullato.')
-            return sync.save_session(loader, verified_identity=account, verified_via='mobile_login')
+            result = sync.save_session(loader, verified_identity=account, verified_via='mobile_login')
+            if committed:
+                committed.set()
+            return result
     finally:
         loader.close()
 
@@ -97,6 +100,7 @@ class Attempt:
         self.asking = threading.Event()
         self.done = threading.Event()
         self.cancelled = threading.Event()
+        self.committed = threading.Event()
         self.channel = ''
         self.result = None
         self.error = None
@@ -129,7 +133,7 @@ class Attempt:
                 raise ValueError('Accesso annullato.')
             if not accepted:
                 raise ValueError('Instagram non ha completato l’accesso.')
-            self.result = finish(self.client, self.cancelled)
+            self.result = finish(self.client, self.cancelled, self.committed)
             with store.db() as connection:
                 connection.execute('UPDATE profiles SET next_sync=0 WHERE enabled=1')
             sync.WAKE.set()
@@ -200,11 +204,16 @@ def password_status(attempt_id):
 def cancel(attempt_id):
     with LOCK:
         if CURRENT and CURRENT.id == attempt_id and not CURRENT.done.is_set():
-            CURRENT.cancelled.set()
-            try:
-                CURRENT.codes.put_nowait('')
-            except queue.Full:
-                pass
+            with sync.SESSION_LOCK:
+                if CURRENT.committed.is_set():
+                    return {'ok': True, 'already_connected': True}
+                CURRENT.cancelled.set()
+                try:
+                    CURRENT.codes.put_nowait('')
+                except queue.Full:
+                    pass
+        elif CURRENT and CURRENT.id == attempt_id and CURRENT.result:
+            return {'ok': True, 'already_connected': True}
     return {'ok': True}
 
 

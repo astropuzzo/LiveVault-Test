@@ -411,7 +411,7 @@
     ++loginPollGeneration;
     const id = loginAttemptId; loginAttemptId = null;
     resetInstagramLogin(); $('#igError').textContent = '';
-    if (id) { try { await api('/api/instagram/login/cancel', {method: 'POST', body: JSON.stringify({attempt_id: id})}); } catch (error) { report(error); } }
+    if (id) { try { const result = await api('/api/instagram/login/cancel', {method: 'POST', body: JSON.stringify({attempt_id: id})}); if (result.already_connected) { toast('L’account è già stato collegato'); await refreshSummary(); } } catch (error) { report(error); } }
     $('#igPassword').focus();
   }
   $('#instagramLogin').addEventListener('submit', event => {
