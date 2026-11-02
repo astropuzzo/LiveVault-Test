@@ -20,7 +20,7 @@
   };
   const stateNames = {queued: 'In coda', running: 'In corso', syncing: 'In corso', done: 'Completato', ready: 'Aggiornato', error: 'Da verificare', cancelled: 'Interrotto', cancel_requested: 'In arresto', paused: 'In pausa', private: 'Privato'};
   const KINDS = {post: ['post', 'post'], reel: ['Reel', 'Reel'], story: ['storia', 'storie']};
-  const state = {authenticated: false, csrf: '', view: 'archive', summary: null, profile: '', kind: 'post', collection: '', igChanging: false, query: '', order: 'newest', cursor: null, posts: [], loadSeq: 0, loading: false, post: null, slide: 0, pendingCode: false, lastCount: null};
+  const state = {selecting: false, selected: new Set(), authenticated: false, csrf: '', view: 'archive', summary: null, profile: '', kind: 'post', collection: '', igChanging: false, query: '', order: 'newest', cursor: null, posts: [], loadSeq: 0, loading: false, post: null, slide: 0, pendingCode: false, lastCount: null};
   let toastTimer, searchTimer, refreshBusy = false, returnFocus = null;
   let loginAttemptId = null, loginPollGeneration = 0;
 
@@ -161,7 +161,7 @@
     // A private profile with nothing archived yet shows only its note, not a row of zeros.
     const locked = profile && profile.access && !Number(profile.post_count);
     $('#archiveHeader').hidden = !!profile; $('#profileCards').hidden = !landing; $('#profilePage').hidden = !profile; $('#browse').hidden = landing || locked;
-    $('#kindTabs').hidden = favorites; $('#collections').hidden = !profile || !Number(profile.count_highlight);
+    $('#kindTabs').hidden = favorites; $('#collectionsRow').hidden = !profile || !Number(profile.count_highlight);
     $('#syncAll').hidden = favorites || !profiles.length;
     $('#archiveTitle').textContent = {favorites: 'Salvati', deleted: 'Cancellati'}[state.view] || 'Archivio';
     $('#archiveMeta').textContent = state.view === 'deleted' ? 'Post, Reel e storie spariti da Instagram dopo che InstaVault li aveva salvati'
@@ -193,8 +193,48 @@
     const result = await api(`/api/profiles/${Number(id)}/collections`);
     if (id !== state.profile) return;
     box.innerHTML = result.items.map(c => `<button class="collection" type="button" role="listitem" data-collection="${esc(c.name)}" aria-label="${esc(highlightName(c.name))}, ${plural(c.count, 'contenuto', 'contenuti')}"><span class="avatar ring">${c.cover ? `<img src="${BASE}/media/${Number(c.cover)}/thumb" alt="" loading="lazy">` : ''}</span><span>${esc(highlightName(c.name))}</span></button>`).join('');
-    bindImageFallback(box);
+    bindImageFallback(box); box.scrollLeft = 0; updateCollectionArrows();
   }
+  // On a computer the circles scroll with arrows and the mouse wheel; on a phone with the finger.
+  function updateCollectionArrows() {
+    const box = $('#collections'); const end = box.scrollWidth - box.clientWidth;
+    $('#collectionsBack').hidden = box.scrollLeft <= 8; $('#collectionsMore').hidden = box.scrollLeft >= end - 8;
+  }
+  $('#collections').addEventListener('scroll', updateCollectionArrows, {passive: true});
+  window.addEventListener('resize', updateCollectionArrows);
+  $('#collections').addEventListener('wheel', event => {
+    const box = event.currentTarget;
+    if (box.scrollWidth <= box.clientWidth || Math.abs(event.deltaX) > Math.abs(event.deltaY)) return;
+    const end = box.scrollWidth - box.clientWidth;
+    if ((event.deltaY < 0 && box.scrollLeft <= 0) || (event.deltaY > 0 && box.scrollLeft >= end)) return;
+    event.preventDefault(); box.scrollLeft += event.deltaY;
+  }, {passive: false});
+  $('#collectionsBack').addEventListener('click', () => $('#collections').scrollBy({left: -$('#collections').clientWidth * .8, behavior: 'smooth'}));
+  $('#collectionsMore').addEventListener('click', () => $('#collections').scrollBy({left: $('#collections').clientWidth * .8, behavior: 'smooth'}));
+
+  // Selection: tiles toggle instead of opening, the bar downloads the chosen originals as one ZIP.
+  function setSelecting(on) {
+    state.selecting = on; if (!on) state.selected.clear();
+    $('#selectToggle').setAttribute('aria-pressed', String(on)); $('#selectToggle').textContent = on ? 'Fine' : 'Seleziona';
+    $('#mediaGrid').classList.toggle('selecting', on); $('#selectionBar').hidden = !on;
+    $$('#mediaGrid .tile').forEach(tile => { tile.classList.toggle('selected', state.selected.has(Number(tile.dataset.post))); tile.setAttribute('aria-pressed', on ? String(state.selected.has(Number(tile.dataset.post))) : 'false'); if (!on) tile.removeAttribute('aria-pressed'); });
+    updateSelection();
+  }
+  function updateSelection() {
+    const count = state.selected.size; const link = $('#downloadSelected');
+    $('#selectionCount').textContent = count ? plural(count, 'contenuto selezionato', 'contenuti selezionati') : 'Tocca i contenuti da scaricare';
+    link.setAttribute('aria-disabled', String(!count));
+    if (count) link.href = `${BASE}/api/download?posts=${[...state.selected].join(',')}`; else link.removeAttribute('href');
+  }
+  function toggleTile(tile) {
+    const id = Number(tile.dataset.post);
+    if (state.selected.has(id)) state.selected.delete(id); else if (state.selected.size < 1000) state.selected.add(id);
+    tile.classList.toggle('selected', state.selected.has(id)); tile.setAttribute('aria-pressed', String(state.selected.has(id))); updateSelection();
+  }
+  $('#selectToggle').addEventListener('click', () => setSelecting(!state.selecting));
+  $('#selectCancel').addEventListener('click', () => setSelecting(false));
+  $('#selectAll').addEventListener('click', () => { $$('#mediaGrid .tile').forEach(tile => { const id = Number(tile.dataset.post); if (state.selected.size < 1000) state.selected.add(id); }); setSelecting(true); });
+  $('#downloadSelected').addEventListener('click', event => { if (!state.selected.size) event.preventDefault(); });
   async function playCollection(name) {
     const params = new URLSearchParams({profile: state.profile, kind: 'highlight', collection: name, order: 'oldest'});
     let ids = [], cursor = null;
@@ -229,6 +269,7 @@
   }
   function setView(view, replace = false) {
     if (!VIEWS.includes(view)) view = 'archive';
+    if (state.selecting) setSelecting(false);
     if (view !== 'archive') state.profile = '';
     state.view = view;
     $$('.nav-item').forEach(item => { if (item.dataset.view === view) item.setAttribute('aria-current', 'page'); else item.removeAttribute('aria-current'); });
@@ -245,6 +286,7 @@
     window.scrollTo({top: 0, behavior: 'instant'});
   }
   function selectProfile(id) {
+    if (state.selecting) setSelecting(false);
     state.profile = String(id); state.view = 'archive';
     $$('.nav-item').forEach(item => { if (item.dataset.view === 'archive') item.setAttribute('aria-current', 'page'); else item.removeAttribute('aria-current'); });
     $('#archiveView').hidden = false; ['profilesView', 'activityView', 'settingsView'].forEach(id => { $('#' + id).hidden = true; });
@@ -266,7 +308,9 @@
     const width = media.width || 480; const height = media.height || 600;
     const here = profileById(state.profile)?.username || post.username;
     const shared = (post.profiles || []).filter(name => name !== here);
-    return `<button class="tile" type="button" data-post="${post.id}" aria-label="${esc(label)} di @${esc(post.username)}, ${esc(day(post.published_at))}">
+    const picked = state.selecting && state.selected.has(post.id);
+    return `<button class="tile${picked ? ' selected' : ''}" type="button" data-post="${post.id}"${state.selecting ? ` aria-pressed="${picked}"` : ''} aria-label="${esc(label)} di @${esc(post.username)}, ${esc(day(post.published_at))}">
+      <span class="tile-check" aria-hidden="true">${icon('check')}</span>
       <img src="${BASE}/media/${media.id}/thumb" alt="" width="${width}" height="${height}" loading="lazy" decoding="async">
       ${kind ? `<span class="tile-kind">${icon(kind)}</span>` : ''}
       ${post.favorite ? `<span class="tile-saved">${icon('heart')}</span>` : ''}
@@ -497,6 +541,7 @@
     if (data.view) { event.preventDefault(); if ($('#postDialog').open) $('#postDialog').close(); if (data.view === 'archive') state.profile = ''; setView(data.view); return; }
     if (data.profile) { if ($('#postDialog').open) $('#postDialog').close(); selectProfile(data.profile); return; }
     if (Object.hasOwn(data, 'clearProfile')) { clearProfile(); return; }
+    if (data.post && state.selecting && target.classList.contains('tile')) { toggleTile(target); return; }
     if (data.post) { openPost(data.post).catch(report); return; }
     if (data.editProfile) { openProfile(profileById(data.editProfile)); return; }
     if (data.syncProfile) { busy(target, async () => { try { await api(`/api/profiles/${Number(data.syncProfile)}/sync`, {method: 'POST', body: '{}'}); toast('Aggiornamento in coda'); await refreshSummary(); } catch (error) { report(error); } }); return; }

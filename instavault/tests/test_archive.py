@@ -713,3 +713,19 @@ def test_activity_lists_what_each_update_downloaded(http, vault):
         media = c.execute("INSERT INTO media(post_id,position,kind,path,size,sha256) VALUES (?,0,'image','x.jpg',1,'x')", (post,)).lastrowid
     item = client.get(root + '/api/jobs').json()['items'][0]
     assert item['items'] == [{'id': post, 'kind': 'post', 'collection': '', 'media': media}]
+
+
+def test_chosen_posts_download_as_one_zip_grouped_by_profile(http, vault):
+    root, client = http
+    ids = []
+    with store.db() as c:
+        for code in ['S1', 'S2', 'S3']:
+            post = c.execute("INSERT INTO posts(profile_id,external_key,shortcode,kind,published_at,archived_at,complete) VALUES (?,?,?,'post',1767225600,1,1)",
+                             (vault['profile'], 'post:' + code, code)).lastrowid
+            c.execute("INSERT INTO media(post_id,position,kind,path,size,sha256) VALUES (?,0,'image',?,4,'x')", (post, f'{vault["profile"]}/{code}/1.jpg'))
+            target = vault['media'] / str(vault['profile']) / code / '1.jpg'
+            target.parent.mkdir(parents=True); target.write_bytes(b'jpeg'); ids.append(post)
+    response = client.get(f'{root}/api/download', params={'posts': f'{ids[0]},{ids[2]},x'})
+    assert response.headers['Content-Disposition'] == 'attachment; filename="instavault-2-contenuti.zip"'
+    assert sorted(zipfile.ZipFile(io.BytesIO(response.content)).namelist()) == ['photographer/post/2026-01-01_S1_1.jpg', 'photographer/post/2026-01-01_S3_1.jpg']
+    assert client.get(f'{root}/api/download', params={'posts': ''}).status_code == 404

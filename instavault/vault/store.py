@@ -275,6 +275,17 @@ def mark_deleted(profile_id, kinds, seen, since, story=False):
                          [now(), profile_id, *args, since, *seen]).rowcount
 
 
+def post_files(ids):
+    # The files of hand-picked posts, grouped by profile in the ZIP.
+    ids = [int(i) for i in ids][:1000]
+    if not ids:
+        return []
+    with db() as c:
+        return [dict(r) for r in c.execute(f'''SELECT r.username, x.kind, x.collection, x.published_at, x.shortcode, m.position, m.path, m.location
+            FROM posts x JOIN media m ON m.post_id=x.id JOIN profiles r ON r.id=x.profile_id
+            WHERE x.complete=1 AND x.id IN ({','.join('?' * len(ids))}) ORDER BY r.username, x.published_at, x.id, m.position''', ids)]
+
+
 def profile_files(profile_id, collection=''):
     # Every archived file of a profile (its own and shared collabs), oldest first.
     sql = f'''SELECT x.kind, x.collection, x.published_at, x.shortcode, m.position, m.path, m.location

@@ -319,6 +319,12 @@ class Handler(BaseHTTPRequestHandler):
                 for row in rows:
                     row['items'] = store.job_items(c, row['id']) if row['downloaded'] else []
             return self.send_json({'items': rows})
+        if path == '/api/download':
+            ids = [v for v in str(query.get('posts', '')).split(',') if v.isdigit()]
+            rows = store.post_files(ids)
+            if not rows:
+                raise HTTPError(404, 'Niente da scaricare per ora.')
+            return self.stream_zip(f'instavault-{len(set(ids))}-contenuti.zip', rows, by_profile=True)
         match = re.fullmatch(r'/api/profiles/(\d+)/download', path)
         if match:
             return self.download_zip(int(match[1]), str(query.get('collection', ''))[:300])
@@ -406,7 +412,9 @@ class Handler(BaseHTTPRequestHandler):
         if not rows:
             raise HTTPError(404, 'Niente da scaricare per ora.')
         label = re.sub(r'[^A-Za-z0-9._-]+', '-', collection.replace('In evidenza · ', ''))[:60].strip('-')
-        name = profile['username'] + (f'-{label}' if label else '') + '.zip'
+        return self.stream_zip(profile['username'] + (f'-{label}' if label else '') + '.zip', rows)
+
+    def stream_zip(self, name, rows, by_profile=False):
         self.send_response(200); self.headers_common()
         self.send_header('Content-Type', 'application/zip')
         self.send_header('Content-Disposition', f'attachment; filename="{name}"')
@@ -420,6 +428,8 @@ class Handler(BaseHTTPRequestHandler):
                     break
                 folder = ('in evidenza/' + re.sub(r'[\\/:*?"<>|]+', '-', row['collection'].replace('In evidenza · ', '')).strip()
                           if row['collection'] else folders.get(row['kind'], 'altro'))
+                if by_profile:
+                    folder = row['username'] + '/' + folder
                 when = datetime.fromtimestamp(row['published_at'], timezone.utc)
                 arcname = f'{folder}/{when:%Y-%m-%d}_{row["shortcode"]}_{row["position"] + 1}{file_suffix(row["path"])}'
                 try:

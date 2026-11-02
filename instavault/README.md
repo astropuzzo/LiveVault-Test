@@ -58,6 +58,10 @@ story after story. Posts, Reels and stories are tabs below them.
 "Scarica tutto" streams a ZIP of the profile's originals
 (`/api/profiles/<id>/download`, optional `collection`), built while it is sent
 with no temporary copy; files out of reach (NVMe away) go in `mancanti.txt`.
+"Seleziona" above the grid turns taps into a selection; the bar downloads the
+chosen posts as one ZIP grouped by profile (`/api/download?posts=1,2,3`, up to
+1000). On a computer the highlight circles scroll with side arrows and the
+mouse wheel; on a phone with the finger.
 
 Posts and Reels keep the newest page of their comments (about 15, one mobile
 request per post) in `comments`; `posts.comments_at` marks the read. New posts
