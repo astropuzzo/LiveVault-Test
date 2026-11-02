@@ -237,6 +237,18 @@ def collections(profile_id):
             GROUP BY p.collection ORDER BY latest DESC''', (profile_id,))]
 
 
+def profile_files(profile_id, collection=''):
+    # Every archived file of a profile (its own and shared collabs), oldest first.
+    sql = f'''SELECT x.kind, x.collection, x.published_at, x.shortcode, m.position, m.path, m.location
+        FROM posts x JOIN media m ON m.post_id=x.id JOIN profiles p ON p.id=?
+        WHERE {OF_PROFILE} AND x.complete=1'''
+    args = [profile_id]
+    if collection:
+        sql += ' AND x.collection=?'; args.append(collection)
+    with db() as c:
+        return [dict(r) for r in c.execute(sql + ' ORDER BY x.published_at, x.id, m.position', args)]
+
+
 def post_json(c, row, detail=False):
     value = dict(row)
     media = [dict(r) for r in c.execute('SELECT id,kind,position,width,height,size FROM media WHERE post_id=? ORDER BY position', (row['id'],))]

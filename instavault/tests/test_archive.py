@@ -1,7 +1,9 @@
 import hashlib
+import io
 import json
 import sys
 import threading
+import zipfile
 from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -626,3 +628,22 @@ def test_old_duplicate_collabs_merge_into_one_shared_post(vault):
     store.initialize()
     assert len(store.list_posts({})['items']) == 1
     assert store.list_posts({'profile': other})['items'][0]['profiles'] == ['photographer', 'friend']
+
+
+def test_a_profile_downloads_as_one_zip_with_highlights_in_their_folder(http, vault):
+    root, client = http
+    with store.db() as c:
+        for code, kind, collection in [('P1', 'post', ''), ('H1', 'story', 'In evidenza · Mare'), ('Gone', 'post', '')]:
+            post = c.execute("INSERT INTO posts(profile_id,external_key,shortcode,kind,published_at,archived_at,complete,collection) VALUES (?,?,?,?,1767225600,1,1,?)",
+                             (vault['profile'], 'post:' + code, code, kind, collection)).lastrowid
+            c.execute("INSERT INTO media(post_id,position,kind,path,size,sha256) VALUES (?,0,'image',?,4,'x')", (post, f'{vault["profile"]}/{code}/1.jpg'))
+    for code in ['P1', 'H1']:
+        target = vault['media'] / str(vault['profile']) / code / '1.jpg'
+        target.parent.mkdir(parents=True); target.write_bytes(b'jpeg')
+    response = client.get(f'{root}/api/profiles/{vault["profile"]}/download')
+    assert response.status_code == 200 and response.headers['Content-Type'] == 'application/zip'
+    archive = zipfile.ZipFile(io.BytesIO(response.content))
+    assert sorted(archive.namelist()) == ['in evidenza/Mare/2026-01-01_H1_1.jpg', 'mancanti.txt', 'post/2026-01-01_P1_1.jpg']
+    assert archive.read('post/2026-01-01_P1_1.jpg') == b'jpeg'
+    only = client.get(f'{root}/api/profiles/{vault["profile"]}/download', params={'collection': 'In evidenza · Mare'})
+    assert zipfile.ZipFile(io.BytesIO(only.content)).namelist() == ['in evidenza/Mare/2026-01-01_H1_1.jpg']

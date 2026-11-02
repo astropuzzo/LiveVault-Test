@@ -98,6 +98,7 @@
 
       <div id="profilePage" hidden>
         <header id="profileHeader" class="profile-head"></header>
+        <div id="collections" class="collections" role="list" aria-label="In evidenza" hidden></div>
         <div id="accessNote" class="access" role="status" hidden></div>
       </div>
 
@@ -107,7 +108,6 @@
             <button type="button" data-kind="post" aria-pressed="true"><svg aria-hidden="true"><use href="#i-stack"/></svg>Post<span class="count"></span></button>
             <button type="button" data-kind="reel" aria-pressed="false"><svg aria-hidden="true"><use href="#i-reel"/></svg>Reel<span class="count"></span></button>
             <button type="button" data-kind="story" aria-pressed="false"><svg aria-hidden="true"><use href="#i-story"/></svg>Storie<span class="count"></span></button>
-            <button type="button" data-kind="highlight" aria-pressed="false"><svg aria-hidden="true"><use href="#i-ring"/></svg>In evidenza<span class="count"></span></button>
           </div>
           <div class="filters">
             <label class="search"><span class="sr-only">Cerca nelle didascalie</span><svg aria-hidden="true"><use href="#i-search"/></svg><input id="search" type="search" placeholder="Cerca" autocomplete="off"></label>
@@ -115,7 +115,6 @@
             <select id="sortOrder"><option value="newest">Più recenti</option><option value="oldest">Meno recenti</option></select>
           </div>
         </div>
-        <div id="collections" class="collections" role="group" aria-label="Raccolte in evidenza" hidden></div>
 
         <p id="gridStatus" class="sr-only" aria-live="polite"></p>
         <div id="mediaGrid" class="grid"></div>
@@ -270,6 +269,7 @@
       <div class="viewer-actions">
         <button id="favoritePost" class="icon-button" type="button" aria-label="Aggiungi ai salvati" aria-pressed="false"><svg aria-hidden="true"><use href="#i-heart"/></svg></button>
         <a id="downloadOriginal" class="icon-button" download aria-label="Scarica l’originale"><svg aria-hidden="true"><use href="#i-download"/></svg></a>
+        <a id="downloadCollection" class="icon-button" hidden aria-label="Scarica tutta la raccolta"><svg aria-hidden="true"><use href="#i-stack"/></svg></a>
         <a id="openInstagram" class="icon-button" target="_blank" rel="noopener noreferrer" aria-label="Apri su Instagram"><svg aria-hidden="true"><use href="#i-external"/></svg></a>
       </div>
     </aside>

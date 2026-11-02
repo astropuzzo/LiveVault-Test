@@ -17,7 +17,7 @@
     return title ? text[0].toUpperCase() + text.slice(1) : text;
   };
   const stateNames = {queued: 'In coda', running: 'In corso', syncing: 'In corso', done: 'Completato', ready: 'Aggiornato', error: 'Da verificare', cancelled: 'Interrotto', cancel_requested: 'In arresto', paused: 'In pausa', private: 'Privato'};
-  const KINDS = {post: ['post', 'post'], reel: ['Reel', 'Reel'], story: ['storia', 'storie'], highlight: ['contenuto in evidenza', 'contenuti in evidenza']};
+  const KINDS = {post: ['post', 'post'], reel: ['Reel', 'Reel'], story: ['storia', 'storie']};
   const state = {authenticated: false, csrf: '', view: 'archive', summary: null, profile: '', kind: 'post', collection: '', igChanging: false, query: '', order: 'newest', cursor: null, posts: [], loadSeq: 0, loading: false, post: null, slide: 0, pendingCode: false, lastCount: null};
   let toastTimer, searchTimer, refreshBusy = false, returnFocus = null;
   let loginAttemptId = null, loginPollGeneration = 0;
@@ -159,7 +159,7 @@
     // A private profile with nothing archived yet shows only its note, not a row of zeros.
     const locked = profile && profile.access && !Number(profile.post_count);
     $('#archiveHeader').hidden = !!profile; $('#profileCards').hidden = !landing; $('#profilePage').hidden = !profile; $('#browse').hidden = landing || locked;
-    $('#kindTabs').hidden = favorites; $('#collections').hidden = !profile || state.kind !== 'highlight';
+    $('#kindTabs').hidden = favorites; $('#collections').hidden = !profile || !Number(profile.count_highlight);
     $('#syncAll').hidden = favorites || !profiles.length;
     $('#archiveTitle').textContent = favorites ? 'Salvati' : 'Archivio';
     $('#archiveMeta').textContent = favorites ? 'I contenuti che hai segnato col cuore, da tutti i profili' : profiles.length ? `${plural(counts.posts, 'contenuto', 'contenuti')} da ${plural(profiles.length, 'profilo', 'profili')}` : 'Aggiungi un profilo Instagram: InstaVault ne conserva post, Reel e storie.';
@@ -167,7 +167,7 @@
     if (!profile) { $('#profileHeader').replaceChildren(); $('#accessNote').hidden = true; return; }
     $('#profileHeader').innerHTML = `${avatar(profile, 'large')}<div class="profile-body">
       <button class="link back" type="button" data-clear-profile>${icon('left')}Tutti i profili</button>
-      <div class="profile-top"><h1>${esc(profile.username)}</h1><div class="page-actions"><button class="button" type="button" data-sync-profile="${profile.id}">${icon('refresh')}Aggiorna</button><button class="button" type="button" data-edit-profile="${profile.id}">Modifica</button></div></div>
+      <div class="profile-top"><h1>${esc(profile.username)}</h1><div class="page-actions"><button class="button" type="button" data-sync-profile="${profile.id}">${icon('refresh')}Aggiorna</button>${Number(profile.post_count) ? `<a class="button" href="${BASE}/api/profiles/${Number(profile.id)}/download" download>${icon('download')}Scarica tutto</a>` : ''}<button class="button" type="button" data-edit-profile="${profile.id}">Modifica</button></div></div>
       <p class="profile-counts"><span><b>${number(profile.count_post)}</b> post</span><span><b>${number(profile.count_reel)}</b> Reel</span><span><b>${number(profile.count_story)}</b> storie</span><span><b>${number(profile.count_highlight)}</b> in evidenza</span></p>
       ${profile.full_name ? `<p class="profile-name">${esc(profile.full_name)}</p>` : ''}
       ${profile.biography ? `<p class="profile-bio">${esc(profile.biography)}</p>` : ''}
@@ -180,15 +180,28 @@
     if (profile.access === 'requested') note.innerHTML = `${icon('lock')}<p><b>Profilo privato.</b> La richiesta di seguirlo è in attesa. InstaVault controlla ${esc(every(profile.interval_minutes))} e scarica tutto appena viene accettata.</p>`;
     if (profile.access === 'not_followed') note.innerHTML = `${icon('lock')}<p><b>Profilo privato.</b> L’account Instagram collegato non lo segue, quindi Instagram non mostra i suoi contenuti.</p><button class="button primary small" type="button" data-follow="${profile.id}">Chiedi di seguire</button>`;
     $$('#kindTabs [data-kind]').forEach(button => { button.querySelector('.count').textContent = number(profile['count_' + button.dataset.kind]); });
+    if (Number(profile.count_highlight) && $('#collections').dataset.profile !== String(profile.id)) loadCollections().catch(report);
   }
+  // Highlights sit under the profile header as circles, as on Instagram; a tap plays the collection.
+  const highlightName = value => value.replace(/^In evidenza · /, '') || 'Senza titolo';
   async function loadCollections() {
     const box = $('#collections'); const id = state.profile;
+    box.dataset.profile = String(id);
     const result = await api(`/api/profiles/${Number(id)}/collections`);
-    if (id !== state.profile || state.kind !== 'highlight') return;
-    const name = value => value.replace(/^In evidenza · /, '') || 'Senza titolo';
-    box.innerHTML = result.items.length ? `<button class="collection${state.collection ? '' : ' selected'}" type="button" data-collection="" aria-pressed="${!state.collection}"><span class="avatar ring">${icon('grid')}</span><span>Tutte</span></button>`
-      + result.items.map(c => `<button class="collection${state.collection === c.name ? ' selected' : ''}" type="button" data-collection="${esc(c.name)}" aria-pressed="${state.collection === c.name}" aria-label="${esc(name(c.name))}, ${plural(c.count, 'contenuto', 'contenuti')}"><span class="avatar ring">${c.cover ? `<img src="${BASE}/media/${Number(c.cover)}/thumb" alt="" loading="lazy">` : ''}</span><span>${esc(name(c.name))}</span></button>`).join('') : '';
+    if (id !== state.profile) return;
+    box.innerHTML = result.items.map(c => `<button class="collection" type="button" role="listitem" data-collection="${esc(c.name)}" aria-label="${esc(highlightName(c.name))}, ${plural(c.count, 'contenuto', 'contenuti')}"><span class="avatar ring">${c.cover ? `<img src="${BASE}/media/${Number(c.cover)}/thumb" alt="" loading="lazy">` : ''}</span><span>${esc(highlightName(c.name))}</span></button>`).join('');
     bindImageFallback(box);
+  }
+  async function playCollection(name) {
+    const params = new URLSearchParams({profile: state.profile, kind: 'highlight', collection: name, order: 'oldest'});
+    let ids = [], cursor = null;
+    do {
+      if (cursor) params.set('cursor', cursor);
+      const page = await api('/api/posts?' + params); ids = ids.concat(page.items.map(item => item.id)); cursor = page.next;
+    } while (cursor && ids.length < 500);
+    if (!ids.length) return;
+    state.playlist = {ids, name, profile: state.profile};
+    await openPost(ids[0]);
   }
   function renderProfiles() {
     const profiles = state.summary?.profiles || [];
@@ -234,9 +247,8 @@
     $('#archiveView').hidden = false; ['profilesView', 'activityView', 'settingsView'].forEach(id => { $('#' + id).hidden = true; });
     const profile = profileById(id); document.title = `@${profile?.username || ''} · InstaVault`;
     // Open on the first kind that has something to show, like Instagram opens on the grid.
-    state.kind = ['post', 'reel', 'story', 'highlight'].find(kind => Number(profile?.['count_' + kind])) || 'post';
-    state.collection = ''; pressKind();
-    if (state.kind === 'highlight') loadCollections().catch(report);
+    state.kind = ['post', 'reel', 'story'].find(kind => Number(profile?.['count_' + kind])) || 'post';
+    state.collection = ''; pressKind(); $('#collections').replaceChildren(); delete $('#collections').dataset.profile;
     if (location.hash !== '#archive') history.pushState(null, '', '#archive');
     renderSummary(); loadPosts(true).catch(report); window.scrollTo({top: 0, behavior: 'instant'});
   }
@@ -296,7 +308,7 @@
     const params = new URLSearchParams();
     if (state.profile) params.set('profile', state.profile);
     if (state.profile) params.set('kind', state.kind);
-    if (state.profile && state.kind === 'highlight' && state.collection) params.set('collection', state.collection);
+
     if (state.query) params.set('q', state.query);
     if (state.view === 'favorites') params.set('favorite', '1');
     params.set('order', state.order);
@@ -341,9 +353,10 @@
     select.value = String(value); $('#profileDialog').showModal();
   }
   function cleanupMedia() { $$('video', $('#viewerMedia')).forEach(video => { video.pause(); video.removeAttribute('src'); video.load(); }); $('#viewerMedia').replaceChildren(); }
-  async function openPost(id) {
-    returnFocus = document.activeElement;
-    const result = await api('/api/posts/' + Number(id)); state.post = result; state.slide = 0;
+  async function openPost(id, slide = 0) {
+    if (!$('#postDialog').open) returnFocus = document.activeElement;
+    if (state.playlist && !state.playlist.ids.includes(Number(id))) state.playlist = null;
+    const result = await api('/api/posts/' + Number(id)); state.post = result; state.slide = slide < 0 ? result.media.length - 1 : slide;
     $('#postAuthor').innerHTML = `${avatar(result, 'small')}<div><button class="link name" type="button" data-profile="${Number(result.profile_id)}">${esc(result.username)}</button>${result.full_name ? `<small>${esc(result.full_name)}</small>` : ''}</div>`;
     bindImageFallback($('#postAuthor'));
     $('#postCaption').textContent = result.caption || result.collection || '';
@@ -364,7 +377,11 @@
     const expired = result.kind === 'story' && !result.collection && Date.now() / 1000 - result.published_at > 86400;
     $('#openInstagram').hidden = expired;
     $('#openInstagram').href = /^https:\/\/www\.instagram\.com\//.test(external) ? external : 'https://www.instagram.com/';
-    updateFavorite(); renderSlide(); $('#postDialog').showModal(); document.body.classList.add('dialog-open');
+    const list = state.playlist;
+    $('#downloadCollection').hidden = !list;
+    if (list) $('#downloadCollection').href = `${BASE}/api/profiles/${Number(list.profile)}/download?collection=${encodeURIComponent(list.name)}`;
+    updateFavorite(); renderSlide();
+    if (!$('#postDialog').open) { $('#postDialog').showModal(); document.body.classList.add('dialog-open'); }
   }
   function updateFavorite() {
     const saved = !!state.post?.favorite; const button = $('#favoritePost');
@@ -382,9 +399,13 @@
     item.addEventListener('error', () => { $('#viewerMedia').innerHTML = '<p class="viewer-missing">File non disponibile. Controlla che l’NVMe sia collegato.</p>'; }, {once: true});
     $('#viewerMedia').append(item);
     placeStoryLinks(item);
-    const many = post.media.length > 1;
-    $('#previousMedia').hidden = !many || state.slide === 0; $('#nextMedia').hidden = !many || state.slide === post.media.length - 1;
-    $('#carouselCount').hidden = !many; $('#carouselCount').textContent = `${state.slide + 1} / ${post.media.length}`;
+    // In a highlight the arrows go on to the next story; elsewhere they stay inside the carousel.
+    const list = state.playlist; const at = list ? list.ids.indexOf(post.id) : -1;
+    const many = post.media.length > 1 || (list && list.ids.length > 1);
+    $('#previousMedia').hidden = !many || (state.slide === 0 && at <= 0);
+    $('#nextMedia').hidden = !many || (state.slide === post.media.length - 1 && (!list || at === list.ids.length - 1));
+    $('#carouselCount').hidden = !many;
+    $('#carouselCount').textContent = list ? `${highlightName(list.name)} · ${at + 1} / ${list.ids.length}` : `${state.slide + 1} / ${post.media.length}`;
     $('#downloadOriginal').href = `${BASE}/media/${media.id}?download=1`;
   }
   // Tappable areas over the story, where Instagram drew the sticker or mention.
@@ -399,8 +420,12 @@
       const scale = Math.min(stage.width / natural[0], stage.height / natural[1]);
       const width = natural[0] * scale, height = natural[1] * scale;
       Object.assign(layer.style, {left: `${(stage.width - width) / 2}px`, top: `${(stage.height - height) / 2}px`, width: `${width}px`, height: `${height}px`});
-      layer.innerHTML = links.map(link => `<a href="${esc(link.url)}" target="_blank" rel="noopener noreferrer" aria-label="${esc(link.label || link.url)}"
-        style="left:${(link.x - link.w / 2) * 100}%;top:${(link.y - link.h / 2) * 100}%;width:${link.w * 100}%;height:${link.h * 100}%"></a>`).join('');
+      layer.replaceChildren(...links.map(link => {
+        const area = document.createElement('a');
+        Object.assign(area, {href: link.url, target: '_blank', rel: 'noopener noreferrer'}); area.setAttribute('aria-label', link.label || link.url);
+        Object.assign(area.style, {left: `${(link.x - link.w / 2) * 100}%`, top: `${(link.y - link.h / 2) * 100}%`, width: `${link.w * 100}%`, height: `${link.h * 100}%`});
+        return area;
+      }));
       layer.hidden = false;
     };
     if (item.complete || item.readyState >= 1) place();
@@ -411,6 +436,12 @@
   window.addEventListener('resize', () => { if ($('#postDialog').open && storyLinkResize) storyLinkResize(); });
   function moveSlide(delta) {
     if (!state.post) return; const next = state.slide + delta;
+    const list = state.playlist;
+    if ((next < 0 || next >= state.post.media.length) && list) {
+      const target = list.ids[list.ids.indexOf(state.post.id) + delta];
+      if (target) openPost(target, delta < 0 ? -1 : 0).catch(report);
+      return;
+    }
     if (next < 0 || next >= state.post.media.length) return;
     state.slide = next; renderSlide();
     // An arrow hides at either end of a carousel; keep keyboard focus inside the viewer.
@@ -445,10 +476,9 @@
     if (data.toggleProfile) { busy(target, async () => { try { const p = profileById(data.toggleProfile); await api('/api/profiles/' + p.id, {method: 'PATCH', body: JSON.stringify({enabled: !p.enabled})}); toast(p.enabled ? 'Profilo in pausa, i contenuti restano' : 'Aggiornamenti riattivati'); await refreshSummary(); } catch (error) { report(error); } }); return; }
     if (data.cancelJob) { busy(target, async () => { try { await api(`/api/jobs/${Number(data.cancelJob)}/cancel`, {method: 'POST', body: '{}'}); toast('Interruzione richiesta'); await refreshSummary(); await loadJobs(); } catch (error) { report(error); } }); return; }
     if (data.follow) { busy(target, async () => { try { const result = await api(`/api/profiles/${Number(data.follow)}/follow`, {method: 'POST', body: '{}'}); toast(result.access ? 'Richiesta inviata: InstaVault scarica appena viene accettata' : 'Ora lo segui: download in coda'); await refreshSummary(); } catch (error) { report(error); } }); return; }
-    if (Object.hasOwn(data, 'collection')) { state.collection = data.collection; loadCollections().catch(report); loadPosts(true).catch(report); return; }
+    if (Object.hasOwn(data, 'collection')) { playCollection(data.collection).catch(report); return; }
     if (Object.hasOwn(data, 'kind')) {
       state.kind = data.kind; state.collection = ''; pressKind(); renderArchive();
-      if (state.kind === 'highlight') loadCollections().catch(report);
       loadPosts(true).catch(report);
     }
   });
@@ -550,7 +580,7 @@
       $('#mediaGrid').innerHTML = state.posts.map(postTile).join(''); bindImageFallback($('#mediaGrid')); renderEmpty();
     } catch (error) { report(error); }
   }));
-  $('#postDialog').addEventListener('close', () => { cleanupMedia(); state.post = null; document.body.classList.remove('dialog-open'); returnFocus?.focus?.(); });
+  $('#postDialog').addEventListener('close', () => { cleanupMedia(); state.post = null; state.playlist = null; document.body.classList.remove('dialog-open'); returnFocus?.focus?.(); });
   $('#profileDialog').addEventListener('close', () => { returnFocus?.focus?.(); });
   ['postDialog', 'profileDialog'].forEach(id => { const dialog = $('#' + id); dialog.addEventListener('click', event => { if (event.target === dialog) dialog.close(); }); });
   document.addEventListener('keydown', event => {

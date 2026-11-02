@@ -12,11 +12,17 @@ import signal
 import sqlite3
 import threading
 import time
+import zipfile
+from datetime import datetime, timezone
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
 from . import login, store, security, sync
+
+
+def file_suffix(relative):
+    return os.path.splitext(relative)[1].lower()
 
 VERSION = '1.0.0'
 LOGIN_ATTEMPTS = {}
@@ -311,6 +317,9 @@ class Handler(BaseHTTPRequestHandler):
             with store.db() as c:
                 rows = [dict(r) for r in c.execute('SELECT j.*,p.username FROM jobs j JOIN profiles p ON p.id=j.profile_id ORDER BY j.id DESC LIMIT 100')]
             return self.send_json({'items': rows})
+        match = re.fullmatch(r'/api/profiles/(\d+)/download', path)
+        if match:
+            return self.download_zip(int(match[1]), str(query.get('collection', ''))[:300])
         match = re.fullmatch(r'/api/profiles/(\d+)/collections', path)
         if match:
             return self.send_json({'items': store.collections(int(match[1]))})
@@ -382,6 +391,46 @@ class Handler(BaseHTTPRequestHandler):
                 if not chunk:
                     break
                 self.wfile.write(chunk); remaining -= len(chunk)
+
+    def download_zip(self, profile_id, collection):
+        # Streamed while it is built: no temporary copy on the eMMC, originals
+        # stored without recompression. Files that are not reachable right now
+        # (NVMe away) are listed in mancanti.txt instead of failing the download.
+        with store.db() as c:
+            profile = c.execute('SELECT username FROM profiles WHERE id=?', (profile_id,)).fetchone()
+        if not profile:
+            raise HTTPError(404, 'Profilo non trovato.')
+        rows = store.profile_files(profile_id, collection)
+        if not rows:
+            raise HTTPError(404, 'Niente da scaricare per ora.')
+        label = re.sub(r'[^A-Za-z0-9._-]+', '-', collection.replace('In evidenza · ', ''))[:60].strip('-')
+        name = profile['username'] + (f'-{label}' if label else '') + '.zip'
+        self.send_response(200); self.headers_common()
+        self.send_header('Content-Type', 'application/zip')
+        self.send_header('Content-Disposition', f'attachment; filename="{name}"')
+        self.send_header('Cache-Control', 'no-store'); self.send_header('Connection', 'close')
+        self.end_headers(); self.close_connection = True
+        folders = {'post': 'post', 'reel': 'reel', 'story': 'storie'}
+        missing = []
+        with zipfile.ZipFile(self.wfile, 'w', zipfile.ZIP_STORED) as archive:
+            for row in rows:
+                if sync.STOP.is_set():
+                    break
+                folder = ('in evidenza/' + re.sub(r'[\\/:*?"<>|]+', '-', row['collection'].replace('In evidenza · ', '')).strip()
+                          if row['collection'] else folders.get(row['kind'], 'altro'))
+                when = datetime.fromtimestamp(row['published_at'], timezone.utc)
+                arcname = f'{folder}/{when:%Y-%m-%d}_{row["shortcode"]}_{row["position"] + 1}{file_suffix(row["path"])}'
+                try:
+                    source = store.safe_file(row['path'], row['location'])
+                    info = zipfile.ZipInfo(arcname, when.timetuple()[:6]); info.compress_type = zipfile.ZIP_STORED
+                    with source.open('rb') as handle, archive.open(info, 'w', force_zip64=True) as target:
+                        while chunk := handle.read(256 * 1024):
+                            target.write(chunk)
+                except (OSError, HTTPError, ValueError):
+                    missing.append(arcname)
+            if missing:
+                archive.writestr('mancanti.txt', 'File non raggiungibili al momento del download '
+                                 '(NVMe scollegato o file mancante):\n' + '\n'.join(missing) + '\n')
 
     def range_error(self, size):
         self.send_response(416); self.headers_common()

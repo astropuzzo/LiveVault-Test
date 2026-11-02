@@ -52,9 +52,12 @@ Rollback and deployment details: [HOSTING.md](../HOSTING.md#instavault).
 
 ## Archive layout
 
-The archive opens on one card per profile. Inside a profile, posts, Reels,
-stories and highlights are separate tabs; highlights are grouped by their
-collection, as on Instagram. A private profile the connected account cannot
+The archive opens on one card per profile. Inside a profile, highlights are
+circles pinned under the header, as on Instagram; a tap plays the collection
+story after story. Posts, Reels and stories are tabs below them.
+"Scarica tutto" streams a ZIP of the profile's originals
+(`/api/profiles/<id>/download`, optional `collection`), built while it is sent
+with no temporary copy; files out of reach (NVMe away) go in `mancanti.txt`. A private profile the connected account cannot
 see is marked `access='requested'` or `'not_followed'` and skipped without an
 error; "Chiedi di seguire" sends the follow request (mobile sessions only).
 Instagram errors are named in Italian with Instagram's own words when the
