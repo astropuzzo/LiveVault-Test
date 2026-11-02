@@ -12,6 +12,10 @@
   const moment = timestamp => timestamp ? new Intl.DateTimeFormat('it-IT', {day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit'}).format(new Date(timestamp * 1000)) : 'mai';
   const bytes = value => { const size = Number(value) || 0; const fmt = n => n.toLocaleString('it-IT', {maximumFractionDigits: 1}); return size >= 1024 ** 3 ? `${fmt(size / 1024 ** 3)} GB` : size >= 1024 ** 2 ? `${fmt(size / 1024 ** 2)} MB` : `${Math.round(size / 1024)} KB`; };
   const plural = (count, one, many) => `${number(count)} ${Number(count) === 1 ? one : many}`;
+  const every = (minutes, title = false) => {
+    const text = minutes === 60 ? 'ogni ora' : minutes % 60 ? `ogni ${minutes} minuti` : `ogni ${minutes / 60} ore`;
+    return title ? text[0].toUpperCase() + text.slice(1) : text;
+  };
   const stateNames = {queued: 'In coda', running: 'In corso', syncing: 'In corso', done: 'Completato', ready: 'Aggiornato', error: 'Da verificare', cancelled: 'Interrotto', cancel_requested: 'In arresto', paused: 'In pausa'};
   const state = {authenticated: false, csrf: '', view: 'archive', summary: null, profile: '', kind: '', query: '', order: 'newest', cursor: null, posts: [], loadSeq: 0, loading: false, post: null, slide: 0, pending2fa: false, lastCount: null};
   let toastTimer, searchTimer, refreshBusy = false, returnFocus = null;
@@ -159,7 +163,7 @@
         <h2><button class="link name" type="button" data-profile="${p.id}">@${esc(p.username)}</button></h2>
         ${p.full_name ? `<p>${esc(p.full_name)}</p>` : ''}
         ${p.error ? `<p class="row-error">${esc(p.error)}</p>` : ''}
-        <p class="stamp">${number(p.post_count)} contenuti · ogni ${p.interval_hours === 1 ? 'ora' : p.interval_hours + ' ore'} · aggiornato ${esc(moment(p.last_sync))}</p>
+        <p class="stamp">${number(p.post_count)} contenuti · ${every(p.interval_minutes)} · aggiornato ${esc(moment(p.last_sync))}</p>
       </div>
       <div class="row-side">
         ${statusTag(p.enabled ? p.status : 'paused')}
@@ -278,9 +282,9 @@
     $('#profileUsername').value = profile?.username || ''; $('#profileUsername').readOnly = !!profile;
     $('#profileSubmit').textContent = profile ? 'Salva modifiche' : 'Aggiungi profilo';
     ['posts', 'reels', 'stories', 'highlights'].forEach(key => { $('#p' + key[0].toUpperCase() + key.slice(1)).checked = profile ? !!profile[key] : key !== 'highlights'; });
-    const select = $('#pInterval'); const value = profile?.interval_hours || 6;
+    const select = $('#pInterval'); const value = profile?.interval_minutes || 10;
     $$('option[data-custom]', select).forEach(option => option.remove());
-    if (![...select.options].some(option => Number(option.value) === Number(value))) { const option = new Option(`Ogni ${value} ore`, value); option.dataset.custom = '1'; select.add(option); }
+    if (![...select.options].some(option => Number(option.value) === Number(value))) { const option = new Option(every(value, true), value); option.dataset.custom = '1'; select.add(option); }
     select.value = String(value); $('#profileDialog').showModal();
   }
   function cleanupMedia() { $$('video', $('#viewerMedia')).forEach(video => { video.pause(); video.removeAttribute('src'); video.load(); }); $('#viewerMedia').replaceChildren(); }
@@ -365,7 +369,7 @@
   $('#profileForm').addEventListener('submit', event => {
     event.preventDefault(); $('#profileError').textContent = '';
     const ident = $('#profileId').value;
-    const body = {username: $('#profileUsername').value.trim(), interval_hours: Number($('#pInterval').value), posts: $('#pPosts').checked, reels: $('#pReels').checked, stories: $('#pStories').checked, highlights: $('#pHighlights').checked};
+    const body = {username: $('#profileUsername').value.trim(), interval_minutes: Number($('#pInterval').value), posts: $('#pPosts').checked, reels: $('#pReels').checked, stories: $('#pStories').checked, highlights: $('#pHighlights').checked};
     if (!body.posts && !body.reels && !body.stories && !body.highlights) { $('#profileError').textContent = 'Scegli almeno un tipo di contenuto.'; return; }
     busy(event.submitter, async () => {
       try { await api('/api/profiles' + (ident ? '/' + ident : ''), {method: ident ? 'PATCH' : 'POST', body: JSON.stringify(body)}); $('#profileDialog').close(); toast(ident ? 'Modifiche salvate' : 'Profilo aggiunto, primo download in coda'); await refreshSummary(); if (!ident && ['archive', 'favorites'].includes(state.view)) renderEmpty(); }
@@ -387,14 +391,18 @@
         const result = await api('/api/instagram/login', {method: 'POST', body: JSON.stringify(body)});
         if (result.two_factor) { state.pending2fa = true; $('#twoFactorBox').hidden = false; $('#igError').textContent = 'Inserisci il codice dell’autenticazione a due fattori.'; $('#igCode').focus(); }
         else { state.pending2fa = false; $('#twoFactorBox').hidden = true; toast('Account Instagram collegato'); await refreshSummary(); }
-      } catch (error) { $('#igError').textContent = error.message; } finally { body.password = ''; body.code = ''; }
+      } catch (error) {
+        $('#igError').textContent = error.message;
+        // Every login check Instagram asks for has the same way out: the browser cookie.
+        if (/cookie/.test(error.message)) $('#cookieDetails').open = true;
+      } finally { body.password = ''; body.code = ''; }
     });
   });
   $('#resetTwoFactor').addEventListener('click', () => { state.pending2fa = false; $('#twoFactorBox').hidden = true; $('#igCode').value = ''; $('#igError').textContent = ''; $('#igPassword').focus(); });
   $('#cookieImport').addEventListener('submit', event => {
     event.preventDefault();
-    const body = {username: $('#cookieUsername').value.trim(), cookies: $('#cookieText').value}; $('#cookieText').value = '';
-    busy(event.submitter, async () => { try { await api('/api/instagram/cookies', {method: 'POST', body: JSON.stringify(body)}); toast('Sessione importata e cifrata sul server'); $('#cookieImport').closest('details').open = false; await refreshSummary(); } catch (error) { report(error); } finally { body.cookies = ''; } });
+    const body = {cookies: $('#cookieText').value}; $('#cookieText').value = '';
+    busy(event.submitter, async () => { try { await api('/api/instagram/cookies', {method: 'POST', body: JSON.stringify(body)}); toast('Account collegato, sessione cifrata sul server'); $('#cookieImport').closest('details').open = false; await refreshSummary(); } catch (error) { report(error); } finally { body.cookies = ''; } });
   });
   $('#disconnectInstagram').addEventListener('click', event => busy(event.currentTarget, async () => {
     try { await api('/api/instagram/disconnect', {method: 'POST', body: '{}'}); state.pending2fa = false; $('#twoFactorBox').hidden = true; ['igUsername', 'igPassword', 'igCode'].forEach(id => { $('#' + id).value = ''; }); toast('Account scollegato, sessione rimossa dal server'); await refreshSummary(); } catch (error) { report(error); }

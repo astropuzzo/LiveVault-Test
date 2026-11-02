@@ -65,7 +65,7 @@ def initialize():
           biography TEXT NOT NULL DEFAULT '', instagram_id TEXT NOT NULL DEFAULT '', avatar TEXT NOT NULL DEFAULT '',
           enabled INTEGER NOT NULL DEFAULT 1, posts INTEGER NOT NULL DEFAULT 1, reels INTEGER NOT NULL DEFAULT 1,
           stories INTEGER NOT NULL DEFAULT 1, highlights INTEGER NOT NULL DEFAULT 0,
-          interval_hours INTEGER NOT NULL DEFAULT 6, status TEXT NOT NULL DEFAULT 'queued', error TEXT NOT NULL DEFAULT '',
+          interval_minutes INTEGER NOT NULL DEFAULT 10, status TEXT NOT NULL DEFAULT 'queued', error TEXT NOT NULL DEFAULT '',
           created_at INTEGER NOT NULL, last_sync INTEGER, next_sync INTEGER NOT NULL DEFAULT 0);
         CREATE TABLE IF NOT EXISTS posts (
           id INTEGER PRIMARY KEY, profile_id INTEGER NOT NULL REFERENCES profiles(id), external_key TEXT NOT NULL,
@@ -92,6 +92,9 @@ def initialize():
         if 'location' not in {row[1] for row in c.execute('PRAGMA table_info(media)')}:
             c.execute("ALTER TABLE media ADD COLUMN location TEXT NOT NULL DEFAULT 'media'")
         c.execute('CREATE INDEX IF NOT EXISTS media_location ON media(location,post_id)')
+        # Hours became minutes on 2026-11-02: every profile moves to the new 10 minute default.
+        if 'interval_minutes' not in {row[1] for row in c.execute('PRAGMA table_info(profiles)')}:
+            c.execute('ALTER TABLE profiles ADD COLUMN interval_minutes INTEGER NOT NULL DEFAULT 10')
         for key, value in {'automatic': True, 'quota_gb': 60, 'min_free_gb': 15}.items():
             c.execute('INSERT OR IGNORE INTO settings VALUES (?,?)', (key, json.dumps(value)))
 

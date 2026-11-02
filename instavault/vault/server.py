@@ -213,10 +213,11 @@ class Handler(BaseHTTPRequestHandler):
                 else:
                     with sync.SESSION_LOCK:
                         result = sync.import_cookies(body)
-            except ValueError:
-                raise
+            except ValueError as exc:
+                # Plain ValueErrors carry InstaVault's own Italian message.
+                raise HTTPError(400, str(exc) if type(exc) is ValueError else 'Controlla i dati inseriti e riprova.') from None
             except Exception as exc:
-                raise HTTPError(400, sync.error_message(exc)) from None
+                raise HTTPError(400, sync.login_message(exc)) from None
             if not result.get('two_factor'):
                 with store.db() as c:
                     c.execute('UPDATE profiles SET next_sync=0 WHERE enabled=1')
@@ -233,11 +234,11 @@ class Handler(BaseHTTPRequestHandler):
         for key in ['enabled', 'posts', 'reels', 'stories', 'highlights']:
             if key in body:
                 values[key] = int(bool(body[key]))
-        if 'interval_hours' in body:
-            value = int(body['interval_hours'])
-            if not 1 <= value <= 168:
-                raise ValueError('Scegli un intervallo da 1 a 168 ore.')
-            values['interval_hours'] = value
+        if 'interval_minutes' in body:
+            value = int(body['interval_minutes'])
+            if not 10 <= value <= 10080:
+                raise ValueError('Scegli un intervallo da 10 minuti a 7 giorni.')
+            values['interval_minutes'] = value
         return values
 
     def update_profile(self, ident, body):

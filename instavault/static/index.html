@@ -165,15 +165,19 @@
               <button id="disconnectInstagram" class="button" type="button" hidden>Scollega</button>
             </div>
           </form>
-          <details class="cookies">
-            <summary>Importa i cookie del browser</summary>
-            <p class="help">Se Instagram chiede una verifica, completala nel browser ed esporta i cookie di instagram.com in formato JSON o Netscape.</p>
+          <details id="cookieDetails" class="cookies">
+            <summary>Collega con il cookie del browser</summary>
+            <p class="help">Usalo quando Instagram chiede una verifica. Da un computer:</p>
+            <ol class="help steps">
+              <li>Apri instagram.com nel browser con l’account già collegato.</li>
+              <li>Premi F12 e apri Application (Chrome, Edge) o Archiviazione (Firefox), poi Cookie › https://www.instagram.com.</li>
+              <li>Copia il valore di <code>sessionid</code> e incollalo qui sotto.</li>
+            </ol>
             <form id="cookieImport" class="form">
-              <label for="cookieUsername">Username Instagram</label>
-              <input id="cookieUsername" autocomplete="off" autocapitalize="none" spellcheck="false" required>
-              <label for="cookieText">Cookie</label>
-              <textarea id="cookieText" rows="5" autocomplete="off" spellcheck="false" required></textarea>
-              <div class="form-actions"><button class="button" type="submit">Importa sessione</button></div>
+              <label for="cookieText">Valore di sessionid</label>
+              <textarea id="cookieText" rows="3" autocomplete="off" spellcheck="false" required></textarea>
+              <p class="help">Va bene anche l’intera riga Cookie o un file di cookie JSON o Netscape. Poi non fare «Esci» da Instagram in quel browser: scollegheresti anche InstaVault.</p>
+              <div class="form-actions"><button class="button" type="submit">Collega con il cookie</button></div>
             </form>
           </details>
         </section>
@@ -220,7 +224,7 @@
       <label><input id="pHighlights" type="checkbox"><span>In evidenza<small>Serve l’account Instagram</small></span></label>
     </fieldset>
     <label for="pInterval">Frequenza di aggiornamento</label>
-    <select id="pInterval"><option value="1">Ogni ora</option><option value="3">Ogni 3 ore</option><option value="6" selected>Ogni 6 ore</option><option value="12">Ogni 12 ore</option><option value="24">Ogni 24 ore</option></select>
+    <select id="pInterval"><option value="10" selected>Ogni 10 minuti</option><option value="30">Ogni 30 minuti</option><option value="60">Ogni ora</option><option value="180">Ogni 3 ore</option><option value="360">Ogni 6 ore</option><option value="1440">Ogni 24 ore</option></select>
     <p id="profileError" class="form-error" role="alert"></p>
     <div class="form-actions">
       <button id="profileSubmit" class="button primary" type="submit">Aggiungi profilo</button>

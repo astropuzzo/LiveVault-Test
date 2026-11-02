@@ -232,8 +232,12 @@ script, Tailscale user, unit, login and Funnel, Control tile, then the
 
 Limits: Instagram refuses anonymous profile reads from this node (2026-11-02,
 public profile reported as not found), so downloads need a session connected in
-InstaVault Settings, by login with optional two-factor code or by importing
-browser cookies. Instagram can rate-limit or flag accounts that download a lot.
+InstaVault Settings, by login with optional two-factor code or by pasting the
+browser's `sessionid` cookie (also accepted: the whole Cookie header, JSON or
+Netscape files). Password logins from this node often hit Instagram's
+checkpoint, so the cookie is the reliable way. Profiles are checked every 10
+minutes by default (choice from 10 minutes to 24 hours) with a random offset of
+up to 30 seconds. Instagram can rate-limit or flag accounts that download a lot.
 
 Rollback: stop or delete only the InstaVault application in Coolify; run
 `systemctl disable --now instavault-tailscale.service` (state is kept; use

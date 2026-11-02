@@ -274,3 +274,56 @@ def test_offline_archive_serves_the_buffer_only(http, vault):
     assert client.get(root + f'/media/{archived}').status_code == 404
     storage = client.get(root + '/api/summary').json()['storage']
     assert storage['mode'] == 'buffer' and storage['buffer_files'] == 1 and storage['buffer_bytes'] > 0
+
+
+class FakeLoader:
+    def __init__(self):
+        self.cookies = None
+    def load_session(self, username, cookies):
+        self.cookies = dict(cookies)
+    def test_login(self):
+        return 'owner_account'
+    def save_session(self):
+        return self.cookies
+
+
+@pytest.mark.parametrize('pasted', ['12345678%3AAbCdEfGhIjKlMn%3A17%3AAYfZ',
+                                    'Cookie: mid=abc; sessionid=12345678%3AAbCdEfGhIjKlMn%3A17%3AAYfZ; rur="x"'])
+def test_a_pasted_sessionid_alone_connects_the_account(vault, monkeypatch, pasted):
+    fake = FakeLoader(); monkeypatch.setattr(sync, 'loader', lambda: fake)
+    result = sync.import_cookies({'cookies': pasted})
+    assert result == {'configured': True, 'username': 'owner_account', 'checked_at': result['checked_at']}
+    assert fake.cookies['sessionid'] == '12345678%3AAbCdEfGhIjKlMn%3A17%3AAYfZ'
+    assert len(fake.cookies['csrftoken']) == 32 and fake.cookies['ds_user_id'] == '12345678'
+
+
+def test_login_errors_say_what_instagram_asked_for():
+    from instaloader.exceptions import LoginException, BadCredentialsException
+    checkpoint = LoginException('Login: Checkpoint required. Point your browser to /challenge/x/ - follow the instructions, then retry.')
+    assert 'Sono stato io' in sync.login_message(checkpoint)
+    assert 'pausa' in sync.login_message(LoginException('Login error: "fail" status, message "Please wait a few minutes before you try again.".'))
+    assert 'cookie' in sync.login_message(LoginException('Login error: Unexpected response, this might indicate a blocked IP.'))
+    assert 'non corretti' in sync.login_message(BadCredentialsException('Login error: Wrong password.'))
+
+
+def test_profiles_check_every_ten_minutes_with_a_random_offset(vault):
+    with store.db() as c:
+        profile = dict(c.execute('SELECT * FROM profiles WHERE id=?', (vault['profile'],)).fetchone())
+    assert profile['interval_minutes'] == 10
+    delays = {sync.next_check(profile) for _ in range(200)}
+    assert min(delays) >= 570 and max(delays) <= 630 and len(delays) > 1
+
+
+def test_old_archives_move_from_hours_to_ten_minutes(vault):
+    with store.db() as c:
+        c.execute('ALTER TABLE profiles DROP COLUMN interval_minutes')
+        c.execute('ALTER TABLE profiles ADD COLUMN interval_hours INTEGER NOT NULL DEFAULT 6')
+    store.initialize()
+    with store.db() as c:
+        assert c.execute('SELECT interval_minutes FROM profiles WHERE id=?', (vault['profile'],)).fetchone()[0] == 10
+
+
+def test_interval_below_ten_minutes_is_refused(http, vault):
+    root, client = http
+    assert client.post(root + f'/api/profiles/{vault["profile"]}', json={'interval_minutes': 5}).status_code == 400
+    assert client.post(root + f'/api/profiles/{vault["profile"]}', json={'interval_minutes': 30}).status_code == 200

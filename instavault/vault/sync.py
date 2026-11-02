@@ -4,7 +4,9 @@ import contextlib
 import hashlib
 import json
 import os
+import random
 import re
+import secrets
 import shutil
 import threading
 import time
@@ -56,6 +58,11 @@ def fsync_directory(path):
             os.close(fd)
 
 
+def next_check(profile):
+    # A few seconds of random offset, so the checks never run like a clock.
+    return profile['interval_minutes'] * 60 + random.randint(-30, 30)
+
+
 def poster_of(relative):
     return relative.rsplit('.', 1)[0] + '.poster.jpg'
 
@@ -83,7 +90,7 @@ def loader():
 def save_session(value):
     account = value.test_login()
     if not account:
-        raise ValueError('La sessione Instagram non è valida. Accedi nuovamente.')
+        raise ValueError('Instagram non ha accettato la sessione. Ricopia sessionid dal browser in cui sei collegato, o accedi di nuovo.')
     content = security.encrypt_json({'username': account, 'cookies': value.save_session(), 'checked_at': store.now()})
     temporary = store.DATA / 'instagram.enc.tmp'
     with temporary.open('wb') as f:
@@ -115,8 +122,10 @@ def instagram_login(body):
 
 
 def import_cookies(body):
-    account = store.username(body.get('username', ''))
-    source = str(body.get('cookies', ''))[:100000]
+    # The account name comes from Instagram itself in save_session.
+    account = store.username(body['username']) if body.get('username') else 'instavault'
+    source = str(body.get('cookies', ''))[:100000].strip()
+    text = source.removeprefix('Cookie:').strip()
     cookies = {}
     try:
         item = json.loads(source)
@@ -128,7 +137,18 @@ def import_cookies(body):
         elif isinstance(item, dict):
             cookies = {str(k): str(v) for k, v in item.items() if isinstance(v, str)}
     except json.JSONDecodeError:
-        for line in source.splitlines():
+        lines = text.splitlines()
+        if len(lines) == 1 and '\t' not in text and 'sessionid=' in text:
+            # The Cookie request header copied from the browser: name=value; name=value
+            for part in text.split(';'):
+                name, _, value = part.strip().partition('=')
+                cookies[name] = value
+            lines = []
+        elif len(lines) == 1 and re.fullmatch(r'[A-Za-z0-9%:_.-]{20,400}', text):
+            # Only the value of the sessionid cookie.
+            cookies['sessionid'] = text
+            lines = []
+        for line in lines:
             line = line.removeprefix('#HttpOnly_')
             if line.startswith('#') or not line.strip():
                 continue
@@ -137,11 +157,32 @@ def import_cookies(body):
             if len(columns) == 7 and (domain == 'instagram.com' or domain.endswith('.instagram.com')):
                 cookies[columns[5]] = columns[6]
     if not cookies.get('sessionid'):
-        raise ValueError('Importa cookie Instagram in formato JSON o Netscape, con sessionid.')
+        raise ValueError('Non trovo sessionid: incolla il suo valore, la riga Cookie o i cookie in formato JSON o Netscape.')
     cookies = {k: v for k, v in cookies.items() if k in {'sessionid', 'csrftoken', 'ds_user_id', 'mid', 'ig_did', 'rur'}}
+    # instaloader needs a csrftoken; Instagram checks only that header and
+    # cookie match, so a fresh one works when only sessionid was pasted.
+    cookies.setdefault('csrftoken', secrets.token_hex(16))
+    owner = cookies['sessionid'].split('%3A', 1)[0]
+    if owner.isdigit():
+        cookies.setdefault('ds_user_id', owner)
     value = loader()
     value.load_session(account, cookies)
     return save_session(value)
+
+
+def login_message(exc):
+    """Says which check Instagram asked for when logging in with a password."""
+    text = str(exc).lower()
+    if 'checkpoint' in text:
+        return ('Instagram vuole confermare che sei tu. Apri l’app Instagram, conferma l’accesso («Sono stato io») '
+                'e riprova qui entro pochi minuti, oppure collega con il cookie del browser.')
+    if 'wait a few minutes' in text or type(exc).__name__ == 'TooManyRequestsException':
+        return 'Instagram chiede una pausa prima di un altro accesso. Riprova tra 30 minuti oppure collega con il cookie del browser.'
+    if 'blocked ip' in text or 'json decode' in text or 'unexpected response' in text:
+        return 'Instagram non accetta l’accesso con password da questo server. Collega con il cookie del browser.'
+    if type(exc).__name__ == 'BadCredentialsException':
+        return 'Username o password Instagram non corretti.'
+    return error_message(exc)
 
 
 def error_message(exc):
@@ -376,7 +417,7 @@ class Worker:
                     message += ' · Collega Instagram per storie e contenuti in evidenza'
                 c.execute("UPDATE jobs SET state='done',finished_at=?,message=? WHERE id=?", (store.now(), message, ident))
                 c.execute("UPDATE profiles SET status='ready',error='',last_sync=?,next_sync=? WHERE id=?",
-                          (store.now(), store.now() + (60 if more else profile['interval_hours'] * 3600), profile['id']))
+                          (store.now(), store.now() + (60 if more else next_check(profile)), profile['id']))
         except Exception as exc:
             message = error_message(exc)
             if isinstance(exc, BufferFull):
