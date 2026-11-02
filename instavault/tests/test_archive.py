@@ -789,3 +789,15 @@ def test_search_finds_comments_mentions_and_a_month(vault):
     assert codes(q='#mare') == ['A'] and codes(q='@virginia') == ['A']
     assert codes(q='neve') == ['B'] and codes(q='@gfd_photo') == ['B']
     assert codes(**{'from': '1769904000', 'to': '1772323200'}) == ['B']
+
+
+def test_a_tagged_post_keeps_its_own_key_and_kind(vault, monkeypatch):
+    job, profile = running_job(vault)
+    worker = sync.Worker()
+    monkeypatch.setattr(worker, 'download', lambda url, relative, job_id: (target := store.MEDIA / relative, target.parent.mkdir(parents=True, exist_ok=True), target.write_bytes(b'x'), (1, hashlib.sha256(b'x').hexdigest()))[-1])
+    monkeypatch.setattr(worker, 'thumbnail', lambda *_: ('', 1080, 1350))
+    item = image_item('Tag1'); item.product_type = 'clips'; item.owner_username = 'someone'
+    assert worker.archive(profile, item, 'tagged', job)
+    row = store.list_posts({'profile': profile['id'], 'kind': 'tagged'})['items'][0]
+    assert (row['external_key'], row['kind'], row['owner']) == ('tagged:Tag1', 'tagged', 'someone')
+    assert store.list_posts({'kind': 'feed'})['items'] == []

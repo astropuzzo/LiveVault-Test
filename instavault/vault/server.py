@@ -273,7 +273,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def profile_values(self, body):
         values = {}
-        for key in ['enabled', 'posts', 'reels', 'stories', 'highlights']:
+        for key in ['enabled', 'posts', 'reels', 'stories', 'highlights', 'tagged']:
             if key in body:
                 values[key] = int(bool(body[key]))
         if 'interval_minutes' in body:
@@ -439,7 +439,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header('Content-Disposition', f'attachment; filename="{name}"')
         self.send_header('Cache-Control', 'no-store'); self.send_header('Connection', 'close')
         self.end_headers(); self.close_connection = True
-        folders = {'post': 'post', 'reel': 'reel', 'story': 'storie'}
+        folders = {'post': 'post', 'reel': 'reel', 'story': 'storie', 'tagged': 'taggati'}
         missing = []
         with zipfile.ZipFile(self.wfile, 'w', zipfile.ZIP_STORED) as archive:
             for row in rows:

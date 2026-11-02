@@ -179,8 +179,8 @@ class MediaIterator:
             if self._started and not self._next_cursor:
                 raise StopIteration
             previous_cursor = self._next_cursor
-            method = (self.source.client.user_medias_paginated_v1 if self.kind == 'post'
-                      else self.source.client.user_clips_paginated_v1)
+            method = getattr(self.source.client, {'post': 'user_medias_paginated_v1', 'reel': 'user_clips_paginated_v1',
+                                                  'tagged': 'usertag_medias_paginated_v1'}[self.kind])
             items, next_cursor = method(str(self.profile.userid), amount=PAGE_SIZE,
                                         end_cursor=previous_cursor)
             if not isinstance(items, list) or (next_cursor is not None and not isinstance(next_cursor, str)):
@@ -246,6 +246,9 @@ class ProfileAdapter:
 
     def get_reels(self):
         return MediaIterator(self.source, self, 'reel')
+
+    def get_tagged(self):
+        return MediaIterator(self.source, self, 'tagged')
 
 
 class StoryCollection:

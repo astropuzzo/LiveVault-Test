@@ -361,7 +361,8 @@ class Worker:
         shortcode = str(item.mediaid) if story else item.shortcode
         if not re.fullmatch(r'[A-Za-z0-9_-]{1,80}', shortcode):
             raise ValueError('Identificativo media non valido')
-        external = ('story:' if story else 'post:') + shortcode
+        # A tagged post is someone else's: its own key, so it never mixes with the profile's posts.
+        external = ('story:' if story else 'tagged:' if kind == 'tagged' else 'post:') + shortcode
         with store.db() as c:
             existing = c.execute('SELECT * FROM posts WHERE profile_id=? AND external_key=?', (profile['id'], external)).fetchone()
             assets = list(c.execute('SELECT * FROM media WHERE post_id=?', (existing['id'],))) if existing else []
@@ -382,7 +383,7 @@ class Worker:
         date = item.date_utc if story else item.date_utc
         stamp = int(date.replace(tzinfo=__import__('datetime').timezone.utc).timestamp())
         caption = '' if story else (item.caption or '')
-        if not story and getattr(item, 'product_type', '') == 'clips':
+        if not story and kind != 'tagged' and getattr(item, 'product_type', '') == 'clips':
             kind = 'reel'
         if not permalink:
             permalink = f'https://www.instagram.com/stories/{profile["username"]}/{shortcode}/' if story else f'https://www.instagram.com/p/{shortcode}/'
@@ -479,7 +480,7 @@ class Worker:
             added = self.archive(profile, item, kind, job_id)
             known = 0 if added else known + 1
             with store.db() as c:
-                c.execute('UPDATE jobs SET seen=seen+1,message=? WHERE id=?', ('Controllo dei ' + ('Reel' if kind == 'reel' else 'post') + '…', job_id))
+                c.execute('UPDATE jobs SET seen=seen+1,message=? WHERE id=?', ({'reel': 'Controllo dei Reel…', 'tagged': 'Controllo dei post in cui è taggato…'}.get(kind, 'Controllo dei post…'), job_id))
             if not initial and known >= 16:
                 break
             if hasattr(iterator, 'freeze'):
@@ -565,6 +566,9 @@ class Worker:
                 section('post', 'Post', lambda: self.stream(profile, remote.get_posts(), 'post', ident))
             if profile['reels']:
                 section('reel', 'Reel', lambda: self.stream(profile, remote.get_reels(), 'reel', ident))
+            tagged = getattr(remote, 'get_tagged', None) or getattr(remote, 'get_tagged_posts', None)
+            if profile.get('tagged') and value.context.is_logged_in and tagged:
+                section('tagged', 'Taggati', lambda: self.stream(profile, tagged(), 'tagged', ident))
             if profile['stories'] and value.context.is_logged_in:
                 def stories():
                     live = set()

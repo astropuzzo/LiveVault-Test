@@ -36,6 +36,7 @@
 <symbol id="i-home" viewBox="0 0 24 24"><path d="M4 10.5 12 4l8 6.5V20h-5.5v-6h-5v6H4z"/></symbol>
 <symbol id="i-comment" viewBox="0 0 24 24"><path d="M20 12a8 8 0 0 1-11.7 7.1L4 20l1-4.1A8 8 0 1 1 20 12z"/></symbol>
 <symbol id="i-sound" viewBox="0 0 24 24"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path d="M15.5 9a4.2 4.2 0 0 1 0 6M18 6.5a7.8 7.8 0 0 1 0 11"/></symbol>
+<symbol id="i-tag" viewBox="0 0 24 24"><path d="M12 3.5 4 7v10l8 3.5 8-3.5V7z"/><circle cx="12" cy="10" r="2.5"/><path d="M8 16c.8-1.6 2.2-2.5 4-2.5s3.2.9 4 2.5"/></symbol>
 <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="10" rx="2"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5"/></symbol>
 <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.4-4.4"/></symbol>
 <symbol id="i-logout" viewBox="0 0 24 24"><path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4M9.5 16.5 5 12l4.5-4.5M5 12h10"/></symbol>
@@ -127,6 +128,7 @@
             <button type="button" data-kind="post" aria-pressed="true"><svg aria-hidden="true"><use href="#i-stack"/></svg>Post<span class="count"></span></button>
             <button type="button" data-kind="reel" aria-pressed="false"><svg aria-hidden="true"><use href="#i-reel"/></svg>Reel<span class="count"></span></button>
             <button type="button" data-kind="story" aria-pressed="false"><svg aria-hidden="true"><use href="#i-story"/></svg>Storie<span class="count"></span></button>
+            <button type="button" data-kind="tagged" aria-pressed="false"><svg aria-hidden="true"><use href="#i-tag"/></svg>Taggati<span class="count"></span></button>
           </div>
           <div class="filters">
             <label class="search"><span class="sr-only">Cerca nelle didascalie</span><svg aria-hidden="true"><use href="#i-search"/></svg><input id="search" type="search" placeholder="Cerca testo, @utente, #tag" autocomplete="off"></label>
@@ -268,6 +270,7 @@
       <label><input id="pReels" type="checkbox" checked><span>Reel</span></label>
       <label><input id="pStories" type="checkbox" checked><span>Storie<small>Serve l’account Instagram</small></span></label>
       <label><input id="pHighlights" type="checkbox"><span>In evidenza<small>Serve l’account Instagram</small></span></label>
+      <label><input id="pTagged" type="checkbox" checked><span>Post in cui è taggato<small>Pubblicati da altri account. Serve l’account Instagram</small></span></label>
     </fieldset>
     <label for="pInterval">Frequenza di aggiornamento</label>
     <select id="pInterval"><option value="10" selected>Ogni 10 minuti</option><option value="30">Ogni 30 minuti</option><option value="60">Ogni ora</option><option value="180">Ogni 3 ore</option><option value="360">Ogni 6 ore</option><option value="1440">Ogni 24 ore</option></select>

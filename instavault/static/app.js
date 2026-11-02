@@ -19,7 +19,7 @@
     return title ? text[0].toUpperCase() + text.slice(1) : text;
   };
   const stateNames = {queued: 'In coda', running: 'In corso', syncing: 'In corso', done: 'Completato', ready: 'Aggiornato', error: 'Da verificare', cancelled: 'Interrotto', cancel_requested: 'In arresto', paused: 'In pausa', private: 'Privato'};
-  const KINDS = {post: ['post', 'post'], reel: ['Reel', 'Reel'], story: ['storia', 'storie']};
+  const KINDS = {post: ['post', 'post'], reel: ['Reel', 'Reel'], story: ['storia', 'storie'], tagged: ['post in cui è taggato', 'post in cui è taggato']};
   const state = {selecting: false, selected: new Set(), authenticated: false, csrf: '', view: 'archive', summary: null, profile: '', kind: 'post', collection: '', igChanging: false, query: '', order: 'newest', cursor: null, posts: [], loadSeq: 0, loading: false, post: null, slide: 0, pendingCode: false, lastCount: null};
   let toastTimer, searchTimer, refreshBusy = false, returnFocus = null;
   let loginAttemptId = null, loginPollGeneration = 0;
@@ -173,7 +173,7 @@
     $('#profileHeader').innerHTML = `${avatar(profile, 'large')}<div class="profile-body">
       <button class="link back" type="button" data-clear-profile>${icon('left')}Tutti i profili</button>
       <div class="profile-top"><h1>${esc(profile.username)}</h1><div class="page-actions"><button class="button" type="button" data-sync-profile="${profile.id}">${icon('refresh')}Aggiorna</button>${Number(profile.post_count) ? `<a class="button" href="${BASE}/api/profiles/${Number(profile.id)}/download" download>${icon('download')}Scarica tutto</a>` : ''}<button class="button" type="button" data-edit-profile="${profile.id}">Modifica</button><button class="button" type="button" data-remove-profile="${profile.id}">Rimuovi</button></div></div>
-      <p class="profile-counts"><span><b>${number(profile.count_post)}</b> post</span><span><b>${number(profile.count_reel)}</b> Reel</span><span><b>${number(profile.count_story)}</b> storie</span><span><b>${number(profile.count_highlight)}</b> in evidenza</span></p>
+      <p class="profile-counts"><span><b>${number(profile.count_post)}</b> post</span><span><b>${number(profile.count_reel)}</b> Reel</span><span><b>${number(profile.count_story)}</b> storie</span><span><b>${number(profile.count_highlight)}</b> in evidenza</span>${Number(profile.count_tagged) ? `<span><b>${number(profile.count_tagged)}</b> taggati</span>` : ''}</p>
       ${profile.full_name ? `<p class="profile-name">${esc(profile.full_name)}</p>` : ''}
       ${profile.biography ? `<p class="profile-bio">${esc(profile.biography)}</p>` : ''}
       ${profile.error && !profile.access ? `<p class="profile-error">${esc(profile.error)}</p>` : ''}
@@ -390,7 +390,7 @@
     const profile = profileById(state.profile);
     if (profile) {
       const [, many] = KINDS[state.kind] || KINDS.post;
-      const setting = {post: 'posts', reel: 'reels', story: 'stories', highlight: 'highlights'}[state.kind];
+      const setting = {post: 'posts', reel: 'reels', story: 'stories', highlight: 'highlights', tagged: 'tagged'}[state.kind];
       if (profile.access) return showEmpty('Ancora niente da mostrare', 'Il profilo è privato: i contenuti arrivano quando l’account collegato potrà vederli.');
       if (!profile[setting]) return showEmpty(`Nessun ${many === 'post' ? 'post' : many} archiviato`, `Questo profilo non archivia ${many}. Puoi attivarli da Modifica.`, {label: 'Modifica', edit: profile.id});
       if (state.kind === 'story') return showEmpty('Nessuna storia archiviata', 'Le storie restano su Instagram 24 ore: InstaVault salva quelle pubblicate da quando segue il profilo.');
@@ -501,7 +501,7 @@
     $('#profileDialogTitle').textContent = profile ? `Modifica @${profile.username}` : 'Aggiungi un profilo';
     $('#profileUsername').value = profile?.username || username; $('#profileUsername').readOnly = !!profile;
     $('#profileSubmit').textContent = profile ? 'Salva modifiche' : 'Aggiungi profilo';
-    ['posts', 'reels', 'stories', 'highlights'].forEach(key => { $('#p' + key[0].toUpperCase() + key.slice(1)).checked = profile ? !!profile[key] : key !== 'highlights'; });
+    ['posts', 'reels', 'stories', 'highlights', 'tagged'].forEach(key => { $('#p' + key[0].toUpperCase() + key.slice(1)).checked = profile ? !!profile[key] : key !== 'highlights'; });
     const select = $('#pInterval'); const value = profile?.interval_minutes || 10;
     $$('option[data-custom]', select).forEach(option => option.remove());
     if (![...select.options].some(option => Number(option.value) === Number(value))) { const option = new Option(every(value, true), value); option.dataset.custom = '1'; select.add(option); }
@@ -565,6 +565,7 @@
     if (state.playlist && !state.playlist.ids.includes(Number(id))) state.playlist = null;
     const result = await api('/api/posts/' + Number(id)); state.post = result; state.slide = slide < 0 ? result.media.length - 1 : slide;
     $('#postAuthor').innerHTML = `${avatar(result, 'small')}<div><button class="link name" type="button" data-profile="${Number(result.profile_id)}">${esc(result.username)}</button>${result.full_name ? `<small>${esc(result.full_name)}</small>` : ''}</div>`;
+    if (result.kind === 'tagged' && result.owner) $('#postAuthor').innerHTML = `${avatar({username: result.owner})}<div><span class="mention"><button class="link name" type="button" data-mention="${esc(result.owner)}" aria-haspopup="menu">${esc(result.owner)}</button></span><small>tagga @${esc(result.username)}</small></div>`;
     bindImageFallback($('#postAuthor'));
     $('#postCaption').innerHTML = linkify(result.caption || result.collection || '');
     $('#postCaption').hidden = !(result.caption || result.collection);
@@ -725,7 +726,7 @@
   $('#profileForm').addEventListener('submit', event => {
     event.preventDefault(); $('#profileError').textContent = '';
     const ident = $('#profileId').value;
-    const body = {username: $('#profileUsername').value.trim(), interval_minutes: Number($('#pInterval').value), posts: $('#pPosts').checked, reels: $('#pReels').checked, stories: $('#pStories').checked, highlights: $('#pHighlights').checked};
+    const body = {username: $('#profileUsername').value.trim(), interval_minutes: Number($('#pInterval').value), posts: $('#pPosts').checked, reels: $('#pReels').checked, stories: $('#pStories').checked, highlights: $('#pHighlights').checked, tagged: $('#pTagged').checked};
     if (!body.posts && !body.reels && !body.stories && !body.highlights) { $('#profileError').textContent = 'Scegli almeno un tipo di contenuto.'; return; }
     busy(event.submitter, async () => {
       try { await api('/api/profiles' + (ident ? '/' + ident : ''), {method: ident ? 'PATCH' : 'POST', body: JSON.stringify(body)}); $('#profileDialog').close(); toast(ident ? 'Modifiche salvate' : 'Profilo aggiunto, primo download in coda'); await refreshSummary(); if (!ident && GRIDS.includes(state.view)) renderEmpty(); }

@@ -100,6 +100,9 @@ def initialize():
         # removed: taken off the list but its archive kept, so adding it again resumes.
         if 'removed' not in {row[1] for row in c.execute('PRAGMA table_info(profiles)')}:
             c.execute('ALTER TABLE profiles ADD COLUMN removed INTEGER NOT NULL DEFAULT 0')
+        # tagged: also archive the posts of other accounts that tag the profile.
+        if 'tagged' not in {row[1] for row in c.execute('PRAGMA table_info(profiles)')}:
+            c.execute('ALTER TABLE profiles ADD COLUMN tagged INTEGER NOT NULL DEFAULT 1')
         if 'interval_minutes' not in {row[1] for row in c.execute('PRAGMA table_info(profiles)')}:
             c.execute('ALTER TABLE profiles ADD COLUMN interval_minutes INTEGER NOT NULL DEFAULT 10')
         # owner: who published it on Instagram. links: JSON list of the story's
@@ -245,6 +248,7 @@ def profile_rows():
           (SELECT COUNT(*) FROM media m JOIN posts x ON m.post_id=x.id WHERE {OF_PROFILE} AND x.complete=1) AS media_count,
           (SELECT COUNT(*) FROM posts x WHERE {OF_PROFILE} AND x.complete=1 AND x.kind='post') AS count_post,
           (SELECT COUNT(*) FROM posts x WHERE {OF_PROFILE} AND x.complete=1 AND x.kind='reel') AS count_reel,
+          (SELECT COUNT(*) FROM posts x WHERE x.profile_id=p.id AND x.complete=1 AND x.kind='tagged') AS count_tagged,
           (SELECT COUNT(*) FROM posts x WHERE {OF_PROFILE} AND x.complete=1 AND x.kind='story' AND x.collection='') AS count_story,
           (SELECT COUNT(*) FROM posts x WHERE {OF_PROFILE} AND x.complete=1 AND x.kind='story' AND x.collection<>'') AS count_highlight,
           (SELECT COUNT(*) FROM posts x WHERE x.profile_id=p.id AND x.complete=1 AND x.deleted_at IS NOT NULL) AS count_deleted,
@@ -400,7 +404,7 @@ def list_posts(query):
         conditions.append('(p.profile_id=? OR p.id IN (SELECT post_id FROM shared WHERE profile_id=?))')
         args += [query['profile'], query['profile']]
     kind = query.get('kind')
-    if kind in {'post', 'reel'}:
+    if kind in {'post', 'reel', 'tagged'}:
         conditions.append('p.kind=?'); args.append(kind)
     elif kind == 'feed':
         conditions.append("p.kind IN ('post','reel')")
