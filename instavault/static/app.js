@@ -498,7 +498,59 @@
     if (![...select.options].some(option => Number(option.value) === Number(value))) { const option = new Option(every(value, true), value); option.dataset.custom = '1'; select.add(option); }
     select.value = String(value); $('#profileDialog').showModal();
   }
-  function cleanupMedia() { $$('video', $('#viewerMedia')).forEach(video => { video.pause(); video.removeAttribute('src'); video.load(); }); $('#viewerMedia').replaceChildren(); }
+  function cleanupMedia() { stopStory(); $$('video', $('#viewerMedia')).forEach(video => { video.pause(); video.removeAttribute('src'); video.load(); }); $('#viewerMedia').replaceChildren(); }
+
+  // Stories play like on Instagram: a bar per story, photos for five seconds,
+  // videos to their end, a tap on the left goes back, hold to pause.
+  const story = {raf: 0, elapsed: 0, last: 0, paused: false, video: null, pressed: 0};
+  const storyMode = () => !!state.playlist && state.post?.kind === 'story';
+  function stopStory() { cancelAnimationFrame(story.raf); story.raf = 0; story.video = null; }
+  function playMedia(video) { video.play().catch(() => { video.muted = true; updateMute(); video.play().catch(() => {}); }); }
+  function updateMute() {
+    const button = $('#storyMute'); const video = story.video;
+    button.hidden = !video; if (!video) return;
+    button.setAttribute('aria-pressed', String(!video.muted)); button.setAttribute('aria-label', video.muted ? 'Attiva l’audio' : 'Disattiva l’audio');
+  }
+  function advanceStory() {
+    const list = state.playlist; const at = list.ids.indexOf(state.post.id);
+    if (at >= list.ids.length - 1 && state.slide >= state.post.media.length - 1) $('#postDialog').close(); else moveSlide(1);
+  }
+  function startStory(item) {
+    stopStory(); const on = storyMode(); const bar = $('#storyBar');
+    $('#postDialog').classList.toggle('story-mode', on); bar.hidden = !on;
+    if (!on) { $('#storyMute').hidden = true; return; }
+    const at = state.playlist.ids.indexOf(state.post.id);
+    bar.replaceChildren(...state.playlist.ids.map((_, i) => {
+      const segment = document.createElement('span'); const fill = document.createElement('i');
+      fill.style.width = i < at ? '100%' : '0%'; segment.append(fill); return segment;
+    }));
+    const fill = bar.children[at]?.firstChild;
+    story.elapsed = 0; story.last = performance.now(); story.paused = false;
+    story.video = item.tagName === 'VIDEO' ? item : null; updateMute();
+    if (story.video) { item.controls = false; playMedia(item); item.addEventListener('ended', advanceStory, {once: true}); }
+    const tick = now => {
+      if (!story.paused) story.elapsed += now - story.last; story.last = now;
+      const video = story.video; const progress = video ? (video.duration ? video.currentTime / video.duration : 0) : story.elapsed / 5000;
+      if (fill) fill.style.width = `${Math.min(progress, 1) * 100}%`;
+      if (!video && progress >= 1) { stopStory(); advanceStory(); return; }
+      story.raf = requestAnimationFrame(tick);
+    };
+    story.raf = requestAnimationFrame(tick);
+  }
+  function holdStory(paused) {
+    story.paused = paused;
+    if (story.video) { if (paused) story.video.pause(); else playMedia(story.video); }
+  }
+  $('#viewerMedia').addEventListener('pointerdown', () => { if (!storyMode()) return; story.pressed = performance.now(); holdStory(true); });
+  $('#viewerMedia').addEventListener('pointerup', event => {
+    if (!storyMode() || !story.pressed) return;
+    const quick = performance.now() - story.pressed < 250; story.pressed = 0; holdStory(false);
+    if (!quick) return;
+    const box = $('#viewerMedia').getBoundingClientRect();
+    if (event.clientX - box.left < box.width * .3) moveSlide(-1); else advanceStory();
+  });
+  $('#viewerMedia').addEventListener('pointercancel', () => { story.pressed = 0; if (storyMode()) holdStory(false); });
+  $('#storyMute').addEventListener('click', () => { if (story.video) { story.video.muted = !story.video.muted; updateMute(); } });
   async function openPost(id, slide = 0) {
     if (!$('#postDialog').open) returnFocus = document.activeElement;
     if (state.playlist && !state.playlist.ids.includes(Number(id))) state.playlist = null;
@@ -547,11 +599,14 @@
     const item = document.createElement(media.kind === 'video' ? 'video' : 'img');
     item.src = `${BASE}/media/${media.id}`;
     if (media.width && media.height) { item.width = media.width; item.height = media.height; }
-    if (media.kind === 'video') { item.controls = true; item.playsInline = true; item.preload = 'metadata'; item.poster = `${BASE}/media/${media.id}/thumb`; }
+    if (media.kind === 'video') { item.controls = true; item.playsInline = true; item.preload = 'auto'; item.poster = `${BASE}/media/${media.id}/thumb`; }
     else { item.alt = post.caption?.slice(0, 150) || `Foto di @${post.username}`; item.decoding = 'async'; }
     item.addEventListener('error', () => { $('#viewerMedia').innerHTML = '<p class="viewer-missing">File non disponibile. Controlla che l’NVMe sia collegato.</p>'; }, {once: true});
     $('#viewerMedia').append(item);
     placeStoryLinks(item);
+    startStory(item);
+    // Reels and videos start by themselves, as on Instagram.
+    if (media.kind === 'video' && !storyMode()) playMedia(item);
     // In a highlight the arrows go on to the next story; elsewhere they stay inside the carousel.
     const list = state.playlist; const at = list ? list.ids.indexOf(post.id) : -1;
     const many = post.media.length > 1 || (list && list.ids.length > 1);
@@ -748,7 +803,12 @@
   });
   let touchStart = null;
   $('#viewerMedia').addEventListener('touchstart', event => { if (!event.target.closest('video')) touchStart = {x: event.changedTouches[0].clientX, y: event.changedTouches[0].clientY}; }, {passive: true});
-  $('#viewerMedia').addEventListener('touchend', event => { if (!touchStart) return; const dx = event.changedTouches[0].clientX - touchStart.x; const dy = event.changedTouches[0].clientY - touchStart.y; if (Math.abs(dx) > 55 && Math.abs(dx) > Math.abs(dy) * 1.5) moveSlide(dx < 0 ? 1 : -1); touchStart = null; }, {passive: true});
+  $('#viewerMedia').addEventListener('touchend', event => {
+    if (!touchStart) return; const dx = event.changedTouches[0].clientX - touchStart.x; const dy = event.changedTouches[0].clientY - touchStart.y; touchStart = null;
+    // Drag down to close, sideways to move on.
+    if (dy > 90 && dy > Math.abs(dx) * 1.5) { $('#postDialog').close(); return; }
+    if (Math.abs(dx) > 55 && Math.abs(dx) > Math.abs(dy) * 1.5) moveSlide(dx < 0 ? 1 : -1);
+  }, {passive: true});
   window.addEventListener('popstate', () => { if (state.authenticated) setView(location.hash.slice(1) || 'home', true); });
   document.addEventListener('visibilitychange', () => { if (!document.hidden && state.authenticated) refreshSummary().catch(report); });
   setInterval(() => { if (!document.hidden && state.authenticated && !$('#profileDialog').open) refreshSummary().catch(error => { if (error.status === 401) showLogin(); }); }, 15000);
