@@ -514,3 +514,39 @@ def test_cancel_during_session_commit_reports_connection_accurately(instagram, m
     cancellation.start(); release.set(); cancellation.join(5)
     assert result == [{'ok':True,'already_connected':True}]
     assert wait_login(first,'done')['configured']
+
+
+def test_mobile_login_loader_never_uses_anonymous_instaloader(vault, monkeypatch):
+    from vault import mobile_source
+    saved={'username':'owner_account','cookies':{'sessionid':'42%3AAbCdEfGhIjKlMnOpQrStUv%3A17%3AAYfZ','csrftoken':'real-csrf','ds_user_id':'42'},'verified_via':'mobile_login'}
+    (store.DATA/'instagram.enc').write_bytes(security.encrypt_json(saved))
+    (store.DATA/'instagram-device.enc').write_bytes(security.encrypt_json({'uuids':{'uuid':'stable'}}))
+    seen=[]
+    marker=object()
+    monkeypatch.setattr(mobile_source,'MobileSource',lambda settings,session: (seen.append((settings,session)) or marker))
+    assert sync.loader() is marker
+    assert seen[0][0]['uuids']['uuid']=='stable' and seen[0][1]['verified_via']=='mobile_login'
+
+
+def test_an_unavailable_story_category_does_not_block_posts(vault, monkeypatch):
+    import contextlib
+    with store.db() as c:
+        c.execute('UPDATE profiles SET reels=0 WHERE id=?',(vault['profile'],))
+    job=store.enqueue(vault['profile'])
+    profile=SimpleNamespace(full_name='Photographer',biography='',userid=42,profile_pic_url='https://cdninstagram.com/avatar.jpg',get_posts=lambda:iter([]))
+    class Source:
+        context=SimpleNamespace(is_logged_in=True)
+        def profile(self,username):return profile
+        def get_stories(self,ids):raise RuntimeError('story endpoint unavailable')
+        def close(self):pass
+    monkeypatch.setattr(sync,'loader',lambda:Source())
+    worker=sync.Worker()
+    monkeypatch.setattr(worker,'download',lambda *a:(1,'digest'))
+    with store.db() as c:
+        c.execute("UPDATE profiles SET avatar='existing.jpg' WHERE id=?",(vault['profile'],))
+        row=dict(c.execute('SELECT * FROM jobs WHERE id=?',(job,)).fetchone())
+    worker.run_job(row)
+    with store.db() as c:
+        result=c.execute('SELECT state,message FROM jobs WHERE id=?',(job,)).fetchone()
+        assert result['state']=='done' and 'Storie' in result['message']
+        assert c.execute("SELECT data FROM cursors WHERE kind='pause:story'").fetchone()

@@ -32,7 +32,10 @@ Correzione login 2026-11-02: accesso mobile asincrono con codici email/SMS/2FA;
 verifica cookie tramite endpoint web autenticato invece del vecchio GraphQL.
 Stato e annullamento del tentativo nelle Impostazioni; cookie e password mai nei
 log. Conservati i lavori non committati di Claude in un checkout separato.
-Limite: la sessione reale richiede una prova dell'utente dopo il deploy. Rollback:
+Login mobile reale confermato dall'utente; primo carosello verificato (3 foto).
+Il downloader riusa il trasporto mobile autenticato, senza il lookup anonimo
+di Instaloader. Pagine da 12 elementi, ripresa JSON e isolamento degli errori
+delle singole categorie. Rollback:
 redeploy della sola InstaVault dall'immagine `ib5ozkgmrnflouf4jqqzsxeg_instavault:84d26a584602908f78b002b20cb9e55cd7f0d8da`.
 
 ## Accesso pubblico — ripristinato 2026-10-06

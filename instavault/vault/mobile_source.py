@@ -1,0 +1,283 @@
+"""Read-only mobile transport for sessions authenticated by mobile login.
+
+Browser-cookie sessions are deliberately excluded. The adapter never invokes
+the SDK's anonymous fallbacks or answers account challenges unattended.
+"""
+from __future__ import annotations
+
+import copy
+import json
+import re
+import time
+from datetime import datetime, timezone
+from types import SimpleNamespace
+
+PAGE_SIZE = 12
+CURSOR_TRANSPORT = 'instagrapi-mobile-v1'
+CURSOR_MAX_AGE = 3600
+
+
+def _get(item, name, default=None):
+    return item.get(name, default) if isinstance(item, dict) else getattr(item, name, default)
+
+
+def _url(value):
+    return str(value) if value is not None else ''
+
+
+def _plain(value):
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, dict):
+        return {str(k): _plain(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_plain(v) for v in value]
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if hasattr(value, 'model_dump'):
+        return value.model_dump(mode='json')
+    if hasattr(value, '__dict__'):
+        return {k: _plain(v) for k, v in vars(value).items() if not k.startswith('_')}
+    return str(value)
+
+
+def _snapshot(value):
+    typed = type(value).__name__ == 'Media' and type(value).__module__.startswith('instagrapi.')
+    return {'model': 'Media' if typed else 'plain', 'data': _plain(value)}
+
+
+def _restore(value):
+    if not isinstance(value, dict) or value.get('model') not in {'Media', 'plain'} or not isinstance(value.get('data'), dict):
+        raise ValueError('Cursore mobile non valido.')
+    if value['model'] == 'Media':
+        from instagrapi.types import Media
+        return Media.model_validate(value['data'])
+    return value['data']
+
+
+def _thumbnail(item):
+    versions = _get(item, 'image_versions2')
+    candidates = _get(versions, 'candidates', []) or []
+    if candidates:
+        largest = max(candidates, key=lambda c: int(_get(c, 'width', 0) or 0) * int(_get(c, 'height', 0) or 0))
+        if _get(largest, 'url'):
+            return _url(_get(largest, 'url'))
+    return _url(_get(item, 'thumbnail_url') or _get(item, 'display_url') or _get(item, 'url'))
+
+
+class MediaAdapter:
+    def __init__(self, item, *, reel=False):
+        self.item = item
+        self._reel = reel
+        if int(_get(item, 'media_type', 0)) not in {1, 2, 8}:
+            raise ValueError('Tipo di contenuto Instagram non valido.')
+        if int(_get(item, 'media_type')) == 8 and not _get(item, 'resources'):
+            raise ValueError('Instagram non ha restituito i contenuti del carosello.')
+
+    @property
+    def mediaid(self):
+        value = str(_get(self.item, 'pk') or _get(self.item, 'id', '')).split('_', 1)[0]
+        if not value.isdigit():
+            raise ValueError('Identificativo Instagram non valido.')
+        return int(value)
+
+    @property
+    def shortcode(self):
+        return str(_get(self.item, 'code') or self.mediaid)
+
+    @property
+    def date_utc(self):
+        value = _get(self.item, 'taken_at')
+        if isinstance(value, str):
+            value = datetime.fromisoformat(value.replace('Z', '+00:00'))
+        elif isinstance(value, (int, float)):
+            value = datetime.fromtimestamp(value, timezone.utc)
+        if not isinstance(value, datetime):
+            raise ValueError('Data del contenuto Instagram non disponibile.')
+        return value.astimezone(timezone.utc).replace(tzinfo=None) if value.tzinfo else value
+
+    @property
+    def caption(self):
+        return str(_get(self.item, 'caption_text', '') or '')
+
+    @property
+    def product_type(self):
+        return 'clips' if self._reel else str(_get(self.item, 'product_type', '') or '')
+
+    @property
+    def typename(self):
+        return {1: 'GraphImage', 2: 'GraphVideo', 8: 'GraphSidecar'}[int(_get(self.item, 'media_type'))]
+
+    @property
+    def is_video(self):
+        return int(_get(self.item, 'media_type')) == 2
+
+    @property
+    def url(self):
+        return _thumbnail(self.item)
+
+    @property
+    def video_url(self):
+        return _url(_get(self.item, 'video_url'))
+
+    def get_sidecar_nodes(self):
+        for resource in _get(self.item, 'resources', []) or []:
+            yield SimpleNamespace(is_video=int(_get(resource, 'media_type', 1)) == 2,
+                                  display_url=_thumbnail(resource), video_url=_url(_get(resource, 'video_url')))
+
+
+class MediaIterator:
+    """One page at a time; persisted state replays the last returned node."""
+    def __init__(self, source, profile, kind):
+        self.source, self.profile, self.kind = source, profile, kind
+        self._items = []
+        self._position = 0
+        self._started = False
+        self._next_cursor = ''
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        while self._position >= len(self._items):
+            if self._started and not self._next_cursor:
+                raise StopIteration
+            previous_cursor = self._next_cursor
+            method = (self.source.client.user_medias_paginated_v1 if self.kind == 'post'
+                      else self.source.client.user_clips_paginated_v1)
+            items, next_cursor = method(str(self.profile.userid), amount=PAGE_SIZE,
+                                        end_cursor=previous_cursor)
+            if not isinstance(items, list) or (next_cursor is not None and not isinstance(next_cursor, str)):
+                raise ValueError('Instagram non ha restituito una pagina valida.')
+            # The pinned SDK can return an empty page after catching a response
+            # schema error. That must not close an archive as successfully empty.
+            payload = getattr(self.source.client, 'last_json', None)
+            if not items and isinstance(payload, dict) and 'items' not in payload:
+                raise ValueError('Instagram non ha restituito una pagina valida.')
+            if not self._started and not items and self.kind == 'post' and self.profile.media_count > 0:
+                raise ValueError('Instagram non ha restituito i post del profilo.')
+            if next_cursor and (not items or next_cursor == previous_cursor):
+                raise ValueError('Instagram non ha avanzato la pagina dell’archivio.')
+            self._items, self._position = items, 0
+            self._next_cursor, self._started = next_cursor or '', True
+        item = self._items[self._position]
+        self._position += 1
+        return MediaAdapter(item, reel=self.kind == 'reel')
+
+    def freeze(self):
+        return {'version': 1, 'transport': CURSOR_TRANSPORT,
+                'account_id': self.source.account_id, 'profile_id': str(self.profile.userid),
+                'kind': self.kind, 'created_at': time.time(), 'started': self._started,
+                'cursor': self._next_cursor,
+                'remaining': [_snapshot(item) for item in self._items[max(0, self._position - 1):]]}
+
+    def restore(self, value):
+        if self._started or self._position:
+            raise ValueError('Il cursore mobile è già stato usato.')
+        if not isinstance(value, dict) or any(value.get(k) != expected for k, expected in {
+                'version': 1, 'transport': CURSOR_TRANSPORT, 'account_id': self.source.account_id,
+                'profile_id': str(self.profile.userid), 'kind': self.kind}.items()):
+            raise ValueError('Il cursore appartiene a un altro archivio o trasporto.')
+        stamp = value.get('created_at')
+        if type(stamp) not in {int, float} or not 0 <= time.time() - stamp <= CURSOR_MAX_AGE:
+            raise ValueError('Cursore mobile scaduto: aggiorna i collegamenti dei media.')
+        remaining, cursor = value.get('remaining'), value.get('cursor')
+        if (not isinstance(remaining, list) or len(remaining) > 64 or not isinstance(cursor, str)
+                or len(cursor) > 8192 or type(value.get('started')) is not bool):
+            raise ValueError('Cursore mobile non valido.')
+        if len(json.dumps(value)) > 8 * 1024 * 1024:
+            raise ValueError('Cursore mobile troppo grande.')
+        self._items = [_restore(item) for item in remaining]
+        self._position = 0
+        self._next_cursor, self._started = cursor, value['started']
+
+
+class ProfileAdapter:
+    def __init__(self, source, item):
+        self.source = source
+        self.userid = str(_get(item, 'pk', ''))
+        if not self.userid.isdigit():
+            raise ValueError('Profilo Instagram non valido.')
+        self.username = str(_get(item, 'username', ''))
+        self.full_name = str(_get(item, 'full_name', '') or '')
+        self.biography = str(_get(item, 'biography', '') or '')
+        self.profile_pic_url = _url(_get(item, 'profile_pic_url_hd') or _get(item, 'profile_pic_url'))
+        self.media_count = int(_get(item, 'media_count', 0) or 0)
+
+    def get_posts(self):
+        return MediaIterator(self.source, self, 'post')
+
+    def get_reels(self):
+        return MediaIterator(self.source, self, 'reel')
+
+
+class StoryCollection:
+    def __init__(self, items, title=''):
+        self.items, self.title = items, title
+
+    def get_items(self):
+        for item in self.items:
+            yield MediaAdapter(item)
+
+
+class HighlightAdapter:
+    def __init__(self, source, item):
+        self.source, self.item = source, item
+        self.title = str(_get(item, 'title', '') or '')
+
+    def get_items(self):
+        value = self.source.client.highlight_info(str(_get(self.item, 'pk')))
+        for item in _get(value, 'items', []) or []:
+            yield MediaAdapter(item)
+
+
+class MobileSource:
+    def __init__(self, settings, session, *, client=None, client_factory=None):
+        if not isinstance(session, dict) or session.get('verified_via') != 'mobile_login':
+            raise ValueError('Questa sessione non proviene da un accesso mobile verificato.')
+        cookies = session.get('cookies')
+        if not isinstance(cookies, dict) or not cookies.get('sessionid'):
+            raise ValueError('Sessione mobile non disponibile.')
+        owner = str(cookies.get('ds_user_id') or '')
+        if not owner:
+            match = re.match(r'^\d+', str(cookies['sessionid']))
+            owner = match[0] if match else ''
+        if not owner.isdigit():
+            raise ValueError('Identità della sessione mobile non disponibile.')
+        self.account_id = owner
+        if client is None:
+            if client_factory is None:
+                from instagrapi import Client
+                client_factory = Client
+            config = copy.deepcopy(settings or {})
+            config['cookies'] = dict(config.get('cookies') or {}) | dict(cookies)
+            config['authorization_data'] = {'ds_user_id': owner, 'sessionid': cookies['sessionid'],
+                                            'should_use_header_over_cookies': True}
+            client = client_factory(settings=config)
+        self.client = client
+        self.client.with_challenge_flow = False
+        self.client.username = str(session.get('username', ''))
+        self.context = SimpleNamespace(is_logged_in=True, username=self.client.username)
+
+    def profile(self, username):
+        return ProfileAdapter(self, self.client.user_info_by_username_v1(username))
+
+    def get_stories(self, userids):
+        for userid in userids:
+            # The explicit v1 method has no anonymous fallback.
+            yield StoryCollection(self.client.user_stories_v1(str(userid)))
+
+    def get_highlights(self, profile):
+        for item in self.client.user_highlights(str(profile.userid)):
+            yield HighlightAdapter(self, item)
+
+    def close(self):
+        closed = set()
+        for name in ['private', 'public']:
+            session = getattr(self.client, name, None)
+            if session is not None and id(session) not in closed:
+                closed.add(id(session))
+                try:
+                    session.close()
+                except Exception:
+                    pass

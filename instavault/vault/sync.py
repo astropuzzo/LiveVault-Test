@@ -87,6 +87,12 @@ def loader():
     path = store.DATA / 'instagram.enc'
     if path.exists():
         item = security.decrypt_json(path.read_bytes())
+        if item.get('verified_via') == 'mobile_login':
+            value.close()
+            from .mobile_source import MobileSource
+            device = store.DATA / 'instagram-device.enc'
+            settings = security.decrypt_json(device.read_bytes()) if device.exists() else {}
+            return MobileSource(settings, item)
         value.load_session(item['username'], item['cookies'])
     return value
 
@@ -308,7 +314,11 @@ class Worker:
         initial = not cursor or not cursor['complete']
         if cursor and cursor['data']:
             try:
-                iterator.thaw(FrozenNodeIterator(**json.loads(cursor['data'])))
+                frozen = json.loads(cursor['data'])
+                if hasattr(iterator, 'restore'):
+                    iterator.restore(frozen)
+                else:
+                    iterator.thaw(FrozenNodeIterator(**frozen))
             except (ValueError, TypeError, instaloader.InvalidArgumentException):
                 pass
         known = 0
@@ -321,7 +331,8 @@ class Worker:
             if not initial and known >= 16:
                 break
             if hasattr(iterator, 'freeze'):
-                frozen = json.dumps(iterator.freeze()._asdict())
+                snapshot = iterator.freeze()
+                frozen = json.dumps(snapshot._asdict() if hasattr(snapshot, '_asdict') else snapshot)
                 with store.db() as c:
                     c.execute('INSERT OR REPLACE INTO cursors VALUES (?,?,?,0)', (profile['id'], kind, frozen))
             if index >= 74:
@@ -345,7 +356,7 @@ class Worker:
         try:
             value = loader()
             self.check(ident)
-            remote = instaloader.Profile.from_username(value.context, profile['username'])
+            remote = value.profile(profile['username']) if hasattr(value, 'profile') else instaloader.Profile.from_username(value.context, profile['username'])
             with store.db() as c:
                 c.execute('UPDATE profiles SET full_name=?,biography=?,instagram_id=? WHERE id=?',
                           (remote.full_name, remote.biography, str(remote.userid), profile['id']))
@@ -354,25 +365,62 @@ class Worker:
                 self.download(remote.profile_pic_url, avatar, ident)
                 with store.db() as c:
                     c.execute('UPDATE profiles SET avatar=? WHERE id=?', (avatar, profile['id']))
-            if profile['stories'] and value.context.is_logged_in:
-                for story in value.get_stories([remote.userid]):
-                    for item in story.get_items():
-                        self.archive(profile, item, 'story', ident)
+            warnings = []
+            successful = []
+            def section(kind, label, action):
+                nonlocal more
+                with store.db() as c:
+                    row = c.execute('SELECT data FROM cursors WHERE profile_id=? AND kind=?', (profile['id'], 'pause:' + kind)).fetchone()
+                if row:
+                    previous = json.loads(row['data'])
+                    if previous['until'] > store.now():
+                        warnings.append(previous['message']); return
+                try:
+                    more |= bool(action())
+                    successful.append(kind)
+                    with store.db() as c:
+                        c.execute('DELETE FROM cursors WHERE profile_id=? AND kind=?', (profile['id'], 'pause:' + kind))
+                except (Paused, StorageFull):
+                    raise
+                except Exception as exc:
+                    # Account verification and throttling stop the whole pass.
+                    # A single unavailable content category must not block all
+                    # other posts or be falsely reported as an empty archive.
+                    if type(exc).__name__ in {'PleaseWaitFewMinutes', 'TooManyRequestsException', 'ClientThrottledError',
+                                              'ChallengeRequired', 'LoginRequired', 'ClientLoginRequired', 'AbortDownloadException'}:
+                        raise
+                    warning = label + ': ' + error_message(exc)
+                    warnings.append(warning)
+                    with store.db() as c:
+                        c.execute('INSERT OR REPLACE INTO cursors VALUES (?,?,?,0)',
+                                  (profile['id'], 'pause:' + kind, json.dumps({'until':store.now()+3600,'message':warning})))
             if profile['posts']:
-                more |= self.stream(profile, remote.get_posts(), 'post', ident)
+                section('post', 'Post', lambda: self.stream(profile, remote.get_posts(), 'post', ident))
             if profile['reels']:
-                more |= self.stream(profile, remote.get_reels(), 'reel', ident)
+                section('reel', 'Reel', lambda: self.stream(profile, remote.get_reels(), 'reel', ident))
+            if profile['stories'] and value.context.is_logged_in:
+                def stories():
+                    for story in value.get_stories([remote.userid]):
+                        for item in story.get_items():
+                            self.archive(profile, item, 'story', ident)
+                section('story', 'Storie', stories)
             if profile['highlights'] and value.context.is_logged_in:
-                for highlight in value.get_highlights(remote):
-                    for item in highlight.get_items():
-                        self.archive(profile, item, 'story', ident, 'In evidenza · ' + highlight.title[:150])
+                def highlights():
+                    for highlight in value.get_highlights(remote):
+                        for item in highlight.get_items():
+                            self.archive(profile, item, 'story', ident, 'In evidenza · ' + highlight.title[:150])
+                section('highlight', 'In evidenza', highlights)
+            if warnings and not successful:
+                raise RuntimeError('Selected content categories temporarily unavailable')
             with store.db() as c:
                 message = 'Prima importazione in corso' if more else 'Archivio aggiornato'
                 if (profile['stories'] or profile['highlights']) and not value.context.is_logged_in:
                     message += ' · Collega Instagram per storie e contenuti in evidenza'
+                if warnings:
+                    message += ' · ' + ' · '.join(warnings)
                 c.execute("UPDATE jobs SET state='done',finished_at=?,message=? WHERE id=?", (store.now(), message, ident))
-                c.execute("UPDATE profiles SET status='ready',error='',last_sync=?,next_sync=? WHERE id=?",
-                          (store.now(), store.now() + (60 if more else next_check(profile)), profile['id']))
+                c.execute("UPDATE profiles SET status='ready',error=?,last_sync=?,next_sync=? WHERE id=?",
+                          (' · '.join(warnings), store.now(), store.now() + (60 if more else next_check(profile)), profile['id']))
         except Exception as exc:
             message = error_message(exc)
             if isinstance(exc, BufferFull):

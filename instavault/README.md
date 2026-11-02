@@ -44,6 +44,8 @@ including email/SMS codes and 2FA. Settings polls the authenticated attempt stat
 and supports cancelling it. Browser cookie imports use authenticated web account
 data, not the legacy GraphQL login probe. Rate limiting, rejected sessions,
 manual verification and network failures have distinct messages. Passwords and
-codes are not persisted; the reusable Instagram session is encrypted. A real
-login/download check needs the user's own account through the protected UI.
+codes are not persisted; the reusable Instagram session is encrypted. Mobile-authenticated sessions keep the same mobile transport for downloads;
+browser sessions keep the web transport. The selected photographer's real login
+and first three-photo carousel were verified on 2026-11-02. The full initial
+archive continues in bounded, resumable passes.
 Rollback and deployment details: [HOSTING.md](../HOSTING.md#instavault).

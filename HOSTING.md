@@ -254,8 +254,17 @@ produce distinct safe errors. No public profile lookup proves authentication.
 The phone identity (no authorization or password) is kept encrypted in
 `/data/instavault/instagram-device.enc`. Manual checkpoints must be completed in
 the official Instagram app/browser. Failed password logins log only the
-exception class and an allowlisted step name, never tokens. Validation 2026-11-02: 112 automated tests pass locally; the first live user login
-and ensuing download remain to be verified with the user’s actual Instagram session.
+exception class and an allowlisted step name, never tokens. Validation 2026-11-02: 133 automated tests pass locally. The user completed
+real mobile sign-in; a read-only probe returned the selected profile and 12 real
+posts, and the first carousel (3 originals, 214173 bytes) was archived. The mobile
+session now stays on its authenticated mobile transport for profile, posts,
+Reels, stories and highlights: Instaloader 4.16 resolves profile names through an
+anonymous page even when logged in, which prevented downloads on this node.
+Mobile pagination uses 12 items per request and JSON cursors scoped to account,
+profile and category; it never falls back to anonymous requests. Browser-cookie
+sessions remain on the web transport and are never silently converted to mobile.
+Unavailable content categories have a one-hour backoff and do not prevent other
+categories from being archived; account challenges/throttling stop the pass.
 Profiles are checked every 10
 minutes by default (choice from 10 minutes to 24 hours) with a random offset of
 up to 30 seconds. Instagram can rate-limit or flag accounts that download a lot.
