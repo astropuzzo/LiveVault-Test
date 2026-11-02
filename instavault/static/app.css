@@ -209,6 +209,13 @@ input[readonly]{background:var(--raised)}
 .tile-kind{right:8px}
 .tile-saved{left:8px}
 .tile-saved svg{width:18px;height:18px;fill:#fff}
+.tile-deleted{position:absolute;bottom:8px;left:8px;display:grid;place-items:center;width:26px;height:26px;border-radius:50%;background:rgba(0,0,0,.6);color:#fff}
+.tile-deleted svg{width:16px;height:16px}
+.job-thumbs{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.job-thumb{width:56px;height:56px;padding:0;border-radius:6px;overflow:hidden;background:var(--raised)}
+.job-thumb img{width:100%;height:100%;object-fit:cover}
+.job-thumb:hover{opacity:.85}
+.job-more{display:grid;place-items:center;min-width:56px;height:56px;padding:0 8px;border-radius:6px;background:var(--raised);color:var(--text-2);font-size:13px;font-weight:600}
 .tile-shared{position:absolute;bottom:8px;right:8px;color:#fff;filter:drop-shadow(0 1px 2px rgba(0,0,0,.6))}
 .tile-shared svg{width:18px;height:18px}
 .tile-hover{position:absolute;inset:0;display:grid;place-items:center;padding:12px;background:rgba(0,0,0,.55);color:#fff;font-size:13px;font-weight:600;line-height:18px;text-align:center;overflow-wrap:anywhere;opacity:0;transition:opacity 150ms var(--ease)}

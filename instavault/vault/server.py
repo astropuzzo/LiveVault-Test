@@ -316,6 +316,8 @@ class Handler(BaseHTTPRequestHandler):
         if path == '/api/jobs':
             with store.db() as c:
                 rows = [dict(r) for r in c.execute('SELECT j.*,p.username FROM jobs j JOIN profiles p ON p.id=j.profile_id ORDER BY j.id DESC LIMIT 100')]
+                for row in rows:
+                    row['items'] = store.job_items(c, row['id']) if row['downloaded'] else []
             return self.send_json({'items': rows})
         match = re.fullmatch(r'/api/profiles/(\d+)/download', path)
         if match:

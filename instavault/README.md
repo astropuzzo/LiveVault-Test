@@ -63,7 +63,16 @@ Posts and Reels keep the newest page of their comments (about 15, one mobile
 request per post) in `comments`; `posts.comments_at` marks the read. New posts
 get them when archived, older ones twelve per check. A refusal stops comments
 for that pass and never the media download. In the viewer a commenter's name
-opens a menu: the Instagram profile, and the archived profile or the add form. A private profile the connected account cannot
+opens a menu: the Instagram profile, and the archived profile or the add form.
+
+Activity shows thumbnails of what each update downloaded (`posts.job_id`).
+Deletions are read from what a check fetches anyway, never from extra
+requests: a pass over the posts that starts from the newest one marks
+`posts.deleted_at` on archived posts and Reels newer than the oldest item it
+listed but missing from it; a story still inside its 24 hours that the story
+list no longer has is marked the same way. An item that shows up again is
+restored. Older archive entries are never checked. Marked items carry a bin
+icon and the Cancellati view lists them. A private profile the connected account cannot
 see is marked `access='requested'` or `'not_followed'` and skipped without an
 error; "Chiedi di seguire" sends the follow request (mobile sessions only).
 Instagram errors are named in Italian with Instagram's own words when the

@@ -251,6 +251,7 @@ class Worker:
     def __init__(self):
         self.source = None
         self.comments_blocked = False
+        self.seen = {}
         self.thread = None
         self.current = None
         self.leader = False
@@ -378,8 +379,8 @@ class Worker:
             if existing:
                 ident = existing['id']
             else:
-                ident = c.execute('''INSERT INTO posts(profile_id,external_key,shortcode,kind,caption,published_at,archived_at,permalink,collection,owner,links)
-                    VALUES (?,?,?,?,?,?,?,?,?,?,?)''', (profile['id'], external, shortcode, kind, caption, stamp, store.now(), permalink, collection, owner, links)).lastrowid
+                ident = c.execute('''INSERT INTO posts(profile_id,external_key,shortcode,kind,caption,published_at,archived_at,permalink,collection,owner,links,job_id)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?)''', (profile['id'], external, shortcode, kind, caption, stamp, store.now(), permalink, collection, owner, links, job_id)).lastrowid
         for index, (video, url, poster) in enumerate(parts):
             self.check(job_id)
             relative = f'{profile["id"]}/{shortcode}/{index + 1}.{"mp4" if video else "jpg"}'
@@ -399,7 +400,7 @@ class Worker:
                     size=excluded.size,sha256=excluded.sha256,width=excluded.width,height=excluded.height,location=excluded.location''',
                           (ident, index, 'video' if video else 'image', relative, thumb, size, digest, width, height, self.mode))
         with store.db() as c:
-            c.execute('UPDATE posts SET complete=1,caption=?,kind=?,owner=?,links=? WHERE id=?', (caption, kind, owner, links, ident))
+            c.execute('UPDATE posts SET complete=1,caption=?,kind=?,owner=?,links=?,job_id=? WHERE id=?', (caption, kind, owner, links, job_id, ident))
             c.execute('UPDATE jobs SET downloaded=downloaded+1 WHERE id=?', (job_id,))
         if not story:
             self.save_comments(ident, shortcode)
@@ -439,6 +440,7 @@ class Worker:
         with store.db() as c:
             cursor = c.execute('SELECT * FROM cursors WHERE profile_id=? AND kind=?', (profile['id'], kind)).fetchone()
         initial = not cursor or not cursor['complete']
+        fresh = True
         if cursor and cursor['data']:
             try:
                 frozen = json.loads(cursor['data'])
@@ -446,11 +448,16 @@ class Worker:
                     iterator.restore(frozen)
                 else:
                     iterator.thaw(FrozenNodeIterator(**frozen))
+                fresh = False
             except (ValueError, TypeError, instaloader.InvalidArgumentException):
                 pass
+        # Only a pass that starts from the newest post can tell what vanished.
+        seen = self.seen[kind] = {'fresh': fresh, 'codes': set(), 'oldest': None}
         known = 0
         for index, item in enumerate(iterator):
             self.check(job_id)
+            seen['codes'].add(item.shortcode)
+            seen['oldest'] = int(item.date_utc.replace(tzinfo=__import__('datetime').timezone.utc).timestamp())
             added = self.archive(profile, item, kind, job_id)
             known = 0 if added else known + 1
             with store.db() as c:
@@ -507,6 +514,8 @@ class Worker:
                 return
             warnings = []
             successful = []
+            deleted = {}
+            self.seen = {}
             def section(kind, label, action):
                 nonlocal more
                 with store.db() as c:
@@ -540,9 +549,13 @@ class Worker:
                 section('reel', 'Reel', lambda: self.stream(profile, remote.get_reels(), 'reel', ident))
             if profile['stories'] and value.context.is_logged_in:
                 def stories():
+                    live = set()
                     for story in value.get_stories([remote.userid]):
                         for item in story.get_items():
+                            live.add(str(item.mediaid))
                             self.archive(profile, item, 'story', ident)
+                    # A story still inside its 24 hours that Instagram no longer lists was deleted.
+                    deleted['story'] = store.mark_deleted(profile['id'], (), live, store.now() - 86400 + 600, story=True)
                 section('story', 'Storie', stories)
             if profile['highlights'] and value.context.is_logged_in:
                 def highlights():
@@ -564,6 +577,10 @@ class Worker:
                         warnings.append('In evidenza: ' + plural(failed, 'raccolta non scaricata', 'raccolte non scaricate')
                                         + ', riprovo al prossimo controllo')
                 section('highlight', 'In evidenza', highlights)
+            posts_seen = self.seen.get('post')
+            if posts_seen and posts_seen['fresh'] and posts_seen['oldest'] and 'post' in successful:
+                codes = posts_seen['codes'] | (self.seen.get('reel') or {}).get('codes', set())
+                deleted['post'] = store.mark_deleted(profile['id'], ('post', 'reel'), codes, posts_seen['oldest'])
             if warnings and not successful:
                 raise RuntimeError('Selected content categories temporarily unavailable')
             self.backfill_comments(profile)
@@ -571,6 +588,9 @@ class Worker:
                 message = 'Prima importazione in corso' if more else 'Archivio aggiornato'
                 if (profile['stories'] or profile['highlights']) and not value.context.is_logged_in:
                     message += ' · Collega Instagram per storie e contenuti in evidenza'
+                gone = sum(deleted.values())
+                if gone:
+                    message += ' · ' + plural(gone, 'contenuto cancellato su Instagram', 'contenuti cancellati su Instagram')
                 if warnings:
                     message += ' · ' + ' · '.join(warnings)
                 c.execute("UPDATE jobs SET state='done',finished_at=?,message=? WHERE id=?", (store.now(), message, ident))

@@ -113,6 +113,13 @@ def initialize():
           PRIMARY KEY(post_id,profile_id))''')
         merge_duplicates(c)
         # The newest page of comments of a post or Reel; comments_at marks when it was read.
+        # job_id: the update that downloaded it. deleted_at: when a recent post or
+        # a story still within its 24 hours vanished from Instagram.
+        for name in ['job_id', 'deleted_at']:
+            if name not in columns:
+                c.execute(f'ALTER TABLE posts ADD COLUMN {name} INTEGER')
+        c.execute('CREATE INDEX IF NOT EXISTS posts_job ON posts(job_id) WHERE job_id IS NOT NULL')
+        c.execute('CREATE INDEX IF NOT EXISTS posts_deleted ON posts(deleted_at) WHERE deleted_at IS NOT NULL')
         if 'comments_at' not in columns:
             c.execute('ALTER TABLE posts ADD COLUMN comments_at INTEGER')
         c.execute('''CREATE TABLE IF NOT EXISTS comments (
@@ -229,6 +236,7 @@ def profile_rows():
           (SELECT COUNT(*) FROM posts x WHERE {OF_PROFILE} AND x.complete=1 AND x.kind='reel') AS count_reel,
           (SELECT COUNT(*) FROM posts x WHERE {OF_PROFILE} AND x.complete=1 AND x.kind='story' AND x.collection='') AS count_story,
           (SELECT COUNT(*) FROM posts x WHERE {OF_PROFILE} AND x.complete=1 AND x.kind='story' AND x.collection<>'') AS count_highlight,
+          (SELECT COUNT(*) FROM posts x WHERE x.profile_id=p.id AND x.complete=1 AND x.deleted_at IS NOT NULL) AS count_deleted,
           (SELECT m.id FROM media m JOIN posts x ON m.post_id=x.id WHERE {OF_PROFILE} AND x.complete=1 AND x.kind<>'story'
              ORDER BY x.published_at DESC, m.position LIMIT 1) AS cover
           FROM profiles p ORDER BY p.username''')]
@@ -242,6 +250,29 @@ def collections(profile_id):
                AND x.collection=p.collection AND x.complete=1 ORDER BY x.published_at DESC, m.position LIMIT 1) AS cover
             FROM posts p WHERE p.profile_id=? AND p.complete=1 AND p.kind='story' AND p.collection<>''
             GROUP BY p.collection ORDER BY latest DESC''', (profile_id,))]
+
+
+def job_items(c, job_id, limit=12):
+    # What one update downloaded: the first file of each new post, newest first.
+    return [dict(r) for r in c.execute('''SELECT p.id, p.kind, p.collection,
+        (SELECT m.id FROM media m WHERE m.post_id=p.id ORDER BY m.position LIMIT 1) AS media
+        FROM posts p WHERE p.job_id=? AND p.complete=1 ORDER BY p.published_at DESC LIMIT ?''', (job_id, limit))]
+
+
+def mark_deleted(profile_id, kinds, seen, since, story=False):
+    # Archived items newer than `since` that Instagram no longer lists were
+    # deleted (or hidden); one that shows up again is restored.
+    seen = list(seen)
+    marks = ','.join('?' * len(seen)) or "''"
+    kind_sql = "kind='story' AND collection=''" if story else f"kind IN ({','.join('?' * len(kinds))})"
+    args = [] if story else list(kinds)
+    with db() as c:
+        if seen:
+            c.execute(f'UPDATE posts SET deleted_at=NULL WHERE profile_id=? AND {kind_sql} AND shortcode IN ({marks})',
+                      [profile_id, *args, *seen])
+        return c.execute(f'''UPDATE posts SET deleted_at=? WHERE profile_id=? AND {kind_sql} AND complete=1
+            AND deleted_at IS NULL AND published_at>? AND shortcode NOT IN ({marks})''',
+                         [now(), profile_id, *args, since, *seen]).rowcount
 
 
 def profile_files(profile_id, collection=''):
@@ -293,6 +324,8 @@ def list_posts(query):
             conditions.append('p.collection=?'); args.append(str(query['collection'])[:300])
     if query.get('favorite') == '1':
         conditions.append('p.favorite=1')
+    if query.get('deleted') == '1':
+        conditions.append('p.deleted_at IS NOT NULL')
     if not storage_ready():
         # With the NVMe away only what the buffer holds can be shown.
         conditions.append("NOT EXISTS (SELECT 1 FROM media m WHERE m.post_id=p.id AND m.location='media')")

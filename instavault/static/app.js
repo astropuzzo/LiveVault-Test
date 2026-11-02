@@ -2,7 +2,9 @@
   'use strict';
   const BASE = location.pathname === '/instavault' || location.pathname.startsWith('/instavault/') ? '/instavault' : '';
   const THEME_KEY = 'instavault-theme';
-  const VIEWS = ['archive', 'favorites', 'profiles', 'activity', 'settings'];
+  const VIEWS = ['archive', 'favorites', 'deleted', 'profiles', 'activity', 'settings'];
+  // Views that show a grid of archived posts.
+  const GRIDS = ['archive', 'favorites', 'deleted'];
   const $ = (selector, root = document) => root.querySelector(selector);
   const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
   const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
@@ -134,7 +136,7 @@
       const changed = (state.lastCount !== null && state.lastCount !== count) || (state.lastMode !== undefined && state.lastMode !== mode);
       state.summary = summary; state.lastCount = count; state.lastMode = mode; renderSummary();
       if (state.view === 'activity') await loadJobs();
-      if (!initial && changed && ['archive', 'favorites'].includes(state.view)) await loadPosts(true);
+      if (!initial && changed && GRIDS.includes(state.view)) await loadPosts(true);
     } finally { refreshBusy = false; }
   }
 
@@ -155,14 +157,15 @@
   function renderArchive() {
     const summary = state.summary || {}; const profiles = summary.profiles || []; const counts = summary.counts || {};
     const profile = state.view === 'archive' ? profileById(state.profile) : null;
-    const favorites = state.view === 'favorites'; const landing = state.view === 'archive' && !profile;
+    const favorites = ['favorites', 'deleted'].includes(state.view); const landing = state.view === 'archive' && !profile;
     // A private profile with nothing archived yet shows only its note, not a row of zeros.
     const locked = profile && profile.access && !Number(profile.post_count);
     $('#archiveHeader').hidden = !!profile; $('#profileCards').hidden = !landing; $('#profilePage').hidden = !profile; $('#browse').hidden = landing || locked;
     $('#kindTabs').hidden = favorites; $('#collections').hidden = !profile || !Number(profile.count_highlight);
     $('#syncAll').hidden = favorites || !profiles.length;
-    $('#archiveTitle').textContent = favorites ? 'Salvati' : 'Archivio';
-    $('#archiveMeta').textContent = favorites ? 'I contenuti che hai segnato col cuore, da tutti i profili' : profiles.length ? `${plural(counts.posts, 'contenuto', 'contenuti')} da ${plural(profiles.length, 'profilo', 'profili')}` : 'Aggiungi un profilo Instagram: InstaVault ne conserva post, Reel e storie.';
+    $('#archiveTitle').textContent = {favorites: 'Salvati', deleted: 'Cancellati'}[state.view] || 'Archivio';
+    $('#archiveMeta').textContent = state.view === 'deleted' ? 'Post, Reel e storie spariti da Instagram dopo che InstaVault li aveva salvati'
+      : favorites ? 'I contenuti che hai segnato col cuore, da tutti i profili' : profiles.length ? `${plural(counts.posts, 'contenuto', 'contenuti')} da ${plural(profiles.length, 'profilo', 'profili')}` : 'Aggiungi un profilo Instagram: InstaVault ne conserva post, Reel e storie.';
     if (landing) renderCards(profiles);
     if (!profile) { $('#profileHeader').replaceChildren(); $('#accessNote').hidden = true; return; }
     $('#profileHeader').innerHTML = `${avatar(profile, 'large')}<div class="profile-body">
@@ -229,12 +232,12 @@
     if (view !== 'archive') state.profile = '';
     state.view = view;
     $$('.nav-item').forEach(item => { if (item.dataset.view === view) item.setAttribute('aria-current', 'page'); else item.removeAttribute('aria-current'); });
-    $('#archiveView').hidden = !['archive', 'favorites'].includes(view); $('#profilesView').hidden = view !== 'profiles'; $('#activityView').hidden = view !== 'activity'; $('#settingsView').hidden = view !== 'settings';
-    const names = {archive: 'Archivio', favorites: 'Salvati', profiles: 'Profili', activity: 'Attività', settings: 'Impostazioni'};
+    $('#archiveView').hidden = !GRIDS.includes(view); $('#profilesView').hidden = view !== 'profiles'; $('#activityView').hidden = view !== 'activity'; $('#settingsView').hidden = view !== 'settings';
+    const names = {archive: 'Archivio', favorites: 'Salvati', deleted: 'Cancellati', profiles: 'Profili', activity: 'Attività', settings: 'Impostazioni'};
     document.title = `${names[view]} · InstaVault`;
     if (state.summary) renderSummary(); else renderArchive();
     if (state.authenticated) {
-      if (['archive', 'favorites'].includes(view)) loadPosts(true).catch(report);
+      if (GRIDS.includes(view)) loadPosts(true).catch(report);
       if (view === 'activity') loadJobs().catch(report);
     }
     const hash = '#' + view;
@@ -267,6 +270,7 @@
       <img src="${BASE}/media/${media.id}/thumb" alt="" width="${width}" height="${height}" loading="lazy" decoding="async">
       ${kind ? `<span class="tile-kind">${icon(kind)}</span>` : ''}
       ${post.favorite ? `<span class="tile-saved">${icon('heart')}</span>` : ''}
+      ${post.deleted_at ? `<span class="tile-deleted" title="Cancellato su Instagram">${icon('deleted')}</span>` : ''}
       ${shared.length ? `<span class="tile-shared" title="Condiviso con ${esc(shared.map(name => '@' + name).join(', '))}">${icon('shared')}</span>` : ''}
       <span class="tile-hover">${owner}${esc(day(post.published_at))}</span>
     </button>`;
@@ -281,6 +285,7 @@
     const summary = state.summary || {}; const profiles = summary.profiles || [];
     if (summary.storage && !summary.storage.ready && profiles.length) return showEmpty('Archivio sull’NVMe scollegato', 'Qui compaiono solo i contenuti scaricati nel buffer interno. Il resto torna visibile quando ricolleghi l’NVMe.');
     if (state.view === 'favorites') return showEmpty('Nessun contenuto salvato', 'Apri un contenuto e tocca il cuore per ritrovarlo qui.');
+    if (state.view === 'deleted') return showEmpty('Nessun contenuto cancellato', 'A ogni controllo InstaVault confronta gli ultimi post e le storie delle 24 ore: quello che sparisce da Instagram resta qui.');
     if (state.query) return showEmpty('Nessun risultato', 'Nessun contenuto corrisponde a questa ricerca.');
     const profile = profileById(state.profile);
     if (profile) {
@@ -297,7 +302,7 @@
     showEmpty('Ancora nessun contenuto', 'Avvia un aggiornamento: i contenuti scaricati compaiono qui.');
   }
   async function loadPosts(reset = false) {
-    if (!state.authenticated || !['archive', 'favorites'].includes(state.view)) return;
+    if (!state.authenticated || !GRIDS.includes(state.view)) return;
     if (state.loading && !reset) return;
     const seq = ++state.loadSeq; state.loading = true;
     const grid = $('#mediaGrid');
@@ -311,6 +316,7 @@
 
     if (state.query) params.set('q', state.query);
     if (state.view === 'favorites') params.set('favorite', '1');
+    if (state.view === 'deleted') params.set('deleted', '1');
     params.set('order', state.order);
     if (!reset && state.cursor) params.set('cursor', state.cursor);
     try {
@@ -336,6 +342,7 @@
         <h2>@${esc(job.username)}</h2>
         <p${job.error ? ' class="row-error"' : ''}>${esc(job.error || job.message || (job.state === 'queued' ? 'In attesa del suo turno' : 'Controllo dei nuovi contenuti'))}</p>
         <p class="stamp">${esc(moment(job.started_at || job.created_at))} · ${plural(job.downloaded, 'nuovo', 'nuovi')} · ${number(job.seen)} controllati</p>
+        ${job.items?.length ? `<div class="job-thumbs">${job.items.filter(item => item.media).map(item => `<button class="job-thumb" type="button" data-post="${Number(item.id)}" aria-label="Apri il contenuto scaricato"><img src="${BASE}/media/${Number(item.media)}/thumb" alt="" loading="lazy" decoding="async"></button>`).join('')}${job.downloaded > job.items.length ? `<span class="job-more">+${number(job.downloaded - job.items.length)}</span>` : ''}</div>` : ''}
       </div>
       <div class="row-side">${statusTag(job.state)}${['queued', 'running'].includes(job.state) ? `<button class="button small" type="button" data-cancel-job="${job.id}">Interrompi</button>` : ''}</div>
     </article>`).join('') : '<div class="empty"><h2>Nessun aggiornamento</h2><p>Gli aggiornamenti dei profili compaiono qui, uno alla volta.</p></div>';
@@ -374,7 +381,7 @@
     bindImageFallback($('#postAuthor'));
     $('#postCaption').textContent = result.caption || result.collection || '';
     $('#postCaption').hidden = !(result.caption || result.collection);
-    $('#postMetadata').textContent = `pubblicato ${day(result.published_at)} · archiviato ${day(result.archived_at)}`;
+    $('#postMetadata').textContent = `pubblicato ${day(result.published_at)} · archiviato ${day(result.archived_at)}${result.deleted_at ? ` · cancellato su Instagram ${day(result.deleted_at)}` : ''}`;
     // A collab or repost shows once and names every archived profile that has it.
     const others = (result.profiles || []).filter(name => name !== result.username);
     $('#postShared').hidden = !others.length;
@@ -516,7 +523,7 @@
     const body = {username: $('#profileUsername').value.trim(), interval_minutes: Number($('#pInterval').value), posts: $('#pPosts').checked, reels: $('#pReels').checked, stories: $('#pStories').checked, highlights: $('#pHighlights').checked};
     if (!body.posts && !body.reels && !body.stories && !body.highlights) { $('#profileError').textContent = 'Scegli almeno un tipo di contenuto.'; return; }
     busy(event.submitter, async () => {
-      try { await api('/api/profiles' + (ident ? '/' + ident : ''), {method: ident ? 'PATCH' : 'POST', body: JSON.stringify(body)}); $('#profileDialog').close(); toast(ident ? 'Modifiche salvate' : 'Profilo aggiunto, primo download in coda'); await refreshSummary(); if (!ident && ['archive', 'favorites'].includes(state.view)) renderEmpty(); }
+      try { await api('/api/profiles' + (ident ? '/' + ident : ''), {method: ident ? 'PATCH' : 'POST', body: JSON.stringify(body)}); $('#profileDialog').close(); toast(ident ? 'Modifiche salvate' : 'Profilo aggiunto, primo download in coda'); await refreshSummary(); if (!ident && GRIDS.includes(state.view)) renderEmpty(); }
       catch (error) { $('#profileError').textContent = error.message; }
     });
   });

@@ -678,3 +678,38 @@ def test_a_comment_refusal_never_stops_the_download(vault, monkeypatch):
     assert worker.archive(profile, image_item('NoComments'), 'post', job)
     assert worker.comments_blocked
     assert store.list_posts({})['items'][0]['shortcode'] == 'NoComments'
+
+
+def test_only_recent_posts_missing_from_instagram_are_marked_deleted_and_can_come_back(vault):
+    profile = vault['profile']
+    for code, stamp in [('Old', 100), ('Kept', 300), ('Gone', 400), ('New', 500)]:
+        with store.db() as c:
+            c.execute("INSERT INTO posts(profile_id,external_key,shortcode,kind,published_at,archived_at,complete) VALUES (?,?,?,'post',?,1,1)",
+                      (profile, 'post:' + code, code, stamp))
+    # Instagram listed New and Kept, down to Kept's date: Gone vanished, Old is outside the window.
+    assert store.mark_deleted(profile, ('post', 'reel'), {'New', 'Kept'}, 300) == 1
+    assert [p['shortcode'] for p in store.list_posts({'deleted': '1'})['items']] == ['Gone']
+    store.mark_deleted(profile, ('post', 'reel'), {'New', 'Kept', 'Gone'}, 300)
+    assert store.list_posts({'deleted': '1'})['items'] == []
+
+
+def test_a_story_removed_within_its_day_is_marked_deleted(vault):
+    profile = vault['profile']
+    with store.db() as c:
+        for code, age in [('Live', 600), ('Removed', 1200), ('Expired', 90000)]:
+            c.execute("INSERT INTO posts(profile_id,external_key,shortcode,kind,published_at,archived_at,complete) VALUES (?,?,?,'story',?,1,1)",
+                      (profile, 'story:' + code, code, store.now() - age))
+    assert store.mark_deleted(profile, (), {'Live'}, store.now() - 86400 + 600, story=True) == 1
+    assert [p['shortcode'] for p in store.list_posts({'deleted': '1'})['items']] == ['Removed']
+
+
+def test_activity_lists_what_each_update_downloaded(http, vault):
+    root, client = http
+    job = store.enqueue(vault['profile'])
+    with store.db() as c:
+        c.execute("UPDATE jobs SET state='done',downloaded=1 WHERE id=?", (job,))
+        post = c.execute("INSERT INTO posts(profile_id,external_key,shortcode,kind,published_at,archived_at,complete,job_id) VALUES (?,?,?,'post',1,1,1,?)",
+                         (vault['profile'], 'post:J1', 'J1', job)).lastrowid
+        media = c.execute("INSERT INTO media(post_id,position,kind,path,size,sha256) VALUES (?,0,'image','x.jpg',1,'x')", (post,)).lastrowid
+    item = client.get(root + '/api/jobs').json()['items'][0]
+    assert item['items'] == [{'id': post, 'kind': 'post', 'collection': '', 'media': media}]
