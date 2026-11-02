@@ -610,8 +610,14 @@ class Worker:
                     for highlight in value.get_highlights(remote):
                         try:
                             for item in highlight.get_items():
-                                self.archive(profile, item, 'story', ident, 'In evidenza · ' + highlight.title[:150],
-                                             highlight_link(highlight))
+                                try:
+                                    self.archive(profile, item, 'story', ident, 'In evidenza · ' + highlight.title[:150],
+                                                 highlight_link(highlight))
+                                except requests.HTTPError as exc:
+                                    # A file Instagram no longer serves must not hold back the rest of the collection.
+                                    if getattr(exc.response, 'status_code', None) not in (403, 404, 410):
+                                        raise
+                                    print(f'InstaVault: @{profile["username"]} highlight «{highlight.title}»: file gone ({exc.response.status_code})', flush=True)
                         except (Paused, StorageFull):
                             raise
                         except Exception as exc:
