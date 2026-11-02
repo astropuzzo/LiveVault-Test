@@ -18,6 +18,13 @@ e MyFreeCams: 2026-10-06; Bonsai Sensei e console App e ricavi: 2026-10-08;
 InstaVault: 2026-11-02). Il vecchio handoff duplicato è stato sostituito
 da un rinvio, con originale conservato nella directory rollback.
 
+Interfacce LiveVault e OpenAstro Control (2026-11-02): tema grafite al posto del
+cosmic glass. Colori neutri, superfici piene, niente sfocature, aloni, orbite,
+etichette maiuscole o numerazioni decorative; restano i colori di stato
+(registrazione, live, avvisi). `motion.js` rimosso da entrambe le app e dalle
+cache dei service worker; gli ID e i contratti JavaScript non cambiano.
+Dettagli e rollback del pannello in `control-panel/README.md`.
+
 InstaVault (2026-11-02): archivio dei profili Instagram scelti dall'utente,
 applicazione Coolify separata dal modulo `instavault/`, dominio proprio
 `https://instavault.tailf2871c.ts.net/` da un nodo Tailscale dedicato

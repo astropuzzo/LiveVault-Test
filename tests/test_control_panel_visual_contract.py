@@ -44,8 +44,8 @@ def test_new_layout_keeps_progressive_disclosure_and_player_transport():
     assert "media.classList.toggle('media-tech-open')" in js
 
 
-def test_shared_motion_and_local_font_are_available_offline():
+def test_local_font_is_available_offline_and_decorative_motion_is_gone():
     html = (ROOT / 'index.html').read_text(encoding='utf-8')
     sw = (ROOT / 'sw.js').read_text(encoding='utf-8')
-    assert '/motion.js?v=3.5.1' in html
-    assert '"/motion.js"' in sw and '"/fonts/mona-sans-latin-wght.woff2"' in sw
+    assert 'motion.js' not in html and 'motion.js' not in sw
+    assert '"/fonts/mona-sans-latin-wght.woff2"' in sw

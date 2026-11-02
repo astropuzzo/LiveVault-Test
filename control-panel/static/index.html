@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <meta name="theme-color" content="#070d1c">
+  <meta name="theme-color" content="#111113">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="OpenAstro">
@@ -25,7 +25,6 @@
         <div class="mark" aria-hidden="true"><svg viewBox="0 0 28 28" fill="none" aria-hidden="true"><circle cx="14" cy="14" r="8" stroke="currentColor" stroke-width="1.5"/><ellipse cx="14" cy="14" rx="13" ry="4.5" transform="rotate(-32 14 14)" stroke="currentColor" stroke-width="1.2"/><circle cx="22" cy="6.5" r="2" fill="currentColor"/></svg></div>
         <div><strong>OpenAstro</strong><small>Console personale</small></div>
       </div>
-      <p class="rail-label">CENTRO DI CONTROLLO</p>
       <nav class="side-nav" aria-label="Sezioni principali">
         <a href="#dashboard" data-route="dashboard" class="active"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 13h6V4H4v9Zm0 7h6v-5H4v5Zm10 0h6v-9h-6v9Zm0-16v5h6V4h-6Z"/></svg><span>Dashboard</span></a>
         <a href="#media" data-route="media"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v14H4V5Zm6 3v8l6-4-6-4Z"/></svg><span>Media</span></a>
@@ -45,72 +44,51 @@
     <button id="logoutButton" class="logout" type="button">Esci</button>
 
     <header class="mobile-header">
-      <div class="mobile-identity"><div class="mark" aria-hidden="true"><svg viewBox="0 0 28 28" fill="none" aria-hidden="true"><circle cx="14" cy="14" r="8" stroke="currentColor" stroke-width="1.5"/><ellipse cx="14" cy="14" rx="13" ry="4.5" transform="rotate(-32 14 14)" stroke="currentColor" stroke-width="1.2"/><circle cx="22" cy="6.5" r="2" fill="currentColor"/></svg></div><div><small>OPENASTRO</small><strong id="mobileViewTitle">Dashboard</strong></div></div>
+      <div class="mobile-identity"><div class="mark" aria-hidden="true"><svg viewBox="0 0 28 28" fill="none" aria-hidden="true"><circle cx="14" cy="14" r="8" stroke="currentColor" stroke-width="1.5"/><ellipse cx="14" cy="14" rx="13" ry="4.5" transform="rotate(-32 14 14)" stroke="currentColor" stroke-width="1.2"/><circle cx="22" cy="6.5" r="2" fill="currentColor"/></svg></div><div><strong id="mobileViewTitle">Dashboard</strong></div></div>
       <div class="mobile-status"><div class="connection"><i></i><span id="mobileConnectionText">Connessione…</span></div></div>
     </header>
 
     <main class="app-main">
       <section class="app-view active" data-view-panel="dashboard" aria-labelledby="heroTitle">
-        <header class="dashboard-topline" data-motion>
-          <div><p class="eyebrow">OPENASTRO CONTROL</p><h1>La tua console.</h1><p class="dashboard-caption">Stato del nodo, acquisizioni e librerie. In tempo reale.</p></div>
+        <header class="dashboard-topline">
+          <div><h1>Console</h1><p class="dashboard-caption">Stato del nodo, acquisizioni e librerie.</p></div>
           <div class="hero-meta"><span id="hostName">openastro</span><span id="uptime">—</span><span id="lastUpdate">—</span></div>
         </header>
 
         <div class="dashboard-mosaic">
-          <article class="app-tile node-card" id="overview" data-motion>
-            <div class="tile-heading"><span>ASIAIR / NODO PERSONALE</span><i class="state-dot"></i></div>
+          <article class="app-tile node-card" id="overview">
+            <div class="tile-heading"><span>Nodo ASIAIR</span><i class="state-dot"></i></div>
             <div class="node-core">
               <div class="node-summary">
                 <div class="hero-state"><h2 id="heroTitle">Verifica…</h2><span id="heroRecorderPill">—</span></div>
                 <p id="heroSubtitle">Stato operativo del nodo.</p>
                 <div class="uptime-line"><span class="uptime-caption">Tempo di attività</span><strong class="hero-uptime" id="heroUptimeValue">—</strong></div>
               </div>
-              <div class="orbital-core" aria-hidden="true">
-                <svg class="node-orbit" data-orbit viewBox="0 0 240 240" fill="none">
-                  <defs>
-                    <radialGradient id="consoleOrbGlow"><stop stop-color="#63b8ff" stop-opacity=".28"/><stop offset="1" stop-color="#63b8ff" stop-opacity="0"/></radialGradient>
-                    <linearGradient id="consoleOrbMetal" x1="76" y1="78" x2="162" y2="161" gradientUnits="userSpaceOnUse"><stop stop-color="#29496e"/><stop offset=".45" stop-color="#172d4b"/><stop offset="1" stop-color="#0a192d"/></linearGradient>
-                    <linearGradient id="consoleOrbEdge" x1="63" y1="60" x2="178" y2="172" gradientUnits="userSpaceOnUse"><stop stop-color="#b1dcff"/><stop offset=".5" stop-color="#63b8ff" stop-opacity=".15"/><stop offset="1" stop-color="#9c9fff" stop-opacity=".5"/></linearGradient>
-                  </defs>
-                  <circle cx="120" cy="120" r="115" fill="url(#consoleOrbGlow)"/>
-                  <circle cx="120" cy="120" r="85" stroke="#719bca" stroke-opacity=".14"/>
-                  <circle cx="120" cy="120" r="106" stroke="#719bca" stroke-opacity=".08" stroke-dasharray="3 7"/>
-                  <ellipse cx="120" cy="120" rx="105" ry="39" transform="rotate(-27 120 120)" stroke="#63b8ff" stroke-opacity=".5"/>
-                  <ellipse cx="120" cy="120" rx="42" ry="95" transform="rotate(-27 120 120)" stroke="#9c9fff" stroke-opacity=".4"/>
-                  <rect x="79" y="79" width="82" height="82" rx="24" fill="url(#consoleOrbMetal)" stroke="url(#consoleOrbEdge)"/>
-                  <path d="M120 96a24 24 0 1 0 24 24" stroke="#c6e6ff" stroke-width="1.7" stroke-linecap="round"/>
-                  <path d="M98 110h44M99 130h40" stroke="#63b8ff" stroke-opacity=".55"/>
-                  <ellipse cx="120" cy="120" rx="10" ry="23" stroke="#9c9fff" stroke-opacity=".7"/>
-                  <circle cx="143" cy="100" r="4" fill="#c6e6ff"/>
-                  <circle cx="212" cy="73" r="4" fill="#8dccff"/>
-                  <circle cx="41" cy="168" r="3" fill="#b5b7ff"/>
-                </svg>
-                <span class="orbital-core-caption">OPENASTRO</span>
-              </div>
+              
             </div>
             <div class="node-meters">
               <div class="hero-bar" id="heroCpuBar"><i></i><span>CPU</span><b id="heroCpuText">—</b></div>
               <div class="hero-bar" id="heroRamBar"><i></i><span>RAM</span><b id="heroRamText">—</b></div>
-              <div class="hero-bar" id="heroTempBar"><i></i><span>TEMP</span><b id="heroTempText">—</b></div>
-              <div class="hero-bar" id="heroDiskBar"><i></i><span>NVME</span><b id="heroDiskText">—</b></div>
+              <div class="hero-bar" id="heroTempBar"><i></i><span>Temp</span><b id="heroTempText">—</b></div>
+              <div class="hero-bar" id="heroDiskBar"><i></i><span>NVMe</span><b id="heroDiskText">—</b></div>
             </div>
           </article>
 
-          <article class="app-tile live-card" data-motion>
+          <article class="app-tile live-card">
             <div class="tile-heading"><span>LiveVault</span><i class="state-dot"></i></div>
             <div class="live-rings" id="liveRings" aria-hidden="true"><i></i><i></i><i></i></div>
             <strong id="dashLiveState">Verifica…</strong>
             <small id="dashLiveDetail">—</small>
           </article>
 
-          <article class="app-tile power-card" data-motion>
+          <article class="app-tile power-card">
             <div class="tile-heading"><span>Energia</span><i></i></div>
             <div class="power-gauge" id="dashPowerArt" aria-hidden="true"><i></i></div>
             <strong id="dashPowerState">—</strong>
             <small id="dashPowerDetail">—</small>
           </article>
 
-          <article class="app-tile storage-card" data-motion>
+          <article class="app-tile storage-card">
             <div class="tile-heading"><span>Storage</span><i></i></div>
             <strong id="dashStorageMode">—</strong>
             <small id="dashStorageDetail">—</small>
@@ -119,48 +97,48 @@
 
 
 
-          <article class="media-feature-card" data-motion>
+          <article class="media-feature-card">
             <a href="#media" data-route="media" aria-label="Apri OpenAstro Media">
-              <div class="media-feature-copy"><span>MEDIA HUB</span><h2>La tua libreria, senza confini.</h2><p class="media-feature-description">Video, musica e foto da tutti i tuoi supporti.</p><div class="media-feature-status"><strong id="dashMediaState">Verifica…</strong><small id="dashMediaDetail">In attesa delle librerie</small></div></div>
+              <div class="media-feature-copy"><h2>Media Hub</h2><p class="media-feature-description">Video, musica e foto da tutti i tuoi supporti.</p><div class="media-feature-status"><strong id="dashMediaState">Verifica…</strong><small id="dashMediaDetail">In attesa delle librerie</small></div></div>
               <div class="media-feature-orb" aria-hidden="true"><i></i><i></i><b>▶</b></div><span class="media-feature-arrow" aria-hidden="true">↗</span>
             </a>
           </article>
-          <article class="app-tile apps-feature-card" data-motion>
+          <article class="app-tile apps-feature-card">
             <a href="#apps" data-route="apps" aria-label="Apri App e ricavi per Bonsai Sensei">
               <div class="apps-feature-icon" aria-hidden="true"><svg viewBox="0 0 64 64"><path d="M17 47h30l-4 9H21l-4-9ZM31 47V28m0 13-10-9m10 3 10-10M12 29c-3-7 1-12 8-12 0-9 13-13 18-6 10-4 18 6 13 13 6 7-2 14-10 11-5 7-14 5-17 0-6 3-12 0-12-6Z"/></svg></div>
-              <div class="apps-feature-copy"><span>LE TUE APP</span><h2>App e ricavi</h2><p>Ricevute, account e stato dei servizi.</p></div>
+              <div class="apps-feature-copy"><span>Le tue app</span><h2>App e ricavi</h2><p>Ricevute, account e stato dei servizi.</p></div>
               <span class="apps-feature-app">Bonsai Sensei</span><span class="apps-feature-arrow" aria-hidden="true">↗</span>
             </a>
           </article>
-          <article class="app-tile apps-feature-card instavault-feature-card" data-motion>
+          <article class="app-tile apps-feature-card instavault-feature-card">
             <a href="https://instavault.tailf2871c.ts.net/" target="_blank" rel="noopener" aria-label="Apri InstaVault in una nuova scheda">
               <div class="apps-feature-icon" aria-hidden="true"><svg viewBox="0 0 64 64"><path d="M24 14h16M19 20h26M19 26h26a4 4 0 0 1 4 4v17a4 4 0 0 1-4 4H19a4 4 0 0 1-4-4V30a4 4 0 0 1 4-4ZM15 45l10-9 7 6 6-5 11 9"/></svg></div>
-              <div class="apps-feature-copy"><span>ARCHIVIO INSTAGRAM</span><h2>InstaVault</h2><p>Post, Reel e storie dei profili che scegli, salvati sull’NVMe.</p></div>
+              <div class="apps-feature-copy"><span>Archivio instagram</span><h2>InstaVault</h2><p>Post, Reel e storie dei profili che scegli, salvati sull’NVMe.</p></div>
               <span class="apps-feature-app">instavault</span><span class="apps-feature-arrow" aria-hidden="true">↗</span>
             </a>
           </article>
         </div>
 
-        <section class="panel diagnostic-panel" data-motion aria-labelledby="diagnosticTitle">
-          <div class="panel-head"><div><p class="eyebrow">STATO DEL NODO</p><h2 id="diagnosticTitle">Da controllare</h2></div><span id="diagnosticSummary" class="status-chip" role="status">Verifica in corso</span></div>
+        <section class="panel diagnostic-panel" aria-labelledby="diagnosticTitle">
+          <div class="panel-head"><div><h2 id="diagnosticTitle">Da controllare</h2></div><span id="diagnosticSummary" class="status-chip" role="status">Verifica in corso</span></div>
           <div id="diagnosticIssues" class="diagnostic-issues"></div>
           <div class="diagnostic-footer"><small id="diagnosticAge">In attesa del nodo</small><button id="exportDiagnostics" class="button secondary" type="button" disabled>Esporta diagnosi</button></div>
         </section>
 
-        <section class="resource-details" id="resourceDetails" data-motion-disclosure>
+        <section class="resource-details" id="resourceDetails"-disclosure>
           <button class="resource-toggle" id="resourceToggle" type="button" aria-expanded="false"><span><b>Risorse live</b><small>CPU, RAM, temperatura, disco e rete</small></span><i>⌄</i></button>
           <section class="metrics-grid" aria-label="Risorse del server">
             <article class="metric-card"><div class="ring" id="cpuRing"><span id="cpuValue">—</span></div><div><p>CPU</p><strong id="loadValue">—</strong><small id="coreValue">—</small></div></article>
-            <article class="metric-card"><div class="ring" id="ramRing"><span id="ramValue">—</span></div><div><p>MEMORIA</p><strong id="ramUsed">—</strong><small id="ramTotal">—</small></div></article>
-            <article class="metric-card"><div class="ring temp" id="tempRing"><span id="tempValue">—</span></div><div><p>TEMPERATURA</p><strong id="tempState">—</strong><small>Compute Module</small></div></article>
-            <article class="metric-card"><div class="ring" id="diskRing"><span id="diskValue">—</span></div><div><p>NVME SERVER</p><strong id="diskFree">—</strong><small id="diskTotal">—</small></div></article>
-            <article class="metric-card network-card"><div class="ring" id="networkRing"><span>NET</span></div><div><p>RETE LIVE</p><strong id="networkDown">↓ —</strong><small id="networkUp">↑ —</small></div></article>
-            <article class="metric-card watt-card"><div class="ring power-ring" id="wattRing"><span>—</span></div><div><p>POTENZA MISURATA</p><strong id="wattValue">—</strong><small id="wattDaily">Sensore ingresso ASIAIR</small></div></article>
+            <article class="metric-card"><div class="ring" id="ramRing"><span id="ramValue">—</span></div><div><p>Memoria</p><strong id="ramUsed">—</strong><small id="ramTotal">—</small></div></article>
+            <article class="metric-card"><div class="ring temp" id="tempRing"><span id="tempValue">—</span></div><div><p>Temperatura</p><strong id="tempState">—</strong><small>Compute Module</small></div></article>
+            <article class="metric-card"><div class="ring" id="diskRing"><span id="diskValue">—</span></div><div><p>NVMe server</p><strong id="diskFree">—</strong><small id="diskTotal">—</small></div></article>
+            <article class="metric-card network-card"><div class="ring" id="networkRing"><span>NET</span></div><div><p>Rete live</p><strong id="networkDown">↓ —</strong><small id="networkUp">↑ —</small></div></article>
+            <article class="metric-card watt-card"><div class="ring power-ring" id="wattRing"><span>—</span></div><div><p>Potenza misurata</p><strong id="wattValue">—</strong><small id="wattDaily">Sensore ingresso ASIAIR</small></div></article>
           </section>
         </section>
 
         <section class="dashboard-control-section" aria-label="Comandi del nodo">
-          <article class="app-tile action-card" data-motion>
+          <article class="app-tile action-card">
             <div class="tile-heading action-heading"><span>Comandi del nodo</span><a href="https://openastro.tailf2871c.ts.net:10000/" target="_blank" rel="noopener">Coolify ↗</a></div>
             <div class="action-bubbles">
               <button id="quickNvmeAction" data-action="eject_nvme" data-confirm="Tieni premuto per espellere in sicurezza" aria-label="Espelli o rimonta NVMe">
@@ -188,37 +166,37 @@
       </section>
 
       <section class="app-view" data-view-panel="media" aria-labelledby="view-media-title">
-        <header class="view-heading" data-motion><div><p class="eyebrow">LIBRERIA PERSONALE</p><h1 id="view-media-title">Media Hub</h1><p>Film, musica e ricordi. Le tue librerie, da ogni dispositivo.</p></div></header>
-            <section class="panel media-panel workspace-panel" id="media" data-motion-disclosure>
+        <header class="view-heading"><div><h1 id="view-media-title">Media Hub</h1><p>Film, musica e foto dai supporti collegati al server.</p></div></header>
+            <section class="panel media-panel workspace-panel" id="media"-disclosure>
       <div class="panel-head media-head">
-        <div><p class="eyebrow">MEDIA HUB</p><h2>OpenAstro Media</h2><small>La tua libreria USB, in casa e fuori casa.</small></div>
+        <div><h2>OpenAstro Media</h2><small>Libreria USB, in casa e fuori casa.</small></div>
         <div class="media-head-actions"><span class="status-chip" id="mediaChip">Nessun supporto</span><button class="button secondary media-tech-toggle" id="mediaTechToggle" type="button">Dettagli</button><button class="button secondary" data-action="media_rescan">Rileva USB</button></div>
       </div>
 
       <div class="media-stats" id="mediaStats">
-        <button data-media-filter="video"><span>VIDEO</span><strong id="mediaStatVideo">0</strong><small id="mediaStatVideoSize">0 B</small></button>
-        <button data-media-filter="audio"><span>AUDIO</span><strong id="mediaStatAudio">0</strong><small id="mediaStatAudioSize">0 B</small></button>
-        <button data-media-filter="image"><span>FOTO</span><strong id="mediaStatImage">0</strong><small id="mediaStatImageSize">0 B</small></button>
-        <button data-media-filter="all"><span>TOTALE</span><strong id="mediaStatTotal">0</strong><small id="mediaStatTotalSize">0 B</small></button>
+        <button data-media-filter="video"><span>Video</span><strong id="mediaStatVideo">0</strong><small id="mediaStatVideoSize">0 B</small></button>
+        <button data-media-filter="audio"><span>Audio</span><strong id="mediaStatAudio">0</strong><small id="mediaStatAudioSize">0 B</small></button>
+        <button data-media-filter="image"><span>Foto</span><strong id="mediaStatImage">0</strong><small id="mediaStatImageSize">0 B</small></button>
+        <button data-media-filter="all"><span>Totale</span><strong id="mediaStatTotal">0</strong><small id="mediaStatTotalSize">0 B</small></button>
       </div>
 
       <div class="media-memory-grid" id="mediaMemoryGrid">
-        <article><span>LIBRERIA MEMORIZZATA</span><strong id="mediaKnownFiles">0</strong><small id="mediaKnownBytes">0 B indicizzati</small></article>
-        <article><span>CONTINUA A GUARDARE</span><strong id="mediaContinueCount">0</strong><small>sincronizzato tra dispositivi</small></article>
-        <article><span>PREFERITI</span><strong id="mediaFavoriteCount">0</strong><small>salvati su OpenAstro</small></article>
-        <article><span>STREAM ATTIVI</span><strong id="mediaStreamCount">0</strong><small id="mediaStreamDetail">nessuna riproduzione</small></article>
+        <article><span>Libreria memorizzata</span><strong id="mediaKnownFiles">0</strong><small id="mediaKnownBytes">0 B indicizzati</small></article>
+        <article><span>Continua a guardare</span><strong id="mediaContinueCount">0</strong><small>sincronizzato tra dispositivi</small></article>
+        <article><span>Preferiti</span><strong id="mediaFavoriteCount">0</strong><small>salvati su OpenAstro</small></article>
+        <article><span>Stream attivi</span><strong id="mediaStreamCount">0</strong><small id="mediaStreamDetail">nessuna riproduzione</small></article>
       </div>
 
       <div class="media-profile-rails" id="mediaProfileRails">
-        <section id="mediaContinueWrap" hidden><div class="media-section-title"><span>CONTINUA A GUARDARE</span><small>Riprendi da dove eri rimasto</small></div><div class="media-profile-rail" id="mediaContinue"></div></section>
-        <section id="mediaFavoritesWrap" hidden><div class="media-section-title"><span>I TUOI PREFERITI</span><small>disponibili su ogni browser</small></div><div class="media-profile-rail" id="mediaFavorites"></div></section>
-        <section id="mediaPlayedWrap" hidden><div class="media-section-title"><span>VISTI DI RECENTE</span><small>cronologia OpenAstro</small></div><div class="media-profile-rail" id="mediaPlayed"></div></section>
-        <section id="mediaStreamsWrap" hidden><div class="media-section-title"><span>SESSIONI IN RIPRODUZIONE</span><small>Riproduzioni in corso</small></div><div class="media-stream-list" id="mediaStreams"></div></section>
+        <section id="mediaContinueWrap" hidden><div class="media-section-title"><span>Continua a guardare</span><small>Riprendi da dove eri rimasto</small></div><div class="media-profile-rail" id="mediaContinue"></div></section>
+        <section id="mediaFavoritesWrap" hidden><div class="media-section-title"><span>I tuoi preferiti</span><small>disponibili su ogni browser</small></div><div class="media-profile-rail" id="mediaFavorites"></div></section>
+        <section id="mediaPlayedWrap" hidden><div class="media-section-title"><span>Visti di recente</span><small>cronologia OpenAstro</small></div><div class="media-profile-rail" id="mediaPlayed"></div></section>
+        <section id="mediaStreamsWrap" hidden><div class="media-section-title"><span>Sessioni in riproduzione</span><small>Riproduzioni in corso</small></div><div class="media-stream-list" id="mediaStreams"></div></section>
       </div>
 
       <div class="media-layout media-layout-v2">
         <aside class="media-sidebar">
-          <div class="media-section-title"><span>SUPPORTI</span><small>Import protetto</small></div>
+          <div class="media-section-title"><span>Supporti</span><small>Import protetto</small></div>
           <div id="mediaDeviceList" class="media-devices"><p class="muted">Collega una chiavetta o un disco USB rimovibile.</p></div>
 
           <div class="media-access-grid">
@@ -240,15 +218,15 @@
 
           <section class="torrent-panel" id="torrentPanel" aria-labelledby="torrentTitle">
             <header class="torrent-head">
-              <div><span>TORRENT MANAGER</span><strong id="torrentTitle">Cerca e scarica</strong><small>Transmission headless · import automatico nella libreria Media</small></div>
+              <div><span>Torrent manager</span><strong id="torrentTitle">Cerca e scarica</strong><small>Transmission headless · import automatico nella libreria Media</small></div>
               <div class="torrent-head-meta"><span class="torrent-chip" id="torrentProviderChip">1337X</span><span class="torrent-chip" id="torrentClientChip">Verifica client…</span><button class="icon-button" id="torrentRefresh" type="button" title="Aggiorna torrent">↻</button></div>
             </header>
 
             <div class="torrent-stats">
-              <article class="torrent-stat"><span>DOWNLOAD</span><strong id="torrentRateDown">0 B/s</strong><small id="torrentRateDownSub">nessun download</small></article>
-              <article class="torrent-stat"><span>UPLOAD</span><strong id="torrentRateUp">0 B/s</strong><small id="torrentRateUpSub">upload inattivo</small></article>
-              <article class="torrent-stat"><span>ATTIVI</span><strong id="torrentActive">0</strong><small id="torrentActiveSub">0 in pausa</small></article>
-              <article class="torrent-stat"><span>CODA</span><strong id="torrentCount">0</strong><small id="torrentCountSub">job nel client</small></article>
+              <article class="torrent-stat"><span>Download</span><strong id="torrentRateDown">0 B/s</strong><small id="torrentRateDownSub">nessun download</small></article>
+              <article class="torrent-stat"><span>Upload</span><strong id="torrentRateUp">0 B/s</strong><small id="torrentRateUpSub">upload inattivo</small></article>
+              <article class="torrent-stat"><span>Attivi</span><strong id="torrentActive">0</strong><small id="torrentActiveSub">0 in pausa</small></article>
+              <article class="torrent-stat"><span>Coda</span><strong id="torrentCount">0</strong><small id="torrentCountSub">job nel client</small></article>
             </div>
 
             <div class="torrent-search">
@@ -280,23 +258,23 @@
             </div>
 
             <section id="torrentResultsWrap" hidden>
-              <div class="torrent-section-head"><span>RISULTATI 1337X</span><small id="torrentResultsCount"></small></div>
+              <div class="torrent-section-head"><span>Risultati 1337x</span><small id="torrentResultsCount"></small></div>
               <div class="torrent-results" id="torrentResults"></div>
             </section>
 
             <section>
-              <div class="torrent-section-head"><span>DOWNLOAD</span><small id="torrentQueueCount">0 torrent · usa Pausa/Riprendi o Elimina su ogni riga</small></div>
+              <div class="torrent-section-head"><span>Download</span><small id="torrentQueueCount">0 torrent · usa Pausa/Riprendi o Elimina su ogni riga</small></div>
               <div class="torrent-queue" id="torrentQueue"><div class="torrent-empty">Nessun torrent in coda.</div></div>
             </section>
 
             <section id="torrentImportsWrap" hidden>
-              <div class="torrent-section-head torrent-import-head"><span>IMPORTATI DI RECENTE</span><div><small>torrent rimosso · media conservato</small><button id="torrentClearImports" type="button">Cancella lista</button></div></div>
+              <div class="torrent-section-head torrent-import-head"><span>Importati di recente</span><div><small>torrent rimosso · media conservato</small><button id="torrentClearImports" type="button">Cancella lista</button></div></div>
               <div class="torrent-imports" id="torrentImports"></div>
             </section>
           </section>
 
           <div class="media-recent-wrap" id="mediaRecentWrap" hidden>
-            <div class="media-section-title"><span>AGGIUNTI DI RECENTE</span><small id="mediaRecentCount"></small></div>
+            <div class="media-section-title"><span>Aggiunti di recente</span><small id="mediaRecentCount"></small></div>
             <div class="media-recent" id="mediaRecent"></div>
           </div>
 
@@ -309,7 +287,7 @@
                 <span class="media-view-switch"><button id="mediaGridView" class="active" title="Griglia">GRID</button><button id="mediaListView" title="Lista">LIST</button></span>
               </div>
               <div class="media-manager-bar" id="mediaManagerBar">
-                <div class="media-manager-status"><strong>FILE MANAGER</strong><span id="mediaSelectionCount">0 selezionati</span></div>
+                <div class="media-manager-status"><strong>File manager</strong><span id="mediaSelectionCount">0 selezionati</span></div>
                 <div class="media-manager-actions">
                   <button id="mediaNewFolder" type="button">Nuova cartella</button>
                   <button id="mediaSelectAll" type="button">Seleziona tutto</button>
@@ -325,7 +303,7 @@
           </div>
 
           <section class="media-upload-card disabled" id="mediaUploadCard" aria-labelledby="mediaUploadTitle">
-            <header class="media-upload-head"><div><span>IMPORTA SUL SERVER</span><strong id="mediaUploadTitle">Carica dal computer</strong><small id="mediaUploadRoute">Percorso automatico: LAN/Tailscale diretto quando disponibile, Internet solo come fallback.</small></div><span class="media-upload-route" id="mediaUploadRouteChip">AUTO</span></header>
+            <header class="media-upload-head"><div><span>Importa sul server</span><strong id="mediaUploadTitle">Carica dal computer</strong><small id="mediaUploadRoute">Percorso automatico: LAN/Tailscale diretto quando disponibile, Internet solo come fallback.</small></div><span class="media-upload-route" id="mediaUploadRouteChip">AUTO</span></header>
             <label class="media-drop-zone" id="mediaDropZone" aria-disabled="true">
               <input id="mediaUploadInput" type="file" multiple hidden>
               <span class="media-drop-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M11 15h2V8.8l2.6 2.6 1.4-1.4L12 5l-5 5 1.4 1.4L11 8.8V15Zm-6 3h14v2H5v-2Z"/></svg></span>
@@ -344,55 +322,55 @@
       </section>
 
       <section class="app-view" data-view-panel="apps" aria-labelledby="view-apps-title">
-        <header class="view-heading" data-motion><div><p class="eyebrow">LE TUE APP</p><h1 id="view-apps-title">App e ricavi</h1><p>Un posto per seguire gli acquisti e collegare i risultati delle tue app.</p></div><div class="apps-heading-actions"><button id="appsRefresh" class="button secondary" type="button">Aggiorna</button><button id="appsExport" class="button secondary" type="button" disabled>Esporta JSON</button></div></header>
+        <header class="view-heading"><div><h1 id="view-apps-title">App e ricavi</h1><p>Un posto per seguire gli acquisti e collegare i risultati delle tue app.</p></div><div class="apps-heading-actions"><button id="appsRefresh" class="button secondary" type="button">Aggiorna</button><button id="appsExport" class="button secondary" type="button" disabled>Esporta JSON</button></div></header>
         <div id="appsWorkspace" class="apps-workspace" aria-busy="false">
-          <article class="panel apps-app-hero" data-motion>
+          <article class="panel apps-app-hero">
             <div class="apps-brand-art" aria-hidden="true"><svg viewBox="0 0 64 64"><path d="M17 47h30l-4 9H21l-4-9ZM31 47V28m0 13-10-9m10 3 10-10M12 29c-3-7 1-12 8-12 0-9 13-13 18-6 10-4 18 6 13 13 6 7-2 14-10 11-5 7-14 5-17 0-6 3-12 0-12-6Z"/></svg></div>
-            <div class="apps-app-identity"><div class="apps-app-topline"><span class="eyebrow">APP COLLEGATA</span><span id="appsStatus" class="status-chip" role="status">Da verificare</span></div><h2 id="appsName">Bonsai Sensei</h2><p id="appsServiceNote">Riepilogo dal registro acquisti del server.</p></div>
+            <div class="apps-app-identity"><div class="apps-app-topline"><span class="eyebrow">App collegata</span><span id="appsStatus" class="status-chip" role="status">Da verificare</span></div><h2 id="appsName">Bonsai Sensei</h2><p id="appsServiceNote">Riepilogo dal registro acquisti del server.</p></div>
             <div class="apps-selection"><label for="appsSelector">La tua app</label><select id="appsSelector"><option value="">Seleziona app</option></select></div>
           </article>
           <div class="apps-sample"><span id="appsSample">In attesa del servizio</span><span id="appsVersion">Servizio da verificare</span></div>
           <p id="appsLoadState" class="apps-status-message" role="status" aria-live="polite">Caricamento del riepilogo…</p>
           <div class="apps-metrics" aria-label="Statistiche del registro acquisti">
-            <article class="panel apps-metric" data-motion><span>Ricevute registrate</span><strong id="appsTotal">—</strong><small>Totale del registro, incluse le attese.</small></article>
-            <article class="panel apps-metric" data-motion><span>Acquisti attivi</span><strong id="appsActive">—</strong><small>Ricevute verificate e non revocate.</small></article>
-            <article class="panel apps-metric" data-motion><span>Ricevute revocate</span><strong id="appsRevoked">—</strong><small>Revoche rilevate dal servizio.</small></article>
-            <article class="panel apps-metric" data-motion><span>Account con ricevute</span><strong id="appsAccounts">—</strong><small>Account distinti presenti nel registro.</small></article>
+            <article class="panel apps-metric"><span>Ricevute registrate</span><strong id="appsTotal">—</strong><small>Totale del registro, incluse le attese.</small></article>
+            <article class="panel apps-metric"><span>Acquisti attivi</span><strong id="appsActive">—</strong><small>Ricevute verificate e non revocate.</small></article>
+            <article class="panel apps-metric"><span>Ricevute revocate</span><strong id="appsRevoked">—</strong><small>Revoche rilevate dal servizio.</small></article>
+            <article class="panel apps-metric"><span>Account con ricevute</span><strong id="appsAccounts">—</strong><small>Account distinti presenti nel registro.</small></article>
           </div>
           <div class="apps-main-grid">
-            <article class="panel apps-chart-panel" data-motion aria-labelledby="appsChartTitle">
-              <div class="panel-head"><div><p class="eyebrow">ATTIVITÀ NEL TEMPO</p><h2 id="appsChartTitle">Il ritmo degli acquisti</h2></div><span class="apps-period">Ultimi 30 giorni</span></div>
+            <article class="panel apps-chart-panel" aria-labelledby="appsChartTitle">
+              <div class="panel-head"><div><h2 id="appsChartTitle">Il ritmo degli acquisti</h2></div><span class="apps-period">Ultimi 30 giorni</span></div>
               <p id="appsChartSummary" class="apps-chart-summary">In attesa dell’attività del registro.</p>
               <div id="appsChart" class="apps-chart"></div>
               <div class="apps-chart-legend" aria-hidden="true"><span><i></i>Ricevute create</span><span><i></i>Revoche</span></div>
               <p class="apps-chart-note">Le ricevute create includono gli acquisti in attesa. Le revoche sono conteggiate nel giorno del rilevamento. Giorni in UTC.</p>
               <details class="apps-daily-details"><summary>Consulta i valori giornalieri</summary><div class="apps-table-scroll"><table><thead><tr><th scope="col">Giorno UTC</th><th scope="col">Ricevute</th><th scope="col">Revoche</th></tr></thead><tbody id="appsDailyRows"></tbody></table></div></details>
             </article>
-            <article class="panel apps-ledger-panel" data-motion><p class="eyebrow">DETTAGLIO DEL REGISTRO</p><h2>Acquisti e utenti</h2><div class="apps-ledger-grid"><div><span>Acquisti in attesa</span><strong id="appsPending">—</strong></div><div><span>In elaborazione</span><strong id="appsProcessing">—</strong></div><div><span>Permanenti</span><strong id="appsPermanent">—</strong></div><div><span>Consumabili</span><strong id="appsConsumable">—</strong></div></div><div class="apps-users-link"><div><span>Utenti registrati</span><b>Da collegare</b></div><div><span>Utenti attivi</span><b>Da collegare</b></div><p>Il registro acquisti conta gli account con ricevute. I totali degli utenti richiedono una fonte dedicata.</p></div></article>
+            <article class="panel apps-ledger-panel"><h2>Acquisti e utenti</h2><div class="apps-ledger-grid"><div><span>Acquisti in attesa</span><strong id="appsPending">—</strong></div><div><span>In elaborazione</span><strong id="appsProcessing">—</strong></div><div><span>Permanenti</span><strong id="appsPermanent">—</strong></div><div><span>Consumabili</span><strong id="appsConsumable">—</strong></div></div><div class="apps-users-link"><div><span>Utenti registrati</span><b>Da collegare</b></div><div><span>Utenti attivi</span><b>Da collegare</b></div><p>Il registro acquisti conta gli account con ricevute. I totali degli utenti richiedono una fonte dedicata.</p></div></article>
           </div>
           <div class="apps-finance-grid">
-            <article class="panel apps-finance" data-motion><div class="apps-finance-top"><div><p class="eyebrow">GOOGLE PLAY</p><h2>Ricavi degli acquisti</h2></div><span class="status-chip">Da configurare</span></div><strong class="apps-finance-value" aria-label="Ricavi non disponibili">—</strong><p>Collega i report finanziari Google Play per conoscere importi, commissioni, rimborsi e ricavi netti. Le ricevute da sole non indicano il guadagno.</p><a id="appsPlay" href="https://play.google.com/console/" target="_blank" rel="noopener noreferrer">Apri Google Play Console ↗</a></article>
-            <article class="panel apps-finance" data-motion><div class="apps-finance-top"><div><p class="eyebrow">PUBBLICITÀ</p><h2>Ricavi AdMob</h2></div><span class="status-chip">Da configurare</span></div><strong class="apps-finance-value" aria-label="Ricavi pubblicitari non disponibili">—</strong><p>Serve l’autorizzazione del tuo account AdMob per collegare i report. Ricavi pubblicitari e impression saranno visibili quando la fonte sarà configurata.</p></article>
+            <article class="panel apps-finance"><div class="apps-finance-top"><div><p class="eyebrow">Google Play</p><h2>Ricavi degli acquisti</h2></div><span class="status-chip">Da configurare</span></div><strong class="apps-finance-value" aria-label="Ricavi non disponibili">—</strong><p>Collega i report finanziari Google Play per conoscere importi, commissioni, rimborsi e ricavi netti. Le ricevute da sole non indicano il guadagno.</p><a id="appsPlay" href="https://play.google.com/console/" target="_blank" rel="noopener noreferrer">Apri Google Play Console ↗</a></article>
+            <article class="panel apps-finance"><div class="apps-finance-top"><div><p class="eyebrow">Pubblicità</p><h2>Ricavi AdMob</h2></div><span class="status-chip">Da configurare</span></div><strong class="apps-finance-value" aria-label="Ricavi pubblicitari non disponibili">—</strong><p>Serve l’autorizzazione del tuo account AdMob per collegare i report. Ricavi pubblicitari e impression saranno visibili quando la fonte sarà configurata.</p></article>
           </div>
           <div class="apps-footer-grid">
-            <article class="panel apps-catalog-panel" data-motion><p class="eyebrow">PRODOTTI</p><h2>Catalogo dell’app</h2><div id="appsCatalog" class="apps-catalog">In attesa del catalogo</div></article>
-            <article class="panel apps-catalog-panel" data-motion><p class="eyebrow">GESTIONE</p><h2>Servizio sul server</h2><p>Apri l’app in Coolify per consultarne configurazione, distribuzioni e stato operativo.</p><div class="apps-service-links"><a id="appsCoolify" class="button secondary" href="https://openastro.tailf2871c.ts.net:10000/project/8obr1exooiiaart70zgjlycw/environment/xnn2qsphju8xva9pnkljee2s/application/jxjbyszqndfoefprrxztv3fu" target="_blank" rel="noopener noreferrer">Apri in Coolify ↗</a></div></article>
+            <article class="panel apps-catalog-panel"><h2>Catalogo dell’app</h2><div id="appsCatalog" class="apps-catalog">In attesa del catalogo</div></article>
+            <article class="panel apps-catalog-panel"><h2>Servizio sul server</h2><p>Apri l’app in Coolify per consultarne configurazione, distribuzioni e stato operativo.</p><div class="apps-service-links"><a id="appsCoolify" class="button secondary" href="https://openastro.tailf2871c.ts.net:10000/project/8obr1exooiiaart70zgjlycw/environment/xnn2qsphju8xva9pnkljee2s/application/jxjbyszqndfoefprrxztv3fu" target="_blank" rel="noopener noreferrer">Apri in Coolify ↗</a></div></article>
           </div>
           <details id="appsSetup" class="apps-setup" hidden><summary>Configurazione acquisti da completare</summary><ul id="appsSetupList"></ul></details>
         </div>
       </section>
 
       <section class="app-view" data-view-panel="storage" aria-labelledby="view-storage-title">
-        <header class="view-heading" data-motion><div><p class="eyebrow">ARCHIVIAZIONE</p><h1 id="view-storage-title">Storage</h1><p>NVMe, buffer interno, backup e rimozione sicura.</p></div></header>
-            <section class="panel storage-panel" data-motion id="storage">
+        <header class="view-heading"><div><h1 id="view-storage-title">Storage</h1><p>NVMe, buffer interno, backup e rimozione sicura.</p></div></header>
+            <section class="panel storage-panel" id="storage">
       <div class="panel-head">
-        <div><p class="eyebrow">ARCHIVIAZIONE</p><h2>NVMe duale</h2></div>
+        <div><h2>NVMe duale</h2></div>
         <span class="status-chip" id="storageChip">Verifica…</span>
       </div>
       <div class="storage-map">
         <div class="drive-visual"><i></i><span>WDS 500</span><small>USB 3 / UAS</small></div>
-        <div class="partition"><span>SERVER · EXT4</span><strong id="dataUsage">—</strong><div class="bar"><i id="dataBar"></i></div></div>
-        <div class="partition"><span>USB SHARE · EXFAT</span><strong id="shareUsage">—</strong><div class="bar"><i id="shareBar"></i></div></div>
+        <div class="partition"><span>Server · ext4</span><strong id="dataUsage">—</strong><div class="bar"><i id="dataBar"></i></div></div>
+        <div class="partition"><span>USB share · exfat</span><strong id="shareUsage">—</strong><div class="bar"><i id="shareBar"></i></div></div>
       </div>
       <div class="storage-note" id="storageNote">Prima di rimuovere il disco, usa sempre Espelli NVMe.</div>
       <div class="action-row">
@@ -406,11 +384,11 @@
       </section>
 
       <section class="app-view" data-view-panel="system" aria-labelledby="view-system-title">
-        <header class="view-heading" data-motion><div><p class="eyebrow">PRESTAZIONI</p><h1 id="view-system-title">Sistema</h1><p>Energia, temperatura e telemetria storica.</p></div></header>
+        <header class="view-heading"><div><h1 id="view-system-title">Sistema</h1><p>Energia, temperatura e telemetria storica.</p></div></header>
         <div class="system-tabs" role="tablist" aria-label="Vista sistema"><button class="active" type="button" data-system-tab="power">Energia</button><button type="button" data-system-tab="telemetry">Storico</button></div>
-        <div class="system-grid system-tab-power" data-motion-tabs>    <section class="panel power-panel" data-motion id="power">
+        <div class="system-grid system-tab-power"-tabs>    <section class="panel power-panel" id="power">
       <div class="panel-head">
-        <div><p class="eyebrow">CPU E CONNETTIVITÀ</p><h2>Profilo energetico</h2></div>
+        <div><h2>Profilo energetico</h2></div>
         <span class="profile-chip" id="currentProfile">—</span>
       </div>
       <div class="power-stage">
@@ -419,17 +397,17 @@
       </div>
       <div class="profile-slider">
         <input id="powerSlider" type="range" min="0" max="3" step="1" value="1" aria-label="Profilo energetico da ECO a MAX">
-        <div class="profile-labels"><span>ECO</span><span>BILANCIATO</span><span>PRESTAZIONI</span><span>MAX</span></div>
+        <div class="profile-labels"><span>ECO</span><span>Bilanciato</span><span>Prestazioni</span><span>MAX</span></div>
       </div>
       <div class="power-facts">
-        <div><span>GOVERNOR</span><strong id="powerGovernor">—</strong></div>
-        <div><span>FREQUENZA</span><strong id="powerFrequency">—</strong></div>
-        <div><span>HOTSPOT</span><strong id="powerWifi">—</strong></div>
-        <div><span>ALIMENTAZIONE</span><strong id="powerHealth">—</strong></div>
-        <div><span>ASSORBIMENTO</span><strong id="powerWatts">—</strong></div>
+        <div><span>Governor</span><strong id="powerGovernor">—</strong></div>
+        <div><span>Frequenza</span><strong id="powerFrequency">—</strong></div>
+        <div><span>Hotspot</span><strong id="powerWifi">—</strong></div>
+        <div><span>Alimentazione</span><strong id="powerHealth">—</strong></div>
+        <div><span>Assorbimento</span><strong id="powerWatts">—</strong></div>
       </div>
       <section class="monthly-energy" id="monthlyEnergy" aria-labelledby="monthlyEnergyTitle">
-        <div class="monthly-energy-head"><div><span>ENERGIA MISURATA</span><h3 id="monthlyEnergyTitle">Consumo mensile</h3></div><small id="monthlyEnergyCoverage">calcolo…</small></div>
+        <div class="monthly-energy-head"><div><span>Energia misurata</span><h3 id="monthlyEnergyTitle">Consumo mensile</h3></div><small id="monthlyEnergyCoverage">calcolo…</small></div>
         <div class="monthly-energy-grid">
           <div class="monthly-energy-current"><span id="monthlyEnergyMonth">MESE CORRENTE</span><strong id="monthlyEnergyValue">—</strong><small id="monthlyEnergyMeta">W medi e picco in calcolo…</small></div>
           <div class="monthly-energy-history" id="monthlyEnergyHistory"><div class="monthly-energy-empty">Caricamento mesi precedenti…</div></div>
@@ -443,44 +421,44 @@
       <p class="power-safety">MAX mantiene la CPU alla frequenza massima configurata sul nodo. NVMe e registrazioni restano attivi.</p>
     </section>
 
-        <section class="panel telemetry-panel" data-motion id="telemetry">
+        <section class="panel telemetry-panel" id="telemetry">
       <div class="panel-head telemetry-head">
-        <div><p class="eyebrow">TELEMETRIA</p><h2>Andamento risorse</h2></div>
+        <div><h2>Andamento risorse</h2></div>
         <div class="range-switch" role="group" aria-label="Intervallo grafici">
           <button data-range="3600" class="active" aria-pressed="true">1H</button><button data-range="21600" aria-pressed="false">6H</button><button data-range="86400" aria-pressed="false">24H</button><button data-range="604800" aria-pressed="false">7G</button><button data-range="2592000" aria-pressed="false">30G</button><button data-range="7776000" aria-pressed="false">90G</button>
         </div>
       </div>
       <div class="availability-card" id="availabilityCard">
         <div class="availability-copy">
-          <div><span>DISPONIBILITÀ</span><strong id="availabilityPercent">—</strong><small id="availabilityKnown">calcolo…</small></div>
-          <div><span>DOWNTIME</span><strong id="downtimeTotal">—</strong><small id="downtimeCount">nessun evento</small></div>
-          <div><span>ULTIMO OFFLINE</span><strong id="lastDowntime">—</strong><small id="lastDowntimeWhen">nessun downtime registrato</small></div>
+          <div><span>Disponibilità</span><strong id="availabilityPercent">—</strong><small id="availabilityKnown">calcolo…</small></div>
+          <div><span>Downtime</span><strong id="downtimeTotal">—</strong><small id="downtimeCount">nessun evento</small></div>
+          <div><span>Ultimo offline</span><strong id="lastDowntime">—</strong><small id="lastDowntimeWhen">nessun downtime registrato</small></div>
         </div>
         <div class="availability-track" id="availabilityTimeline" aria-label="Timeline disponibilità"><i class="availability-online"></i></div>
       </div>
       <div class="chart-grid">
         <article class="chart-card chart-wide">
-          <header><div><span class="chart-kicker">COMPUTE</span><strong>CPU + memoria</strong></div><div class="legend"><i class="cpu"></i>CPU <i class="ram"></i>RAM</div></header>
+          <header><div><strong>CPU + memoria</strong></div><div class="legend"><i class="cpu"></i>CPU <i class="ram"></i>RAM</div></header>
           <div class="chart-host" id="computeChart"><span class="chart-empty">Raccolta dati reali…</span></div>
           <footer><span id="cpuAverage">CPU media —</span><span id="ramAverage">RAM media —</span></footer>
         </article>
         <article class="chart-card">
-          <header><div><span class="chart-kicker">THERMAL</span><strong>Temperatura</strong></div><b id="tempPeak">—</b></header>
+          <header><div><strong>Temperatura</strong></div><b id="tempPeak">—</b></header>
           <div class="chart-host" id="temperatureChart"><span class="chart-empty">Raccolta dati…</span></div>
           <footer><span>°C</span><span id="tempAverage">media —</span></footer>
         </article>
         <article class="chart-card">
-          <header><div><span class="chart-kicker">TRAFFIC</span><strong>Rete</strong></div><b id="networkPeak">—</b></header>
+          <header><div><strong>Rete</strong></div><b id="networkPeak">—</b></header>
           <div class="chart-host" id="networkChart"><span class="chart-empty">Raccolta dati…</span></div>
           <footer><span>↓ download</span><span>↑ upload</span></footer>
         </article>
         <article class="chart-card">
-          <header><div><span class="chart-kicker">CAPACITY</span><strong>Disco NVMe</strong></div><b id="diskTrend">—</b></header>
+          <header><div><strong>Disco NVMe</strong></div><b id="diskTrend">—</b></header>
           <div class="chart-host" id="diskChart"><span class="chart-empty">Raccolta dati…</span></div>
           <footer><span>% utilizzato</span><span id="diskDelta">variazione —</span></footer>
         </article>
         <article class="chart-card">
-          <header><div><span class="chart-kicker">SENSORE ASIAIR · INGRESSO DC</span><strong>Potenza assorbita</strong></div><b id="wattPeak">—</b></header>
+          <header><div><span class="chart-kicker">Sensore ASIAIR, ingresso DC</span><strong>Potenza assorbita</strong></div><b id="wattPeak">—</b></header>
           <div class="chart-host" id="wattChart"><span class="chart-empty">Raccolta dati…</span></div>
           <footer><span id="energyMeasured">In attesa di campioni misurati</span><span id="wattAverage">media —</span></footer>
         </article>
@@ -492,8 +470,8 @@
       </section>
 
       <section class="app-view" data-view-panel="nina" aria-labelledby="view-nina-title">
-        <header class="view-heading nina-view-heading" data-motion>
-          <div><p class="eyebrow">LA SESSIONE ASTRO</p><h1 id="view-nina-title">NINA Monitor</h1><p>La sessione N.I.N.A. e la qualità delle tue acquisizioni, in un unico sguardo.</p></div>
+        <header class="view-heading nina-view-heading">
+          <div><h1 id="view-nina-title">NINA Monitor</h1><p>La sessione N.I.N.A. e la qualità delle tue acquisizioni, in un unico sguardo.</p></div>
           <div class="nina-head-actions"><a class="button secondary" href="/nina/" target="_blank" rel="noopener">Apri Monitor ↗</a></div>
         </header>
         <section class="panel nina-embedded-panel">
@@ -506,10 +484,10 @@
       </section>
 
       <section class="app-view" data-view-panel="pihole" aria-labelledby="view-pihole-title">
-        <header class="view-heading pihole-view-heading" data-motion><div><p class="eyebrow">PROTEZIONE DNS</p><h1 id="view-pihole-title">Protezione DNS</h1><p>Pi-hole e DNS cifrato. Protezione personale, in casa e fuori.</p></div><div class="pihole-head-state"><span id="piholeRemoteBadge" class="status-chip">Verifica…</span><button class="button secondary" id="piholeRefresh" type="button">Aggiorna</button></div></header>
+        <header class="view-heading pihole-view-heading"><div><h1 id="view-pihole-title">Protezione DNS</h1><p>Pi-hole e DNS cifrato. Protezione personale, in casa e fuori.</p></div><div class="pihole-head-state"><span id="piholeRemoteBadge" class="status-chip">Verifica…</span><button class="button secondary" id="piholeRefresh" type="button">Aggiorna</button></div></header>
         <div class="pihole-page-grid">
-          <section class="panel pihole-panel" data-motion id="piholePanel" aria-labelledby="piholeTitle">
-            <div class="panel-head"><div><p class="eyebrow">RETE DI CASA</p><h2 id="piholeTitle">DNS LAN e filtering</h2></div><span class="status-chip" id="piholeInstallState">Verifica…</span></div>
+          <section class="panel pihole-panel" id="piholePanel" aria-labelledby="piholeTitle">
+            <div class="panel-head"><div><h2 id="piholeTitle">DNS LAN e filtering</h2></div><span class="status-chip" id="piholeInstallState">Verifica…</span></div>
             <div class="pihole-primary">
               <div><strong id="piholeBlockingTitle">Stato in verifica</strong><small id="piholeDnsDetail">Controllo DNS e FTL…</small></div>
               <label class="pihole-switch" title="Disattiva solo il filtering: il DNS resta online"><input id="piholeToggle" type="checkbox" disabled aria-label="Attiva o disattiva il blocking Pi-hole"><span aria-hidden="true"></span><b id="piholeToggleLabel">—</b></label>
@@ -523,9 +501,9 @@
             <div class="action-row pihole-actions"><a class="button secondary" id="piholeAdminLink" href="#" target="_blank" rel="noopener">Apri Pi-hole ↗</a><button class="button secondary" id="piholeRestart" type="button" data-pihole-endpoint="/api/pihole/restart">Riavvia servizio</button><button class="button secondary" id="piholeGravityAction" type="button" data-pihole-endpoint="/api/pihole/gravity">Aggiorna Gravity</button></div>
           </section>
 
-          <section class="panel pihole-remote-panel" data-motion aria-labelledby="remoteDnsTitle">
-            <div class="panel-head"><div><p class="eyebrow">FUORI CASA</p><h2 id="remoteDnsTitle">DNS remoto</h2></div><span class="dns-live-dot" id="piholeRemoteDot" aria-hidden="true"></span></div>
-            <div class="remote-hero"><div><span>GATEWAY PUBBLICO</span><strong id="piholeRemoteHost">—</strong><small id="piholeRemoteNote">Endpoint infrastrutturale: non inserirlo nel campo DNS privato di Android.</small></div><span class="status-chip">Infrastruttura</span></div>
+          <section class="panel pihole-remote-panel" aria-labelledby="remoteDnsTitle">
+            <div class="panel-head"><div><h2 id="remoteDnsTitle">DNS remoto</h2></div><span class="dns-live-dot" id="piholeRemoteDot" aria-hidden="true"></span></div>
+            <div class="remote-hero"><div><span>Gateway pubblico</span><strong id="piholeRemoteHost">—</strong><small id="piholeRemoteNote">Endpoint infrastrutturale: non inserirlo nel campo DNS privato di Android.</small></div><span class="status-chip">Infrastruttura</span></div>
             <div class="dot-network-banner" id="piholeNetworkBanner" hidden><div><span id="piholeNetworkKicker">RETE IPV6</span><strong id="piholeNetworkTitle">Configurazione richiesta</strong><small id="piholeNetworkReason">Verifica delegazione Iliadbox…</small></div><span class="status-chip" id="piholeNetworkState">—</span></div>
             <div class="remote-protocols">
               <article><div><span>DoT</span><strong id="piholeDotState">—</strong></div><small>Android Private DNS · TCP 853</small></article>
@@ -539,22 +517,22 @@
             <div class="action-row compact remote-actions"><button class="button secondary" type="button" data-pihole-endpoint="/api/pihole/remote/test">Testa gateway</button></div>
           </section>
 
-          <section class="panel dns-devices-panel" data-motion aria-labelledby="dnsDevicesTitle">
-            <div class="panel-head devices-head"><div><p class="eyebrow">DISPOSITIVI REMOTI</p><h2 id="dnsDevicesTitle">Accessi personali</h2><small>Ogni dispositivo ha una credenziale separata. Puoi bloccarlo senza modificare gli altri.</small></div><button class="button" id="piholeAddDevice" type="button">Aggiungi dispositivo</button></div>
+          <section class="panel dns-devices-panel" aria-labelledby="dnsDevicesTitle">
+            <div class="panel-head devices-head"><div><h2 id="dnsDevicesTitle">Accessi personali</h2><small>Ogni dispositivo ha una credenziale separata. Puoi bloccarlo senza modificare gli altri.</small></div><button class="button" id="piholeAddDevice" type="button">Aggiungi dispositivo</button></div>
             <div class="device-summary"><span><b id="piholeDeviceOnline">0</b> online</span><span><b id="piholeDeviceEnabled">0</b> abilitati</span><span><b id="piholeDeviceTotal">0</b> totali</span></div>
             <div class="dns-device-list" id="piholeDeviceList"><div class="dns-device-empty"><strong>Nessun dispositivo remoto</strong><small>Aggiungi il Samsung, un iPhone, iPad o Mac e copia la configurazione una sola volta.</small></div></div>
           </section>
 
           <section class="panel dns-setup-panel" id="piholeDeviceSetup" hidden aria-labelledby="dnsSetupTitle">
-            <div class="panel-head"><div><p class="eyebrow">CONFIGURA</p><h2 id="dnsSetupTitle">Nuovo dispositivo</h2></div><button class="icon-button" id="piholeSetupClose" type="button" aria-label="Chiudi">×</button></div>
+            <div class="panel-head"><div><h2 id="dnsSetupTitle">Nuovo dispositivo</h2></div><button class="icon-button" id="piholeSetupClose" type="button" aria-label="Chiudi">×</button></div>
             <form id="piholeDeviceForm" class="dns-device-form"><label><span>Nome</span><input id="piholeDeviceName" name="name" maxlength="48" required placeholder="es. Samsung S24 Ultra" autocomplete="off"></label><label><span>Tipo</span><select id="piholeDevicePlatform" name="platform"><option value="android">Android</option><option value="ios">iPhone</option><option value="ipad">iPad</option><option value="macos">Mac</option><option value="windows">Windows</option><option value="generic">Altro</option></select></label><button class="button" type="submit">Genera accesso</button></form>
             <p class="dns-setup-note">Il nome serve solo nel tuo pannello. La credenziale reale viene generata casualmente e può essere revocata in qualsiasi momento.</p>
           </section>
 
           <section class="panel dns-detail-panel" id="piholeDeviceDetail" hidden aria-labelledby="dnsDeviceDetailTitle">
-            <div class="panel-head"><div><p class="eyebrow" id="dnsDeviceDetailPlatform">DISPOSITIVO</p><h2 id="dnsDeviceDetailTitle">Dettagli accesso</h2></div><button class="icon-button" id="piholeDetailClose" type="button" aria-label="Chiudi">×</button></div>
+            <div class="panel-head"><div><p class="eyebrow" id="dnsDeviceDetailPlatform">Dispositivo</p><h2 id="dnsDeviceDetailTitle">Dettagli accesso</h2></div><button class="icon-button" id="piholeDetailClose" type="button" aria-label="Chiudi">×</button></div>
             <div class="device-detail-status"><span id="dnsDeviceDetailState" class="status-chip">—</span><span id="dnsDeviceLastSeen">Mai connesso</span></div>
-            <div class="dns-connection-box" id="dnsDotConnection"><label for="dnsDeviceHostname">USA QUESTO SU ANDROID · Hostname DNS privato / DoT</label><div><input id="dnsDeviceHostname" readonly autocomplete="off" spellcheck="false" placeholder="DoT non ancora disponibile"><button class="button secondary" id="dnsCopyHostname" type="button">Copia</button></div><small id="dnsDotHint">Su Samsung: Impostazioni → Connessioni → Altre impostazioni → DNS privato → Nome host provider.</small></div>
+            <div class="dns-connection-box" id="dnsDotConnection"><label for="dnsDeviceHostname">Su Android: hostname DNS privato (DoT)</label><div><input id="dnsDeviceHostname" readonly autocomplete="off" spellcheck="false" placeholder="DoT non ancora disponibile"><button class="button secondary" id="dnsCopyHostname" type="button">Copia</button></div><small id="dnsDotHint">Su Samsung: Impostazioni → Connessioni → Altre impostazioni → DNS privato → Nome host provider.</small></div>
             <div class="dns-connection-box" id="dnsDohConnection"><label for="dnsDeviceDoh">URL DNS-over-HTTPS</label><div><input id="dnsDeviceDoh" readonly autocomplete="off" spellcheck="false"><button class="button secondary" id="dnsCopyDoh" type="button">Copia</button></div><small>Per Apple usa preferibilmente il profilo automatico qui sotto.</small></div>
             <div class="device-live-facts"><div><span>Ultimo IP</span><strong id="dnsDeviceIp">—</strong></div><div><span>Sessioni TLS</span><strong id="dnsDeviceConnections">0</strong></div><div><span>Query</span><strong id="dnsDeviceQueries">0</strong></div><div><span>Bloccate</span><strong id="dnsDeviceBlocked">0</strong></div></div>
             <div class="dns-install-guide" id="dnsInstallGuide"></div>
@@ -564,9 +542,9 @@
       </section>
 
       <section class="app-view" data-view-panel="advanced" aria-labelledby="view-advanced-title">
-        <header class="view-heading" data-motion><div><p class="eyebrow">AMMINISTRAZIONE</p><h1 id="view-advanced-title">Operazioni</h1><p>Servizi, connessioni e attività. Tutto il necessario per prenderti cura del nodo.</p></div></header>
+        <header class="view-heading"><div><h1 id="view-advanced-title">Operazioni</h1><p>Servizi, connessioni e attività. Tutto il necessario per prenderti cura del nodo.</p></div></header>
         <div class="advanced-grid">    <section class="panel" id="services">
-      <div class="panel-head"><div><p class="eyebrow">OPERATIVITÀ</p><h2>Servizi</h2></div><span id="serviceCount">—</span></div>
+      <div class="panel-head"><div><h2>Servizi</h2></div><span id="serviceCount">—</span></div>
       <div class="service-grid" id="serviceGrid"></div>
       <div class="action-row compact">
         <button class="button secondary" data-action="restart_livevault" data-confirm="Tieni premuto per riavviare LiveVault">Riavvia LiveVault</button>
@@ -575,17 +553,17 @@
     </section>
 
     <section class="panel" id="interfaces">
-      <div class="panel-head"><div><p class="eyebrow">WORKSPACE</p><h2>Interfacce</h2></div></div>
+      <div class="panel-head"><div><h2>Interfacce</h2></div></div>
       <div class="link-grid" id="interfaceGrid"></div>
     </section>
 
     <section class="panel" id="containers">
-      <div class="panel-head"><div><p class="eyebrow">RUNTIME</p><h2>Container</h2></div><span id="containerCount">—</span></div>
+      <div class="panel-head"><div><h2>Container</h2></div><span id="containerCount">—</span></div>
       <div class="container-list" id="containerList"></div>
     </section>
 
     <section class="panel" id="activity">
-      <div class="panel-head"><div><p class="eyebrow">REGISTRO OPERAZIONI</p><h2>Attività recenti</h2></div></div>
+      <div class="panel-head"><div><h2>Attività recenti</h2></div></div>
       <div class="timeline" id="actionLog"><p class="muted">Nessuna azione manuale registrata.</p></div>
       <div class="danger-zone">
         <div><strong>Riavvio del server</strong><small>LiveVault tornerà online automaticamente.</small></div>
@@ -628,21 +606,18 @@
 
   <div class="toast" id="toast" role="status"></div>
   <div class="login-gate" id="loginGate" hidden>
-    <form class="login-card" id="loginForm" data-motion>
+    <form class="login-card" id="loginForm">
       <div class="login-story">
-        <div class="login-brand"><div class="mark" aria-hidden="true"><svg viewBox="0 0 28 28" fill="none" aria-hidden="true"><circle cx="14" cy="14" r="8" stroke="currentColor" stroke-width="1.5"/><ellipse cx="14" cy="14" rx="13" ry="4.5" transform="rotate(-32 14 14)" stroke="currentColor" stroke-width="1.2"/><circle cx="22" cy="6.5" r="2" fill="currentColor"/></svg></div><small>OPENASTRO / CONTROL</small></div>
-        <p class="eyebrow">IL TUO NODO PERSONALE</p>
-        <h1>Il tuo centro<br>di <em>controllo.</em></h1>
-        <p>Il tuo server, le tue acquisizioni e le tue librerie. Tutto connesso, in uno spazio personale.</p>
-        <svg class="login-orbit" data-orbit viewBox="0 0 150 100" fill="none" aria-hidden="true"><ellipse cx="75" cy="50" rx="68" ry="25" transform="rotate(-18 75 50)" stroke="currentColor"/><ellipse cx="75" cy="50" rx="27" ry="45" transform="rotate(-18 75 50)" stroke="currentColor"/><circle cx="134" cy="27" r="4" fill="#63b8ff"/></svg>
+        <div class="login-brand"><div class="mark" aria-hidden="true"><svg viewBox="0 0 28 28" fill="none" aria-hidden="true"><circle cx="14" cy="14" r="8" stroke="currentColor" stroke-width="1.5"/><ellipse cx="14" cy="14" rx="13" ry="4.5" transform="rotate(-32 14 14)" stroke="currentColor" stroke-width="1.2"/><circle cx="22" cy="6.5" r="2" fill="currentColor"/></svg></div></div>
+                <h1>OpenAstro Control</h1>
+        <p>Stato del nodo, archivio e librerie del server di casa.</p>
+        
       </div>
       <div class="login-form-fields">
-        <p>Bentornato.</p>
-        <label>UTENTE<input id="loginUsername" name="username" autocomplete="username" value="admin" required></label>
-        <label>PASSWORD<input id="loginPassword" name="password" type="password" autocomplete="current-password" required></label>
-        <button class="button login-submit" type="submit">Accedi al tuo spazio <span aria-hidden="true">→</span></button>
+        <label>Utente<input id="loginUsername" name="username" autocomplete="username" value="admin" required></label>
+        <label>Password<input id="loginPassword" name="password" type="password" autocomplete="current-password" required></label>
+        <button class="button login-submit" type="submit">Accedi</button>
         <div class="login-error" id="loginError" role="alert"></div>
-        <small class="login-footnote">Accesso personale · Sessione protetta</small>
       </div>
     </form>
   </div>
@@ -653,6 +628,5 @@
   <script src="/app.js?v=3.5.1-apps2" defer></script>
   <script src="/torrent-manager.js?v=3.5.1-torrent5" defer></script>
   <script src="/media-upload.js?v=3.5.1" defer></script>
-  <script src="/motion.js?v=3.5.1" defer></script>
 </body>
 </html>

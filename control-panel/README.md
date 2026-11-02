@@ -4,6 +4,19 @@ PWA mobile-first per monitorare e controllare il server ASIAIR/Debian. Il serviz
 vive sulla memoria interna, resta accessibile senza NVMe e viene pubblicato solo
 in HTTPS tramite Tailscale Funnel, con autenticazione applicativa.
 
+## Interfaccia grafite (2026-11-02)
+
+Sostituisce il tema cosmic glass. I colori blu e viola dell'interfaccia sono
+diventati grigi della stessa luminosità; restano verde, ambra e rosso, che
+indicano uno stato. Tolti: sfocature, aloni radiali, orbite SVG, sopratitoli
+maiuscoli ripetuti sopra i titoli, «Bentornato.», freccia nel pulsante di
+accesso e `motion.js`. Cache del service worker `openastro-control-v3.5.1-graphite`.
+Gli ID usati da `app.js` restano; le orbite ancora alimentate dagli script
+(`#powerGlyph`) sono solo nascoste.
+Rilascio: copia di `index.html`, `sw.js` e dei cinque CSS in
+`/opt/openastro-control/static` senza riavvio; la copia precedente è in
+`/home/astro/rollback/control-static-20261102`. Rollback: ricopiare quei file.
+
 ## Interfaccia 3.5.1 (verificata, 2026-09-30)
 
 `static/index.html` e `static/app.css`: evoluzione cosmic glass dell’originale,

@@ -39,7 +39,7 @@ def test_product_ui_rendering_regressions_are_pinned():
     assert has_css(tuning, '.cr-pulse-access-span.tipjar {fill: url(#lv-pulse-tipjar)')
     assert has_css(tuning, '.cr-pulse-rec-span{fill:var(--recording)')
     assert has_css(tuning, '.cr-pulse-missed-span {fill: url(#lv-pulse-missed)')
-    assert has_css(tuning, '--recording: #ff5c5c')
+    assert has_css(tuning, '--recording:#ff5a4f')
 
     html = (ROOT / 'app/static/index.html').read_text(encoding='utf-8')
     assert "createElement('link')" not in workspace
