@@ -418,9 +418,17 @@ def list_posts(query):
         # With the NVMe away only what the buffer holds can be shown.
         conditions.append("NOT EXISTS (SELECT 1 FROM media m WHERE m.post_id=p.id AND m.location='media')")
     if query.get('q'):
-        conditions.append('(p.caption LIKE ? ESCAPE \'\\\' OR r.username LIKE ? ESCAPE \'\\\')')
-        term = str(query['q'])[:150].replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
-        args += ['%' + term + '%'] * 2
+        # Captions, the profile name and the comments with their authors.
+        conditions.append('''(p.caption LIKE ? ESCAPE '\\' OR r.username LIKE ? ESCAPE '\\' OR EXISTS (SELECT 1 FROM comments k
+            WHERE k.post_id=p.id AND (k.text LIKE ? ESCAPE '\\' OR k.username LIKE ? ESCAPE '\\')))''')
+        # The text keeps a leading @ for captions and comments; names are matched without it.
+        escape = lambda value: value.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
+        text = '%' + escape(str(query['q'])[:150]) + '%'
+        name = '%' + escape(str(query['q'])[:150].lstrip('@')) + '%'
+        args += [text, name, text, name]
+    for key, op in [('from', '>='), ('to', '<')]:
+        if str(query.get(key, '')).isdigit():
+            conditions.append(f'p.published_at{op}?'); args.append(int(query[key]))
     older = query.get('order') == 'oldest'
     if query.get('cursor'):
         stamp, ident = map(int, query['cursor'].split(':'))

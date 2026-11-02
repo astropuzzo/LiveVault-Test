@@ -129,7 +129,9 @@
             <button type="button" data-kind="story" aria-pressed="false"><svg aria-hidden="true"><use href="#i-story"/></svg>Storie<span class="count"></span></button>
           </div>
           <div class="filters">
-            <label class="search"><span class="sr-only">Cerca nelle didascalie</span><svg aria-hidden="true"><use href="#i-search"/></svg><input id="search" type="search" placeholder="Cerca" autocomplete="off"></label>
+            <label class="search"><span class="sr-only">Cerca nelle didascalie</span><svg aria-hidden="true"><use href="#i-search"/></svg><input id="search" type="search" placeholder="Cerca testo, @utente, #tag" autocomplete="off"></label>
+            <label class="sr-only" for="monthFilter">Mese di pubblicazione</label>
+            <input id="monthFilter" type="month" title="Mese di pubblicazione">
             <label class="sr-only" for="sortOrder">Ordine</label>
             <select id="sortOrder"><option value="newest">Più recenti</option><option value="oldest">Meno recenti</option></select>
             <button id="selectToggle" class="button" type="button" aria-pressed="false">Seleziona</button>

@@ -346,6 +346,10 @@ input[readonly]{background:var(--raised)}
 .story-links a{position:absolute;min-width:24px;min-height:24px;border-radius:8px}
 .story-links a:hover,.story-links a:focus-visible{box-shadow:0 0 0 2px #fff,0 0 0 4px rgba(0,0,0,.5)}
 .viewer-scroll{flex:1;min-height:0;overflow:auto}
+.tag-link{display:inline;min-height:0;padding:0;font:inherit;font-weight:600;color:var(--text)}
+.mention{position:relative;display:inline-block;white-space:normal}
+.mention .menu{top:24px;left:0}
+#monthFilter{width:auto;min-width:0}
 .viewer-caption{padding:16px;white-space:pre-wrap;overflow-wrap:anywhere}
 .viewer-comments{list-style:none;margin:0;padding:0 16px 16px;display:grid;gap:14px}
 .viewer-comments li{position:relative;display:grid;grid-template-columns:32px minmax(0,1fr);gap:10px;align-items:start}

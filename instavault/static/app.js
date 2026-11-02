@@ -417,6 +417,7 @@
     if (state.query) params.set('q', state.query);
     if (state.view === 'favorites') params.set('favorite', '1');
     if (state.view === 'deleted') params.set('deleted', '1');
+    if (state.range) { params.set('from', state.range[0]); params.set('to', state.range[1]); }
     params.set('order', state.order);
     if (!reset && state.cursor) params.set('cursor', state.cursor);
     try {
@@ -450,6 +451,14 @@
 
   let menu = null;
   function closeMenu() { menu?.remove(); menu = null; }
+  // Captions: #tags search the archive, @mentions open the same menu as a commenter.
+  function linkify(text) {
+    return esc(text).replace(/(^|[\s(])([#@])([\p{L}\p{N}_.]{1,60})/gu, (all, lead, mark, word) => {
+      const clean = word.replace(/\.+$/, ''); const rest = word.slice(clean.length);
+      return mark === '#' ? `${lead}<button class="link tag-link" type="button" data-search="#${clean}">#${clean}</button>${rest}`
+        : `${lead}<span class="mention"><button class="link tag-link" type="button" data-mention="${clean}" aria-haspopup="menu">@${clean}</button></span>${rest}`;
+    });
+  }
   function commenterMenu(button, comment) {
     closeMenu(); if (!comment) return;
     menu = document.createElement('div'); menu.className = 'menu'; menu.setAttribute('role', 'menu');
@@ -457,10 +466,10 @@
       <a role="menuitem" href="https://www.instagram.com/${encodeURIComponent(comment.username)}/" target="_blank" rel="noopener noreferrer">${icon('external')}Apri su Instagram</a>
       ${comment.profile_id ? `<button role="menuitem" type="button" data-profile="${Number(comment.profile_id)}">${icon('grid')}Apri nell’archivio</button>`
         : `<button role="menuitem" type="button" data-add-profile="${esc(comment.username)}">${icon('plus')}Aggiungi all’archivio</button>`}`;
-    button.closest('li').append(menu); menu.querySelector('[role=menuitem]').focus();
+    (button.closest('li, .mention') || button.parentElement).append(menu); menu.querySelector('[role=menuitem]').focus();
   }
   document.addEventListener('keydown', event => { if (event.key === 'Escape' && menu) { event.stopPropagation(); const back = menu.closest('li')?.querySelector('[data-commenter]'); closeMenu(); back?.focus(); } }, true);
-  document.addEventListener('click', event => { if (menu && !event.target.closest('.menu, [data-commenter]')) closeMenu(); });
+  document.addEventListener('click', event => { if (menu && !event.target.closest('.menu, [data-commenter], [data-mention]')) closeMenu(); });
   function openRemove(profile) {
     if (!profile) return;
     returnFocus = document.activeElement; $('#removeId').value = profile.id; $('#removeError').textContent = '';
@@ -557,7 +566,7 @@
     const result = await api('/api/posts/' + Number(id)); state.post = result; state.slide = slide < 0 ? result.media.length - 1 : slide;
     $('#postAuthor').innerHTML = `${avatar(result, 'small')}<div><button class="link name" type="button" data-profile="${Number(result.profile_id)}">${esc(result.username)}</button>${result.full_name ? `<small>${esc(result.full_name)}</small>` : ''}</div>`;
     bindImageFallback($('#postAuthor'));
-    $('#postCaption').textContent = result.caption || result.collection || '';
+    $('#postCaption').innerHTML = linkify(result.caption || result.collection || '');
     $('#postCaption').hidden = !(result.caption || result.collection);
     $('#postMetadata').textContent = `pubblicato ${day(result.published_at)} · archiviato ${day(result.archived_at)}${result.deleted_at ? ` · cancellato su Instagram ${day(result.deleted_at)}` : ''}`;
     // A collab or repost shows once and names every archived profile that has it.
@@ -688,6 +697,8 @@
     if (Object.hasOwn(data, 'collection')) { playCollection(data.collection).catch(report); return; }
     if (data.stories) { playStories(data.stories).catch(report); return; }
     if (data.removeProfile) { openRemove(profileById(data.removeProfile)); return; }
+    if (data.search) { searchFor(data.search); return; }
+    if (data.mention) { const known = (state.summary?.profiles || []).find(p => p.username === data.mention); commenterMenu(target, {username: data.mention, full_name: '', profile_id: known?.id || null}); return; }
     if (data.commenter) { commenterMenu(target, state.post?.comments?.[Number(data.commenter)]); return; }
     if (data.addProfile) { $('#postDialog').close(); closeMenu(); openProfile(null, data.addProfile); return; }
     if (Object.hasOwn(data, 'kind')) {
@@ -695,6 +706,16 @@
       loadPosts(true).catch(report);
     }
   });
+  // A month narrows the grid to the posts published in it.
+  $('#monthFilter').addEventListener('change', event => {
+    const [year, month] = event.target.value.split('-').map(Number);
+    state.range = year ? [Date.UTC(year, month - 1, 1) / 1000, Date.UTC(year, month, 1) / 1000] : null;
+    loadPosts(true).catch(report);
+  });
+  function searchFor(text) {
+    if ($('#postDialog').open) $('#postDialog').close();
+    state.profile = ''; setView('archive'); $('#search').value = text; state.query = text; loadPosts(true).catch(report);
+  }
   $('#search').addEventListener('input', event => { clearTimeout(searchTimer); const value = event.target.value; searchTimer = setTimeout(() => { state.query = value.trim(); loadPosts(true).catch(report); }, 250); });
   $('#sortOrder').addEventListener('change', event => { state.order = event.target.value; loadPosts(true).catch(report); });
   $('#loadMore').addEventListener('click', event => busy(event.currentTarget, () => loadPosts().catch(report)));

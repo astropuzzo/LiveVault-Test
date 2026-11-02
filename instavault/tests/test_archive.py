@@ -776,3 +776,16 @@ def test_an_account_problem_is_remembered_until_a_good_check_or_new_login(vault)
     assert sync.note_account_problem(SomethingElse()) is None
     store.set_setting('session_problem', None)
     assert 'session_problem' not in store.settings()
+
+
+def test_search_finds_comments_mentions_and_a_month(vault):
+    profile = vault['profile']
+    with store.db() as c:
+        for code, caption, stamp in [('A', 'Tramonto #mare con @virginia', 1767225600), ('B', 'Montagna', 1769904000)]:
+            post = c.execute("INSERT INTO posts(profile_id,external_key,shortcode,kind,caption,published_at,archived_at,complete) VALUES (?,?,?,'post',?,?,1,1)",
+                             (profile, 'post:' + code, code, caption, stamp)).lastrowid
+        c.execute("INSERT INTO comments(post_id,external_id,username,text,created_at) VALUES (?,?,?,?,1)", (post, '1', 'gfd_photo', 'Che neve'))
+    codes = lambda **q: [p['shortcode'] for p in store.list_posts(q)['items']]
+    assert codes(q='#mare') == ['A'] and codes(q='@virginia') == ['A']
+    assert codes(q='neve') == ['B'] and codes(q='@gfd_photo') == ['B']
+    assert codes(**{'from': '1769904000', 'to': '1772323200'}) == ['B']
