@@ -215,7 +215,7 @@ def test_sdk_schema_error_cannot_look_like_an_empty_reel_collection(setup):
         client.last_json = {'status': 'fail'}
         return [], None
     client.user_clips_paginated_v1 = broken
-    with pytest.raises(ValueError, match='pagina valida'):
+    with pytest.raises(ValueError, match='pagina incompleta'):
         next(profile.get_reels())
 
 
@@ -258,3 +258,11 @@ def test_story_links_keep_stickers_and_mentions_with_their_place():
     assert [(f['label'], f['url']) for f in found] == [('Shop', 'https://shop.example/a'),
                                                         ('@virginia.c', 'https://www.instagram.com/virginia.c/')]
     assert (found[0]['y'], found[1]['x'], found[1]['w']) == (0.8, 0.2, 0.3)
+
+
+def test_tagged_feed_numeric_page_id_continues_to_the_next_page(setup):
+    client, _, profile = setup
+    client.usertag_medias_paginated_v1 = lambda userid, amount, end_cursor: client._page('tagged', userid, amount, end_cursor)
+    client.pages['tagged', ''] = ([item('T1')], 3674965766175925989)
+    client.pages['tagged', '3674965766175925989'] = ([item('T2')], '')
+    assert [m.shortcode for m in profile.get_tagged()] == ['T1', 'T2']

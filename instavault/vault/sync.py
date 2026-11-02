@@ -213,7 +213,7 @@ def error_message(exc):
         return ('Instagram ha rifiutato questa richiesta' + (f' («{detail}»)' if detail else '') +
                 '. Di solito è un blocco temporaneo: riprovo tra un’ora, quello già scaricato resta.')
     if isinstance(exc, ValueError) and detail:
-        return detail + ' Riprovo tra un’ora.'
+        return detail + ' Riprovo tra un’ora; il resto dell’archivio è aggiornato.'
     return f'Errore imprevisto ({name}' + (f': {detail}' if detail else '') + '). Riprovo tra un’ora.'
 
 
@@ -592,7 +592,7 @@ class Worker:
                 section('reel', 'Reel', lambda: self.stream(profile, remote.get_reels(), 'reel', ident))
             tagged = getattr(remote, 'get_tagged', None) or getattr(remote, 'get_tagged_posts', None)
             if profile.get('tagged') and value.context.is_logged_in and tagged:
-                section('tagged', 'Taggati', lambda: self.stream(profile, tagged(), 'tagged', ident))
+                section('tagged', 'Post in cui è taggato', lambda: self.stream(profile, tagged(), 'tagged', ident))
             if profile['stories'] and value.context.is_logged_in:
                 def stories():
                     live = set()
@@ -620,8 +620,8 @@ class Worker:
                             failed += 1
                             print(f'InstaVault: @{profile["username"]} highlight «{highlight.title}»: {type(exc).__name__}: {instagram_detail(exc)}', flush=True)
                     if failed:
-                        warnings.append('In evidenza: ' + plural(failed, 'raccolta non scaricata', 'raccolte non scaricate')
-                                        + ', riprovo al prossimo controllo')
+                        warnings.append('In evidenza: Instagram non ha mandato ' + plural(failed, 'raccolta', 'raccolte')
+                                        + ', le riprendo al prossimo controllo')
                 section('highlight', 'In evidenza', highlights)
             posts_seen = self.seen.get('post')
             if posts_seen and posts_seen['fresh'] and posts_seen['oldest'] and 'post' in successful:

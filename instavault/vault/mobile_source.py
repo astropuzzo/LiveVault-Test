@@ -183,13 +183,16 @@ class MediaIterator:
                                                   'tagged': 'usertag_medias_paginated_v1'}[self.kind])
             items, next_cursor = method(str(self.profile.userid), amount=PAGE_SIZE,
                                         end_cursor=previous_cursor)
+            # The tagged feed sends its next page id as a number.
+            if isinstance(next_cursor, int) and not isinstance(next_cursor, bool):
+                next_cursor = str(next_cursor)
             if not isinstance(items, list) or (next_cursor is not None and not isinstance(next_cursor, str)):
-                raise ValueError('Instagram non ha restituito una pagina valida.')
+                raise ValueError('Instagram ha mandato una pagina incompleta.')
             # The pinned SDK can return an empty page after catching a response
             # schema error. That must not close an archive as successfully empty.
             payload = getattr(self.source.client, 'last_json', None)
             if not items and isinstance(payload, dict) and 'items' not in payload:
-                raise ValueError('Instagram non ha restituito una pagina valida.')
+                raise ValueError('Instagram ha mandato una pagina incompleta.')
             if not self._started and not items and self.kind == 'post' and self.profile.media_count > 0:
                 raise ValueError('Instagram non ha restituito i post del profilo.')
             if next_cursor and (not items or next_cursor == previous_cursor):
