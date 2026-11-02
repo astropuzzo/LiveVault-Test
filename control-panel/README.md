@@ -16,7 +16,7 @@ i browser non riusino il tema vecchio dalla cache.
 Correzione 2026-11-02 sera: tolta una condizione `@supports` rimasta senza
 parentesi (rompeva le regole sotto i 720 px) e barre mobili a sfondo pieno;
 versione CSS `3.5.1-graphite3`. In LiveVault la barra in basso del telefono
-mostra di nuovo le sezioni.
+mostra di nuovo le sezioni (`style.css?v=3.6.1`).
 Gli ID usati da `app.js` restano; le orbite ancora alimentate dagli script
 (`#powerGlyph`) sono solo nascoste.
 Rilascio: copia di `index.html`, `sw.js` e dei cinque CSS in
