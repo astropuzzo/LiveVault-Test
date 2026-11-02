@@ -168,6 +168,37 @@ def resume():
         raise RuntimeError('; '.join(errors))
 
 
+def buffer():
+    """Restart the paused containers on the internal buffer once the NVMe is gone.
+
+    The bind source then is an empty placeholder on the eMMC under the
+    mountpoint, hidden whenever the NVMe is mounted. Without the marker the
+    app writes new downloads to its eMMC buffer and never touches /media.
+    """
+    if os.path.ismount(NVME):
+        raise RuntimeError('NVMe still mounted: buffer mode refused')
+    if MEDIA.is_symlink():
+        raise RuntimeError('InstaVault placeholder must not be a symlink')
+    MEDIA.mkdir(mode=0o755, exist_ok=True)
+    if (MEDIA / MARKER).exists():
+        raise RuntimeError('Placeholder carries the media marker')
+    recorded = set(read_state())
+    errors = []
+    for container in sorted(recorded):
+        try:
+            item = inspect_container(container)
+            if item is None:
+                recorded.discard(container)
+            elif not item['State']['Running']:
+                command('docker', 'start', container, timeout=30)
+        except (RuntimeError, subprocess.TimeoutExpired) as error:
+            errors.append(f'{container[:12]}: {error}')
+    # Still recorded, so resume restarts them onto the NVMe bind.
+    save_state(recorded)
+    if errors:
+        raise RuntimeError('; '.join(errors))
+
+
 def main(action):
     if os.geteuid() != 0:
         raise RuntimeError('Root required')
@@ -181,8 +212,10 @@ def main(action):
             pause()
         elif action == 'resume':
             resume()
+        elif action == 'buffer':
+            buffer()
         else:
-            raise RuntimeError('Use pause or resume')
+            raise RuntimeError('Use pause, resume or buffer')
 
 
 if __name__ == '__main__':

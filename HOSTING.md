@@ -177,7 +177,7 @@ Own persistent paths:
 - `/mnt/livevault-nvme/instavault-media` (NVMe UUID
   `5fe2d0f6-b485-44e9-8e26-31fb0d217db2`) at `/media`: originals and thumbnails.
   The marker `.instavault-volume` must read `instavault-v1`; without it the app
-  pauses downloads and serves no media.
+  runs in buffer mode (below) and serves no media from the NVMe.
 - `/data/instavault-secrets` read-only at `/run/secrets`: `auth.json` copied from
   `/etc/openastro-control-auth.json` (same login as Control) and `secret`
   (random bytes that sign cookies and encrypt the Instagram session). Never
@@ -201,6 +201,22 @@ before an eject (stops containers labelled `openastro.module=instavault`, state
 in `/var/lib/openastro-instavault`) and `resume` after attach (checks the UUID
 and the marker, then restarts the container on a fresh bind). The helper must be
 installed before the container first starts.
+
+Buffer mode, the same idea as LiveVault's buffer: once the NVMe is unmounted
+(normal eject, or failover after a fault), `nvme-handoff.py` calls the helper's
+`buffer` action. It refuses while the NVMe is still mounted, creates
+`/mnt/livevault-nvme/instavault-media` as an empty root-owned placeholder on the
+eMMC (hidden whenever the NVMe is mounted, never carries the marker) and starts
+again only the containers that `pause` stopped. Without the marker the app
+writes new downloads to `/data/instavault/buffer` on the eMMC and records
+`media.location='buffer'`. It stops at 2 GiB of real disk usage or when the
+eMMC has less than 3 GiB free, whichever comes first; the job then waits in the
+queue. Files already on the NVMe count as archived, so nothing is fetched
+twice, and the grid lists only posts held in the buffer. After attach, `resume`
+restarts the container onto the NVMe and the worker moves the buffer across:
+copy, fsync, SHA-256 check, rename, database update, then delete the eMMC copy.
+A different file already at the same NVMe path is never overwritten; both copies
+stay and the row keeps pointing at the buffer.
 
 Host installation is `scripts/instavault-host-install.sh`, run once as root from
 a bundle folder on the node. It is idempotent and stops at the first error:

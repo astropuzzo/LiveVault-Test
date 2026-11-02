@@ -270,7 +270,8 @@ class Handler(BaseHTTPRequestHandler):
                     WHERE state IN ('running','queued','cancel_requested') ORDER BY j.id LIMIT 100''')]
             return self.send_json({'counts': counts, 'profiles': store.profile_rows(), 'jobs': jobs,
                                    'storage': store.storage_status(), 'instagram': sync.session_status(), 'settings': store.settings(),
-                                   'worker': {'alive': bool(sync.worker.thread and sync.worker.thread.is_alive()), 'leader': sync.worker.leader}})
+                                   'worker': {'alive': bool(sync.worker.thread and sync.worker.thread.is_alive()), 'leader': sync.worker.leader,
+                                              'draining': sync.worker.draining}})
         if path == '/api/posts':
             return self.send_json(store.list_posts(query))
         match = re.fullmatch(r'/api/posts/(\d+)', path)
@@ -298,7 +299,7 @@ class Handler(BaseHTTPRequestHandler):
             if not row:
                 raise HTTPError(404, 'File non trovato.')
             relative = (row['thumb'] or row['path']) if match[2] else row['path']
-            return self.file(store.safe_file(relative), cache=True, download=query.get('download') == '1')
+            return self.file(store.safe_file(relative, row['location']), cache=True, download=query.get('download') == '1')
         if path == '/' or path == '/index.html':
             return self.file(store.STATIC / 'index.html')
         if path in {'/app.js', '/app.css', '/icon.svg'}:

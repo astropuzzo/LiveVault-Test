@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import os
@@ -28,6 +29,35 @@ class Paused(Exception):
 
 class StorageFull(Exception):
     pass
+
+
+class ModeChanged(Paused):
+    pass
+
+
+class BufferFull(StorageFull):
+    pass
+
+
+def file_digest(path):
+    digest = hashlib.sha256()
+    with path.open('rb') as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b''):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def fsync_directory(path):
+    if hasattr(os, 'O_DIRECTORY'):
+        fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+
+
+def poster_of(relative):
+    return relative.rsplit('.', 1)[0] + '.poster.jpg'
 
 
 def session_status():
@@ -116,6 +146,10 @@ def import_cookies(body):
 
 def error_message(exc):
     name = type(exc).__name__
+    if isinstance(exc, BufferFull):
+        return 'Buffer interno pieno: il download riprende quando ricolleghi l’NVMe.'
+    if isinstance(exc, ModeChanged):
+        return 'Disco cambiato durante il download: riprende da solo.'
     if isinstance(exc, StorageFull):
         return 'Spazio riservato esaurito. Aumenta la quota o libera spazio sul disco.'
     if isinstance(exc, Paused):
@@ -134,34 +168,56 @@ class Worker:
         self.thread = None
         self.current = None
         self.leader = False
+        # Where the running job writes: 'media' (NVMe) or 'buffer' (eMMC).
+        self.mode = 'media'
+        self.full = False
+        self.draining = False
+        self.drain_after = 0
 
     def start(self):
         self.thread = threading.Thread(target=self.loop, name='instavault-sync', daemon=True)
         self.thread.start()
 
     def check(self, job_id):
-        if STOP.is_set() or not store.storage_ready():
+        if STOP.is_set():
             raise Paused()
+        if store.mode() != self.mode:
+            raise ModeChanged()
         with store.db() as c:
             state = c.execute('SELECT state FROM jobs WHERE id=?', (job_id,)).fetchone()
         if not state or state['state'] != 'running':
             raise Paused()
 
-    def capacity(self, added=0):
-        state = store.storage_status()
+    def capacity(self, added=0, buffered=None):
         config = store.settings()
-        if not state['ready']:
-            raise Paused()
-        if state['used_bytes'] + added >= state['quota_bytes'] or state['free_bytes'] < config['min_free_gb'] * 1024**3:
+        with store.db() as c:
+            used = c.execute('SELECT COALESCE(SUM(size),0) FROM media').fetchone()[0]
+        if used + added >= config['quota_gb'] * 1024**3:
+            raise StorageFull()
+        if self.mode == 'buffer':
+            if store.buffer_full(added, buffered):
+                raise BufferFull()
+        elif shutil.disk_usage(store.MEDIA).free < config['min_free_gb'] * 1024**3:
             raise StorageFull()
 
+    def stored(self, asset):
+        # The NVMe archive counts as present while the disk is away, so the
+        # buffer never fills up with copies of what is already archived.
+        if asset['location'] == 'media' and self.mode == 'buffer':
+            return True
+        path = store.root(asset['location']) / asset['path']
+        return path.is_file() and path.stat().st_size == asset['size']
+
     def download(self, url, relative, job_id):
-        self.check(job_id); self.capacity()
+        self.check(job_id)
+        # Measured once per file: walking the buffer for every chunk is too slow.
+        buffered = store.buffer_usage() if self.mode == 'buffer' else None
+        self.capacity(0, buffered)
         parsed = urlparse(url)
         host = parsed.hostname or ''
         if parsed.scheme != 'https' or not any(host == h or host.endswith('.' + h) for h in ['cdninstagram.com', 'fbcdn.net', 'instagram.com']):
             raise ValueError('Media host non valido')
-        target = store.MEDIA / relative
+        target = store.root(self.mode) / relative
         target.parent.mkdir(parents=True, exist_ok=True)
         partial = target.with_suffix(target.suffix + '.instavault-part')
         digest = hashlib.sha256(); size = 0
@@ -172,7 +228,7 @@ class Worker:
                     for chunk in response.iter_content(256 * 1024):
                         if not chunk:
                             continue
-                        self.check(job_id); self.capacity(size)
+                        self.check(job_id); self.capacity(size, buffered)
                         f.write(chunk); digest.update(chunk); size += len(chunk)
                     f.flush(); os.fsync(f.fileno())
             self.check(job_id)
@@ -191,7 +247,7 @@ class Worker:
                 image = ImageOps.exif_transpose(image)
                 image.thumbnail((600, 750))
                 image.convert('RGB').save(target, 'JPEG', quality=83, optimize=True)
-                return str(target.relative_to(store.MEDIA)), image.width, image.height
+                return str(target.relative_to(store.root(self.mode)).as_posix()), image.width, image.height
         except (OSError, ValueError):
             return '', 0, 0
 
@@ -204,7 +260,7 @@ class Worker:
         with store.db() as c:
             existing = c.execute('SELECT * FROM posts WHERE profile_id=? AND external_key=?', (profile['id'], external)).fetchone()
             assets = list(c.execute('SELECT * FROM media WHERE post_id=?', (existing['id'],))) if existing else []
-            if existing and existing['complete'] and assets and all((store.MEDIA / a['path']).is_file() for a in assets):
+            if existing and existing['complete'] and assets and all(self.stored(a) for a in assets):
                 if kind == 'reel' and existing['kind'] != 'reel':
                     c.execute("UPDATE posts SET kind='reel' WHERE id=?", (existing['id'],))
                 return False
@@ -230,22 +286,20 @@ class Worker:
             self.check(job_id)
             relative = f'{profile["id"]}/{shortcode}/{index + 1}.{"mp4" if video else "jpg"}'
             previous = next((a for a in assets if a['position'] == index), None)
-            if previous and previous['path'] == relative:
-                previous_path = store.MEDIA / relative
-                if previous_path.is_file() and previous_path.stat().st_size == previous['size']:
-                    continue
+            if previous and previous['path'] == relative and self.stored(previous):
+                continue
             size, digest = self.download(url, relative, job_id)
-            image_path = store.MEDIA / relative
+            image_path = store.root(self.mode) / relative
             if video:
-                poster_relative = f'{profile["id"]}/{shortcode}/{index + 1}.poster.jpg'
+                poster_relative = poster_of(relative)
                 self.download(poster, poster_relative, job_id)
-                image_path = store.MEDIA / poster_relative
+                image_path = store.root(self.mode) / poster_relative
             thumb, width, height = self.thumbnail(image_path)
             with store.db() as c:
-                c.execute('''INSERT INTO media(post_id,position,kind,path,thumb,size,sha256,width,height) VALUES (?,?,?,?,?,?,?,?,?)
+                c.execute('''INSERT INTO media(post_id,position,kind,path,thumb,size,sha256,width,height,location) VALUES (?,?,?,?,?,?,?,?,?,?)
                     ON CONFLICT(post_id,position) DO UPDATE SET kind=excluded.kind,path=excluded.path,thumb=excluded.thumb,
-                    size=excluded.size,sha256=excluded.sha256,width=excluded.width,height=excluded.height''',
-                          (ident, index, 'video' if video else 'image', relative, thumb, size, digest, width, height))
+                    size=excluded.size,sha256=excluded.sha256,width=excluded.width,height=excluded.height,location=excluded.location''',
+                          (ident, index, 'video' if video else 'image', relative, thumb, size, digest, width, height, self.mode))
         with store.db() as c:
             c.execute('UPDATE posts SET complete=1,caption=?,kind=? WHERE id=?', (caption, kind, ident))
             c.execute('UPDATE jobs SET downloaded=downloaded+1 WHERE id=?', (job_id,))
@@ -289,6 +343,7 @@ class Worker:
             profile = dict(c.execute('SELECT * FROM profiles WHERE id=?', (job['profile_id'],)).fetchone())
             c.execute("UPDATE profiles SET status='syncing',error='' WHERE id=?", (profile['id'],))
         self.current = ident
+        self.mode = store.mode()
         more = False
         value = None
         try:
@@ -298,7 +353,7 @@ class Worker:
             with store.db() as c:
                 c.execute('UPDATE profiles SET full_name=?,biography=?,instagram_id=? WHERE id=?',
                           (remote.full_name, remote.biography, str(remote.userid), profile['id']))
-            if not profile['avatar']:
+            if not profile['avatar'] and self.mode == 'media':
                 avatar = f'{profile["id"]}/avatar.jpg'
                 self.download(remote.profile_pic_url, avatar, ident)
                 with store.db() as c:
@@ -324,15 +379,86 @@ class Worker:
                           (store.now(), store.now() + (60 if more else profile['interval_hours'] * 3600), profile['id']))
         except Exception as exc:
             message = error_message(exc)
-            state = 'cancelled' if isinstance(exc, Paused) else 'error'
+            if isinstance(exc, BufferFull):
+                self.full = True
+            # A restart or a disk change interrupted the job, not the user:
+            # it goes back in the queue and runs again by itself.
+            retry = STOP.is_set() or isinstance(exc, (ModeChanged, BufferFull))
             with store.db() as c:
-                c.execute('UPDATE jobs SET state=?,finished_at=?,error=? WHERE id=?', (state, store.now(), message, ident))
-                c.execute('UPDATE profiles SET status=?,error=?,next_sync=? WHERE id=?',
-                          (state, message, store.now() + 12 * 3600, profile['id']))
+                if retry and c.execute("UPDATE jobs SET state='queued',started_at=NULL,message=? WHERE id=? AND state='running'",
+                                       (message, ident)).rowcount:
+                    c.execute("UPDATE profiles SET status='queued',error='' WHERE id=?", (profile['id'],))
+                else:
+                    state = 'cancelled' if isinstance(exc, Paused) else 'error'
+                    c.execute('UPDATE jobs SET state=?,finished_at=?,error=? WHERE id=?', (state, store.now(), message, ident))
+                    c.execute('UPDATE profiles SET status=?,error=?,next_sync=? WHERE id=?',
+                              (state, message, store.now() + 12 * 3600, profile['id']))
         finally:
             if value:
                 value.close()
             self.current = None
+
+    def copy_verified(self, source, target):
+        """True once target holds the same bytes as source. A different file
+        already at target is never overwritten: both copies stay."""
+        digest = file_digest(source)
+        if target.exists():
+            return target.is_file() and file_digest(target) == digest
+        target.parent.mkdir(parents=True, exist_ok=True)
+        temporary = target.with_name(target.name + '.instavault-copy')
+        try:
+            with source.open('rb') as src, temporary.open('wb') as dst:
+                shutil.copyfileobj(src, dst, 1024 * 1024)
+                dst.flush(); os.fsync(dst.fileno())
+            if file_digest(temporary) != digest:
+                return False
+            temporary.replace(target)
+            fsync_directory(target.parent)
+            return True
+        finally:
+            temporary.unlink(missing_ok=True)
+
+    def drain(self):
+        """Moves what the buffer holds onto the NVMe, like LiveVault's
+        merge_buffer: verified copy first, then the database, then delete."""
+        source = store.buffer_root()
+        files = sorted(p for p in source.rglob('*') if p.is_file()) if source.is_dir() else []
+        if not files or time.time() < self.drain_after:
+            return
+        # Files left behind (a conflict, a full NVMe) are tried again later,
+        # not hashed again every 20 seconds.
+        self.drain_after = time.time() + 600
+        self.draining = True
+        try:
+            reserve = store.settings()['min_free_gb'] * 1024**3
+            copied = set()
+            for path in files:
+                if STOP.is_set() or not store.storage_ready():
+                    return
+                if path.name.endswith(store.SKIPPED_SUFFIXES):
+                    path.unlink(missing_ok=True)  # an interrupted download, never recorded
+                    continue
+                if shutil.disk_usage(store.MEDIA).free - path.stat().st_size < reserve:
+                    break
+                relative = path.relative_to(source).as_posix()
+                if self.copy_verified(path, store.MEDIA / relative):
+                    copied.add(relative)
+            if not store.storage_ready():
+                return
+            with store.db() as c:
+                for row in c.execute("SELECT id,path,thumb FROM media WHERE location='buffer'").fetchall():
+                    names = {row['path'], row['thumb'], poster_of(row['path'])} - {''}
+                    if row['path'] in copied and all(n in copied or not (source / n).exists() for n in names):
+                        c.execute("UPDATE media SET location='media' WHERE id=?", (row['id'],))
+                waiting = {n for r in c.execute("SELECT path,thumb FROM media WHERE location='buffer'")
+                           for n in (r['path'], r['thumb'], poster_of(r['path']))}
+            for relative in copied - waiting:
+                (source / relative).unlink(missing_ok=True)
+            for folder in sorted((p for p in source.rglob('*') if p.is_dir()), reverse=True):
+                with contextlib.suppress(OSError):
+                    folder.rmdir()
+        finally:
+            self.draining = False
 
     def recover_abandoned(self):
         # Only the process holding the download lease may recover old work.
@@ -357,7 +483,13 @@ class Worker:
                         self.recover_abandoned()
                     except BlockingIOError:
                         WAKE.wait(5); WAKE.clear(); continue
-                if store.storage_ready():
+                mode = store.mode()
+                if mode == 'media':
+                    self.full = False
+                    self.drain()
+                elif not self.full and store.buffer_full():
+                    self.full = True
+                if mode == 'media' or not self.full:
                     if store.settings()['automatic']:
                         with store.db() as c:
                             due = list(c.execute('SELECT id FROM profiles WHERE enabled=1 AND next_sync<=?', (store.now(),)))

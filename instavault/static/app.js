@@ -72,16 +72,19 @@
   }
   function renderStorage(storage) {
     const used = bytes(storage.used_bytes);
-    const note = storage.ready ? `Limite ${bytes(storage.quota_bytes)} · ${bytes(storage.free_bytes)} liberi sul disco` : 'NVMe non collegato · download in pausa';
+    const note = storage.ready ? `Limite ${bytes(storage.quota_bytes)} · ${bytes(storage.free_bytes)} liberi sul disco`
+      : `NVMe scollegato · buffer ${bytes(storage.buffer_bytes)} di ${bytes(storage.buffer_limit_bytes)}`;
     $$('[data-storage-used]').forEach(element => { element.textContent = used; });
     $$('[data-storage-sentence]').forEach(element => { element.textContent = `${used} usati`; });
     $$('[data-storage-note]').forEach(element => { element.textContent = note; });
     $$('[data-storage-meter]').forEach(element => { element.value = storage.quota_bytes ? Math.min(100, (storage.used_bytes / storage.quota_bytes) * 100) : 0; });
   }
   function renderNotice(summary) {
-    const {profiles = [], storage = {}, instagram = {}} = summary; const notice = $('#notice');
+    const {profiles = [], storage = {}, instagram = {}, worker = {}} = summary; const notice = $('#notice');
     const failing = profiles.find(p => p.enabled && p.error);
-    if (!storage.ready) notice.innerHTML = 'NVMe non collegato: i download sono in pausa e riprendono quando torna disponibile.';
+    if (storage.buffer_full) notice.innerHTML = 'NVMe scollegato e buffer interno pieno: i download riprendono quando ricolleghi l’NVMe.';
+    else if (!storage.ready) notice.innerHTML = `NVMe scollegato: i nuovi download vanno nel buffer interno (${bytes(storage.buffer_bytes)} di ${bytes(storage.buffer_limit_bytes)}). Quando ricolleghi l’NVMe passano sul disco e torna visibile tutto l’archivio.`;
+    else if (worker.draining) notice.innerHTML = 'Sposto sull’NVMe i download salvati nel buffer interno.';
     else if (!instagram.configured && profiles.length) notice.innerHTML = 'Instagram chiede l’accesso per scaricare quasi tutti i profili. <a href="#settings" data-view="settings">Collega l’account</a>';
     else if (failing) notice.innerHTML = `<b>@${esc(failing.username)}</b>: ${esc(failing.error)} <a href="#settings" data-view="settings">Impostazioni</a>`;
     else { notice.hidden = true; return; }
@@ -89,12 +92,14 @@
   }
   function renderSummary() {
     const summary = state.summary; if (!summary) return;
-    const {profiles = [], jobs = [], storage = {}, instagram = {}, settings = {}, counts = {}} = summary;
+    const {profiles = [], jobs = [], storage = {}, instagram = {}, settings = {}, counts = {}, worker = {}} = summary;
     $('#navCount').textContent = counts.posts ? number(counts.posts) : '';
     $('#activityDot').hidden = !jobs.length;
     renderStorage(storage);
     const running = jobs.some(j => j.state === 'running');
-    if (!storage.ready) setSyncStatus('NVMe scollegato', 'off');
+    if (storage.buffer_full) setSyncStatus('Buffer pieno', 'off');
+    else if (!storage.ready) setSyncStatus(running ? 'Download nel buffer' : 'NVMe scollegato', running ? 'live' : 'wait');
+    else if (worker.draining) setSyncStatus('Trasferimento su NVMe', 'live');
     else if (running) setSyncStatus('Download in corso', 'live');
     else if (jobs.length) setSyncStatus(`${number(jobs.length)} in coda`, 'wait');
     else if (!settings.automatic) setSyncStatus('Automatico in pausa', 'off');
@@ -115,8 +120,11 @@
     try {
       const summary = await api('/api/summary');
       if (!state.authenticated) return;
-      const count = Number(summary.counts?.posts || 0); const changed = state.lastCount !== null && state.lastCount !== count;
-      state.summary = summary; state.lastCount = count; renderSummary();
+      const count = Number(summary.counts?.posts || 0);
+      // The grid depends on the disk too: offline it lists only what the buffer holds.
+      const mode = summary.storage?.mode;
+      const changed = (state.lastCount !== null && state.lastCount !== count) || (state.lastMode !== undefined && state.lastMode !== mode);
+      state.summary = summary; state.lastCount = count; state.lastMode = mode; renderSummary();
       if (state.view === 'activity') await loadJobs();
       if (!initial && changed && ['archive', 'favorites'].includes(state.view)) await loadPosts(true);
     } finally { refreshBusy = false; }

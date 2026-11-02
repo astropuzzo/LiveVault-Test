@@ -23,7 +23,9 @@ applicazione Coolify separata dal modulo `instavault/`, dominio proprio
 `https://instavault.tailf2871c.ts.net/` da un nodo Tailscale dedicato
 (`instavault-tailscale.service`); il Funnel `openastro` non cambia. Media su NVMe
 in `/mnt/livevault-nvme/instavault-media`, con pausa e ripresa dentro
-`nvme-handoff.py`. Percorsi, installazione host, limiti e rollback in
+`nvme-handoff.py`. Senza NVMe scarica in un buffer eMMC da 2 GiB
+(`/data/instavault/buffer`, azione `buffer` dell'helper) e al ricollegamento
+sposta tutto sull'NVMe con verifica SHA-256. Percorsi, installazione host, limiti e rollback in
 [HOSTING.md](HOSTING.md#instavault). Il download reale richiede una sessione
 Instagram collegata dall'utente nelle Impostazioni di InstaVault.
 

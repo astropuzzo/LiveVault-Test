@@ -557,6 +557,7 @@ def emergency_failover(reason='NVMe fault'):
                 set_service(GPT_HARNESS_SERVICE, 'start')
 
         publish('buffer', limit_bytes=BUFFER_LIMIT_BYTES, reason=str(reason)[:1200])
+        instavault_storage('buffer', strict=False)
         print('Failover automatico completato: registrazioni sul buffer interno eMMC da 4 GiB; Docker resta online.')
     except Exception:
         # Never claim NVMe mode after a physical fault. If the eMMC bind exists,
@@ -625,6 +626,7 @@ def main(action):
         media_indexer_was_active = service_active('minidlna.service')
         torrent_was_active = service_active('openastro-torrent.service')
         if action == 'eject' and previous == 'buffer' and not os.path.ismount(NVME):
+            instavault_storage('buffer', strict=False)
             print('NVMe già espulso; buffer interno attivo.')
             return
         if action == 'attach' and previous == 'nvme':
@@ -683,6 +685,9 @@ def main(action):
                     if harness_was_active:
                         set_service(GPT_HARNESS_SERVICE, 'start')
                 publish('buffer', limit_bytes=BUFFER_LIMIT_BYTES)
+                # InstaVault restarts on its own eMMC buffer only now that the
+                # NVMe is unmounted, so its bind can never pin the device.
+                instavault_storage('buffer', strict=False)
                 print('NVMe espulso: puoi scollegarlo. Docker online; GPT Harness riavviato su eMMC; registrazione su buffer interno massimo 4 GB.')
             else:
                 # Close all buffer writers before copying. Same stable paths and

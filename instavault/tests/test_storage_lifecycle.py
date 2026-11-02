@@ -228,3 +228,30 @@ def test_state_publish_is_private_atomic_and_deduplicated(helper, monkeypatch, t
     }
     assert stat.S_IMODE(helper.STATE_PATH.stat().st_mode) == 0o600
     assert not list(tmp_path.glob('.containers-*'))
+
+
+def test_buffer_refuses_while_the_nvme_is_mounted(lifecycle, monkeypatch):
+    module, docker = lifecycle
+    docker.add(FIRST, running=False)
+    docker.recorded = [FIRST]
+    monkeypatch.setattr(module.os.path, 'ismount', lambda path: True)
+    with pytest.raises(RuntimeError, match='still mounted'):
+        module.buffer()
+    assert docker.mutations() == []
+
+
+def test_buffer_starts_only_recorded_containers_on_an_empty_placeholder(lifecycle, monkeypatch, tmp_path):
+    module, docker = lifecycle
+    mountpoint = tmp_path / 'unmounted-nvme'
+    mountpoint.mkdir()
+    monkeypatch.setattr(module, 'NVME', mountpoint)
+    monkeypatch.setattr(module, 'MEDIA', mountpoint / 'instavault-media')
+    docker.add(FIRST, running=False)
+    docker.add(SECOND, running=False)
+    docker.recorded = [FIRST, REMOVED]
+    module.buffer()
+    assert docker.mutations() == [('docker', 'start', FIRST)]
+    assert not docker.containers[SECOND]['running']
+    assert module.MEDIA.is_dir() and not (module.MEDIA / module.MARKER).exists()
+    # Kept on record, so resume moves it back onto the NVMe bind.
+    assert docker.recorded == [FIRST]
