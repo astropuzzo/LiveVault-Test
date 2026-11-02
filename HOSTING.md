@@ -232,10 +232,31 @@ script, Tailscale user, unit, login and Funnel, Control tile, then the
 
 Limits: Instagram refuses anonymous profile reads from this node (2026-11-02,
 public profile reported as not found), so downloads need a session connected in
-InstaVault Settings, by login with optional two-factor code or by pasting the
-browser's `sessionid` cookie (also accepted: the whole Cookie header, JSON or
-Netscape files). Password logins from this node often hit Instagram's
-checkpoint, so the cookie is the reliable way. Profiles are checked every 10
+InstaVault Settings, by password or by pasting the browser's `sessionid` cookie
+(also accepted: the whole Cookie header, JSON or Netscape files). The password
+login (`vault/login.py`, since 2026-11-02) goes through instagrapi, the mobile
+API client, because instaloader's web login cannot answer Instagram's
+checkpoint: when Instagram sends a code by email or SMS, or asks for two-factor,
+Settings shows a code field (5 minutes). The attempt runs in a background
+thread: POST `/api/instagram/login` returns immediately with an attempt ID;
+GET `/api/instagram/login/status` reports running, code required, connected or
+failed, and POST `/api/instagram/login/cancel` cancels the attempt. All routes
+require the InstaVault session; mutations also require CSRF. Codes are tied to
+the attempt ID. Passwords and codes are never saved or logged. Password login
+uses the identity authenticated by the mobile client. Browser cookies are
+verified separately using the authenticated web edit form (with a web
+current-user fallback), not Instaloader's legacy GraphQL `test_login`, which
+conflates API/rate-limit failures with rejected sessions. Cookie imports accept
+raw or URI-encoded sessionid, request Cookie headers, Netscape and JSON exports;
+they obtain a real CSRF cookie and require an authenticated account response.
+Throttling, verification requests, unreachable endpoints and rejected sessions
+produce distinct safe errors. No public profile lookup proves authentication.
+The phone identity (no authorization or password) is kept encrypted in
+`/data/instavault/instagram-device.enc`. Manual checkpoints must be completed in
+the official Instagram app/browser. Failed password logins log only the
+exception class and an allowlisted step name, never tokens. Validation 2026-11-02: 111 automated tests pass locally; the first live user login
+and ensuing download remain to be verified with the user’s actual Instagram session.
+Profiles are checked every 10
 minutes by default (choice from 10 minutes to 24 hours) with a random offset of
 up to 30 seconds. Instagram can rate-limit or flag accounts that download a lot.
 

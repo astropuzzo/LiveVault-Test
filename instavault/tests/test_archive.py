@@ -285,16 +285,22 @@ class FakeLoader:
         return 'owner_account'
     def save_session(self):
         return self.cookies
+    def close(self):
+        pass
 
 
 @pytest.mark.parametrize('pasted', ['12345678%3AAbCdEfGhIjKlMn%3A17%3AAYfZ',
                                     'Cookie: mid=abc; sessionid=12345678%3AAbCdEfGhIjKlMn%3A17%3AAYfZ; rur="x"'])
 def test_a_pasted_sessionid_alone_connects_the_account(vault, monkeypatch, pasted):
-    fake = FakeLoader(); monkeypatch.setattr(sync, 'loader', lambda: fake)
+    from vault import instagram_session
+    fake = FakeLoader(); monkeypatch.setattr(sync, 'new_loader', lambda: fake)
+    def checked(cookies):
+        return 'owner_account', dict(cookies, csrftoken='real-instagram-csrf')
+    monkeypatch.setattr(instagram_session, 'validate_web_session', checked)
     result = sync.import_cookies({'cookies': pasted})
     assert result == {'configured': True, 'username': 'owner_account', 'checked_at': result['checked_at']}
     assert fake.cookies['sessionid'] == '12345678%3AAbCdEfGhIjKlMn%3A17%3AAYfZ'
-    assert len(fake.cookies['csrftoken']) == 32 and fake.cookies['ds_user_id'] == '12345678'
+    assert fake.cookies['csrftoken'] == 'real-instagram-csrf' and fake.cookies['ds_user_id'] == '12345678'
 
 
 def test_login_errors_say_what_instagram_asked_for():
@@ -327,3 +333,167 @@ def test_interval_below_ten_minutes_is_refused(http, vault):
     root, client = http
     assert client.post(root + f'/api/profiles/{vault["profile"]}', json={'interval_minutes': 5}).status_code == 400
     assert client.post(root + f'/api/profiles/{vault["profile"]}', json={'interval_minutes': 30}).status_code == 200
+
+
+from vault import login
+from instagrapi.exceptions import ChallengeRequired
+from instagrapi.mixins.challenge import ChallengeChoice
+
+
+class FakeClient:
+    """Calls the code handler the way instagrapi does during a checked login."""
+    def __init__(self):
+        self.challenge_code_handler = None
+        self.password = None
+        self.last_json = {'step_name': 'verify_email'}
+        self.authorization_data = {}
+        self.cookie_dict = {}
+        self.sessionid = None
+    def set_settings(self, settings):
+        self.saved = settings
+    def get_settings(self):
+        return {'uuids': {'uuid': 'same-phone'}, 'cookies': {'mid': 'm', 'sessionid': self.sessionid or ''},
+                'authorization_data': self.authorization_data}
+    def login(self, username, password, verification_code=''):
+        self.username = username
+        self.password = password
+        code = self.challenge_code_handler(username, ChallengeChoice.EMAIL)
+        if not code:
+            raise ChallengeRequired('Challenge code required. Provide it via challenge_code_handler')
+        assert code == '123456'
+        self.sessionid = '42%3AAbCdEfGhIjKlMnOpQrStUv%3A17%3AAYfZ'
+        self.cookie_dict = {'csrftoken': 'real-csrf', 'ds_user_id': '42'}
+        self.authorization_data = {'ds_user_id': '42', 'sessionid': self.sessionid}
+        return True
+
+
+@pytest.fixture
+def instagram(vault, monkeypatch):
+    fake = FakeLoader()
+    monkeypatch.setattr(sync, 'loader', lambda: fake)
+    monkeypatch.setattr(login, 'Client', FakeClient)
+    monkeypatch.setattr(login, 'CURRENT', None)
+    monkeypatch.setattr(login, 'ATTEMPTS', __import__('collections').deque())
+    return fake
+
+
+def wait_login(result, wanted=None):
+    import time
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline:
+        result = login.password_status(result['attempt_id'])
+        if result['state'] == wanted or (wanted is None and result['state'] != 'running'):
+            return result
+        time.sleep(0.01)
+    pytest.fail('Login test did not complete')
+
+
+def test_an_emailed_code_completes_the_login_from_the_phone(instagram):
+    first = wait_login(login.password_login({'username': 'owner_account', 'password': 'secret-pass'}), 'code_required')
+    assert first['channel'] == 'email'
+    result = wait_login(login.password_login({'code': '123456', 'attempt_id': first['attempt_id']}), 'done')
+    assert result['configured'] and result['username'] == 'owner_account'
+    saved = [security.decrypt_json((store.DATA / name).read_bytes()) for name in ['instagram.enc', 'instagram-device.enc']]
+    assert 'secret-pass' not in json.dumps(saved)
+    assert saved[0]['cookies']['ds_user_id'] == '42' and saved[0]['verified_via'] == 'mobile_login'
+    assert saved[1]['uuids'] == {'uuid': 'same-phone'} and not saved[1]['authorization_data']
+    assert 'sessionid' not in saved[1]['cookies']
+
+
+def test_a_wrong_code_ends_the_attempt_with_a_clear_message(instagram):
+    first = wait_login(login.password_login({'username': 'owner_account', 'password': 'secret-pass'}), 'code_required')
+    result = wait_login(login.password_login({'code': '999999', 'attempt_id': first['attempt_id']}), 'error')
+    assert 'non ha accettato il codice' in result['error']
+    with pytest.raises(ValueError, match='scaduto'):
+        login.password_login({'code': '123456', 'attempt_id': first['attempt_id']})
+
+
+def test_a_code_that_never_arrives_does_not_hang_the_login(instagram, monkeypatch):
+    monkeypatch.setattr(login, 'CODE_WAIT', 0.2)
+    first = login.password_login({'username': 'owner_account', 'password': 'secret-pass'})
+    assert login.CURRENT.done.wait(5)
+    assert 'non è arrivato in tempo' in login.password_status(first['attempt_id'])['error']
+
+
+def test_password_request_returns_while_instagram_is_waiting(instagram):
+    import time
+    start = time.monotonic()
+    first = login.password_login({'username': 'owner_account', 'password': 'secret-pass'})
+    assert time.monotonic() - start < 1
+    wait_login(first, 'code_required')
+    login.cancel(first['attempt_id'])
+    assert login.CURRENT.done.wait(5)
+    assert not (store.DATA / 'instagram.enc').exists()
+
+
+def test_a_stale_attempt_cannot_submit_a_code(instagram):
+    first = wait_login(login.password_login({'username': 'owner_account', 'password': 'secret-pass'}), 'code_required')
+    with pytest.raises(ValueError, match='scaduto'):
+        login.password_login({'code': '123456', 'attempt_id': 'other-attempt'})
+    login.cancel(first['attempt_id'])
+    assert login.CURRENT.done.wait(5)
+
+
+def test_cookie_connection_does_not_call_legacy_graphql(vault, monkeypatch):
+    from vault import instagram_session
+    value = FakeLoader()
+    value.test_login = lambda: pytest.fail('Legacy GraphQL must not gate valid web cookies')
+    monkeypatch.setattr(sync, 'new_loader', lambda: value)
+    monkeypatch.setattr(instagram_session, 'validate_web_session', lambda cookies: ('owner_account', dict(cookies, csrftoken='real-csrf')))
+    result = sync.import_cookies({'cookies': '42%3AAbCdEfGhIjKlMnOpQrStUv%3A17%3AAYfZ'})
+    assert result['configured'] and result['username'] == 'owner_account'
+
+
+def test_login_http_request_is_nonblocking_and_status_is_private(http, instagram):
+    import time
+    root, client = http
+    start = time.monotonic()
+    response = client.post(root + '/api/instagram/login', json={'username': 'owner_account', 'password': 'secret-pass'})
+    assert response.status_code == 200 and time.monotonic() - start < 1
+    result = wait_login(response.json(), 'code_required')
+    status_url = root + '/api/instagram/login/status?attempt_id=' + result['attempt_id']
+    assert requests.get(status_url).status_code == 401
+    assert client.get(status_url).json()['channel'] == 'email'
+    assert requests.post(root + '/api/instagram/login/cancel', cookies=client.cookies, json={'attempt_id':result['attempt_id']}).status_code == 403
+    assert client.post(root + '/api/instagram/login/cancel', json={'attempt_id':result['attempt_id']}).status_code == 200
+    assert login.CURRENT.done.wait(5)
+
+
+def test_mobile_totp_completes_without_legacy_graphql(instagram, monkeypatch):
+    from instagrapi.exceptions import TwoFactorRequired
+    class TotpClient(FakeClient):
+        def login(self, username, password, verification_code=''):
+            self.username = username
+            if not verification_code:
+                raise TwoFactorRequired('Verification code required')
+            assert verification_code == '123456'
+            self.sessionid = '42%3AAbCdEfGhIjKlMnOpQrStUv%3A17%3AAYfZ'
+            self.cookie_dict = {'csrftoken':'real-csrf','ds_user_id':'42'}
+            self.authorization_data = {'ds_user_id':'42','sessionid':self.sessionid}
+            return True
+    monkeypatch.setattr(login, 'Client', TotpClient)
+    first = wait_login(login.password_login({'username':'owner_account','password':'secret-pass'}), 'code_required')
+    assert first['channel'] == 'two_factor'
+    result = wait_login(login.password_login({'attempt_id':first['attempt_id'],'code':'123456'}), 'done')
+    assert result['configured']
+
+
+def test_mobile_header_only_login_obtains_real_web_csrf(instagram, monkeypatch):
+    from vault import instagram_session
+    class HeaderOnlyClient(FakeClient):
+        def login(self, username, password, verification_code=''):
+            self.username = username
+            self.sessionid = '42%3AAbCdEfGhIjKlMnOpQrStUv%3A17%3AAYfZ'
+            self.cookie_dict = {}
+            self.authorization_data = {'ds_user_id':'42','sessionid':self.sessionid}
+            return True
+    called = []
+    def web_check(cookies):
+        called.append(dict(cookies))
+        return 'owner_account', dict(cookies, csrftoken='real-web-csrf')
+    monkeypatch.setattr(login, 'Client', HeaderOnlyClient)
+    monkeypatch.setattr(instagram_session, 'validate_web_session', web_check)
+    result = wait_login(login.password_login({'username':'owner_account','password':'secret-pass'}), 'done')
+    assert result['configured'] and len(called)==1 and 'csrftoken' not in called[0]
+    saved = security.decrypt_json((store.DATA/'instagram.enc').read_bytes())
+    assert saved['cookies']['csrftoken']=='real-web-csrf'

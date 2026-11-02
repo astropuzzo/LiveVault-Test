@@ -147,7 +147,7 @@
         <section class="card" aria-labelledby="igTitle">
           <h2 id="igTitle">Account Instagram</h2>
           <p id="instagramState" class="card-state">Non collegato</p>
-          <p class="help">Serve per i profili che Instagram mostra solo dopo l’accesso, per le storie e per i contenuti in evidenza. La password viene usata una volta per accedere e non viene salvata: sul server resta solo la sessione, cifrata.</p>
+          <p class="help">Serve per i profili che Instagram mostra solo dopo l’accesso, per le storie e per i contenuti in evidenza. La password viene usata una volta per accedere e non viene salvata: sul server resta solo la sessione, cifrata. Se Instagram chiede di confermare che sei tu, qui compare il campo per il codice che ti manda via email o SMS.</p>
           <p class="help">Instagram può limitare gli account che scaricano molti contenuti. Se ne hai uno, usa un account secondario.</p>
           <form id="instagramLogin" class="form">
             <label for="igUsername">Username Instagram</label>
@@ -159,7 +159,7 @@
               <input id="igCode" inputmode="numeric" autocomplete="one-time-code">
               <button id="resetTwoFactor" class="link" type="button">Ricomincia l’accesso</button>
             </div>
-            <p id="igError" class="form-error" role="alert"></p>
+            <div id="loginProgress" hidden role="status"><p id="loginProgressText">Connessione a Instagram in corso…</p><button id="cancelInstagramLogin" type="button" class="button small">Annulla tentativo</button></div><p id="igError" class="form-error" role="alert"></p>
             <div class="form-actions">
               <button class="button primary" type="submit">Collega account</button>
               <button id="disconnectInstagram" class="button" type="button" hidden>Scollega</button>

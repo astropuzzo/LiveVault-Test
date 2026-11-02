@@ -22,7 +22,6 @@ from . import store, security
 WAKE = threading.Event()
 STOP = threading.Event()
 SESSION_LOCK = threading.Lock()
-PENDING_LOGIN = None
 
 
 class Paused(Exception):
@@ -76,10 +75,15 @@ def session_status():
         return {'configured': False, 'username': '', 'checked_at': None}
 
 
-def loader():
+def new_loader():
     value = instaloader.Instaloader(quiet=True, sleep=True, max_connection_attempts=1,
                                    request_timeout=20, fatal_status_codes=[401, 403, 429])
     value.context.error = lambda *a, **k: None
+    return value
+
+
+def loader():
+    value = new_loader()
     path = store.DATA / 'instagram.enc'
     if path.exists():
         item = security.decrypt_json(path.read_bytes())
@@ -87,11 +91,20 @@ def loader():
     return value
 
 
-def save_session(value):
-    account = value.test_login()
-    if not account:
-        raise ValueError('Instagram non ha accettato la sessione. Ricopia sessionid dal browser in cui sei collegato, o accedi di nuovo.')
-    content = security.encrypt_json({'username': account, 'cookies': value.save_session(), 'checked_at': store.now()})
+def save_session(value, verified_identity=None, verified_via='web_session'):
+    from .instagram_session import validate_web_session
+    cookies = value.save_session()
+    # A mobile login is already authenticated by the mobile client. Browser
+    # cookies must be verified on a browser endpoint, never the legacy GraphQL.
+    if verified_identity and cookies.get('csrftoken'):
+        account = store.username(verified_identity)
+    else:
+        account, cookies = validate_web_session(cookies)
+        if verified_identity and account.lower() != verified_identity.lower():
+            raise ValueError('La sessione restituita da Instagram appartiene a un altro account.')
+    value.load_session(account, cookies)
+    content = security.encrypt_json({'username': account, 'cookies': cookies,
+                                    'checked_at': store.now(), 'verified_via': verified_via})
     temporary = store.DATA / 'instagram.enc.tmp'
     with temporary.open('wb') as f:
         os.chmod(temporary, 0o600); f.write(content); f.flush(); os.fsync(f.fileno())
@@ -100,74 +113,16 @@ def save_session(value):
     return session_status()
 
 
-def instagram_login(body):
-    global PENDING_LOGIN
-    with SESSION_LOCK:
-        if body.get('code'):
-            if not PENDING_LOGIN or PENDING_LOGIN[1] < time.time() - 300:
-                raise ValueError('Il tentativo è scaduto. Ripeti l’accesso.')
-            value = PENDING_LOGIN[0]
-            value.two_factor_login(str(body['code']).strip())
-        else:
-            value = instaloader.Instaloader(quiet=True, max_connection_attempts=1, request_timeout=20)
-            value.context.error = lambda *a, **k: None
-            try:
-                value.login(store.username(body.get('username', '')), str(body.get('password', ''))[:1000])
-            except instaloader.TwoFactorAuthRequiredException:
-                PENDING_LOGIN = (value, time.time())
-                return {'two_factor': True}
-        result = save_session(value)
-        PENDING_LOGIN = None
-        return result
-
-
 def import_cookies(body):
-    # The account name comes from Instagram itself in save_session.
-    account = store.username(body['username']) if body.get('username') else 'instavault'
-    source = str(body.get('cookies', ''))[:100000].strip()
-    text = source.removeprefix('Cookie:').strip()
-    cookies = {}
+    from .instagram_session import parse_cookies, validate_web_session
+    cookies = parse_cookies(body.get('cookies', ''))
+    account, cookies = validate_web_session(cookies)
+    value = new_loader()
     try:
-        item = json.loads(source)
-        if isinstance(item, list):
-            for cookie in item:
-                domain = str(cookie.get('domain', '')).lstrip('.')
-                if domain == 'instagram.com' or domain.endswith('.instagram.com'):
-                    cookies[str(cookie['name'])] = str(cookie['value'])
-        elif isinstance(item, dict):
-            cookies = {str(k): str(v) for k, v in item.items() if isinstance(v, str)}
-    except json.JSONDecodeError:
-        lines = text.splitlines()
-        if len(lines) == 1 and '\t' not in text and 'sessionid=' in text:
-            # The Cookie request header copied from the browser: name=value; name=value
-            for part in text.split(';'):
-                name, _, value = part.strip().partition('=')
-                cookies[name] = value
-            lines = []
-        elif len(lines) == 1 and re.fullmatch(r'[A-Za-z0-9%:_.-]{20,400}', text):
-            # Only the value of the sessionid cookie.
-            cookies['sessionid'] = text
-            lines = []
-        for line in lines:
-            line = line.removeprefix('#HttpOnly_')
-            if line.startswith('#') or not line.strip():
-                continue
-            columns = line.split('\t')
-            domain = columns[0].lstrip('.')
-            if len(columns) == 7 and (domain == 'instagram.com' or domain.endswith('.instagram.com')):
-                cookies[columns[5]] = columns[6]
-    if not cookies.get('sessionid'):
-        raise ValueError('Non trovo sessionid: incolla il suo valore, la riga Cookie o i cookie in formato JSON o Netscape.')
-    cookies = {k: v for k, v in cookies.items() if k in {'sessionid', 'csrftoken', 'ds_user_id', 'mid', 'ig_did', 'rur'}}
-    # instaloader needs a csrftoken; Instagram checks only that header and
-    # cookie match, so a fresh one works when only sessionid was pasted.
-    cookies.setdefault('csrftoken', secrets.token_hex(16))
-    owner = cookies['sessionid'].split('%3A', 1)[0]
-    if owner.isdigit():
-        cookies.setdefault('ds_user_id', owner)
-    value = loader()
-    value.load_session(account, cookies)
-    return save_session(value)
+        value.load_session(account, cookies)
+        return save_session(value, verified_identity=account)
+    finally:
+        value.close()
 
 
 def login_message(exc):

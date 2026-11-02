@@ -17,8 +17,9 @@
     return title ? text[0].toUpperCase() + text.slice(1) : text;
   };
   const stateNames = {queued: 'In coda', running: 'In corso', syncing: 'In corso', done: 'Completato', ready: 'Aggiornato', error: 'Da verificare', cancelled: 'Interrotto', cancel_requested: 'In arresto', paused: 'In pausa'};
-  const state = {authenticated: false, csrf: '', view: 'archive', summary: null, profile: '', kind: '', query: '', order: 'newest', cursor: null, posts: [], loadSeq: 0, loading: false, post: null, slide: 0, pending2fa: false, lastCount: null};
+  const state = {authenticated: false, csrf: '', view: 'archive', summary: null, profile: '', kind: '', query: '', order: 'newest', cursor: null, posts: [], loadSeq: 0, loading: false, post: null, slide: 0, pendingCode: false, lastCount: null};
   let toastTimer, searchTimer, refreshBusy = false, returnFocus = null;
+  let loginAttemptId = null, loginPollGeneration = 0;
 
   function applyTheme(value) {
     if (value === 'light' || value === 'dark') document.documentElement.dataset.theme = value;
@@ -32,12 +33,13 @@
     clearTimeout(toastTimer); toastTimer = setTimeout(() => { element.hidden = true; }, 5000);
   }
   function showLogin() {
+    ++loginPollGeneration; loginAttemptId = null;
     state.authenticated = false; state.csrf = ''; state.summary = null; state.posts = []; state.lastCount = null;
     if ($('#postDialog').open) $('#postDialog').close();
     if ($('#profileDialog').open) $('#profileDialog').close();
     ['mediaGrid', 'tray', 'profilesList', 'jobsList', 'profileHeader', 'postAuthor', 'postCaption', 'postMetadata'].forEach(id => $('#' + id).replaceChildren());
     ['igPassword', 'igCode', 'cookieText', 'loginPassword'].forEach(id => { $('#' + id).value = ''; });
-    state.pending2fa = false; $('#twoFactorBox').hidden = true;
+    state.pendingCode = false; $('#twoFactorBox').hidden = true;
     $('#appShell').hidden = true; $('#loginGate').hidden = false; document.title = 'Accedi · InstaVault';
   }
   async function api(path, options = {}) {
@@ -382,30 +384,65 @@
     busy(event.submitter, async () => { try { await api('/api/settings', {method: 'POST', body: JSON.stringify(body)}); toast('Impostazioni salvate'); await refreshSummary(); } catch (error) { report(error); } });
   });
   $('#themeSelect').addEventListener('change', event => { const value = event.target.value; applyTheme(value); try { if (value) localStorage.setItem(THEME_KEY, value); else localStorage.removeItem(THEME_KEY); } catch { /* the choice still applies to this visit */ } });
+  const codeSentTo = {
+    email: 'Instagram ha mandato un codice alla tua email. Scrivilo qui sotto entro 5 minuti.',
+    sms: 'Instagram ha mandato un codice via SMS. Scrivilo qui sotto entro 5 minuti.',
+    two_factor: 'Scrivi il codice dell’autenticazione a due fattori.',
+  };
+  function resetInstagramLogin() {
+    state.pendingCode = false; $('#twoFactorBox').hidden = true;
+    $('#loginProgress').hidden = true; $('#igCode').value = '';
+  }
+  async function awaitInstagramLogin(result) {
+    const generation = ++loginPollGeneration;
+    loginAttemptId = result.attempt_id || loginAttemptId;
+    while (result.state === 'running') {
+      $('#loginProgress').hidden = false;
+      $('#loginProgressText').textContent = 'Connessione a Instagram in corso…';
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      if (generation !== loginPollGeneration || !state.authenticated) return {state: 'cancelled'};
+      result = await api('/api/instagram/login/status?attempt_id=' + encodeURIComponent(loginAttemptId));
+    }
+    $('#loginProgress').hidden = true;
+    if (result.state === 'error') throw new Error(result.error);
+    return result;
+  }
+  async function cancelInstagramLogin() {
+    ++loginPollGeneration;
+    const id = loginAttemptId; loginAttemptId = null;
+    resetInstagramLogin(); $('#igError').textContent = '';
+    if (id) { try { await api('/api/instagram/login/cancel', {method: 'POST', body: JSON.stringify({attempt_id: id})}); } catch (error) { report(error); } }
+    $('#igPassword').focus();
+  }
   $('#instagramLogin').addEventListener('submit', event => {
     event.preventDefault(); $('#igError').textContent = '';
-    const body = state.pending2fa ? {code: $('#igCode').value.trim()} : {username: $('#igUsername').value.trim(), password: $('#igPassword').value};
+    const body = state.pendingCode ? {code: $('#igCode').value.trim(), attempt_id: loginAttemptId} : {username: $('#igUsername').value.trim(), password: $('#igPassword').value};
     $('#igPassword').value = ''; $('#igCode').value = '';
     busy(event.submitter, async () => {
       try {
-        const result = await api('/api/instagram/login', {method: 'POST', body: JSON.stringify(body)});
-        if (result.two_factor) { state.pending2fa = true; $('#twoFactorBox').hidden = false; $('#igError').textContent = 'Inserisci il codice dell’autenticazione a due fattori.'; $('#igCode').focus(); }
-        else { state.pending2fa = false; $('#twoFactorBox').hidden = true; toast('Account Instagram collegato'); await refreshSummary(); }
+        let result = await api('/api/instagram/login', {method: 'POST', body: JSON.stringify(body)});
+        result = await awaitInstagramLogin(result);
+        if (result.state === 'cancelled') return;
+        if (result.code_required) {
+          state.pendingCode = true; $('#twoFactorBox').hidden = false;
+          $('#igError').textContent = codeSentTo[result.channel] || codeSentTo.email; $('#igCode').focus();
+        } else if (result.configured) {
+          loginAttemptId = null; resetInstagramLogin(); toast('Account Instagram collegato'); await refreshSummary();
+        }
       } catch (error) {
-        $('#igError').textContent = error.message;
-        // Every login check Instagram asks for has the same way out: the browser cookie.
-        if (/cookie/.test(error.message)) $('#cookieDetails').open = true;
+        resetInstagramLogin(); $('#igError').textContent = error.message;
       } finally { body.password = ''; body.code = ''; }
     });
   });
-  $('#resetTwoFactor').addEventListener('click', () => { state.pending2fa = false; $('#twoFactorBox').hidden = true; $('#igCode').value = ''; $('#igError').textContent = ''; $('#igPassword').focus(); });
+  $('#cancelInstagramLogin').addEventListener('click', () => cancelInstagramLogin());
+  $('#resetTwoFactor').addEventListener('click', () => cancelInstagramLogin());
   $('#cookieImport').addEventListener('submit', event => {
     event.preventDefault();
     const body = {cookies: $('#cookieText').value}; $('#cookieText').value = '';
     busy(event.submitter, async () => { try { await api('/api/instagram/cookies', {method: 'POST', body: JSON.stringify(body)}); toast('Account collegato, sessione cifrata sul server'); $('#cookieImport').closest('details').open = false; await refreshSummary(); } catch (error) { report(error); } finally { body.cookies = ''; } });
   });
   $('#disconnectInstagram').addEventListener('click', event => busy(event.currentTarget, async () => {
-    try { await api('/api/instagram/disconnect', {method: 'POST', body: '{}'}); state.pending2fa = false; $('#twoFactorBox').hidden = true; ['igUsername', 'igPassword', 'igCode'].forEach(id => { $('#' + id).value = ''; }); toast('Account scollegato, sessione rimossa dal server'); await refreshSummary(); } catch (error) { report(error); }
+    try { await api('/api/instagram/disconnect', {method: 'POST', body: '{}'}); state.pendingCode = false; $('#twoFactorBox').hidden = true; ['igUsername', 'igPassword', 'igCode'].forEach(id => { $('#' + id).value = ''; }); toast('Account scollegato, sessione rimossa dal server'); await refreshSummary(); } catch (error) { report(error); }
   }));
   $('#closePost').addEventListener('click', () => $('#postDialog').close());
   $('#previousMedia').addEventListener('click', () => moveSlide(-1));

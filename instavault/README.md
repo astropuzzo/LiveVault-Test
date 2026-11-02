@@ -36,3 +36,14 @@ and the secrets folder an `auth.json` (`username`, `salt`, `hash` =
 sha256 of `salt:password`) plus a `secret` file of at least 32 random bytes.
 Set `automatic` to false in the `settings` table when previewing with seeded
 data, so the worker does not contact Instagram.
+
+## Instagram sign-in
+
+Password login uses instagrapi's mobile flow in a bounded background attempt,
+including email/SMS codes and 2FA. Settings polls the authenticated attempt state
+and supports cancelling it. Browser cookie imports use authenticated web account
+data, not the legacy GraphQL login probe. Rate limiting, rejected sessions,
+manual verification and network failures have distinct messages. Passwords and
+codes are not persisted; the reusable Instagram session is encrypted. A real
+login/download check needs the user's own account through the protected UI.
+Rollback and deployment details: [HOSTING.md](../HOSTING.md#instavault).

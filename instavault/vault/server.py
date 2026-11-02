@@ -16,7 +16,7 @@ from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-from . import store, security, sync
+from . import login, store, security, sync
 
 VERSION = '1.0.0'
 LOGIN_ATTEMPTS = {}
@@ -151,6 +151,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json({'ok': True}, cookie=f'instavault_session={token}; Path=/; Max-Age=604800; HttpOnly; SameSite=Strict{secure}')
         self.mutation()
         body = self.body()
+        if path == '/api/instagram/login/cancel':
+            return self.send_json(login.cancel(str(body.get('attempt_id', ''))))
         if path == '/api/logout':
             secure = '; Secure' if os.environ.get('INSTAVAULT_COOKIE_SECURE', 'true') == 'true' else ''
             return self.send_json({'ok': True}, cookie='instavault_session=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict' + secure)
@@ -209,21 +211,28 @@ class Handler(BaseHTTPRequestHandler):
         if path in {'/api/instagram/login', '/api/instagram/cookies'}:
             try:
                 if path.endswith('/login'):
-                    result = sync.instagram_login(body)
+                    result = login.password_login(body)
                 else:
+                    login.cancel_current()
                     with sync.SESSION_LOCK:
                         result = sync.import_cookies(body)
             except ValueError as exc:
+                from .instagram_session import SessionError
+                if isinstance(exc, SessionError):
+                    print(f'InstaVault: cookie verification result={exc.code} source={exc.source} http={exc.http_status or 0}', flush=True)
+                    status = 429 if exc.code == 'rate_limited' else 503 if exc.code in {'verification_unavailable', 'network_error'} else 400
+                    return self.send_json({'error': str(exc), 'reason': exc.code}, status)
                 # Plain ValueErrors carry InstaVault's own Italian message.
                 raise HTTPError(400, str(exc) if type(exc) is ValueError else 'Controlla i dati inseriti e riprova.') from None
             except Exception as exc:
-                raise HTTPError(400, sync.login_message(exc)) from None
-            if not result.get('two_factor'):
+                raise HTTPError(400, (login.message if path.endswith('/login') else sync.login_message)(exc)) from None
+            if path.endswith('/cookies') and result.get('configured'):
                 with store.db() as c:
                     c.execute('UPDATE profiles SET next_sync=0 WHERE enabled=1')
                 sync.WAKE.set()
             return self.send_json(result)
         if path == '/api/instagram/disconnect':
+            login.cancel_current()
             with sync.SESSION_LOCK:
                 (store.DATA / 'instagram.enc').unlink(missing_ok=True)
             return self.send_json({'ok': True})
@@ -263,6 +272,11 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json({'ok': True, 'csrf': security.csrf_token(token), 'version': VERSION})
         if path.startswith('/api/') or path.startswith('/media/'):
             self.authenticate()
+        if path == '/api/instagram/login/status':
+            try:
+                return self.send_json(login.password_status(query.get('attempt_id', '')))
+            except ValueError as exc:
+                return self.send_json({'error': str(exc)}, 400)
         if path == '/api/summary':
             with store.db() as c:
                 counts = dict(c.execute('''SELECT COUNT(*) AS posts,COALESCE(SUM(kind='reel'),0) AS reels,
