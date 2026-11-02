@@ -10,7 +10,9 @@ Sostituisce il tema cosmic glass. I colori blu e viola dell'interfaccia sono
 diventati grigi della stessa luminosità; restano verde, ambra e rosso, che
 indicano uno stato. Tolti: sfocature, aloni radiali, orbite SVG, sopratitoli
 maiuscoli ripetuti sopra i titoli, «Bentornato.», freccia nel pulsante di
-accesso e `motion.js`. Cache del service worker `openastro-control-v3.5.1-graphite`.
+accesso e `motion.js`. Cache del service worker `openastro-control-v3.5.1-graphite`;
+i CSS hanno la versione `?v=3.5.1-graphite` (LiveVault `style.css?v=3.6.0`) perché
+i browser non riusino il tema vecchio dalla cache.
 Gli ID usati da `app.js` restano; le orbite ancora alimentate dagli script
 (`#powerGlyph`) sono solo nascoste.
 Rilascio: copia di `index.html`, `sw.js` e dei cinque CSS in
