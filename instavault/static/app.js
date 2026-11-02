@@ -72,7 +72,9 @@
   }
   function renderStorage(storage) {
     const used = bytes(storage.used_bytes);
-    const note = storage.ready ? `Limite ${bytes(storage.quota_bytes)} · ${bytes(storage.free_bytes)} liberi sul disco`
+    // Files still in the buffer with the NVMe back mean a transfer is running or a copy conflicted.
+    const left = storage.ready && storage.buffer_files ? ` · ${number(storage.buffer_files)} file ancora nel buffer interno` : '';
+    const note = storage.ready ? `Limite ${bytes(storage.quota_bytes)} · ${bytes(storage.free_bytes)} liberi sul disco${left}`
       : `NVMe scollegato · buffer ${bytes(storage.buffer_bytes)} di ${bytes(storage.buffer_limit_bytes)}`;
     $$('[data-storage-used]').forEach(element => { element.textContent = used; });
     $$('[data-storage-sentence]').forEach(element => { element.textContent = `${used} usati`; });
@@ -218,6 +220,7 @@
   function renderEmpty() {
     if (state.posts.length) { $('#emptyState').hidden = true; return; }
     const summary = state.summary || {}; const profiles = summary.profiles || [];
+    if (summary.storage && !summary.storage.ready && profiles.length) return showEmpty('Archivio sull’NVMe scollegato', 'Qui compaiono solo i contenuti scaricati nel buffer interno. Il resto torna visibile quando ricolleghi l’NVMe.');
     if (state.view === 'favorites') return showEmpty('Nessun contenuto salvato', 'Apri un contenuto e tocca il cuore per ritrovarlo qui.');
     if (state.query || state.kind) return showEmpty('Nessun risultato', 'Nessun contenuto corrisponde a questi filtri.');
     if (!profiles.length) return showEmpty('Nessun profilo da archiviare', 'Aggiungi un profilo Instagram: InstaVault scarica post, Reel e storie e li conserva sul server.', {label: 'Aggiungi profilo', action: 'add-profile'});

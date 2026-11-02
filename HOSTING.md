@@ -210,8 +210,10 @@ eMMC (hidden whenever the NVMe is mounted, never carries the marker) and starts
 again only the containers that `pause` stopped. Without the marker the app
 writes new downloads to `/data/instavault/buffer` on the eMMC and records
 `media.location='buffer'`. It stops at 2 GiB of real disk usage or when the
-eMMC has less than 3 GiB free, whichever comes first; the job then waits in the
-queue. Files already on the NVMe count as archived, so nothing is fetched
+eMMC has less than 5 GiB free, whichever comes first; the job then waits in the
+queue. The 5 GiB floor is there because LiveVault's 4 GiB buffer image
+(`/var/lib/livevault-buffer.img`) is sparse and fills during the same outage:
+recordings always keep their room. Files already on the NVMe count as archived, so nothing is fetched
 twice, and the grid lists only posts held in the buffer. After attach, `resume`
 restarts the container onto the NVMe and the worker moves the buffer across:
 copy, fsync, SHA-256 check, rename, database update, then delete the eMMC copy.

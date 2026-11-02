@@ -102,6 +102,9 @@ def recover_interrupted():
         run('systemctl', 'start', 'livevault-backup.timer')
         subprocess.run(['systemctl', 'try-restart', 'minidlna.service'], capture_output=True)
         instavault_storage('resume', strict=False)
+    else:
+        # Interrupted eject: InstaVault follows whichever disk is still there.
+        instavault_storage('resume' if os.path.ismount(NVME) else 'buffer', strict=False)
     return mode
 
 

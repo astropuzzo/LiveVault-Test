@@ -15,10 +15,11 @@ MEDIA = Path(os.environ.get('INSTAVAULT_MEDIA', '/media'))
 SECRETS = Path(os.environ.get('INSTAVAULT_SECRETS', '/run/secrets'))
 STATIC = Path(__file__).resolve().parents[1] / 'static'
 # While the NVMe is away, new downloads go to an internal buffer on the eMMC,
-# like LiveVault. The eMMC also holds Docker and every app's data, so the
-# buffer stops at its own size or at the free-space floor, whichever is first.
+# like LiveVault. The eMMC also holds Docker, every app's data and LiveVault's
+# sparse 4 GiB buffer image, which grows during the same outage. The floor
+# leaves that image room to fill plus 1 GiB, so recordings always come first.
 BUFFER_LIMIT = 2 * 1024**3
-EMMC_FLOOR = 3 * 1024**3
+EMMC_FLOOR = 5 * 1024**3
 SKIPPED_SUFFIXES = ('.instavault-part', '.instavault-copy')
 
 

@@ -13,7 +13,7 @@ frontend framework. Operations, paths and rollback live in
 - `vault/sync.py`: one background worker with a file lease, resumable cursors,
   deduplication by Instagram id, downloads only from Instagram CDN hosts, quota
   and free-space checks before every chunk. Without the media marker it writes
-  to the eMMC buffer (2 GiB, 3 GiB eMMC floor) and drains it onto the NVMe with
+  to the eMMC buffer (2 GiB, stops below 5 GiB free on the eMMC) and drains it onto the NVMe with
   a verified copy when the disk comes back.
 - `vault/store.py`: SQLite schema and queries; media paths stay inside `/media`,
   or inside `/data/buffer` while the NVMe is away (`media.location`).
