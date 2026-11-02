@@ -300,7 +300,7 @@ def test_a_pasted_sessionid_alone_connects_the_account(vault, monkeypatch, paste
         return 'owner_account', dict(cookies, csrftoken='real-instagram-csrf')
     monkeypatch.setattr(instagram_session, 'validate_web_session', checked)
     result = sync.import_cookies({'cookies': pasted})
-    assert result == {'configured': True, 'username': 'owner_account', 'checked_at': result['checked_at']}
+    assert result == {'configured': True, 'username': 'owner_account', 'checked_at': result['checked_at'], 'problem': None}
     assert fake.cookies['sessionid'] == '12345678%3AAbCdEfGhIjKlMn%3A17%3AAYfZ'
     assert fake.cookies['csrftoken'] == 'real-instagram-csrf' and fake.cookies['ds_user_id'] == '12345678'
 
@@ -766,3 +766,13 @@ def test_deleting_a_profile_removes_its_files_but_hands_collabs_over(http, vault
     assert (vault['media'] / str(vault['profile']) / 'Collab' / '1.jpg').exists()
     assert [(p['shortcode'], p['username']) for p in store.list_posts({})['items']] == [('Collab', 'friend')]
     assert [p['username'] for p in store.profile_rows()] == ['friend']
+
+
+def test_an_account_problem_is_remembered_until_a_good_check_or_new_login(vault):
+    class ChallengeRequired(Exception): pass
+    assert sync.note_account_problem(ChallengeRequired()) == 'login'
+    assert store.settings()['session_problem']['kind'] == 'login'
+    class SomethingElse(Exception): pass
+    assert sync.note_account_problem(SomethingElse()) is None
+    store.set_setting('session_problem', None)
+    assert 'session_problem' not in store.settings()

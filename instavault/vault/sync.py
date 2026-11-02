@@ -81,13 +81,30 @@ def poster_of(relative):
     return relative.rsplit('.', 1)[0] + '.poster.jpg'
 
 
+# The connected account needs the user: 'login' to reconnect, 'pause' to wait.
+ACCOUNT_PROBLEMS = {
+    'login': {'LoginRequired', 'ClientLoginRequired', 'LoginRequiredException', 'BadCredentialsException',
+              'ChallengeRequired', 'ChallengeError', 'ChallengeUnknownStep', 'TwoFactorAuthRequiredException'},
+    'pause': {'FeedbackRequired', 'PleaseWaitFewMinutes', 'ClientThrottledError', 'TooManyRequestsException'},
+}
+
+
+def note_account_problem(exc):
+    name = type(exc).__name__
+    kind = next((k for k, names in ACCOUNT_PROBLEMS.items() if name in names), None)
+    if kind:
+        store.set_setting('session_problem', {'kind': kind, 'message': error_message(exc), 'at': store.now()})
+    return kind
+
+
 def session_status():
     path = store.DATA / 'instagram.enc'
+    problem = store.settings().get('session_problem')
     try:
         item = security.decrypt_json(path.read_bytes())
-        return {'configured': True, 'username': item['username'], 'checked_at': item.get('checked_at')}
+        return {'configured': True, 'username': item['username'], 'checked_at': item.get('checked_at'), 'problem': problem}
     except (OSError, ValueError, KeyError):
-        return {'configured': False, 'username': '', 'checked_at': None}
+        return {'configured': False, 'username': '', 'checked_at': None, 'problem': None}
 
 
 def new_loader():
@@ -130,6 +147,7 @@ def save_session(value, verified_identity=None, verified_via='web_session'):
     with temporary.open('wb') as f:
         os.chmod(temporary, 0o600); f.write(content); f.flush(); os.fsync(f.fileno())
     temporary.replace(store.DATA / 'instagram.enc')
+    store.set_setting('session_problem', None)
     WAKE.set()
     return session_status()
 
@@ -594,10 +612,13 @@ class Worker:
                 if warnings:
                     message += ' · ' + ' · '.join(warnings)
                 c.execute("UPDATE jobs SET state='done',finished_at=?,message=? WHERE id=?", (store.now(), message, ident))
+                if value.context.is_logged_in:
+                    c.execute("DELETE FROM settings WHERE key='session_problem'")
                 c.execute("UPDATE profiles SET status='ready',error=?,last_sync=?,next_sync=? WHERE id=?",
                           (' · '.join(warnings), store.now(), store.now() + (60 if more else next_check(profile)), profile['id']))
         except Exception as exc:
             message = error_message(exc)
+            note_account_problem(exc)
             if not isinstance(exc, Paused):
                 print(f'InstaVault: @{profile["username"]} job: {type(exc).__name__}: {instagram_detail(exc)}', flush=True)
             if isinstance(exc, BufferFull):

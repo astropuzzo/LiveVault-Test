@@ -97,6 +97,8 @@
     else if (!storage.ready) notice.innerHTML = `NVMe scollegato: i nuovi download vanno nel buffer interno (${bytes(storage.buffer_bytes)} di ${bytes(storage.buffer_limit_bytes)}). Quando ricolleghi l’NVMe passano sul disco e torna visibile tutto l’archivio.`;
     else if (worker.draining) notice.innerHTML = 'Sposto sull’NVMe i download salvati nel buffer interno.';
     else if (!instagram.configured && profiles.length) notice.innerHTML = 'Instagram chiede l’accesso per scaricare quasi tutti i profili. <a href="#settings" data-view="settings">Collega l’account</a>';
+    else if (instagram.problem?.kind === 'login') notice.innerHTML = `<b>Instagram ha scollegato @${esc(instagram.username)}.</b> ${esc(instagram.problem.message)} I download sono fermi finché non lo ricolleghi. <a href="#settings" data-view="settings">Ricollega l’account</a>`;
+    else if (instagram.problem?.kind === 'pause') notice.innerHTML = `<b>Instagram ha messo in pausa @${esc(instagram.username)}</b> (${esc(moment(instagram.problem.at))}). ${esc(instagram.problem.message)}`;
     else if (failing) notice.innerHTML = `<b>@${esc(failing.username)}</b>: ${esc(failing.error)} <button class="link" type="button" data-profile="${failing.id}">Apri il profilo</button>`;
     else { notice.hidden = true; return; }
     notice.hidden = false;

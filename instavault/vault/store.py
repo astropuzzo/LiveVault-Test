@@ -138,6 +138,14 @@ def settings():
         return {r['key']: json.loads(r['value']) for r in c.execute('SELECT * FROM settings')}
 
 
+def set_setting(key, value):
+    with db() as c:
+        if value is None:
+            c.execute('DELETE FROM settings WHERE key=?', (key,))
+        else:
+            c.execute('INSERT OR REPLACE INTO settings VALUES (?,?)', (key, json.dumps(value)))
+
+
 def storage_ready():
     try:
         return (MEDIA / '.instavault-volume').read_text().strip() == 'instavault-v1'
