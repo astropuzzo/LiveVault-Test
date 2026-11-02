@@ -178,9 +178,13 @@ Own persistent paths:
   `5fe2d0f6-b485-44e9-8e26-31fb0d217db2`) at `/media`: originals and thumbnails.
   The marker `.instavault-volume` must read `instavault-v1`; without it the app
   runs in buffer mode (below) and serves no media from the NVMe.
-- `/data/instavault-secrets` read-only at `/run/secrets`: `auth.json` copied from
-  `/etc/openastro-control-auth.json` (same login as Control) and `secret`
-  (random bytes that sign cookies and encrypt the Instagram session). Never
+- `/data/instavault-secrets` read-only at `/run/secrets`: `auth.json`, InstaVault's
+  own login (user `admin` since 2026-11-02, at the user's request; first copied
+  from `/etc/openastro-control-auth.json`), and `secret` (random bytes that sign
+  cookies and encrypt the Instagram session). To change the login, put an
+  `instavault-auth.json` (`username`, `salt`, `hash` = sha256 of
+  `salt:password`) in the install bundle and run the install script: it keeps
+  the old file in the backup folder. Changing it signs out every session. Never
   print, copy into Git or publish these files.
 
 Public access uses a dedicated Tailscale node, not a path on the `openastro`

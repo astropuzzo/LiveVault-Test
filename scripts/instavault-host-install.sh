@@ -33,6 +33,21 @@ cmp "$HERE/instavault-storage.py" /usr/local/libexec/instavault-storage.py
 cmp "$HERE/nvme-handoff.py" /usr/local/libexec/nvme-handoff.py
 sha256sum /usr/local/libexec/instavault-storage.py /usr/local/libexec/nvme-handoff.py
 
+# Own InstaVault login, when the bundle carries one: username, salt and
+# sha256(salt:password) only, never the password. Built outside Git.
+if [[ -f "$HERE/instavault-auth.json" ]]; then
+  auth=/data/instavault-secrets/auth.json
+  python3 - "$HERE/instavault-auth.json" <<'EOF'
+import json, re, sys
+value = json.load(open(sys.argv[1], encoding='utf-8'))
+assert set(value) == {'username', 'salt', 'hash'} and re.fullmatch('[0-9a-f]{64}', value['hash'])
+EOF
+  [[ -e "$BACKUP/instavault-auth.json.before" ]] || install -m 600 "$auth" "$BACKUP/instavault-auth.json.before"
+  install -o "$(stat -c %u "$auth")" -g "$(stat -c %g "$auth")" -m "$(stat -c %a "$auth")" "$HERE/instavault-auth.json" "$auth"
+  rm -f "$HERE/instavault-auth.json"
+  echo "Accesso di InstaVault aggiornato: le sessioni aperte vanno rifatte con le nuove credenziali."
+fi
+
 step "3/8 Utente e cartelle del nodo Tailscale (eMMC)"
 id -u instavault-ts >/dev/null 2>&1 || useradd --system --no-create-home --home-dir /data/instavault-tailscale/home --shell /usr/sbin/nologin instavault-ts
 install -d -o instavault-ts -g instavault-ts -m 700 /data/instavault-tailscale /data/instavault-tailscale/node /data/instavault-tailscale/home

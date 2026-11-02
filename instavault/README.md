@@ -8,8 +8,8 @@ frontend framework. Operations, paths and rollback live in
 
 ## Layout
 
-- `vault/server.py`: HTTP API, static files, media with byte ranges, login shared
-  with the OpenAstro Control credentials, signed cookie plus CSRF token.
+- `vault/server.py`: HTTP API, static files, media with byte ranges, its own
+  login from `auth.json`, signed cookie plus CSRF token.
 - `vault/sync.py`: one background worker with a file lease, resumable cursors,
   deduplication by Instagram id, downloads only from Instagram CDN hosts, quota
   and free-space checks before every chunk. Without the media marker it writes
