@@ -33,6 +33,8 @@
 <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></symbol>
 <symbol id="i-deleted" viewBox="0 0 24 24"><path d="M4.5 7h15M9.5 7V4.5h5V7M6.5 7l1 13h9l1-13M10 11v5.5M14 11v5.5"/></symbol>
 <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"/></symbol>
+<symbol id="i-home" viewBox="0 0 24 24"><path d="M4 10.5 12 4l8 6.5V20h-5.5v-6h-5v6H4z"/></symbol>
+<symbol id="i-comment" viewBox="0 0 24 24"><path d="M20 12a8 8 0 0 1-11.7 7.1L4 20l1-4.1A8 8 0 1 1 20 12z"/></symbol>
 <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="10" rx="2"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5"/></symbol>
 <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.4-4.4"/></symbol>
 <symbol id="i-logout" viewBox="0 0 24 24"><path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4M9.5 16.5 5 12l4.5-4.5M5 12h10"/></symbol>
@@ -55,13 +57,14 @@
 
 <div id="appShell" class="shell" hidden>
   <header class="mobile-bar">
-    <a class="brand" href="#archive" data-view="archive"><img src="./icon.svg" width="28" height="28" alt=""><span>InstaVault</span></a>
+    <a class="brand" href="#home" data-view="home"><img src="./icon.svg" width="28" height="28" alt=""><span>InstaVault</span></a>
     <span class="sync-status" data-sync-status><i></i><span>Verifica</span></span>
   </header>
 
   <nav class="sidebar" aria-label="Sezioni">
-    <a class="brand" href="#archive" data-view="archive"><img src="./icon.svg" width="28" height="28" alt=""><span>InstaVault</span></a>
+    <a class="brand" href="#home" data-view="home"><img src="./icon.svg" width="28" height="28" alt=""><span>InstaVault</span></a>
     <div class="nav-items">
+      <a class="nav-item" href="#home" data-view="home"><svg aria-hidden="true"><use href="#i-home"/></svg><span>Home</span></a>
       <a class="nav-item" href="#archive" data-view="archive"><svg aria-hidden="true"><use href="#i-grid"/></svg><span>Archivio</span><small id="navCount" class="nav-count"></small></a>
       <a class="nav-item" href="#profiles" data-view="profiles"><svg aria-hidden="true"><use href="#i-users"/></svg><span>Profili</span></a>
       <a class="nav-item" href="#favorites" data-view="favorites"><svg aria-hidden="true"><use href="#i-heart"/></svg><span>Salvati</span></a>
@@ -84,6 +87,14 @@
 
   <main class="main" id="main">
     <div id="notice" class="notice" role="status" hidden></div>
+
+    <section id="homeView" class="view home" aria-labelledby="homeTitle" hidden>
+      <h1 id="homeTitle" class="sr-only">Home</h1>
+      <div id="homeStories" class="home-stories" role="list" aria-label="Storie delle ultime 24 ore" hidden></div>
+      <div id="feed" class="feed"></div>
+      <div id="feedEmpty" class="empty" hidden><h2>Ancora nessun post</h2><p>I post e i Reel dei profili archiviati compaiono qui, dal più recente.</p></div>
+      <div id="feedMore" class="feed-more" aria-hidden="true"></div>
+    </section>
 
     <section id="archiveView" class="view" aria-labelledby="archiveTitle">
       <header id="archiveHeader" class="page-head">
@@ -261,6 +272,26 @@
     <div class="form-actions">
       <button id="profileSubmit" class="button primary" type="submit">Aggiungi profilo</button>
       <button class="button" type="button" data-close="profileDialog">Annulla</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="removeDialog" class="sheet" aria-labelledby="removeTitle">
+  <form id="removeForm" class="form">
+    <div class="sheet-head">
+      <h2 id="removeTitle">Rimuovi il profilo</h2>
+      <button type="button" class="icon-button" data-close="removeDialog" aria-label="Chiudi"><svg aria-hidden="true"><use href="#i-close"/></svg></button>
+    </div>
+    <input id="removeId" type="hidden">
+    <fieldset class="options">
+      <legend>Cosa succede all’archivio</legend>
+      <label><input type="radio" name="removeMode" value="keep" checked><span>Tieni i contenuti<small>Il profilo sparisce e non viene più controllato. Se lo aggiungi di nuovo riparte da dove era rimasto.</small></span></label>
+      <label><input type="radio" name="removeMode" value="delete"><span>Cancella anche i contenuti<small id="removeSize">Foto, video, commenti e cronologia vengono eliminati dal disco. Non si può annullare.</small></span></label>
+    </fieldset>
+    <p id="removeError" class="form-error" role="alert"></p>
+    <div class="form-actions">
+      <button id="removeSubmit" class="button primary" type="submit">Rimuovi profilo</button>
+      <button class="button" type="button" data-close="removeDialog">Annulla</button>
     </div>
   </form>
 </dialog>

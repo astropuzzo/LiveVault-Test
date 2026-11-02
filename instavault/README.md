@@ -52,6 +52,17 @@ Rollback and deployment details: [HOSTING.md](../HOSTING.md#instavault).
 
 ## Archive layout
 
+InstaVault opens on Home: circles for profiles with stories from the last 24
+hours (a tap plays them), then posts and Reels of every profile, newest first,
+loading more while scrolling (`/api/stories`, `/api/posts?kind=feed`).
+
+A profile is removed from Profili or its page. "Tieni i contenuti" sets
+`profiles.removed`: it disappears and is no longer checked, its files and
+cursors stay, and adding the same username again brings it back where it
+stopped. "Cancella anche i contenuti" deletes its rows and files (NVMe needed
+for files there); a collab it shares with a listed profile moves to that
+profile instead. A running download is stopped first.
+
 The archive opens on one card per profile. Inside a profile, highlights are
 circles pinned under the header, as on Instagram; a tap plays the collection
 story after story. Posts, Reels and stories are tabs below them.

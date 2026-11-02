@@ -729,3 +729,40 @@ def test_chosen_posts_download_as_one_zip_grouped_by_profile(http, vault):
     assert response.headers['Content-Disposition'] == 'attachment; filename="instavault-2-contenuti.zip"'
     assert sorted(zipfile.ZipFile(io.BytesIO(response.content)).namelist()) == ['photographer/post/2026-01-01_S1_1.jpg', 'photographer/post/2026-01-01_S3_1.jpg']
     assert client.get(f'{root}/api/download', params={'posts': ''}).status_code == 404
+
+
+def add_post(vault, profile, code):
+    with store.db() as c:
+        post = c.execute("INSERT INTO posts(profile_id,external_key,shortcode,kind,published_at,archived_at,complete) VALUES (?,?,?,'post',1,1,1)",
+                         (profile, 'post:' + code, code)).lastrowid
+        c.execute("INSERT INTO media(post_id,position,kind,path,thumb,size,sha256) VALUES (?,0,'image',?,?,4,'x')",
+                  (post, f'{profile}/{code}/1.jpg', f'{profile}/{code}/1.thumb.jpg'))
+    folder = vault['media'] / str(profile) / code; folder.mkdir(parents=True)
+    (folder / '1.jpg').write_bytes(b'jpeg'); (folder / '1.thumb.jpg').write_bytes(b'jpeg')
+    return post
+
+
+def test_removing_a_profile_keeps_its_archive_and_adding_it_again_resumes(http, vault):
+    root, client = http
+    add_post(vault, vault['profile'], 'Kept')
+    assert client.post(f'{root}/api/profiles/{vault["profile"]}/remove', json={'delete_data': False}).status_code == 200
+    assert store.profile_rows() == [] and store.list_posts({})['items'] == []
+    assert (vault['media'] / str(vault['profile']) / 'Kept' / '1.jpg').exists()
+    again = client.post(f'{root}/api/profiles', json={'username': 'photographer'})
+    assert again.json()['id'] == vault['profile']
+    assert [p['shortcode'] for p in store.list_posts({})['items']] == ['Kept']
+
+
+def test_deleting_a_profile_removes_its_files_but_hands_collabs_over(http, vault):
+    root, client = http
+    with store.db() as c:
+        friend = c.execute('INSERT INTO profiles(username,created_at) VALUES (?,?)', ('friend', store.now())).lastrowid
+    add_post(vault, vault['profile'], 'Mine')
+    collab = add_post(vault, vault['profile'], 'Collab')
+    with store.db() as c:
+        c.execute('INSERT INTO shared VALUES (?,?)', (collab, friend))
+    assert client.post(f'{root}/api/profiles/{vault["profile"]}/remove', json={'delete_data': True}).status_code == 200
+    assert not (vault['media'] / str(vault['profile']) / 'Mine').exists()
+    assert (vault['media'] / str(vault['profile']) / 'Collab' / '1.jpg').exists()
+    assert [(p['shortcode'], p['username']) for p in store.list_posts({})['items']] == [('Collab', 'friend')]
+    assert [p['username'] for p in store.profile_rows()] == ['friend']

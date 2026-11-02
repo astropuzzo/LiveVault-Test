@@ -171,11 +171,27 @@ class Handler(BaseHTTPRequestHandler):
             with store.db() as c:
                 if c.execute('SELECT COUNT(*) FROM profiles').fetchone()[0] >= 100:
                     raise ValueError('Hai raggiunto il limite di 100 profili.')
-                ident = c.execute('INSERT INTO profiles(username,created_at) VALUES (?,?)', (name, store.now())).lastrowid
+                old = c.execute('SELECT id,removed FROM profiles WHERE username=?', (name,)).fetchone()
+                if old and old['removed']:
+                    # Added again: it comes back with its archive and carries on from there.
+                    ident = old['id']
+                    c.execute("UPDATE profiles SET removed=0,enabled=1,status='queued',error='',next_sync=0 WHERE id=?", (ident,))
+                else:
+                    ident = c.execute('INSERT INTO profiles(username,created_at) VALUES (?,?)', (name, store.now())).lastrowid
                 if values:
                     c.execute('UPDATE profiles SET ' + ','.join(k + '=?' for k in values) + ' WHERE id=?', [*values.values(), ident])
             store.enqueue(ident); sync.WAKE.set()
             return self.send_json({'ok': True, 'id': ident}, 201)
+        match = re.fullmatch(r'/api/profiles/(\d+)/remove', path)
+        if match:
+            ident = int(match[1]); delete = bool(body.get('delete_data'))
+            try:
+                files = store.remove_profile(ident, delete)
+            except KeyError:
+                raise HTTPError(404, 'Profilo non trovato.') from None
+            if delete:
+                store.delete_files(files, ident)
+            return self.send_json({'ok': True, 'deleted': delete})
         match = re.fullmatch(r'/api/profiles/(\d+)/follow', path)
         if match:
             try:
@@ -297,13 +313,16 @@ class Handler(BaseHTTPRequestHandler):
         if path == '/api/summary':
             with store.db() as c:
                 counts = dict(c.execute('''SELECT COUNT(*) AS posts,COALESCE(SUM(kind='reel'),0) AS reels,
-                  COALESCE(SUM(kind='story'),0) AS stories FROM posts WHERE complete=1''').fetchone())
+                  COALESCE(SUM(kind='story'),0) AS stories FROM posts WHERE complete=1
+                  AND profile_id IN (SELECT id FROM profiles WHERE removed=0)''').fetchone())
                 jobs = [dict(r) for r in c.execute('''SELECT j.*,p.username FROM jobs j JOIN profiles p ON p.id=j.profile_id
                     WHERE state IN ('running','queued','cancel_requested') ORDER BY j.id LIMIT 100''')]
             return self.send_json({'counts': counts, 'profiles': store.profile_rows(), 'jobs': jobs,
                                    'storage': store.storage_status(), 'instagram': sync.session_status(), 'settings': store.settings(),
                                    'worker': {'alive': bool(sync.worker.thread and sync.worker.thread.is_alive()), 'leader': sync.worker.leader,
                                               'draining': sync.worker.draining}})
+        if path == '/api/stories':
+            return self.send_json({'items': store.recent_stories(), 'now': store.now()})
         if path == '/api/posts':
             return self.send_json(store.list_posts(query))
         match = re.fullmatch(r'/api/posts/(\d+)', path)

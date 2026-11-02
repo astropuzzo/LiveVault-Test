@@ -2,7 +2,7 @@
   'use strict';
   const BASE = location.pathname === '/instavault' || location.pathname.startsWith('/instavault/') ? '/instavault' : '';
   const THEME_KEY = 'instavault-theme';
-  const VIEWS = ['archive', 'favorites', 'deleted', 'profiles', 'activity', 'settings'];
+  const VIEWS = ['home', 'archive', 'favorites', 'deleted', 'profiles', 'activity', 'settings'];
   // Views that show a grid of archived posts.
   const GRIDS = ['archive', 'favorites', 'deleted'];
   const $ = (selector, root = document) => root.querySelector(selector);
@@ -170,7 +170,7 @@
     if (!profile) { $('#profileHeader').replaceChildren(); $('#accessNote').hidden = true; return; }
     $('#profileHeader').innerHTML = `${avatar(profile, 'large')}<div class="profile-body">
       <button class="link back" type="button" data-clear-profile>${icon('left')}Tutti i profili</button>
-      <div class="profile-top"><h1>${esc(profile.username)}</h1><div class="page-actions"><button class="button" type="button" data-sync-profile="${profile.id}">${icon('refresh')}Aggiorna</button>${Number(profile.post_count) ? `<a class="button" href="${BASE}/api/profiles/${Number(profile.id)}/download" download>${icon('download')}Scarica tutto</a>` : ''}<button class="button" type="button" data-edit-profile="${profile.id}">Modifica</button></div></div>
+      <div class="profile-top"><h1>${esc(profile.username)}</h1><div class="page-actions"><button class="button" type="button" data-sync-profile="${profile.id}">${icon('refresh')}Aggiorna</button>${Number(profile.post_count) ? `<a class="button" href="${BASE}/api/profiles/${Number(profile.id)}/download" download>${icon('download')}Scarica tutto</a>` : ''}<button class="button" type="button" data-edit-profile="${profile.id}">Modifica</button><button class="button" type="button" data-remove-profile="${profile.id}">Rimuovi</button></div></div>
       <p class="profile-counts"><span><b>${number(profile.count_post)}</b> post</span><span><b>${number(profile.count_reel)}</b> Reel</span><span><b>${number(profile.count_story)}</b> storie</span><span><b>${number(profile.count_highlight)}</b> in evidenza</span></p>
       ${profile.full_name ? `<p class="profile-name">${esc(profile.full_name)}</p>` : ''}
       ${profile.biography ? `<p class="profile-bio">${esc(profile.biography)}</p>` : ''}
@@ -235,6 +235,58 @@
   $('#selectCancel').addEventListener('click', () => setSelecting(false));
   $('#selectAll').addEventListener('click', () => { $$('#mediaGrid .tile').forEach(tile => { const id = Number(tile.dataset.post); if (state.selected.size < 1000) state.selected.add(id); }); setSelecting(true); });
   $('#downloadSelected').addEventListener('click', event => { if (!state.selected.size) event.preventDefault(); });
+  // Home: stories of the last day as circles, then posts and Reels of every profile, newest first.
+  const feed = {cursor: null, loading: false, done: false, seq: 0};
+  async function loadHome() {
+    const seq = ++feed.seq; feed.cursor = null; feed.done = false;
+    $('#feed').replaceChildren(); $('#feedEmpty').hidden = true;
+    const stories = await api('/api/stories');
+    if (seq !== feed.seq) return;
+    $('#homeStories').hidden = !stories.items.length;
+    $('#homeStories').innerHTML = stories.items.map(s => `<button class="collection" type="button" role="listitem" data-stories="${Number(s.profile_id)}" aria-label="Storie di @${esc(s.username)}, ${plural(s.count, 'storia', 'storie')}">${avatar(s, 'ring')}<span>${esc(s.username)}</span></button>`).join('');
+    bindImageFallback($('#homeStories'));
+    await loadFeed(seq);
+  }
+  async function loadFeed(seq = feed.seq) {
+    if (feed.loading || feed.done) return;
+    feed.loading = true;
+    try {
+      const params = new URLSearchParams({kind: 'feed'}); if (feed.cursor) params.set('cursor', feed.cursor);
+      const page = await api('/api/posts?' + params);
+      if (seq !== feed.seq) return;
+      $('#feed').insertAdjacentHTML('beforeend', page.items.map(feedCard).join(''));
+      bindImageFallback($('#feed'));
+      feed.cursor = page.next; feed.done = !page.next;
+      $('#feedEmpty').hidden = !!$('#feed').children.length;
+    } finally { feed.loading = false; }
+  }
+  function feedCard(post) {
+    const media = post.media?.[0]; if (!media) return '';
+    const kind = post.kind === 'reel' || media.kind === 'video' ? 'reel' : post.media.length > 1 ? 'stack' : '';
+    const ratio = media.width && media.height ? Math.min(Math.max(media.width / media.height, .8), 1.91) : .8;
+    const others = (post.profiles || []).filter(name => name !== post.username);
+    return `<article class="feed-card">
+      <header>${avatar(post, 'small')}<button class="link name" type="button" data-profile="${Number(post.profile_id)}">${esc(post.username)}</button><span class="stamp">${esc(day(post.published_at))}</span></header>
+      <button class="feed-media" type="button" data-post="${post.id}" aria-label="Apri il ${post.kind === 'reel' ? 'Reel' : 'post'} di @${esc(post.username)}" data-ratio="${ratio.toFixed(3)}">
+        <img src="${BASE}/media/${media.id}/thumb" alt="" loading="lazy" decoding="async" width="${media.width || 480}" height="${media.height || 600}">
+        ${kind ? `<span class="tile-kind">${icon(kind)}</span>` : ''}${post.deleted_at ? `<span class="tile-deleted" title="Cancellato su Instagram">${icon('deleted')}</span>` : ''}
+      </button>
+      <div class="feed-body">
+        ${others.length || post.comment_count ? `<p class="feed-meta">${others.length ? `<span>${icon('shared')}Con ${others.map(name => '@' + esc(name)).join(', ')}</span>` : ''}${post.comment_count ? `<button class="link" type="button" data-post="${post.id}">${icon('comment')}${plural(post.comment_count, 'commento', 'commenti')}</button>` : ''}</p>` : ''}
+        ${post.caption ? `<p class="feed-caption"><b>${esc(post.username)}</b> ${esc(post.caption)}</p>` : ''}
+      </div>
+    </article>`;
+  }
+  // The card keeps the photo's own shape (between 4:5 and 1.91:1), set through the DOM because of the CSP.
+  new MutationObserver(() => $$('#feed .feed-media[data-ratio]').forEach(button => { button.style.aspectRatio = button.dataset.ratio; button.removeAttribute('data-ratio'); })).observe($('#feed'), {childList: true});
+  new IntersectionObserver(entries => { if (entries.some(e => e.isIntersecting) && state.view === 'home') loadFeed().catch(report); }, {rootMargin: '800px'}).observe($('#feedMore'));
+  async function playStories(profileId) {
+    const since = Math.floor(Date.now() / 1000) - 86400;
+    const page = await api('/api/posts?' + new URLSearchParams({profile: profileId, kind: 'story', since, order: 'oldest'}));
+    const ids = page.items.map(item => item.id); if (!ids.length) return;
+    state.playlist = {ids, name: '@' + (profileById(profileId)?.username || ''), collection: '', profile: String(profileId)};
+    await openPost(ids[0]);
+  }
   async function playCollection(name) {
     const params = new URLSearchParams({profile: state.profile, kind: 'highlight', collection: name, order: 'oldest'});
     let ids = [], cursor = null;
@@ -243,7 +295,7 @@
       const page = await api('/api/posts?' + params); ids = ids.concat(page.items.map(item => item.id)); cursor = page.next;
     } while (cursor && ids.length < 500);
     if (!ids.length) return;
-    state.playlist = {ids, name, profile: state.profile};
+    state.playlist = {ids, name, collection: name, profile: state.profile};
     await openPost(ids[0]);
   }
   function renderProfiles() {
@@ -262,6 +314,7 @@
           <button class="button small" type="button" data-sync-profile="${p.id}">Aggiorna</button>
           <button class="button small" type="button" data-edit-profile="${p.id}">Modifica</button>
           <button class="button small" type="button" data-toggle-profile="${p.id}">${p.enabled ? 'Metti in pausa' : 'Riprendi'}</button>
+          <button class="button small" type="button" data-remove-profile="${p.id}">Rimuovi</button>
         </div>
       </div>
     </article>`).join('') : '<div class="empty"><h2>Nessun profilo</h2><p>Aggiungi il primo profilo Instagram da archiviare.</p><button class="button primary" type="button" data-action="add-profile">Aggiungi profilo</button></div>';
@@ -273,12 +326,13 @@
     if (view !== 'archive') state.profile = '';
     state.view = view;
     $$('.nav-item').forEach(item => { if (item.dataset.view === view) item.setAttribute('aria-current', 'page'); else item.removeAttribute('aria-current'); });
-    $('#archiveView').hidden = !GRIDS.includes(view); $('#profilesView').hidden = view !== 'profiles'; $('#activityView').hidden = view !== 'activity'; $('#settingsView').hidden = view !== 'settings';
-    const names = {archive: 'Archivio', favorites: 'Salvati', deleted: 'Cancellati', profiles: 'Profili', activity: 'Attività', settings: 'Impostazioni'};
+    $('#archiveView').hidden = !GRIDS.includes(view); $('#homeView').hidden = view !== 'home'; $('#profilesView').hidden = view !== 'profiles'; $('#activityView').hidden = view !== 'activity'; $('#settingsView').hidden = view !== 'settings';
+    const names = {home: 'Home', archive: 'Archivio', favorites: 'Salvati', deleted: 'Cancellati', profiles: 'Profili', activity: 'Attività', settings: 'Impostazioni'};
     document.title = `${names[view]} · InstaVault`;
     if (state.summary) renderSummary(); else renderArchive();
     if (state.authenticated) {
       if (GRIDS.includes(view)) loadPosts(true).catch(report);
+      if (view === 'home') loadHome().catch(report);
       if (view === 'activity') loadJobs().catch(report);
     }
     const hash = '#' + view;
@@ -289,7 +343,7 @@
     if (state.selecting) setSelecting(false);
     state.profile = String(id); state.view = 'archive';
     $$('.nav-item').forEach(item => { if (item.dataset.view === 'archive') item.setAttribute('aria-current', 'page'); else item.removeAttribute('aria-current'); });
-    $('#archiveView').hidden = false; ['profilesView', 'activityView', 'settingsView'].forEach(id => { $('#' + id).hidden = true; });
+    $('#archiveView').hidden = false; ['homeView', 'profilesView', 'activityView', 'settingsView'].forEach(id => { $('#' + id).hidden = true; });
     const profile = profileById(id); document.title = `@${profile?.username || ''} · InstaVault`;
     // Open on the first kind that has something to show, like Instagram opens on the grid.
     state.kind = ['post', 'reel', 'story'].find(kind => Number(profile?.['count_' + kind])) || 'post';
@@ -385,7 +439,7 @@
       <div class="row-main">
         <h2>@${esc(job.username)}</h2>
         <p${job.error ? ' class="row-error"' : ''}>${esc(job.error || job.message || (job.state === 'queued' ? 'In attesa del suo turno' : 'Controllo dei nuovi contenuti'))}</p>
-        <p class="stamp">${esc(moment(job.started_at || job.created_at))} · ${plural(job.downloaded, 'nuovo', 'nuovi')} · ${number(job.seen)} controllati</p>
+        <p class="stamp">${esc(moment(job.started_at || job.created_at))} · ${number(job.seen)} controllati, ${job.downloaded ? plural(job.downloaded, 'nuovo', 'nuovi') : 'nessuno nuovo'}</p>
         ${job.items?.length ? `<div class="job-thumbs">${job.items.filter(item => item.media).map(item => `<button class="job-thumb" type="button" data-post="${Number(item.id)}" aria-label="Apri il contenuto scaricato"><img src="${BASE}/media/${Number(item.media)}/thumb" alt="" loading="lazy" decoding="async"></button>`).join('')}${job.downloaded > job.items.length ? `<span class="job-more">+${number(job.downloaded - job.items.length)}</span>` : ''}</div>` : ''}
       </div>
       <div class="row-side">${statusTag(job.state)}${['queued', 'running'].includes(job.state) ? `<button class="button small" type="button" data-cancel-job="${job.id}">Interrompi</button>` : ''}</div>
@@ -405,6 +459,32 @@
   }
   document.addEventListener('keydown', event => { if (event.key === 'Escape' && menu) { event.stopPropagation(); const back = menu.closest('li')?.querySelector('[data-commenter]'); closeMenu(); back?.focus(); } }, true);
   document.addEventListener('click', event => { if (menu && !event.target.closest('.menu, [data-commenter]')) closeMenu(); });
+  function openRemove(profile) {
+    if (!profile) return;
+    returnFocus = document.activeElement; $('#removeId').value = profile.id; $('#removeError').textContent = '';
+    $('#removeTitle').textContent = `Rimuovi @${profile.username}`;
+    $('#removeForm').elements.removeMode.value = 'keep'; updateRemove();
+    $('#removeDialog').showModal();
+  }
+  function updateRemove() {
+    const remove = $('#removeForm').elements.removeMode.value === 'delete';
+    $('#removeSubmit').textContent = remove ? 'Cancella profilo e contenuti' : 'Rimuovi profilo';
+    $('#removeSubmit').classList.toggle('danger', remove);
+  }
+  $('#removeForm').addEventListener('change', updateRemove);
+  $('#removeForm').addEventListener('submit', event => {
+    event.preventDefault();
+    const id = Number($('#removeId').value); const deleteData = $('#removeForm').elements.removeMode.value === 'delete';
+    busy(event.submitter, async () => {
+      try {
+        await api(`/api/profiles/${id}/remove`, {method: 'POST', body: JSON.stringify({delete_data: deleteData})});
+        $('#removeDialog').close(); if (String(state.profile) === String(id)) state.profile = '';
+        toast(deleteData ? 'Profilo e contenuti cancellati' : 'Profilo rimosso, i contenuti restano sul disco');
+        await refreshSummary(); if (GRIDS.includes(state.view)) loadPosts(true).catch(report);
+      } catch (error) { $('#removeError').textContent = error.message; }
+    });
+  });
+  $('#removeDialog').addEventListener('close', () => { returnFocus?.focus?.(); });
   function openProfile(profile = null, username = '') {
     returnFocus = document.activeElement; $('#profileError').textContent = ''; $('#profileId').value = profile?.id || '';
     $('#profileDialogTitle').textContent = profile ? `Modifica @${profile.username}` : 'Aggiungi un profilo';
@@ -449,8 +529,8 @@
     $('#openInstagram').hidden = expired;
     $('#openInstagram').href = /^https:\/\/www\.instagram\.com\//.test(external) ? external : 'https://www.instagram.com/';
     const list = state.playlist;
-    $('#downloadCollection').hidden = !list;
-    if (list) $('#downloadCollection').href = `${BASE}/api/profiles/${Number(list.profile)}/download?collection=${encodeURIComponent(list.name)}`;
+    $('#downloadCollection').hidden = !list?.collection;
+    if (list?.collection) $('#downloadCollection').href = `${BASE}/api/profiles/${Number(list.profile)}/download?collection=${encodeURIComponent(list.collection)}`;
     updateFavorite(); renderSlide();
     if (!$('#postDialog').open) { $('#postDialog').showModal(); document.body.classList.add('dialog-open'); }
   }
@@ -521,7 +601,7 @@
   function report(error) { if (error.status !== 401) toast(error.message || 'Operazione non riuscita.'); }
   async function start() {
     const me = await api('/api/me'); state.csrf = me.csrf; state.authenticated = true; $('#loginGate').hidden = true; $('#appShell').hidden = false;
-    await refreshSummary(true); setView(location.hash.slice(1) || 'archive', true);
+    await refreshSummary(true); setView(location.hash.slice(1) || 'home', true);
   }
   async function logout(button) {
     await busy(button, async () => { try { await api('/api/logout', {method: 'POST', body: '{}'}); showLogin(); } catch (error) { report(error); } });
@@ -549,6 +629,8 @@
     if (data.cancelJob) { busy(target, async () => { try { await api(`/api/jobs/${Number(data.cancelJob)}/cancel`, {method: 'POST', body: '{}'}); toast('Interruzione richiesta'); await refreshSummary(); await loadJobs(); } catch (error) { report(error); } }); return; }
     if (data.follow) { busy(target, async () => { try { const result = await api(`/api/profiles/${Number(data.follow)}/follow`, {method: 'POST', body: '{}'}); toast(result.access ? 'Richiesta inviata: InstaVault scarica appena viene accettata' : 'Ora lo segui: download in coda'); await refreshSummary(); } catch (error) { report(error); } }); return; }
     if (Object.hasOwn(data, 'collection')) { playCollection(data.collection).catch(report); return; }
+    if (data.stories) { playStories(data.stories).catch(report); return; }
+    if (data.removeProfile) { openRemove(profileById(data.removeProfile)); return; }
     if (data.commenter) { commenterMenu(target, state.post?.comments?.[Number(data.commenter)]); return; }
     if (data.addProfile) { $('#postDialog').close(); closeMenu(); openProfile(null, data.addProfile); return; }
     if (Object.hasOwn(data, 'kind')) {
@@ -665,7 +747,7 @@
   let touchStart = null;
   $('#viewerMedia').addEventListener('touchstart', event => { if (!event.target.closest('video')) touchStart = {x: event.changedTouches[0].clientX, y: event.changedTouches[0].clientY}; }, {passive: true});
   $('#viewerMedia').addEventListener('touchend', event => { if (!touchStart) return; const dx = event.changedTouches[0].clientX - touchStart.x; const dy = event.changedTouches[0].clientY - touchStart.y; if (Math.abs(dx) > 55 && Math.abs(dx) > Math.abs(dy) * 1.5) moveSlide(dx < 0 ? 1 : -1); touchStart = null; }, {passive: true});
-  window.addEventListener('popstate', () => { if (state.authenticated) setView(location.hash.slice(1) || 'archive', true); });
+  window.addEventListener('popstate', () => { if (state.authenticated) setView(location.hash.slice(1) || 'home', true); });
   document.addEventListener('visibilitychange', () => { if (!document.hidden && state.authenticated) refreshSummary().catch(report); });
   setInterval(() => { if (!document.hidden && state.authenticated && !$('#profileDialog').open) refreshSummary().catch(error => { if (error.status === 401) showLogin(); }); }, 15000);
   start().catch(error => { showLogin(); if (error.status !== 401) $('#loginError').textContent = 'Server non raggiungibile. Riprova tra poco.'; });

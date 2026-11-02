@@ -97,6 +97,9 @@ def initialize():
         # request waits, 'not_followed' nobody asked yet.
         if 'access' not in {row[1] for row in c.execute('PRAGMA table_info(profiles)')}:
             c.execute("ALTER TABLE profiles ADD COLUMN access TEXT NOT NULL DEFAULT ''")
+        # removed: taken off the list but its archive kept, so adding it again resumes.
+        if 'removed' not in {row[1] for row in c.execute('PRAGMA table_info(profiles)')}:
+            c.execute('ALTER TABLE profiles ADD COLUMN removed INTEGER NOT NULL DEFAULT 0')
         if 'interval_minutes' not in {row[1] for row in c.execute('PRAGMA table_info(profiles)')}:
             c.execute('ALTER TABLE profiles ADD COLUMN interval_minutes INTEGER NOT NULL DEFAULT 10')
         # owner: who published it on Instagram. links: JSON list of the story's
@@ -239,7 +242,7 @@ def profile_rows():
           (SELECT COUNT(*) FROM posts x WHERE x.profile_id=p.id AND x.complete=1 AND x.deleted_at IS NOT NULL) AS count_deleted,
           (SELECT m.id FROM media m JOIN posts x ON m.post_id=x.id WHERE {OF_PROFILE} AND x.complete=1 AND x.kind<>'story'
              ORDER BY x.published_at DESC, m.position LIMIT 1) AS cover
-          FROM profiles p ORDER BY p.username''')]
+          FROM profiles p WHERE p.removed=0 ORDER BY p.username''')]
 
 
 def collections(profile_id):
@@ -250,6 +253,70 @@ def collections(profile_id):
                AND x.collection=p.collection AND x.complete=1 ORDER BY x.published_at DESC, m.position LIMIT 1) AS cover
             FROM posts p WHERE p.profile_id=? AND p.complete=1 AND p.kind='story' AND p.collection<>''
             GROUP BY p.collection ORDER BY latest DESC''', (profile_id,))]
+
+
+def remove_profile(profile_id, delete_data):
+    """Takes a profile off the list. With delete_data its files, comments and
+    history go too; a collab it shares with a listed profile moves to that
+    profile instead. Returns the files to unlink once the database agrees."""
+    with db() as c:
+        if not c.execute('SELECT 1 FROM profiles WHERE id=?', (profile_id,)).fetchone():
+            raise KeyError(profile_id)
+        if c.execute("SELECT 1 FROM jobs WHERE profile_id=? AND state='running'", (profile_id,)).fetchone():
+            c.execute("UPDATE jobs SET state='cancel_requested' WHERE profile_id=? AND state='running'", (profile_id,))
+            raise ValueError('Download in corso: lo sto interrompendo, riprova tra qualche secondo.')
+        c.execute("UPDATE jobs SET state='cancelled' WHERE profile_id=? AND state IN ('queued','cancel_requested')", (profile_id,))
+        if not delete_data:
+            c.execute('UPDATE profiles SET removed=1,enabled=0 WHERE id=?', (profile_id,))
+            return []
+        if c.execute("SELECT 1 FROM media m JOIN posts p ON p.id=m.post_id WHERE p.profile_id=? AND m.location='media' LIMIT 1",
+                     (profile_id,)).fetchone() and not storage_ready():
+            raise ValueError('Collega l’NVMe per cancellare i file di questo profilo.')
+        for row in list(c.execute('''SELECT s.post_id, MIN(s.profile_id) AS heir FROM shared s JOIN posts p ON p.id=s.post_id
+                WHERE p.profile_id=? AND s.profile_id<>? GROUP BY s.post_id''', (profile_id, profile_id))):
+            c.execute('UPDATE posts SET profile_id=? WHERE id=?', (row['heir'], row['post_id']))
+            c.execute('DELETE FROM shared WHERE post_id=? AND profile_id=?', (row['post_id'], row['heir']))
+        files = []
+        for m in c.execute('SELECT m.* FROM media m JOIN posts p ON p.id=m.post_id WHERE p.profile_id=?', (profile_id,)):
+            files += [(m['path'], m['location']), (m['thumb'], m['location'])]
+            if m['kind'] == 'video':
+                files.append((m['path'].rsplit('.', 1)[0] + '.poster.jpg', m['location']))
+        avatar = c.execute('SELECT avatar FROM profiles WHERE id=?', (profile_id,)).fetchone()['avatar']
+        if avatar:
+            files.append((avatar, 'media'))
+        posts = 'SELECT id FROM posts WHERE profile_id=?'
+        c.execute(f'DELETE FROM comments WHERE post_id IN ({posts})', (profile_id,))
+        c.execute(f'DELETE FROM media WHERE post_id IN ({posts})', (profile_id,))
+        c.execute(f'DELETE FROM shared WHERE post_id IN ({posts}) OR profile_id=?', (profile_id, profile_id))
+        for table in ['posts', 'cursors', 'jobs']:
+            c.execute(f'DELETE FROM {table} WHERE profile_id=?', (profile_id,))
+        c.execute('DELETE FROM profiles WHERE id=?', (profile_id,))
+    return [(rel, loc) for rel, loc in files if rel]
+
+
+def delete_files(files, profile_id):
+    for relative, location in files:
+        try:
+            safe_file(relative, location).unlink()
+        except (OSError, ValueError):
+            pass
+    # Empty folders of the profile go too; anything still in use stays.
+    for top in [MEDIA / str(profile_id), buffer_root() / str(profile_id)]:
+        if top.is_dir():
+            for folder in sorted((p for p in top.rglob('*') if p.is_dir()), key=lambda p: len(p.parts), reverse=True):
+                with contextlib.suppress(OSError):
+                    folder.rmdir()
+            with contextlib.suppress(OSError):
+                top.rmdir()
+
+
+def recent_stories():
+    # Profiles with stories from the last 24 hours, newest first: the Home's circles.
+    with db() as c:
+        return [dict(r) for r in c.execute('''SELECT r.id AS profile_id, r.username, r.avatar, COUNT(*) AS count,
+            MAX(p.published_at) AS latest FROM posts p JOIN profiles r ON r.id=p.profile_id
+            WHERE p.kind='story' AND p.collection='' AND p.complete=1 AND p.published_at>=? AND r.removed=0
+            GROUP BY r.id ORDER BY latest DESC''', (now() - 86400,))]
 
 
 def job_items(c, job_id, limit=12):
@@ -304,7 +371,7 @@ def post_json(c, row, detail=False):
     value['media'] = media
     # Every archived profile that published it, the owner first.
     value['profiles'] = [r[0] for r in c.execute('''SELECT username FROM profiles WHERE id=?
-        UNION ALL SELECT r.username FROM shared s JOIN profiles r ON r.id=s.profile_id WHERE s.post_id=?''',
+        UNION ALL SELECT r.username FROM shared s JOIN profiles r ON r.id=s.profile_id WHERE s.post_id=? AND r.removed=0''',
                                                  (row['profile_id'], row['id']))]
     try:
         value['links'] = json.loads(value.get('links') or '[]')
@@ -327,6 +394,8 @@ def list_posts(query):
     kind = query.get('kind')
     if kind in {'post', 'reel'}:
         conditions.append('p.kind=?'); args.append(kind)
+    elif kind == 'feed':
+        conditions.append("p.kind IN ('post','reel')")
     elif kind == 'story':
         conditions.append("p.kind='story' AND p.collection=''")
     elif kind == 'highlight':
@@ -349,7 +418,12 @@ def list_posts(query):
         stamp, ident = map(int, query['cursor'].split(':'))
         conditions.append('(p.published_at,p.id) ' + ('>' if older else '<') + ' (?,?)'); args += [stamp, ident]
     direction = 'ASC' if older else 'DESC'
-    sql = '''SELECT p.*,r.username,r.full_name,r.avatar FROM posts p JOIN profiles r ON p.profile_id=r.id
+    # A removed profile's posts stay hidden, unless a collab also belongs to a listed profile.
+    conditions.append('(r.removed=0 OR p.id IN (SELECT s.post_id FROM shared s JOIN profiles q ON q.id=s.profile_id WHERE q.removed=0))')
+    if str(query.get('since', '')).isdigit():
+        conditions.append('p.published_at>=?'); args.append(int(query['since']))
+    sql = '''SELECT p.*,r.username,r.full_name,r.avatar,(SELECT COUNT(*) FROM comments k WHERE k.post_id=p.id) AS comment_count
+          FROM posts p JOIN profiles r ON p.profile_id=r.id
           WHERE ''' + ' AND '.join(conditions) + f' ORDER BY p.published_at {direction},p.id {direction} LIMIT 49'
     with db() as c:
         rows = list(c.execute(sql, args)); has_more = len(rows) > 48; rows = rows[:48]

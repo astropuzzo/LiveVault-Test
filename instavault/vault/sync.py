@@ -461,7 +461,7 @@ class Worker:
             added = self.archive(profile, item, kind, job_id)
             known = 0 if added else known + 1
             with store.db() as c:
-                c.execute('UPDATE jobs SET seen=seen+1,message=? WHERE id=?', ('Archiviazione ' + ('Reel' if kind == 'reel' else 'post'), job_id))
+                c.execute('UPDATE jobs SET seen=seen+1,message=? WHERE id=?', ('Controllo dei ' + ('Reel' if kind == 'reel' else 'post') + '…', job_id))
             if not initial and known >= 16:
                 break
             if hasattr(iterator, 'freeze'):
