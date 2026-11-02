@@ -49,3 +49,13 @@ browser sessions keep the web transport. The selected photographer's real login
 and first three-photo carousel were verified on 2026-11-02. The full initial
 archive continues in bounded, resumable passes.
 Rollback and deployment details: [HOSTING.md](../HOSTING.md#instavault).
+
+## Archive layout
+
+The archive opens on one card per profile. Inside a profile, posts, Reels,
+stories and highlights are separate tabs; highlights are grouped by their
+collection, as on Instagram. A private profile the connected account cannot
+see is marked `access='requested'` or `'not_followed'` and skipped without an
+error; "Chiedi di seguire" sends the follow request (mobile sessions only).
+Instagram errors are named in Italian and their class is printed to the
+container log.

@@ -16,8 +16,9 @@
     const text = minutes === 60 ? 'ogni ora' : minutes % 60 ? `ogni ${minutes} minuti` : `ogni ${minutes / 60} ore`;
     return title ? text[0].toUpperCase() + text.slice(1) : text;
   };
-  const stateNames = {queued: 'In coda', running: 'In corso', syncing: 'In corso', done: 'Completato', ready: 'Aggiornato', error: 'Da verificare', cancelled: 'Interrotto', cancel_requested: 'In arresto', paused: 'In pausa'};
-  const state = {authenticated: false, csrf: '', view: 'archive', summary: null, profile: '', kind: '', query: '', order: 'newest', cursor: null, posts: [], loadSeq: 0, loading: false, post: null, slide: 0, pendingCode: false, lastCount: null};
+  const stateNames = {queued: 'In coda', running: 'In corso', syncing: 'In corso', done: 'Completato', ready: 'Aggiornato', error: 'Da verificare', cancelled: 'Interrotto', cancel_requested: 'In arresto', paused: 'In pausa', private: 'Privato'};
+  const KINDS = {post: ['post', 'post'], reel: ['Reel', 'Reel'], story: ['storia', 'storie'], highlight: ['contenuto in evidenza', 'contenuti in evidenza']};
+  const state = {authenticated: false, csrf: '', view: 'archive', summary: null, profile: '', kind: 'post', collection: '', igChanging: false, query: '', order: 'newest', cursor: null, posts: [], loadSeq: 0, loading: false, post: null, slide: 0, pendingCode: false, lastCount: null};
   let toastTimer, searchTimer, refreshBusy = false, returnFocus = null;
   let loginAttemptId = null, loginPollGeneration = 0;
 
@@ -37,7 +38,7 @@
     state.authenticated = false; state.csrf = ''; state.summary = null; state.posts = []; state.lastCount = null;
     if ($('#postDialog').open) $('#postDialog').close();
     if ($('#profileDialog').open) $('#profileDialog').close();
-    ['mediaGrid', 'tray', 'profilesList', 'jobsList', 'profileHeader', 'postAuthor', 'postCaption', 'postMetadata'].forEach(id => $('#' + id).replaceChildren());
+    ['mediaGrid', 'profileCards', 'collections', 'profilesList', 'jobsList', 'profileHeader', 'postAuthor', 'postCaption', 'postMetadata'].forEach(id => $('#' + id).replaceChildren());
     ['igPassword', 'igCode', 'cookieText', 'loginPassword'].forEach(id => { $('#' + id).value = ''; });
     state.pendingCode = false; $('#twoFactorBox').hidden = true;
     $('#appShell').hidden = true; $('#loginGate').hidden = false; document.title = 'Accedi · InstaVault';
@@ -89,12 +90,12 @@
   }
   function renderNotice(summary) {
     const {profiles = [], storage = {}, instagram = {}, worker = {}} = summary; const notice = $('#notice');
-    const failing = profiles.find(p => p.enabled && p.error);
+    const failing = profiles.find(p => p.enabled && p.error && !p.access);
     if (storage.buffer_full) notice.innerHTML = 'NVMe scollegato e buffer interno pieno: i download riprendono quando ricolleghi l’NVMe.';
     else if (!storage.ready) notice.innerHTML = `NVMe scollegato: i nuovi download vanno nel buffer interno (${bytes(storage.buffer_bytes)} di ${bytes(storage.buffer_limit_bytes)}). Quando ricolleghi l’NVMe passano sul disco e torna visibile tutto l’archivio.`;
     else if (worker.draining) notice.innerHTML = 'Sposto sull’NVMe i download salvati nel buffer interno.';
     else if (!instagram.configured && profiles.length) notice.innerHTML = 'Instagram chiede l’accesso per scaricare quasi tutti i profili. <a href="#settings" data-view="settings">Collega l’account</a>';
-    else if (failing) notice.innerHTML = `<b>@${esc(failing.username)}</b>: ${esc(failing.error)} <a href="#settings" data-view="settings">Impostazioni</a>`;
+    else if (failing) notice.innerHTML = `<b>@${esc(failing.username)}</b>: ${esc(failing.error)} <button class="link" type="button" data-profile="${failing.id}">Apri il profilo</button>`;
     else { notice.hidden = true; return; }
     notice.hidden = false;
   }
@@ -114,13 +115,12 @@
     else setSyncStatus('Aggiornato', 'ok');
     renderNotice(summary);
     $('#instagramState').textContent = instagram.configured ? `Collegato come @${instagram.username}` : 'Non collegato';
-    $('#disconnectInstagram').hidden = !instagram.configured;
-    if (!$('#instagramLogin').contains(document.activeElement) && instagram.configured && !$('#igUsername').value) $('#igUsername').value = instagram.username;
+    // Once connected the sign-in form steps aside; it comes back only to switch account.
+    const connected = instagram.configured && !state.igChanging && !state.pendingCode && !loginAttemptId;
+    $('#igConnected').hidden = !connected; $('#igConnect').hidden = connected;
+    $('#keepInstagram').hidden = !(instagram.configured && state.igChanging);
     if (!$('#settingsForm').contains(document.activeElement)) { $('#automatic').checked = !!settings.automatic; $('#quotaGb').value = settings.quota_gb ?? 60; $('#reserveGb').value = settings.min_free_gb ?? 15; }
-    $('#tray').innerHTML = profiles.map(p => `<button class="tray-item${String(p.id) === String(state.profile) ? ' selected' : ''}${p.status === 'syncing' ? ' live' : ''}" type="button" data-profile="${p.id}" aria-label="Apri @${esc(p.username)}">${avatar(p, 'ring')}<span>${esc(p.username)}</span></button>`).join('')
-      + '<button class="tray-item add" type="button" data-action="add-profile">' + `<span class="avatar ring" aria-hidden="true">${icon('plus')}</span><span>Aggiungi</span></button>`;
-    bindImageFallback($('#tray'));
-    renderHeader(); renderProfiles();
+    renderArchive(); renderProfiles();
   }
   async function refreshSummary(initial = false) {
     if (refreshBusy || !state.authenticated) return;
@@ -138,24 +138,57 @@
     } finally { refreshBusy = false; }
   }
 
-  function renderHeader() {
+  function profileLine(p) {
+    if (p.access === 'requested') return 'Privato · richiesta di seguire in attesa';
+    if (p.access === 'not_followed') return 'Privato · da seguire per archiviarlo';
+    if (p.status === 'syncing') return 'Download in corso';
+    if (!p.enabled) return 'In pausa';
+    return `${plural(p.post_count, 'contenuto', 'contenuti')} · aggiornato ${moment(p.last_sync)}`;
+  }
+  function renderCards(profiles) {
+    $('#profileCards').innerHTML = profiles.map(p => `<button class="profile-card" type="button" data-profile="${p.id}" aria-label="Apri @${esc(p.username)}">
+      <span class="card-cover">${p.cover ? `<img src="${BASE}/media/${Number(p.cover)}/thumb" alt="" loading="lazy" decoding="async">` : p.access ? icon('lock') : ''}</span>
+      <span class="card-body">${avatar(p, 'medium')}<span class="card-text"><strong>@${esc(p.username)}</strong><span class="${p.error && !p.access ? 'card-error' : ''}">${esc(p.error && !p.access ? 'Da verificare' : profileLine(p))}</span></span></span>
+    </button>`).join('') + (profiles.length ? '' : `<button class="profile-card add" type="button" data-action="add-profile"><span class="card-cover">${icon('plus')}</span><span class="card-body"><span class="card-text"><strong>Aggiungi un profilo</strong><span>Username o link Instagram</span></span></span></button>`);
+    bindImageFallback($('#profileCards'));
+  }
+  function renderArchive() {
     const summary = state.summary || {}; const profiles = summary.profiles || []; const counts = summary.counts || {};
     const profile = state.view === 'archive' ? profileById(state.profile) : null;
-    const favorites = state.view === 'favorites';
-    $('#archiveHeader').hidden = !!profile; $('#profileHeader').hidden = !profile; $('#tray').hidden = favorites || !profiles.length && !profile;
-    $('#syncAll').hidden = favorites;
+    const favorites = state.view === 'favorites'; const landing = state.view === 'archive' && !profile;
+    // A private profile with nothing archived yet shows only its note, not a row of zeros.
+    const locked = profile && profile.access && !Number(profile.post_count);
+    $('#archiveHeader').hidden = !!profile; $('#profileCards').hidden = !landing; $('#profilePage').hidden = !profile; $('#browse').hidden = landing || locked;
+    $('#kindTabs').hidden = favorites; $('#collections').hidden = !profile || state.kind !== 'highlight';
+    $('#syncAll').hidden = favorites || !profiles.length;
     $('#archiveTitle').textContent = favorites ? 'Salvati' : 'Archivio';
-    $('#archiveMeta').textContent = favorites ? 'I contenuti che hai segnato col cuore' : profiles.length ? `${plural(counts.posts, 'contenuto', 'contenuti')} · ${plural(profiles.length, 'profilo', 'profili')}` : '';
-    if (!profile) { $('#profileHeader').replaceChildren(); return; }
+    $('#archiveMeta').textContent = favorites ? 'I contenuti che hai segnato col cuore, da tutti i profili' : profiles.length ? `${plural(counts.posts, 'contenuto', 'contenuti')} da ${plural(profiles.length, 'profilo', 'profili')}` : 'Aggiungi un profilo Instagram: InstaVault ne conserva post, Reel e storie.';
+    if (landing) renderCards(profiles);
+    if (!profile) { $('#profileHeader').replaceChildren(); $('#accessNote').hidden = true; return; }
     $('#profileHeader').innerHTML = `${avatar(profile, 'large')}<div class="profile-body">
+      <button class="link back" type="button" data-clear-profile>${icon('left')}Tutti i profili</button>
       <div class="profile-top"><h1>${esc(profile.username)}</h1><div class="page-actions"><button class="button" type="button" data-sync-profile="${profile.id}">${icon('refresh')}Aggiorna</button><button class="button" type="button" data-edit-profile="${profile.id}">Modifica</button></div></div>
-      <p class="profile-counts"><span><b>${number(profile.post_count)}</b> contenuti</span><span><b>${number(profile.media_count)}</b> file</span></p>
+      <p class="profile-counts"><span><b>${number(profile.count_post)}</b> post</span><span><b>${number(profile.count_reel)}</b> Reel</span><span><b>${number(profile.count_story)}</b> storie</span><span><b>${number(profile.count_highlight)}</b> in evidenza</span></p>
       ${profile.full_name ? `<p class="profile-name">${esc(profile.full_name)}</p>` : ''}
       ${profile.biography ? `<p class="profile-bio">${esc(profile.biography)}</p>` : ''}
-      <p class="stamp">aggiornato ${esc(moment(profile.last_sync))}</p>
-      <button class="link back" type="button" data-clear-profile>${icon('left')}Tutti i profili</button>
+      ${profile.error && !profile.access ? `<p class="profile-error">${esc(profile.error)}</p>` : ''}
+      <p class="stamp">${esc(profile.status === 'syncing' ? 'download in corso' : 'aggiornato ' + moment(profile.last_sync))} · ${esc(every(profile.interval_minutes))}</p>
     </div>`;
     bindImageFallback($('#profileHeader'));
+    const note = $('#accessNote');
+    note.hidden = !profile.access;
+    if (profile.access === 'requested') note.innerHTML = `${icon('lock')}<p><b>Profilo privato.</b> La richiesta di seguirlo è in attesa. InstaVault controlla ${esc(every(profile.interval_minutes))} e scarica tutto appena viene accettata.</p>`;
+    if (profile.access === 'not_followed') note.innerHTML = `${icon('lock')}<p><b>Profilo privato.</b> L’account Instagram collegato non lo segue, quindi Instagram non mostra i suoi contenuti.</p><button class="button primary small" type="button" data-follow="${profile.id}">Chiedi di seguire</button>`;
+    $$('#kindTabs [data-kind]').forEach(button => { button.querySelector('.count').textContent = number(profile['count_' + button.dataset.kind]); });
+  }
+  async function loadCollections() {
+    const box = $('#collections'); const id = state.profile;
+    const result = await api(`/api/profiles/${Number(id)}/collections`);
+    if (id !== state.profile || state.kind !== 'highlight') return;
+    const name = value => value.replace(/^In evidenza · /, '') || 'Senza titolo';
+    box.innerHTML = result.items.length ? `<button class="collection${state.collection ? '' : ' selected'}" type="button" data-collection="" aria-pressed="${!state.collection}"><span class="avatar ring">${icon('grid')}</span><span>Tutte</span></button>`
+      + result.items.map(c => `<button class="collection${state.collection === c.name ? ' selected' : ''}" type="button" data-collection="${esc(c.name)}" aria-pressed="${state.collection === c.name}" aria-label="${esc(name(c.name))}, ${plural(c.count, 'contenuto', 'contenuti')}"><span class="avatar ring">${c.cover ? `<img src="${BASE}/media/${Number(c.cover)}/thumb" alt="" loading="lazy">` : ''}</span><span>${esc(name(c.name))}</span></button>`).join('') : '';
+    bindImageFallback(box);
   }
   function renderProfiles() {
     const profiles = state.summary?.profiles || [];
@@ -186,7 +219,7 @@
     $('#archiveView').hidden = !['archive', 'favorites'].includes(view); $('#profilesView').hidden = view !== 'profiles'; $('#activityView').hidden = view !== 'activity'; $('#settingsView').hidden = view !== 'settings';
     const names = {archive: 'Archivio', favorites: 'Salvati', profiles: 'Profili', activity: 'Attività', settings: 'Impostazioni'};
     document.title = `${names[view]} · InstaVault`;
-    if (state.summary) renderSummary(); else renderHeader();
+    if (state.summary) renderSummary(); else renderArchive();
     if (state.authenticated) {
       if (['archive', 'favorites'].includes(view)) loadPosts(true).catch(report);
       if (view === 'activity') loadJobs().catch(report);
@@ -200,15 +233,20 @@
     $$('.nav-item').forEach(item => { if (item.dataset.view === 'archive') item.setAttribute('aria-current', 'page'); else item.removeAttribute('aria-current'); });
     $('#archiveView').hidden = false; ['profilesView', 'activityView', 'settingsView'].forEach(id => { $('#' + id).hidden = true; });
     const profile = profileById(id); document.title = `@${profile?.username || ''} · InstaVault`;
+    // Open on the first kind that has something to show, like Instagram opens on the grid.
+    state.kind = ['post', 'reel', 'story', 'highlight'].find(kind => Number(profile?.['count_' + kind])) || 'post';
+    state.collection = ''; pressKind();
+    if (state.kind === 'highlight') loadCollections().catch(report);
     if (location.hash !== '#archive') history.pushState(null, '', '#archive');
     renderSummary(); loadPosts(true).catch(report); window.scrollTo({top: 0, behavior: 'instant'});
   }
+  function pressKind() { $$('#kindTabs [data-kind]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.kind === state.kind))); }
   function clearProfile() { state.profile = ''; document.title = 'Archivio · InstaVault'; renderSummary(); loadPosts(true).catch(report); }
 
   function postTile(post) {
     const media = post.media?.[0]; if (!media) return '';
-    const kind = post.kind === 'reel' || media.kind === 'video' ? 'reel' : post.media.length > 1 ? 'stack' : post.kind === 'story' ? 'story' : '';
-    const label = post.kind === 'reel' ? 'Reel' : post.kind === 'story' ? 'Storia' : post.media.length > 1 ? 'Carosello' : 'Post';
+    const kind = post.kind === 'reel' || media.kind === 'video' ? 'reel' : post.media.length > 1 ? 'stack' : post.collection ? 'ring' : post.kind === 'story' ? 'story' : '';
+    const label = post.kind === 'reel' ? 'Reel' : post.collection ? 'In evidenza' : post.kind === 'story' ? 'Storia' : post.media.length > 1 ? 'Carosello' : 'Post';
     const owner = state.profile ? '' : `@${esc(post.username)} · `;
     const width = media.width || 480; const height = media.height || 600;
     return `<button class="tile" type="button" data-post="${post.id}" aria-label="${esc(label)} di @${esc(post.username)}, ${esc(day(post.published_at))}">
@@ -221,14 +259,23 @@
   function showEmpty(title, text, action = null) {
     $('#emptyState').hidden = false; $('#emptyTitle').textContent = title; $('#emptyText').textContent = text;
     const button = $('#emptyAction'); button.hidden = !action;
-    if (action) { button.textContent = action.label; button.dataset.action = action.action || ''; button.dataset.view = action.view || ''; }
+    if (action) { button.textContent = action.label; button.dataset.action = action.action || ''; button.dataset.view = action.view || ''; button.dataset.editProfile = action.edit || ''; }
   }
   function renderEmpty() {
     if (state.posts.length) { $('#emptyState').hidden = true; return; }
     const summary = state.summary || {}; const profiles = summary.profiles || [];
     if (summary.storage && !summary.storage.ready && profiles.length) return showEmpty('Archivio sull’NVMe scollegato', 'Qui compaiono solo i contenuti scaricati nel buffer interno. Il resto torna visibile quando ricolleghi l’NVMe.');
     if (state.view === 'favorites') return showEmpty('Nessun contenuto salvato', 'Apri un contenuto e tocca il cuore per ritrovarlo qui.');
-    if (state.query || state.kind) return showEmpty('Nessun risultato', 'Nessun contenuto corrisponde a questi filtri.');
+    if (state.query) return showEmpty('Nessun risultato', 'Nessun contenuto corrisponde a questa ricerca.');
+    const profile = profileById(state.profile);
+    if (profile) {
+      const [, many] = KINDS[state.kind] || KINDS.post;
+      const setting = {post: 'posts', reel: 'reels', story: 'stories', highlight: 'highlights'}[state.kind];
+      if (profile.access) return showEmpty('Ancora niente da mostrare', 'Il profilo è privato: i contenuti arrivano quando l’account collegato potrà vederli.');
+      if (!profile[setting]) return showEmpty(`Nessun ${many === 'post' ? 'post' : many} archiviato`, `Questo profilo non archivia ${many}. Puoi attivarli da Modifica.`, {label: 'Modifica', edit: profile.id});
+      if (state.kind === 'story') return showEmpty('Nessuna storia archiviata', 'Le storie restano su Instagram 24 ore: InstaVault salva quelle pubblicate da quando segue il profilo.');
+      return showEmpty(`Nessun ${many === 'post' ? 'post' : many} archiviato`, profile.status === 'syncing' ? 'Il download è in corso: i contenuti compaiono qui appena arrivano.' : 'Compaiono qui al prossimo aggiornamento.');
+    }
     if (!profiles.length) return showEmpty('Nessun profilo da archiviare', 'Aggiungi un profilo Instagram: InstaVault scarica post, Reel e storie e li conserva sul server.', {label: 'Aggiungi profilo', action: 'add-profile'});
     if (summary.jobs?.length) return showEmpty('Download in coda', 'I primi contenuti compaiono qui appena scaricati.');
     if (!summary.instagram?.configured) return showEmpty('Ancora nessun contenuto', 'Instagram chiede l’accesso prima di mostrare i post. Collega l’account in Impostazioni.', {label: 'Collega l’account', view: 'settings'});
@@ -245,7 +292,8 @@
     }
     const params = new URLSearchParams();
     if (state.profile) params.set('profile', state.profile);
-    if (state.kind) params.set('kind', state.kind);
+    if (state.profile) params.set('kind', state.kind);
+    if (state.profile && state.kind === 'highlight' && state.collection) params.set('collection', state.collection);
     if (state.query) params.set('q', state.query);
     if (state.view === 'favorites') params.set('favorite', '1');
     params.set('order', state.order);
@@ -357,8 +405,11 @@
     if (data.syncProfile) { busy(target, async () => { try { await api(`/api/profiles/${Number(data.syncProfile)}/sync`, {method: 'POST', body: '{}'}); toast('Aggiornamento in coda'); await refreshSummary(); } catch (error) { report(error); } }); return; }
     if (data.toggleProfile) { busy(target, async () => { try { const p = profileById(data.toggleProfile); await api('/api/profiles/' + p.id, {method: 'PATCH', body: JSON.stringify({enabled: !p.enabled})}); toast(p.enabled ? 'Profilo in pausa, i contenuti restano' : 'Aggiornamenti riattivati'); await refreshSummary(); } catch (error) { report(error); } }); return; }
     if (data.cancelJob) { busy(target, async () => { try { await api(`/api/jobs/${Number(data.cancelJob)}/cancel`, {method: 'POST', body: '{}'}); toast('Interruzione richiesta'); await refreshSummary(); await loadJobs(); } catch (error) { report(error); } }); return; }
+    if (data.follow) { busy(target, async () => { try { const result = await api(`/api/profiles/${Number(data.follow)}/follow`, {method: 'POST', body: '{}'}); toast(result.access ? 'Richiesta inviata: InstaVault scarica appena viene accettata' : 'Ora lo segui: download in coda'); await refreshSummary(); } catch (error) { report(error); } }); return; }
+    if (Object.hasOwn(data, 'collection')) { state.collection = data.collection; loadCollections().catch(report); loadPosts(true).catch(report); return; }
     if (Object.hasOwn(data, 'kind')) {
-      state.kind = data.kind; $$('[data-kind]').forEach(b => b.setAttribute('aria-pressed', String(b === target)));
+      state.kind = data.kind; state.collection = ''; pressKind(); renderArchive();
+      if (state.kind === 'highlight') loadCollections().catch(report);
       loadPosts(true).catch(report);
     }
   });
@@ -427,7 +478,7 @@
           state.pendingCode = true; $('#twoFactorBox').hidden = false;
           $('#igError').textContent = codeSentTo[result.channel] || codeSentTo.email; $('#igCode').focus();
         } else if (result.configured) {
-          loginAttemptId = null; resetInstagramLogin(); toast('Account Instagram collegato'); await refreshSummary();
+          loginAttemptId = null; state.igChanging = false; resetInstagramLogin(); toast('Account Instagram collegato'); await refreshSummary();
         }
       } catch (error) {
         resetInstagramLogin(); $('#igError').textContent = error.message;
@@ -435,11 +486,13 @@
     });
   });
   $('#cancelInstagramLogin').addEventListener('click', () => cancelInstagramLogin());
+  $('#changeInstagram').addEventListener('click', () => { state.igChanging = true; renderSummary(); $('#igUsername').focus(); });
+  $('#keepInstagram').addEventListener('click', () => { state.igChanging = false; $('#igError').textContent = ''; renderSummary(); });
   $('#resetTwoFactor').addEventListener('click', () => cancelInstagramLogin());
   $('#cookieImport').addEventListener('submit', event => {
     event.preventDefault();
     const body = {cookies: $('#cookieText').value}; $('#cookieText').value = '';
-    busy(event.submitter, async () => { try { await api('/api/instagram/cookies', {method: 'POST', body: JSON.stringify(body)}); toast('Account collegato, sessione cifrata sul server'); $('#cookieImport').closest('details').open = false; await refreshSummary(); } catch (error) { report(error); } finally { body.cookies = ''; } });
+    busy(event.submitter, async () => { try { await api('/api/instagram/cookies', {method: 'POST', body: JSON.stringify(body)}); toast('Account collegato, sessione cifrata sul server'); $('#cookieImport').closest('details').open = false; state.igChanging = false; await refreshSummary(); } catch (error) { report(error); } finally { body.cookies = ''; } });
   });
   $('#disconnectInstagram').addEventListener('click', event => busy(event.currentTarget, async () => {
     try { await api('/api/instagram/disconnect', {method: 'POST', body: '{}'}); state.pendingCode = false; $('#twoFactorBox').hidden = true; ['igUsername', 'igPassword', 'igCode'].forEach(id => { $('#' + id).value = ''; }); toast('Account scollegato, sessione rimossa dal server'); await refreshSummary(); } catch (error) { report(error); }

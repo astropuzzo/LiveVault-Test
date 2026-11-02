@@ -93,6 +93,10 @@ def initialize():
             c.execute("ALTER TABLE media ADD COLUMN location TEXT NOT NULL DEFAULT 'media'")
         c.execute('CREATE INDEX IF NOT EXISTS media_location ON media(location,post_id)')
         # Hours became minutes on 2026-11-02: every profile moves to the new 10 minute default.
+        # Who may see a private profile: '' public or followed, 'requested' a follow
+        # request waits, 'not_followed' nobody asked yet.
+        if 'access' not in {row[1] for row in c.execute('PRAGMA table_info(profiles)')}:
+            c.execute("ALTER TABLE profiles ADD COLUMN access TEXT NOT NULL DEFAULT ''")
         if 'interval_minutes' not in {row[1] for row in c.execute('PRAGMA table_info(profiles)')}:
             c.execute('ALTER TABLE profiles ADD COLUMN interval_minutes INTEGER NOT NULL DEFAULT 10')
         for key, value in {'automatic': True, 'quota_gb': 60, 'min_free_gb': 15}.items():
@@ -181,8 +185,24 @@ def profile_rows():
     with db() as c:
         return [dict(r) for r in c.execute('''SELECT p.*,
           (SELECT COUNT(*) FROM posts WHERE profile_id=p.id AND complete=1) AS post_count,
-          (SELECT COUNT(*) FROM media m JOIN posts x ON m.post_id=x.id WHERE x.profile_id=p.id AND x.complete=1) AS media_count
+          (SELECT COUNT(*) FROM media m JOIN posts x ON m.post_id=x.id WHERE x.profile_id=p.id AND x.complete=1) AS media_count,
+          (SELECT COUNT(*) FROM posts WHERE profile_id=p.id AND complete=1 AND kind='post') AS count_post,
+          (SELECT COUNT(*) FROM posts WHERE profile_id=p.id AND complete=1 AND kind='reel') AS count_reel,
+          (SELECT COUNT(*) FROM posts WHERE profile_id=p.id AND complete=1 AND kind='story' AND collection='') AS count_story,
+          (SELECT COUNT(*) FROM posts WHERE profile_id=p.id AND complete=1 AND kind='story' AND collection<>'') AS count_highlight,
+          (SELECT m.id FROM media m JOIN posts x ON m.post_id=x.id WHERE x.profile_id=p.id AND x.complete=1 AND x.kind<>'story'
+             ORDER BY x.published_at DESC, m.position LIMIT 1) AS cover
           FROM profiles p ORDER BY p.username''')]
+
+
+def collections(profile_id):
+    # Highlights grouped like Instagram's circles: title, size and the newest cover.
+    with db() as c:
+        return [dict(r) for r in c.execute('''SELECT p.collection AS name, COUNT(*) AS count, MAX(p.published_at) AS latest,
+            (SELECT m.id FROM media m JOIN posts x ON m.post_id=x.id WHERE x.profile_id=p.profile_id
+               AND x.collection=p.collection AND x.complete=1 ORDER BY x.published_at DESC, m.position LIMIT 1) AS cover
+            FROM posts p WHERE p.profile_id=? AND p.complete=1 AND p.kind='story' AND p.collection<>''
+            GROUP BY p.collection ORDER BY latest DESC''', (profile_id,))]
 
 
 def post_json(c, row, detail=False):
@@ -196,9 +216,17 @@ def post_json(c, row, detail=False):
 
 def list_posts(query):
     conditions, args = ['p.complete=1'], []
-    for key, column in [('profile', 'p.profile_id'), ('kind', 'p.kind')]:
-        if query.get(key):
-            conditions.append(column + '=?'); args.append(query[key])
+    if query.get('profile'):
+        conditions.append('p.profile_id=?'); args.append(query['profile'])
+    kind = query.get('kind')
+    if kind in {'post', 'reel'}:
+        conditions.append('p.kind=?'); args.append(kind)
+    elif kind == 'story':
+        conditions.append("p.kind='story' AND p.collection=''")
+    elif kind == 'highlight':
+        conditions.append("p.kind='story' AND p.collection<>''")
+        if query.get('collection'):
+            conditions.append('p.collection=?'); args.append(str(query['collection'])[:300])
     if query.get('favorite') == '1':
         conditions.append('p.favorite=1')
     if not storage_ready():

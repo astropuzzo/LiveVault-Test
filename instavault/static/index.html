@@ -28,6 +28,8 @@
 <symbol id="i-stack" viewBox="0 0 24 24"><rect x="3.5" y="7.5" width="13" height="13" rx="2"/><path d="M7.5 3.5h11a2 2 0 0 1 2 2v11"/></symbol>
 <symbol id="i-reel" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="17" height="17" rx="4"/><path d="m10 8.5 5.5 3.5-5.5 3.5Z"/></symbol>
 <symbol id="i-story" viewBox="0 0 24 24"><path d="M12 3.5a8.5 8.5 0 1 1-8.5 8.5"/><path d="M4 8.6a8.6 8.6 0 0 1 1.6-2.4M8.4 4.3a8.4 8.4 0 0 1 1.3-.5"/><path d="M12 8v8M8 12h8"/></symbol>
+<symbol id="i-ring" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/></symbol>
+<symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="10" rx="2"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5"/></symbol>
 <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.4-4.4"/></symbol>
 <symbol id="i-logout" viewBox="0 0 24 24"><path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4M9.5 16.5 5 12l4.5-4.5M5 12h10"/></symbol>
 </defs></svg>
@@ -90,32 +92,38 @@
         </div>
       </header>
 
-      <header id="profileHeader" class="profile-head" hidden></header>
+      <div id="profileCards" class="cards"></div>
 
-      <div id="tray" class="tray" role="group" aria-label="Profili archiviati"></div>
-
-      <div class="toolbar">
-        <div class="tabs" role="group" aria-label="Tipo di contenuto">
-          <button type="button" data-kind="" aria-pressed="true"><svg aria-hidden="true"><use href="#i-grid"/></svg>Tutto</button>
-          <button type="button" data-kind="post" aria-pressed="false"><svg aria-hidden="true"><use href="#i-stack"/></svg>Post</button>
-          <button type="button" data-kind="reel" aria-pressed="false"><svg aria-hidden="true"><use href="#i-reel"/></svg>Reel</button>
-          <button type="button" data-kind="story" aria-pressed="false"><svg aria-hidden="true"><use href="#i-story"/></svg>Storie</button>
-        </div>
-        <div class="filters">
-          <label class="search"><span class="sr-only">Cerca nelle didascalie e nei profili</span><svg aria-hidden="true"><use href="#i-search"/></svg><input id="search" type="search" placeholder="Cerca" autocomplete="off"></label>
-          <label class="sr-only" for="sortOrder">Ordine</label>
-          <select id="sortOrder"><option value="newest">Più recenti</option><option value="oldest">Meno recenti</option></select>
-        </div>
+      <div id="profilePage" hidden>
+        <header id="profileHeader" class="profile-head"></header>
+        <div id="accessNote" class="access" role="status" hidden></div>
       </div>
 
-      <p id="gridStatus" class="sr-only" aria-live="polite"></p>
-      <div id="mediaGrid" class="grid"></div>
-      <div id="emptyState" class="empty" hidden>
-        <h2 id="emptyTitle"></h2>
-        <p id="emptyText"></p>
-        <button id="emptyAction" class="button primary" type="button" hidden></button>
+      <div id="browse">
+        <div class="toolbar">
+          <div id="kindTabs" class="tabs" role="group" aria-label="Tipo di contenuto">
+            <button type="button" data-kind="post" aria-pressed="true"><svg aria-hidden="true"><use href="#i-stack"/></svg>Post<span class="count"></span></button>
+            <button type="button" data-kind="reel" aria-pressed="false"><svg aria-hidden="true"><use href="#i-reel"/></svg>Reel<span class="count"></span></button>
+            <button type="button" data-kind="story" aria-pressed="false"><svg aria-hidden="true"><use href="#i-story"/></svg>Storie<span class="count"></span></button>
+            <button type="button" data-kind="highlight" aria-pressed="false"><svg aria-hidden="true"><use href="#i-ring"/></svg>In evidenza<span class="count"></span></button>
+          </div>
+          <div class="filters">
+            <label class="search"><span class="sr-only">Cerca nelle didascalie</span><svg aria-hidden="true"><use href="#i-search"/></svg><input id="search" type="search" placeholder="Cerca" autocomplete="off"></label>
+            <label class="sr-only" for="sortOrder">Ordine</label>
+            <select id="sortOrder"><option value="newest">Più recenti</option><option value="oldest">Meno recenti</option></select>
+          </div>
+        </div>
+        <div id="collections" class="collections" role="group" aria-label="Raccolte in evidenza" hidden></div>
+
+        <p id="gridStatus" class="sr-only" aria-live="polite"></p>
+        <div id="mediaGrid" class="grid"></div>
+        <div id="emptyState" class="empty" hidden>
+          <h2 id="emptyTitle"></h2>
+          <p id="emptyText"></p>
+          <button id="emptyAction" class="button primary" type="button" hidden></button>
+        </div>
+        <button id="loadMore" class="button load-more" type="button" hidden>Carica altri</button>
       </div>
-      <button id="loadMore" class="button load-more" type="button" hidden>Carica altri</button>
     </section>
 
     <section id="profilesView" class="view" aria-labelledby="profilesTitle" hidden>
@@ -147,6 +155,14 @@
         <section class="card" aria-labelledby="igTitle">
           <h2 id="igTitle">Account Instagram</h2>
           <p id="instagramState" class="card-state">Non collegato</p>
+          <div id="igConnected" hidden>
+            <p class="help">InstaVault scarica con questo account. I profili privati si vedono solo se li segue.</p>
+            <div class="form-actions">
+              <button id="changeInstagram" class="button" type="button">Usa un altro account</button>
+              <button id="disconnectInstagram" class="button" type="button">Scollega</button>
+            </div>
+          </div>
+          <div id="igConnect">
           <p class="help">Serve per i profili che Instagram mostra solo dopo l’accesso, per le storie e per i contenuti in evidenza. La password viene usata una volta per accedere e non viene salvata: sul server resta solo la sessione, cifrata. Se Instagram chiede di confermare che sei tu, qui compare il campo per il codice che ti manda via email o SMS.</p>
           <p class="help">Instagram può limitare gli account che scaricano molti contenuti. Se ne hai uno, usa un account secondario.</p>
           <form id="instagramLogin" class="form">
@@ -162,7 +178,7 @@
             <div id="loginProgress" hidden role="status"><p id="loginProgressText">Connessione a Instagram in corso…</p><button id="cancelInstagramLogin" type="button" class="button small">Annulla tentativo</button></div><p id="igError" class="form-error" role="alert"></p>
             <div class="form-actions">
               <button class="button primary" type="submit">Collega account</button>
-              <button id="disconnectInstagram" class="button" type="button" hidden>Scollega</button>
+              <button id="keepInstagram" class="button" type="button" hidden>Annulla</button>
             </div>
           </form>
           <details id="cookieDetails" class="cookies">
@@ -180,6 +196,7 @@
               <div class="form-actions"><button class="button" type="submit">Collega con il cookie</button></div>
             </form>
           </details>
+          </div>
         </section>
 
         <section class="card" aria-labelledby="storageTitle">

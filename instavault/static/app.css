@@ -140,7 +140,7 @@ input[readonly]{background:var(--raised)}
 .profile-counts b{font-weight:600;font-variant-numeric:tabular-nums}
 .profile-name{font-weight:600}
 .profile-bio{white-space:pre-line;overflow-wrap:anywhere;max-width:60ch}
-.back{justify-self:start;color:var(--text-2);font-weight:500;margin-left:-4px}
+.back{justify-self:start;color:var(--text-2);font-weight:500;margin-left:-4px;min-height:28px}
 
 /* Avatars */
 .avatar{position:relative;display:inline-grid;place-items:center;flex:none;width:40px;height:40px;border-radius:50%;overflow:hidden;background:var(--raised);color:var(--text-2);font-weight:600;font-size:15px}
@@ -150,16 +150,38 @@ input[readonly]{background:var(--raised)}
 .avatar.large{width:150px;height:150px;font-size:48px}
 .avatar.ring{width:64px;height:64px;font-size:22px;border:2px solid var(--bg);box-shadow:0 0 0 2px var(--line)}
 
-/* Profile tray */
-.tray{display:flex;gap:16px;overflow-x:auto;padding:4px 4px 16px;margin-bottom:8px;scrollbar-width:none}
-.tray::-webkit-scrollbar{display:none}
-.tray-item{flex:0 0 72px;display:grid;justify-items:center;gap:8px;padding:4px 0;font-size:12px;line-height:16px;color:var(--text)}
-.tray-item>span:last-child{max-width:72px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.tray-item:hover .avatar.ring{box-shadow:0 0 0 2px var(--field)}
-.tray-item.selected .avatar.ring{box-shadow:0 0 0 2px var(--text)}
-.tray-item.live .avatar.ring{box-shadow:0 0 0 2px var(--accent)}
-.tray-item.add .avatar.ring{background:var(--bg);box-shadow:0 0 0 1px var(--field);color:var(--text)}
-.tray-item.add svg{width:24px;height:24px}
+/* Archive home: one card per profile, the latest photo as its cover */
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:16px}
+.profile-card{display:grid;grid-template-rows:auto 1fr;border:1px solid var(--line);border-radius:12px;overflow:hidden;text-align:left;background:var(--bg);transition:border-color 150ms var(--ease)}
+.profile-card:hover{border-color:var(--field)}
+.profile-card:focus-visible{outline-offset:2px}
+.card-cover{display:grid;place-items:center;aspect-ratio:4/3;background:var(--raised);color:var(--muted);overflow:hidden}
+.card-cover img{width:100%;height:100%;object-fit:cover}
+.card-cover svg{width:28px;height:28px}
+.card-body{display:flex;align-items:center;gap:12px;padding:12px}
+.card-body .avatar{margin-top:-36px;border:3px solid var(--bg);width:56px;height:56px;box-sizing:content-box}
+.card-text{min-width:0;display:grid;gap:2px}
+.card-text strong{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.card-text span{font-size:13px;line-height:18px;color:var(--text-2)}
+.card-text .card-error{color:var(--danger)}
+.profile-card.add{border-style:dashed}
+.profile-card.add .card-cover{background:none;color:var(--text)}
+
+/* A private profile says why the grid is empty and what to do */
+.access{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:24px;padding:12px 16px;border:1px solid var(--line);border-radius:8px}
+.access>svg{width:20px;height:20px;color:var(--text-2)}
+.access p{flex:1;min-width:220px}
+.profile-error{color:var(--danger)}
+
+/* Highlight collections, the circles under a profile on Instagram */
+.collections{display:flex;gap:16px;overflow-x:auto;padding:4px 4px 16px;margin-bottom:8px;scrollbar-width:none}
+.collections::-webkit-scrollbar{display:none}
+.collection{flex:0 0 76px;display:grid;justify-items:center;gap:8px;padding:4px 0;font-size:12px;line-height:16px;color:var(--text)}
+.collection>span:last-child{max-width:76px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.collection .avatar.ring svg{width:22px;height:22px}
+.collection:hover .avatar.ring{box-shadow:0 0 0 2px var(--field)}
+.collection.selected .avatar.ring{box-shadow:0 0 0 2px var(--text)}
+.collection.selected>span:last-child{font-weight:600}
 
 /* Tabs and filters */
 .toolbar{display:flex;align-items:center;justify-content:space-between;gap:16px;border-top:1px solid var(--line);margin-bottom:16px}
@@ -168,6 +190,8 @@ input[readonly]{background:var(--raised)}
 .tabs button:hover{color:var(--text)}
 .tabs button[aria-pressed="true"]{color:var(--text);border-top-color:var(--text)}
 .tabs svg{width:14px;height:14px;stroke-width:2}
+.tabs .count{font-family:var(--mono);font-weight:400;font-size:12px;color:var(--muted)}
+.tabs .count:empty{display:none}
 .filters{display:flex;gap:8px;align-items:center}
 .search{position:relative;display:block}
 .search svg{position:absolute;left:12px;top:50%;width:16px;height:16px;transform:translateY(-50%);color:var(--muted);pointer-events:none}
@@ -214,6 +238,7 @@ input[readonly]{background:var(--raised)}
 .tag::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--muted)}
 .tag.ready::before,.tag.done::before{background:var(--ok)}
 .tag.error::before,.tag.running::before,.tag.syncing::before{background:var(--accent)}
+.tag.private::before{background:transparent;box-shadow:inset 0 0 0 1.5px var(--muted)}
 
 /* Settings */
 .settings{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:24px;align-items:start}
@@ -323,10 +348,15 @@ input[readonly]{background:var(--raised)}
   .profile-top h1{font-size:20px;line-height:28px}
   .profile-top .page-actions{width:100%}
   .profile-counts{gap:4px 20px;font-size:14px}
-  .tray{gap:12px;margin:0 -16px 8px;padding:4px 16px 12px}
-  .tray-item{flex-basis:64px}
-  .tray-item>span:last-child{max-width:64px}
+  .cards{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+  .card-body{padding:10px;gap:8px}
+  .card-body .avatar{width:44px;height:44px;margin-top:-30px}
+  .tabs{gap:0}
+  .tabs button{gap:4px;font-size:12px}
+  .tabs .count{display:none}
   .avatar.ring{width:56px;height:56px;font-size:20px}
+  .collection{flex-basis:64px}
+  .collections{margin:0 -16px 8px;padding:4px 16px 12px}
   .main>.view>.grid{margin:0 -16px}
   .grid{gap:2px}
   .row{flex-wrap:wrap;align-items:flex-start}

@@ -203,6 +203,7 @@ class ProfileAdapter:
         self.biography = str(_get(item, 'biography', '') or '')
         self.profile_pic_url = _url(_get(item, 'profile_pic_url_hd') or _get(item, 'profile_pic_url'))
         self.media_count = int(_get(item, 'media_count', 0) or 0)
+        self.is_private = bool(_get(item, 'is_private', False))
 
     def get_posts(self):
         return MediaIterator(self.source, self, 'post')
@@ -261,6 +262,18 @@ class MobileSource:
 
     def profile(self, username):
         return ProfileAdapter(self, self.client.user_info_by_username_v1(username))
+
+    def access(self, profile):
+        if not profile.is_private or profile.userid == self.account_id:
+            return ''
+        # Raw call: the SDK's Relationship model rejects today's reply.
+        status = self.client.private_request(f'friendships/show/{profile.userid}/')
+        if status.get('following'):
+            return ''
+        return 'requested' if status.get('outgoing_request') else 'not_followed'
+
+    def follow(self, userid):
+        self.client.user_follow(str(userid))
 
     def get_stories(self, userids):
         for userid in userids:

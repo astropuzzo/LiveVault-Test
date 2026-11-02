@@ -550,3 +550,42 @@ def test_an_unavailable_story_category_does_not_block_posts(vault, monkeypatch):
         result=c.execute('SELECT state,message FROM jobs WHERE id=?',(job,)).fetchone()
         assert result['state']=='done' and 'Storie' in result['message']
         assert c.execute("SELECT data FROM cursors WHERE kind='pause:story'").fetchone()
+
+
+def typed_post(profile, key, kind, collection=''):
+    with store.db() as c:
+        return c.execute('''INSERT INTO posts(profile_id,external_key,shortcode,kind,published_at,archived_at,complete,collection)
+            VALUES (?,?,?,?,1000,?,1,?)''', (profile, key, key, kind, store.now(), collection)).lastrowid
+
+
+def test_each_kind_has_its_own_gallery_and_highlights_group_by_collection(vault):
+    profile = vault['profile']
+    for key, kind, collection in [('p1', 'post', ''), ('r1', 'reel', ''), ('s1', 'story', ''),
+                                  ('h1', 'story', 'In evidenza · Mare'), ('h2', 'story', 'In evidenza · Mare'),
+                                  ('h3', 'story', 'In evidenza · Monti')]:
+        typed_post(profile, key, kind, collection)
+    shown = lambda **q: sorted(p['shortcode'] for p in store.list_posts({'profile': profile, **q})['items'])
+    assert shown(kind='post') == ['p1'] and shown(kind='reel') == ['r1'] and shown(kind='story') == ['s1']
+    assert shown(kind='highlight') == ['h1', 'h2', 'h3']
+    assert shown(kind='highlight', collection='In evidenza · Mare') == ['h1', 'h2']
+    assert {c['name']: c['count'] for c in store.collections(profile)} == {'In evidenza · Mare': 2, 'In evidenza · Monti': 1}
+    row = store.profile_rows()[0]
+    assert (row['count_post'], row['count_reel'], row['count_story'], row['count_highlight']) == (1, 1, 1, 3)
+
+
+def test_a_private_profile_says_whether_a_follow_request_waits():
+    viewer = SimpleNamespace(context=SimpleNamespace(user_id='1'))
+    public = SimpleNamespace(is_private=False, userid='2')
+    waiting = SimpleNamespace(is_private=True, followed_by_viewer=False, requested_by_viewer=True, userid='3')
+    unknown = SimpleNamespace(is_private=True, followed_by_viewer=False, requested_by_viewer=False, userid='4')
+    followed = SimpleNamespace(is_private=True, followed_by_viewer=True, userid='5')
+    assert [sync.access_of(viewer, p) for p in [public, waiting, unknown, followed]] == ['', 'requested', 'not_followed', '']
+
+
+def test_instagram_errors_are_named_instead_of_a_generic_failure():
+    class UnknownError(Exception): pass
+    class FeedbackRequired(Exception): pass
+    class SomethingNew(Exception): pass
+    assert 'limite temporaneo' in sync.error_message(UnknownError())
+    assert 'qualche ora' in sync.error_message(FeedbackRequired())
+    assert 'SomethingNew' in sync.error_message(SomethingNew())

@@ -170,6 +170,17 @@ class Handler(BaseHTTPRequestHandler):
                     c.execute('UPDATE profiles SET ' + ','.join(k + '=?' for k in values) + ' WHERE id=?', [*values.values(), ident])
             store.enqueue(ident); sync.WAKE.set()
             return self.send_json({'ok': True, 'id': ident}, 201)
+        match = re.fullmatch(r'/api/profiles/(\d+)/follow', path)
+        if match:
+            try:
+                with sync.SESSION_LOCK:
+                    access = sync.follow(int(match[1]))
+            except ValueError as exc:
+                raise HTTPError(400, str(exc)) from None
+            except Exception as exc:
+                raise HTTPError(400, sync.error_message(exc)) from None
+            store.enqueue(int(match[1])); sync.WAKE.set()
+            return self.send_json({'ok': True, 'access': access})
         match = re.fullmatch(r'/api/profiles/(\d+)(/sync)?', path)
         if match:
             ident = int(match[1])
@@ -300,6 +311,9 @@ class Handler(BaseHTTPRequestHandler):
             with store.db() as c:
                 rows = [dict(r) for r in c.execute('SELECT j.*,p.username FROM jobs j JOIN profiles p ON p.id=j.profile_id ORDER BY j.id DESC LIMIT 100')]
             return self.send_json({'items': rows})
+        match = re.fullmatch(r'/api/profiles/(\d+)/collections', path)
+        if match:
+            return self.send_json({'items': store.collections(int(match[1]))})
         match = re.fullmatch(r'/api/profiles/(\d+)/avatar', path)
         if match:
             with store.db() as c:

@@ -62,6 +62,15 @@ def next_check(profile):
     return profile['interval_minutes'] * 60 + random.randint(-30, 30)
 
 
+# Account-wide problems stop the whole pass; anything else stays in its section.
+STOPPING = {'PleaseWaitFewMinutes', 'TooManyRequestsException', 'ClientThrottledError', 'FeedbackRequired',
+            'ChallengeRequired', 'LoginRequired', 'ClientLoginRequired', 'AbortDownloadException'}
+
+
+def plural(count, one, many):
+    return f'{count} {one if count == 1 else many}'
+
+
 def poster_of(relative):
     return relative.rsplit('.', 1)[0] + '.poster.jpg'
 
@@ -160,9 +169,60 @@ def error_message(exc):
         return 'Instagram richiede una sessione valida che abbia accesso al profilo. Collega il tuo account nelle impostazioni.'
     if name in {'TwoFactorAuthRequiredException', 'LoginException', 'AbortDownloadException', 'TooManyRequestsException'}:
         return 'Instagram ha richiesto una verifica o una pausa. Controlla l’account nel browser e riconnetti la sessione.'
-    if name in {'ProfileNotExistsException', 'QueryReturnedNotFoundException'}:
-        return 'Profilo non trovato o non disponibile per questa sessione.'
-    return 'Instagram non ha completato la richiesta. L’archivio è conservato; puoi riprovare più tardi.'
+    if name in {'ProfileNotExistsException', 'QueryReturnedNotFoundException', 'UserNotFound'}:
+        return 'Profilo non trovato: controlla lo username o se l’account esiste ancora.'
+    if name in {'LoginRequired', 'ClientLoginRequired'}:
+        return 'La sessione Instagram è scaduta. Ricollega l’account nelle impostazioni.'
+    if name in {'ChallengeRequired', 'ChallengeError', 'ChallengeUnknownStep'}:
+        return 'Instagram chiede di confermare che sei tu. Apri l’app Instagram, completa la verifica, poi premi Aggiorna.'
+    if name == 'FeedbackRequired':
+        return 'Instagram ha limitato per qualche ora l’account collegato. InstaVault riprova da solo più tardi.'
+    if name in {'PleaseWaitFewMinutes', 'ClientThrottledError', 'RateLimitError'}:
+        return 'Instagram chiede una pausa. InstaVault riprova da solo tra un’ora.'
+    if name in {'ConnectionError', 'ConnectTimeout', 'ReadTimeout', 'ClientConnectionError', 'ClientRequestTimeout'}:
+        return 'Connessione a Instagram non riuscita. Riprova da solo al prossimo controllo.'
+    if name in {'UnknownError', 'ClientError', 'ClientBadRequestError'}:
+        return ('Instagram ha rifiutato la richiesta senza spiegazione, di solito per un limite temporaneo. '
+                'Riprova da solo al prossimo controllo.')
+    return f'Errore Instagram non previsto ({name}). L’archivio è conservato; riprova da solo al prossimo controllo.'
+
+
+ACCESS_MESSAGES = {
+    'requested': 'Profilo privato: la richiesta di seguirlo è in attesa. InstaVault scarica tutto appena viene accettata.',
+    'not_followed': 'Profilo privato: l’account collegato non lo segue. Chiedi di seguirlo per poterlo archiviare.',
+}
+
+
+def access_of(value, remote):
+    """'' when the connected account can see the profile, else why not."""
+    if hasattr(value, 'access'):
+        return value.access(remote)
+    if not getattr(remote, 'is_private', False) or getattr(remote, 'followed_by_viewer', False):
+        return ''
+    if str(getattr(remote, 'userid', '')) == str(getattr(value.context, 'user_id', '') or ''):
+        return ''
+    return 'requested' if getattr(remote, 'requested_by_viewer', False) else 'not_followed'
+
+
+def follow(profile_id):
+    """Sends the follow request for a private profile from the connected account."""
+    with store.db() as c:
+        row = c.execute('SELECT username FROM profiles WHERE id=?', (profile_id,)).fetchone()
+    if not row:
+        raise ValueError('Profilo non trovato.')
+    value = loader()
+    try:
+        if not hasattr(value, 'follow'):
+            raise ValueError('Per chiedere di seguire da qui collega Instagram con username e password. '
+                             'In alternativa invia la richiesta dall’app.')
+        remote = value.profile(row['username'])
+        value.follow(remote.userid)
+        access = value.access(remote)
+    finally:
+        value.close()
+    with store.db() as c:
+        c.execute('UPDATE profiles SET access=? WHERE id=?', (access, profile_id))
+    return access
 
 
 class Worker:
@@ -365,6 +425,17 @@ class Worker:
                 self.download(remote.profile_pic_url, avatar, ident)
                 with store.db() as c:
                     c.execute('UPDATE profiles SET avatar=? WHERE id=?', (avatar, profile['id']))
+            access = access_of(value, remote)
+            with store.db() as c:
+                c.execute('UPDATE profiles SET access=? WHERE id=?', (access, profile['id']))
+            if access:
+                # Nothing to download until the profile accepts: say so, check again later.
+                with store.db() as c:
+                    c.execute("UPDATE jobs SET state='done',finished_at=?,message=? WHERE id=?",
+                              (store.now(), ACCESS_MESSAGES[access], ident))
+                    c.execute("UPDATE profiles SET status='private',error='',last_sync=?,next_sync=? WHERE id=?",
+                              (store.now(), store.now() + next_check(profile), profile['id']))
+                return
             warnings = []
             successful = []
             def section(kind, label, action):
@@ -386,9 +457,9 @@ class Worker:
                     # Account verification and throttling stop the whole pass.
                     # A single unavailable content category must not block all
                     # other posts or be falsely reported as an empty archive.
-                    if type(exc).__name__ in {'PleaseWaitFewMinutes', 'TooManyRequestsException', 'ClientThrottledError',
-                                              'ChallengeRequired', 'LoginRequired', 'ClientLoginRequired', 'AbortDownloadException'}:
+                    if type(exc).__name__ in STOPPING:
                         raise
+                    print(f'InstaVault: @{profile["username"]} {label}: {type(exc).__name__}', flush=True)
                     warning = label + ': ' + error_message(exc)
                     warnings.append(warning)
                     with store.db() as c:
@@ -406,9 +477,22 @@ class Worker:
                 section('story', 'Storie', stories)
             if profile['highlights'] and value.context.is_logged_in:
                 def highlights():
+                    # One broken collection must not stop the others.
+                    failed = 0
                     for highlight in value.get_highlights(remote):
-                        for item in highlight.get_items():
-                            self.archive(profile, item, 'story', ident, 'In evidenza · ' + highlight.title[:150])
+                        try:
+                            for item in highlight.get_items():
+                                self.archive(profile, item, 'story', ident, 'In evidenza · ' + highlight.title[:150])
+                        except (Paused, StorageFull):
+                            raise
+                        except Exception as exc:
+                            if type(exc).__name__ in STOPPING:
+                                raise
+                            failed += 1
+                            print(f'InstaVault: @{profile["username"]} highlight: {type(exc).__name__}', flush=True)
+                    if failed:
+                        warnings.append('In evidenza: ' + plural(failed, 'raccolta non scaricata', 'raccolte non scaricate')
+                                        + ', riprovo al prossimo controllo')
                 section('highlight', 'In evidenza', highlights)
             if warnings and not successful:
                 raise RuntimeError('Selected content categories temporarily unavailable')
@@ -423,6 +507,8 @@ class Worker:
                           (' · '.join(warnings), store.now(), store.now() + (60 if more else next_check(profile)), profile['id']))
         except Exception as exc:
             message = error_message(exc)
+            if not isinstance(exc, Paused):
+                print(f'InstaVault: @{profile["username"]} job: {type(exc).__name__}', flush=True)
             if isinstance(exc, BufferFull):
                 self.full = True
             # A restart or a disk change interrupted the job, not the user:
