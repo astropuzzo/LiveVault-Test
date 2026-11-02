@@ -647,3 +647,34 @@ def test_a_profile_downloads_as_one_zip_with_highlights_in_their_folder(http, va
     assert archive.read('post/2026-01-01_P1_1.jpg') == b'jpeg'
     only = client.get(f'{root}/api/profiles/{vault["profile"]}/download', params={'collection': 'In evidenza · Mare'})
     assert zipfile.ZipFile(io.BytesIO(only.content)).namelist() == ['in evidenza/Mare/2026-01-01_H1_1.jpg']
+
+
+def test_comments_are_saved_and_name_authors_already_archived(vault, monkeypatch):
+    job, profile = running_job(vault)
+    with store.db() as c:
+        c.execute('INSERT INTO profiles(username,created_at) VALUES (?,?)', ('friend', store.now()))
+    worker = sync.Worker()
+    monkeypatch.setattr(worker, 'download', lambda url, relative, job_id: (target := store.MEDIA / relative, target.parent.mkdir(parents=True, exist_ok=True), target.write_bytes(b'x'), (1, hashlib.sha256(b'x').hexdigest()))[-1])
+    monkeypatch.setattr(worker, 'thumbnail', lambda *_: ('', 1080, 1350))
+    worker.source = SimpleNamespace(comments=lambda code: [
+        {'id': '1', 'username': 'friend', 'full_name': 'Friend', 'text': 'Bellissima', 'created_at': 5, 'likes': 2},
+        {'id': '2', 'username': 'stranger', 'full_name': '', 'text': 'Dove?', 'created_at': 6, 'likes': 0}])
+    assert worker.archive(profile, image_item('WithComments'), 'post', job)
+    with store.db() as c:
+        row = c.execute("SELECT * FROM posts WHERE shortcode='WithComments'").fetchone()
+        detail = store.post_json(c, row, True)
+    assert [(k['username'], k['text'], bool(k['profile_id'])) for k in detail['comments']] == [('friend', 'Bellissima', True), ('stranger', 'Dove?', False)]
+    assert row['comments_at']
+
+
+def test_a_comment_refusal_never_stops_the_download(vault, monkeypatch):
+    job, profile = running_job(vault)
+    worker = sync.Worker()
+    monkeypatch.setattr(worker, 'download', lambda url, relative, job_id: (target := store.MEDIA / relative, target.parent.mkdir(parents=True, exist_ok=True), target.write_bytes(b'x'), (1, hashlib.sha256(b'x').hexdigest()))[-1])
+    monkeypatch.setattr(worker, 'thumbnail', lambda *_: ('', 1080, 1350))
+    def refuse(code):
+        raise RuntimeError('Please wait a few minutes')
+    worker.source = SimpleNamespace(comments=refuse)
+    assert worker.archive(profile, image_item('NoComments'), 'post', job)
+    assert worker.comments_blocked
+    assert store.list_posts({})['items'][0]['shortcode'] == 'NoComments'

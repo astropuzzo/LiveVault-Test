@@ -57,7 +57,13 @@ circles pinned under the header, as on Instagram; a tap plays the collection
 story after story. Posts, Reels and stories are tabs below them.
 "Scarica tutto" streams a ZIP of the profile's originals
 (`/api/profiles/<id>/download`, optional `collection`), built while it is sent
-with no temporary copy; files out of reach (NVMe away) go in `mancanti.txt`. A private profile the connected account cannot
+with no temporary copy; files out of reach (NVMe away) go in `mancanti.txt`.
+
+Posts and Reels keep the newest page of their comments (about 15, one mobile
+request per post) in `comments`; `posts.comments_at` marks the read. New posts
+get them when archived, older ones twelve per check. A refusal stops comments
+for that pass and never the media download. In the viewer a commenter's name
+opens a menu: the Instagram profile, and the archived profile or the add form. A private profile the connected account cannot
 see is marked `access='requested'` or `'not_followed'` and skipped without an
 error; "Chiedi di seguire" sends the follow request (mobile sessions only).
 Instagram errors are named in Italian with Instagram's own words when the

@@ -341,10 +341,23 @@
     </article>`).join('') : '<div class="empty"><h2>Nessun aggiornamento</h2><p>Gli aggiornamenti dei profili compaiono qui, uno alla volta.</p></div>';
   }
 
-  function openProfile(profile = null) {
+  let menu = null;
+  function closeMenu() { menu?.remove(); menu = null; }
+  function commenterMenu(button, comment) {
+    closeMenu(); if (!comment) return;
+    menu = document.createElement('div'); menu.className = 'menu'; menu.setAttribute('role', 'menu');
+    menu.innerHTML = `<p class="menu-title">@${esc(comment.username)}${comment.full_name ? `<small>${esc(comment.full_name)}</small>` : ''}</p>
+      <a role="menuitem" href="https://www.instagram.com/${encodeURIComponent(comment.username)}/" target="_blank" rel="noopener noreferrer">${icon('external')}Apri su Instagram</a>
+      ${comment.profile_id ? `<button role="menuitem" type="button" data-profile="${Number(comment.profile_id)}">${icon('grid')}Apri nell’archivio</button>`
+        : `<button role="menuitem" type="button" data-add-profile="${esc(comment.username)}">${icon('plus')}Aggiungi all’archivio</button>`}`;
+    button.closest('li').append(menu); menu.querySelector('[role=menuitem]').focus();
+  }
+  document.addEventListener('keydown', event => { if (event.key === 'Escape' && menu) { event.stopPropagation(); const back = menu.closest('li')?.querySelector('[data-commenter]'); closeMenu(); back?.focus(); } }, true);
+  document.addEventListener('click', event => { if (menu && !event.target.closest('.menu, [data-commenter]')) closeMenu(); });
+  function openProfile(profile = null, username = '') {
     returnFocus = document.activeElement; $('#profileError').textContent = ''; $('#profileId').value = profile?.id || '';
     $('#profileDialogTitle').textContent = profile ? `Modifica @${profile.username}` : 'Aggiungi un profilo';
-    $('#profileUsername').value = profile?.username || ''; $('#profileUsername').readOnly = !!profile;
+    $('#profileUsername').value = profile?.username || username; $('#profileUsername').readOnly = !!profile;
     $('#profileSubmit').textContent = profile ? 'Salva modifiche' : 'Aggiungi profilo';
     ['posts', 'reels', 'stories', 'highlights'].forEach(key => { $('#p' + key[0].toUpperCase() + key.slice(1)).checked = profile ? !!profile[key] : key !== 'highlights'; });
     const select = $('#pInterval'); const value = profile?.interval_minutes || 10;
@@ -369,6 +382,13 @@
       const profile = (state.summary?.profiles || []).find(item => item.username === name);
       return profile ? `<button class="link" type="button" data-profile="${Number(profile.id)}">@${esc(name)}</button>` : `@${esc(name)}`;
     }).join(', ')}</span>` : '';
+    // Comments: the author opens a small menu to see the account or archive it.
+    const comments = result.comments || [];
+    $('#postComments').hidden = !comments.length;
+    $('#postComments').innerHTML = comments.map((comment, index) => `<li>
+      <span class="avatar small" aria-hidden="true">${esc(comment.username[0].toUpperCase())}</span>
+      <div><p><button class="link name" type="button" data-commenter="${index}" aria-haspopup="menu">${esc(comment.username)}</button> ${esc(comment.text)}</p>
+      <p class="stamp">${esc(day(comment.created_at))}${comment.likes ? ` · ${plural(comment.likes, 'mi piace', 'mi piace')}` : ''}</p></div></li>`).join('');
     const links = (result.links || []).filter(link => /^https?:\/\//.test(link.url));
     $('#postLinks').hidden = !links.length;
     $('#postLinks').innerHTML = links.map(link => `<li><a href="${esc(link.url)}" target="_blank" rel="noopener noreferrer">${icon('link')}<span>${esc(link.label || link.url)}</span></a></li>`).join('');
@@ -477,6 +497,8 @@
     if (data.cancelJob) { busy(target, async () => { try { await api(`/api/jobs/${Number(data.cancelJob)}/cancel`, {method: 'POST', body: '{}'}); toast('Interruzione richiesta'); await refreshSummary(); await loadJobs(); } catch (error) { report(error); } }); return; }
     if (data.follow) { busy(target, async () => { try { const result = await api(`/api/profiles/${Number(data.follow)}/follow`, {method: 'POST', body: '{}'}); toast(result.access ? 'Richiesta inviata: InstaVault scarica appena viene accettata' : 'Ora lo segui: download in coda'); await refreshSummary(); } catch (error) { report(error); } }); return; }
     if (Object.hasOwn(data, 'collection')) { playCollection(data.collection).catch(report); return; }
+    if (data.commenter) { commenterMenu(target, state.post?.comments?.[Number(data.commenter)]); return; }
+    if (data.addProfile) { $('#postDialog').close(); closeMenu(); openProfile(null, data.addProfile); return; }
     if (Object.hasOwn(data, 'kind')) {
       state.kind = data.kind; state.collection = ''; pressKind(); renderArchive();
       loadPosts(true).catch(report);
@@ -580,7 +602,7 @@
       $('#mediaGrid').innerHTML = state.posts.map(postTile).join(''); bindImageFallback($('#mediaGrid')); renderEmpty();
     } catch (error) { report(error); }
   }));
-  $('#postDialog').addEventListener('close', () => { cleanupMedia(); state.post = null; state.playlist = null; document.body.classList.remove('dialog-open'); returnFocus?.focus?.(); });
+  $('#postDialog').addEventListener('close', () => { cleanupMedia(); closeMenu(); state.post = null; state.playlist = null; document.body.classList.remove('dialog-open'); returnFocus?.focus?.(); });
   $('#profileDialog').addEventListener('close', () => { returnFocus?.focus?.(); });
   ['postDialog', 'profileDialog'].forEach(id => { const dialog = $('#' + id); dialog.addEventListener('click', event => { if (event.target === dialog) dialog.close(); }); });
   document.addEventListener('keydown', event => {

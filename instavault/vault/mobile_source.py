@@ -311,6 +311,25 @@ class MobileSource:
             return ''
         return 'requested' if status.get('outgoing_request') else 'not_followed'
 
+    def comments(self, shortcode):
+        # One page, the newest ones: a single request per post.
+        pk = self.client.media_pk_from_code(shortcode)
+        items, _, _ = self.client.media_comments_v1_chunk(str(pk))
+        found = []
+        for item in items or []:
+            user = _get(item, 'user')
+            name = str(_get(user, 'username', '') or '')
+            if not re.fullmatch(r'[A-Za-z0-9._]{1,30}', name):
+                continue
+            stamp = _get(item, 'created_at_utc')
+            if isinstance(stamp, datetime):
+                stamp = int(stamp.replace(tzinfo=stamp.tzinfo or timezone.utc).timestamp())
+            found.append({'id': str(_get(item, 'pk', '')), 'username': name,
+                          'full_name': str(_get(user, 'full_name', '') or '')[:150],
+                          'text': str(_get(item, 'text', '') or '')[:2200],
+                          'created_at': int(stamp or 0), 'likes': int(_get(item, 'like_count', 0) or 0)})
+        return found
+
     def follow(self, userid):
         self.client.user_follow(str(userid))
 

@@ -298,7 +298,20 @@ input[readonly]{background:var(--raised)}
 .story-links{position:absolute;z-index:1}
 .story-links a{position:absolute;min-width:24px;min-height:24px;border-radius:8px}
 .story-links a:hover,.story-links a:focus-visible{box-shadow:0 0 0 2px #fff,0 0 0 4px rgba(0,0,0,.5)}
-.viewer-caption{flex:1;min-height:0;overflow:auto;padding:16px;white-space:pre-wrap;overflow-wrap:anywhere}
+.viewer-scroll{flex:1;min-height:0;overflow:auto}
+.viewer-caption{padding:16px;white-space:pre-wrap;overflow-wrap:anywhere}
+.viewer-comments{list-style:none;margin:0;padding:0 16px 16px;display:grid;gap:14px}
+.viewer-comments li{position:relative;display:grid;grid-template-columns:32px minmax(0,1fr);gap:10px;align-items:start}
+.viewer-comments .avatar.small{width:32px;height:32px;font-size:13px}
+.viewer-comments p{font-size:14px;line-height:20px;overflow-wrap:anywhere}
+.viewer-comments .name{font-weight:600;min-height:24px}
+.viewer-comments .stamp{font-size:12px;margin-top:2px}
+.menu{position:absolute;z-index:5;top:28px;left:42px;min-width:220px;display:grid;padding:6px;border:1px solid var(--line);border-radius:10px;background:var(--bg);box-shadow:0 12px 32px rgba(0,0,0,.25)}
+.menu-title{display:grid;padding:8px 10px;font-weight:600}
+.menu-title small{font-weight:400;color:var(--muted)}
+.menu a,.menu button{display:flex;align-items:center;gap:10px;min-height:44px;padding:0 10px;border-radius:6px;color:var(--text);text-align:left}
+.menu a:hover,.menu button:hover{background:var(--raised)}
+.menu svg{width:18px;height:18px}
 .viewer-stamp{margin-top:auto;padding:12px 16px}
 .viewer-actions{display:flex;gap:4px;padding:8px 12px;border-top:1px solid var(--line)}
 .viewer-actions #downloadOriginal{margin-left:auto}

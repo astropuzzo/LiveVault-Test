@@ -263,8 +263,11 @@
     <aside class="viewer-info">
       <header id="postAuthor" class="viewer-author"></header>
       <p id="postShared" class="viewer-shared" hidden></p>
-      <p id="postCaption" class="viewer-caption"></p>
-      <ul id="postLinks" class="viewer-links" aria-label="Link nella storia" hidden></ul>
+      <div class="viewer-scroll">
+        <p id="postCaption" class="viewer-caption"></p>
+        <ul id="postLinks" class="viewer-links" aria-label="Link nella storia" hidden></ul>
+        <ol id="postComments" class="viewer-comments" aria-label="Commenti" hidden></ol>
+      </div>
       <p id="postMetadata" class="stamp viewer-stamp"></p>
       <div class="viewer-actions">
         <button id="favoritePost" class="icon-button" type="button" aria-label="Aggiungi ai salvati" aria-pressed="false"><svg aria-hidden="true"><use href="#i-heart"/></svg></button>

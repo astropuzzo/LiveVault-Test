@@ -112,6 +112,13 @@ def initialize():
           post_id INTEGER NOT NULL REFERENCES posts(id), profile_id INTEGER NOT NULL REFERENCES profiles(id),
           PRIMARY KEY(post_id,profile_id))''')
         merge_duplicates(c)
+        # The newest page of comments of a post or Reel; comments_at marks when it was read.
+        if 'comments_at' not in columns:
+            c.execute('ALTER TABLE posts ADD COLUMN comments_at INTEGER')
+        c.execute('''CREATE TABLE IF NOT EXISTS comments (
+          id INTEGER PRIMARY KEY, post_id INTEGER NOT NULL REFERENCES posts(id), external_id TEXT NOT NULL,
+          username TEXT NOT NULL, full_name TEXT NOT NULL DEFAULT '', text TEXT NOT NULL,
+          created_at INTEGER NOT NULL, likes INTEGER NOT NULL DEFAULT 0, UNIQUE(post_id,external_id))''')
         for key, value in {'automatic': True, 'quota_gb': 60, 'min_free_gb': 15}.items():
             c.execute('INSERT OR IGNORE INTO settings VALUES (?,?)', (key, json.dumps(value)))
 
@@ -261,6 +268,10 @@ def post_json(c, row, detail=False):
         value['links'] = json.loads(value.get('links') or '[]')
     except ValueError:
         value['links'] = []
+    if detail:
+        # Each author carries the archived profile id when InstaVault already follows them.
+        value['comments'] = [dict(r) for r in c.execute('''SELECT k.username,k.full_name,k.text,k.created_at,k.likes,p.id AS profile_id
+            FROM comments k LEFT JOIN profiles p ON p.username=k.username WHERE k.post_id=? ORDER BY k.created_at''', (row['id'],))]
     if not detail:
         value['caption'] = value['caption'][:260]
     return value

@@ -249,6 +249,8 @@ def follow(profile_id):
 
 class Worker:
     def __init__(self):
+        self.source = None
+        self.comments_blocked = False
         self.thread = None
         self.current = None
         self.leader = False
@@ -399,7 +401,38 @@ class Worker:
         with store.db() as c:
             c.execute('UPDATE posts SET complete=1,caption=?,kind=?,owner=?,links=? WHERE id=?', (caption, kind, owner, links, ident))
             c.execute('UPDATE jobs SET downloaded=downloaded+1 WHERE id=?', (job_id,))
+        if not story:
+            self.save_comments(ident, shortcode)
         return True
+
+    def save_comments(self, post_id, shortcode):
+        # Comments are a bonus: a refusal stops reading them for this pass,
+        # never the download of the media.
+        source = self.source
+        if source is None or not hasattr(source, 'comments') or self.comments_blocked:
+            return False
+        try:
+            found = source.comments(shortcode)
+        except Exception as exc:
+            self.comments_blocked = True
+            print(f'InstaVault: comments {shortcode}: {type(exc).__name__}: {instagram_detail(exc)}', flush=True)
+            return False
+        with store.db() as c:
+            for item in found:
+                c.execute('''INSERT INTO comments(post_id,external_id,username,full_name,text,created_at,likes) VALUES (?,?,?,?,?,?,?)
+                    ON CONFLICT(post_id,external_id) DO UPDATE SET text=excluded.text,likes=excluded.likes''',
+                          (post_id, item['id'], item['username'], item['full_name'], item['text'], item['created_at'], item['likes']))
+            c.execute('UPDATE posts SET comments_at=? WHERE id=?', (store.now(), post_id))
+        return True
+
+    def backfill_comments(self, profile, limit=12):
+        # Posts archived before comments existed get theirs a few at a time.
+        with store.db() as c:
+            rows = list(c.execute('''SELECT id,shortcode FROM posts WHERE profile_id=? AND complete=1 AND kind<>'story'
+                AND comments_at IS NULL ORDER BY published_at DESC LIMIT ?''', (profile['id'], limit)))
+        for row in rows:
+            if STOP.is_set() or not self.save_comments(row['id'], row['shortcode']):
+                break
 
     def stream(self, profile, iterator, kind, job_id):
         from instaloader.nodeiterator import FrozenNodeIterator
@@ -447,8 +480,10 @@ class Worker:
         self.mode = store.mode()
         more = False
         value = None
+        self.comments_blocked = False
         try:
             value = loader()
+            self.source = value
             self.check(ident)
             remote = value.profile(profile['username']) if hasattr(value, 'profile') else instaloader.Profile.from_username(value.context, profile['username'])
             with store.db() as c:
@@ -531,6 +566,7 @@ class Worker:
                 section('highlight', 'In evidenza', highlights)
             if warnings and not successful:
                 raise RuntimeError('Selected content categories temporarily unavailable')
+            self.backfill_comments(profile)
             with store.db() as c:
                 message = 'Prima importazione in corso' if more else 'Archivio aggiornato'
                 if (profile['stories'] or profile['highlights']) and not value.context.is_logged_in:
@@ -561,6 +597,7 @@ class Worker:
         finally:
             if value:
                 value.close()
+            self.source = None
             self.current = None
 
     def copy_verified(self, source, target):
