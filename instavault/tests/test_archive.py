@@ -586,6 +586,43 @@ def test_instagram_errors_are_named_instead_of_a_generic_failure():
     class UnknownError(Exception): pass
     class FeedbackRequired(Exception): pass
     class SomethingNew(Exception): pass
-    assert 'limite temporaneo' in sync.error_message(UnknownError())
+    assert 'blocco temporaneo' in sync.error_message(UnknownError())
+    assert '«Please wait a few minutes»' in sync.error_message(UnknownError('Please wait a few minutes'))
     assert 'qualche ora' in sync.error_message(FeedbackRequired())
     assert 'SomethingNew' in sync.error_message(SomethingNew())
+
+
+def test_a_collab_is_stored_once_and_listed_under_both_profiles(vault, monkeypatch):
+    job, profile = running_job(vault)
+    with store.db() as c:
+        other = dict(c.execute('SELECT * FROM profiles WHERE id=?', (c.execute(
+            'INSERT INTO profiles(username,created_at) VALUES (?,?)', ('friend', store.now())).lastrowid,)).fetchone())
+    worker = sync.Worker(); calls = []
+    def download(url, relative, job_id):
+        target = store.MEDIA / relative; target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(b'collab'); calls.append(relative)
+        return 6, hashlib.sha256(b'collab').hexdigest()
+    monkeypatch.setattr(worker, 'download', download)
+    monkeypatch.setattr(worker, 'thumbnail', lambda *_: ('', 1080, 1350))
+    assert worker.archive(profile, image_item('Collab1'), 'post', job)
+    assert not worker.archive(other, image_item('Collab1'), 'post', job)
+    assert len(calls) == 1
+    mine = store.list_posts({'profile': profile['id']})['items']
+    theirs = store.list_posts({'profile': other['id']})['items']
+    assert [p['id'] for p in mine] == [p['id'] for p in theirs]
+    assert mine[0]['profiles'] == ['photographer', 'friend']
+    assert len(store.list_posts({})['items']) == 1
+    counts = {r['username']: r['count_post'] for r in store.profile_rows()}
+    assert counts == {'photographer': 1, 'friend': 1}
+
+
+def test_old_duplicate_collabs_merge_into_one_shared_post(vault):
+    with store.db() as c:
+        other = c.execute('INSERT INTO profiles(username,created_at) VALUES (?,?)', ('friend', store.now())).lastrowid
+        for owner in [vault['profile'], other]:
+            post = c.execute("INSERT INTO posts(profile_id,external_key,shortcode,kind,published_at,archived_at,complete) VALUES (?,?,?,?,1,1,1)",
+                             (owner, 'post:Dup', 'Dup', 'post')).lastrowid
+            c.execute("INSERT INTO media(post_id,position,kind,path,size,sha256) VALUES (?,0,'image',?,1,'x')", (post, f'{owner}/Dup/1.jpg'))
+    store.initialize()
+    assert len(store.list_posts({})['items']) == 1
+    assert store.list_posts({'profile': other})['items'][0]['profiles'] == ['photographer', 'friend']

@@ -55,11 +55,11 @@ class Client:
         self.calls.append(('stories-v1', userid))
         return [item('Story1', media_type=2, video_url='https://s.cdninstagram.com/story.mp4')]
 
-    def user_highlights(self, userid):
+    def user_highlights_v1(self, userid):
         self.calls.append(('highlights-v1', userid))
         return [SimpleNamespace(pk='111', title='Work')]
 
-    def highlight_info(self, pk):
+    def highlight_info_v1(self, pk):
         self.calls.append(('highlight-info', pk))
         return SimpleNamespace(items=[item('Highlight1')])
 
@@ -247,3 +247,14 @@ def test_browser_sessions_never_become_mobile_sessions(marker):
     session = copy.deepcopy(SESSION); session['verified_via'] = marker
     with pytest.raises(ValueError, match='non proviene'):
         mobile.MobileSource({}, session, client=Client())
+
+
+def test_story_links_keep_stickers_and_mentions_with_their_place():
+    story = {'stickers': [{'x': .5, 'y': .8, 'width': .4, 'height': .1,
+                           'story_link': {'url': 'https://shop.example/a', 'link_title': 'Shop'}}],
+             'links': [{'webUri': 'https://shop.example/a', 'x': .5, 'y': .8, 'width': .4, 'height': .1}],
+             'mentions': [{'user': {'username': 'virginia.c'}, 'x': .2, 'y': .3, 'width': .3, 'height': .05}]}
+    found = mobile.story_links(story)
+    assert [(f['label'], f['url']) for f in found] == [('Shop', 'https://shop.example/a'),
+                                                        ('@virginia.c', 'https://www.instagram.com/virginia.c/')]
+    assert (found[0]['y'], found[1]['x'], found[1]['w']) == (0.8, 0.2, 0.3)

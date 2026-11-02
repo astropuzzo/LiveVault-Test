@@ -29,6 +29,8 @@
 <symbol id="i-reel" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="17" height="17" rx="4"/><path d="m10 8.5 5.5 3.5-5.5 3.5Z"/></symbol>
 <symbol id="i-story" viewBox="0 0 24 24"><path d="M12 3.5a8.5 8.5 0 1 1-8.5 8.5"/><path d="M4 8.6a8.6 8.6 0 0 1 1.6-2.4M8.4 4.3a8.4 8.4 0 0 1 1.3-.5"/><path d="M12 8v8M8 12h8"/></symbol>
 <symbol id="i-ring" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/></symbol>
+<symbol id="i-shared" viewBox="0 0 24 24"><circle cx="8" cy="9" r="3.5"/><circle cx="16" cy="9" r="3.5"/><path d="M2.5 19.5c.6-3 2.8-4.5 5.5-4.5s4.9 1.5 5.5 4.5M13.6 15.4c.7-.3 1.5-.4 2.4-.4 2.7 0 4.9 1.5 5.5 4.5"/></symbol>
+<symbol id="i-link" viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></symbol>
 <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="10" rx="2"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5"/></symbol>
 <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.4-4.4"/></symbol>
 <symbol id="i-logout" viewBox="0 0 24 24"><path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4M9.5 16.5 5 12l4.5-4.5M5 12h10"/></symbol>
@@ -254,13 +256,16 @@
   <div class="viewer-layout">
     <div class="viewer-stage">
       <div id="viewerMedia" class="viewer-media"></div>
+      <div id="storyLinks" class="story-links" hidden></div>
       <button id="previousMedia" class="round-button previous" type="button" aria-label="Precedente"><svg aria-hidden="true"><use href="#i-left"/></svg></button>
       <button id="nextMedia" class="round-button next" type="button" aria-label="Successivo"><svg aria-hidden="true"><use href="#i-right"/></svg></button>
       <span id="carouselCount" class="carousel-count"></span>
     </div>
     <aside class="viewer-info">
       <header id="postAuthor" class="viewer-author"></header>
+      <p id="postShared" class="viewer-shared" hidden></p>
       <p id="postCaption" class="viewer-caption"></p>
+      <ul id="postLinks" class="viewer-links" aria-label="Link nella storia" hidden></ul>
       <p id="postMetadata" class="stamp viewer-stamp"></p>
       <div class="viewer-actions">
         <button id="favoritePost" class="icon-button" type="button" aria-label="Aggiungi ai salvati" aria-pressed="false"><svg aria-hidden="true"><use href="#i-heart"/></svg></button>

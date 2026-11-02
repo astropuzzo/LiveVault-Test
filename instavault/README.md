@@ -57,5 +57,17 @@ stories and highlights are separate tabs; highlights are grouped by their
 collection, as on Instagram. A private profile the connected account cannot
 see is marked `access='requested'` or `'not_followed'` and skipped without an
 error; "Chiedi di seguire" sends the follow request (mobile sessions only).
-Instagram errors are named in Italian and their class is printed to the
-container log.
+Instagram errors are named in Italian with Instagram's own words when the
+reply carries any; the class and that text are printed to the container log.
+
+A post that two archived profiles both publish (a collab or a repost) is
+downloaded once. The first copy owns the files and the `shared` table lists
+it under the other profile; both grids mark it as shared. Duplicates archived
+before 2 November 2026 were merged the same way at startup; their extra files
+stay on disk and are no longer referenced.
+
+Stories keep their tappable areas in `posts.links` (JSON: url, label and the
+box as fractions of the image) from link stickers and @mentions. The viewer
+places them over the story and lists them beside it. Highlights link to
+their stable Instagram address; a plain story's link is hidden after 24 hours,
+when Instagram drops it. Highlights use the v1 mobile calls only.

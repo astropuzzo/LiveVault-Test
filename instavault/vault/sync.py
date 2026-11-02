@@ -67,6 +67,12 @@ STOPPING = {'PleaseWaitFewMinutes', 'TooManyRequestsException', 'ClientThrottled
             'ChallengeRequired', 'LoginRequired', 'ClientLoginRequired', 'AbortDownloadException'}
 
 
+def highlight_link(highlight):
+    # Highlights keep a stable address; a plain story's expires after a day.
+    pk = str(getattr(highlight, 'pk', '') or getattr(highlight, 'unique_id', '')).split(':')[-1]
+    return f'https://www.instagram.com/stories/highlights/{pk}/' if pk.isdigit() else ''
+
+
 def plural(count, one, many):
     return f'{count} {one if count == 1 else many}'
 
@@ -181,10 +187,26 @@ def error_message(exc):
         return 'Instagram chiede una pausa. InstaVault riprova da solo tra un’ora.'
     if name in {'ConnectionError', 'ConnectTimeout', 'ReadTimeout', 'ClientConnectionError', 'ClientRequestTimeout'}:
         return 'Connessione a Instagram non riuscita. Riprova da solo al prossimo controllo.'
-    if name in {'UnknownError', 'ClientError', 'ClientBadRequestError'}:
-        return ('Instagram ha rifiutato la richiesta senza spiegazione, di solito per un limite temporaneo. '
-                'Riprova da solo al prossimo controllo.')
-    return f'Errore Instagram non previsto ({name}). L’archivio è conservato; riprova da solo al prossimo controllo.'
+    detail = instagram_detail(exc)
+    if name in {'UnknownError', 'ClientError', 'ClientBadRequestError', 'ClientJSONDecodeError'}:
+        return ('Instagram ha rifiutato questa richiesta' + (f' («{detail}»)' if detail else '') +
+                '. Di solito è un blocco temporaneo: riprovo tra un’ora, quello già scaricato resta.')
+    if isinstance(exc, ValueError) and detail:
+        return detail + ' Riprovo tra un’ora.'
+    return f'Errore imprevisto ({name}' + (f': {detail}' if detail else '') + '). Riprovo tra un’ora.'
+
+
+def instagram_detail(exc):
+    # Instagram's own words, when the reply carried any, cut to one line.
+    text = ''
+    response = getattr(exc, 'response', None)
+    try:
+        payload = response.json() if response is not None else {}
+        text = payload.get('message') or payload.get('error_title') or ''
+    except Exception:
+        pass
+    text = str(text or exc or '').strip().splitlines()[0] if str(text or exc or '').strip() else ''
+    return re.sub(r'https?://\S+', '', text)[:140].strip()
 
 
 ACCESS_MESSAGES = {
@@ -313,7 +335,7 @@ class Worker:
         except (OSError, ValueError):
             return '', 0, 0
 
-    def archive(self, profile, item, kind, job_id, collection=''):
+    def archive(self, profile, item, kind, job_id, collection='', permalink=''):
         story = kind == 'story'
         shortcode = str(item.mediaid) if story else item.shortcode
         if not re.fullmatch(r'[A-Za-z0-9_-]{1,80}', shortcode):
@@ -326,13 +348,25 @@ class Worker:
                 if kind == 'reel' and existing['kind'] != 'reel':
                     c.execute("UPDATE posts SET kind='reel' WHERE id=?", (existing['id'],))
                 return False
+            if not existing:
+                # A collab or repost already archived under another profile:
+                # list it here too instead of downloading it again.
+                twin = c.execute('SELECT id FROM posts WHERE external_key=? AND profile_id<>? AND complete=1 ORDER BY id LIMIT 1',
+                                 (external, profile['id'])).fetchone()
+                twin_assets = list(c.execute('SELECT * FROM media WHERE post_id=?', (twin['id'],))) if twin else []
+                if twin_assets and all(self.stored(a) for a in twin_assets):
+                    c.execute('INSERT OR IGNORE INTO shared VALUES (?,?)', (twin['id'], profile['id']))
+                    return False
         self.check(job_id)
         date = item.date_utc if story else item.date_utc
         stamp = int(date.replace(tzinfo=__import__('datetime').timezone.utc).timestamp())
         caption = '' if story else (item.caption or '')
         if not story and getattr(item, 'product_type', '') == 'clips':
             kind = 'reel'
-        permalink = f'https://www.instagram.com/stories/{profile["username"]}/{shortcode}/' if story else f'https://www.instagram.com/p/{shortcode}/'
+        if not permalink:
+            permalink = f'https://www.instagram.com/stories/{profile["username"]}/{shortcode}/' if story else f'https://www.instagram.com/p/{shortcode}/'
+        owner = str(getattr(item, 'owner_username', '') or '')[:30]
+        links = json.dumps(getattr(item, 'links', []) or [], ensure_ascii=False) if story else ''
         if not story and item.typename == 'GraphSidecar':
             nodes = list(item.get_sidecar_nodes())
             parts = [(n.is_video, n.video_url if n.is_video else n.display_url, n.display_url) for n in nodes]
@@ -342,8 +376,8 @@ class Worker:
             if existing:
                 ident = existing['id']
             else:
-                ident = c.execute('''INSERT INTO posts(profile_id,external_key,shortcode,kind,caption,published_at,archived_at,permalink,collection)
-                    VALUES (?,?,?,?,?,?,?,?,?)''', (profile['id'], external, shortcode, kind, caption, stamp, store.now(), permalink, collection)).lastrowid
+                ident = c.execute('''INSERT INTO posts(profile_id,external_key,shortcode,kind,caption,published_at,archived_at,permalink,collection,owner,links)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?)''', (profile['id'], external, shortcode, kind, caption, stamp, store.now(), permalink, collection, owner, links)).lastrowid
         for index, (video, url, poster) in enumerate(parts):
             self.check(job_id)
             relative = f'{profile["id"]}/{shortcode}/{index + 1}.{"mp4" if video else "jpg"}'
@@ -363,7 +397,7 @@ class Worker:
                     size=excluded.size,sha256=excluded.sha256,width=excluded.width,height=excluded.height,location=excluded.location''',
                           (ident, index, 'video' if video else 'image', relative, thumb, size, digest, width, height, self.mode))
         with store.db() as c:
-            c.execute('UPDATE posts SET complete=1,caption=?,kind=? WHERE id=?', (caption, kind, ident))
+            c.execute('UPDATE posts SET complete=1,caption=?,kind=?,owner=?,links=? WHERE id=?', (caption, kind, owner, links, ident))
             c.execute('UPDATE jobs SET downloaded=downloaded+1 WHERE id=?', (job_id,))
         return True
 
@@ -459,7 +493,7 @@ class Worker:
                     # other posts or be falsely reported as an empty archive.
                     if type(exc).__name__ in STOPPING:
                         raise
-                    print(f'InstaVault: @{profile["username"]} {label}: {type(exc).__name__}', flush=True)
+                    print(f'InstaVault: @{profile["username"]} {label}: {type(exc).__name__}: {instagram_detail(exc)}', flush=True)
                     warning = label + ': ' + error_message(exc)
                     warnings.append(warning)
                     with store.db() as c:
@@ -482,14 +516,15 @@ class Worker:
                     for highlight in value.get_highlights(remote):
                         try:
                             for item in highlight.get_items():
-                                self.archive(profile, item, 'story', ident, 'In evidenza · ' + highlight.title[:150])
+                                self.archive(profile, item, 'story', ident, 'In evidenza · ' + highlight.title[:150],
+                                             highlight_link(highlight))
                         except (Paused, StorageFull):
                             raise
                         except Exception as exc:
                             if type(exc).__name__ in STOPPING:
                                 raise
                             failed += 1
-                            print(f'InstaVault: @{profile["username"]} highlight: {type(exc).__name__}', flush=True)
+                            print(f'InstaVault: @{profile["username"]} highlight «{highlight.title}»: {type(exc).__name__}: {instagram_detail(exc)}', flush=True)
                     if failed:
                         warnings.append('In evidenza: ' + plural(failed, 'raccolta non scaricata', 'raccolte non scaricate')
                                         + ', riprovo al prossimo controllo')
@@ -508,7 +543,7 @@ class Worker:
         except Exception as exc:
             message = error_message(exc)
             if not isinstance(exc, Paused):
-                print(f'InstaVault: @{profile["username"]} job: {type(exc).__name__}', flush=True)
+                print(f'InstaVault: @{profile["username"]} job: {type(exc).__name__}: {instagram_detail(exc)}', flush=True)
             if isinstance(exc, BufferFull):
                 self.full = True
             # A restart or a disk change interrupted the job, not the user:

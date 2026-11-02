@@ -99,6 +99,19 @@ def initialize():
             c.execute("ALTER TABLE profiles ADD COLUMN access TEXT NOT NULL DEFAULT ''")
         if 'interval_minutes' not in {row[1] for row in c.execute('PRAGMA table_info(profiles)')}:
             c.execute('ALTER TABLE profiles ADD COLUMN interval_minutes INTEGER NOT NULL DEFAULT 10')
+        # owner: who published it on Instagram. links: JSON list of the story's
+        # tappable areas (link stickers, mentions), each with its box on the image.
+        columns = {row[1] for row in c.execute('PRAGMA table_info(posts)')}
+        if 'owner' not in columns:
+            c.execute("ALTER TABLE posts ADD COLUMN owner TEXT NOT NULL DEFAULT ''")
+        if 'links' not in columns:
+            c.execute("ALTER TABLE posts ADD COLUMN links TEXT NOT NULL DEFAULT ''")
+        # A collab or a repost lives once on disk and is listed under every
+        # archived profile that published it.
+        c.execute('''CREATE TABLE IF NOT EXISTS shared (
+          post_id INTEGER NOT NULL REFERENCES posts(id), profile_id INTEGER NOT NULL REFERENCES profiles(id),
+          PRIMARY KEY(post_id,profile_id))''')
+        merge_duplicates(c)
         for key, value in {'automatic': True, 'quota_gb': 60, 'min_free_gb': 15}.items():
             c.execute('INSERT OR IGNORE INTO settings VALUES (?,?)', (key, json.dumps(value)))
 
@@ -181,16 +194,35 @@ def enqueue(profile_id):
         return job_id
 
 
+def merge_duplicates(c):
+    # Before 2026-11-02 a collab was downloaded once per profile. The oldest
+    # copy stays; the others become shared links. Their files stay on disk.
+    rows = list(c.execute('''SELECT external_key, MIN(id) AS keep FROM posts WHERE complete=1
+        GROUP BY external_key HAVING COUNT(DISTINCT profile_id)>1'''))
+    for row in rows:
+        for twin in list(c.execute('SELECT id,profile_id,favorite FROM posts WHERE external_key=? AND id<>?',
+                                   (row['external_key'], row['keep']))):
+            c.execute('INSERT OR IGNORE INTO shared VALUES (?,?)', (row['keep'], twin['profile_id']))
+            if twin['favorite']:
+                c.execute('UPDATE posts SET favorite=1 WHERE id=?', (row['keep'],))
+            c.execute('DELETE FROM media WHERE post_id=?', (twin['id'],))
+            c.execute('DELETE FROM posts WHERE id=?', (twin['id'],))
+
+
+# The posts a profile shows: its own plus the collabs it shares with another profile.
+OF_PROFILE = '(x.profile_id=p.id OR x.id IN (SELECT post_id FROM shared WHERE profile_id=p.id))'
+
+
 def profile_rows():
     with db() as c:
-        return [dict(r) for r in c.execute('''SELECT p.*,
-          (SELECT COUNT(*) FROM posts WHERE profile_id=p.id AND complete=1) AS post_count,
-          (SELECT COUNT(*) FROM media m JOIN posts x ON m.post_id=x.id WHERE x.profile_id=p.id AND x.complete=1) AS media_count,
-          (SELECT COUNT(*) FROM posts WHERE profile_id=p.id AND complete=1 AND kind='post') AS count_post,
-          (SELECT COUNT(*) FROM posts WHERE profile_id=p.id AND complete=1 AND kind='reel') AS count_reel,
-          (SELECT COUNT(*) FROM posts WHERE profile_id=p.id AND complete=1 AND kind='story' AND collection='') AS count_story,
-          (SELECT COUNT(*) FROM posts WHERE profile_id=p.id AND complete=1 AND kind='story' AND collection<>'') AS count_highlight,
-          (SELECT m.id FROM media m JOIN posts x ON m.post_id=x.id WHERE x.profile_id=p.id AND x.complete=1 AND x.kind<>'story'
+        return [dict(r) for r in c.execute(f'''SELECT p.*,
+          (SELECT COUNT(*) FROM posts x WHERE {OF_PROFILE} AND x.complete=1) AS post_count,
+          (SELECT COUNT(*) FROM media m JOIN posts x ON m.post_id=x.id WHERE {OF_PROFILE} AND x.complete=1) AS media_count,
+          (SELECT COUNT(*) FROM posts x WHERE {OF_PROFILE} AND x.complete=1 AND x.kind='post') AS count_post,
+          (SELECT COUNT(*) FROM posts x WHERE {OF_PROFILE} AND x.complete=1 AND x.kind='reel') AS count_reel,
+          (SELECT COUNT(*) FROM posts x WHERE {OF_PROFILE} AND x.complete=1 AND x.kind='story' AND x.collection='') AS count_story,
+          (SELECT COUNT(*) FROM posts x WHERE {OF_PROFILE} AND x.complete=1 AND x.kind='story' AND x.collection<>'') AS count_highlight,
+          (SELECT m.id FROM media m JOIN posts x ON m.post_id=x.id WHERE {OF_PROFILE} AND x.complete=1 AND x.kind<>'story'
              ORDER BY x.published_at DESC, m.position LIMIT 1) AS cover
           FROM profiles p ORDER BY p.username''')]
 
@@ -209,6 +241,14 @@ def post_json(c, row, detail=False):
     value = dict(row)
     media = [dict(r) for r in c.execute('SELECT id,kind,position,width,height,size FROM media WHERE post_id=? ORDER BY position', (row['id'],))]
     value['media'] = media
+    # Every archived profile that published it, the owner first.
+    value['profiles'] = [r[0] for r in c.execute('''SELECT username FROM profiles WHERE id=?
+        UNION ALL SELECT r.username FROM shared s JOIN profiles r ON r.id=s.profile_id WHERE s.post_id=?''',
+                                                 (row['profile_id'], row['id']))]
+    try:
+        value['links'] = json.loads(value.get('links') or '[]')
+    except ValueError:
+        value['links'] = []
     if not detail:
         value['caption'] = value['caption'][:260]
     return value
@@ -217,7 +257,8 @@ def post_json(c, row, detail=False):
 def list_posts(query):
     conditions, args = ['p.complete=1'], []
     if query.get('profile'):
-        conditions.append('p.profile_id=?'); args.append(query['profile'])
+        conditions.append('(p.profile_id=? OR p.id IN (SELECT post_id FROM shared WHERE profile_id=?))')
+        args += [query['profile'], query['profile']]
     kind = query.get('kind')
     if kind in {'post', 'reel'}:
         conditions.append('p.kind=?'); args.append(kind)

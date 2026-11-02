@@ -249,10 +249,13 @@
     const label = post.kind === 'reel' ? 'Reel' : post.collection ? 'In evidenza' : post.kind === 'story' ? 'Storia' : post.media.length > 1 ? 'Carosello' : 'Post';
     const owner = state.profile ? '' : `@${esc(post.username)} · `;
     const width = media.width || 480; const height = media.height || 600;
+    const here = profileById(state.profile)?.username || post.username;
+    const shared = (post.profiles || []).filter(name => name !== here);
     return `<button class="tile" type="button" data-post="${post.id}" aria-label="${esc(label)} di @${esc(post.username)}, ${esc(day(post.published_at))}">
       <img src="${BASE}/media/${media.id}/thumb" alt="" width="${width}" height="${height}" loading="lazy" decoding="async">
       ${kind ? `<span class="tile-kind">${icon(kind)}</span>` : ''}
       ${post.favorite ? `<span class="tile-saved">${icon('heart')}</span>` : ''}
+      ${shared.length ? `<span class="tile-shared" title="Condiviso con ${esc(shared.map(name => '@' + name).join(', '))}">${icon('shared')}</span>` : ''}
       <span class="tile-hover">${owner}${esc(day(post.published_at))}</span>
     </button>`;
   }
@@ -346,7 +349,20 @@
     $('#postCaption').textContent = result.caption || result.collection || '';
     $('#postCaption').hidden = !(result.caption || result.collection);
     $('#postMetadata').textContent = `pubblicato ${day(result.published_at)} · archiviato ${day(result.archived_at)}`;
+    // A collab or repost shows once and names every archived profile that has it.
+    const others = (result.profiles || []).filter(name => name !== result.username);
+    $('#postShared').hidden = !others.length;
+    $('#postShared').innerHTML = others.length ? `${icon('shared')}<span>Condiviso con ${others.map(name => {
+      const profile = (state.summary?.profiles || []).find(item => item.username === name);
+      return profile ? `<button class="link" type="button" data-profile="${Number(profile.id)}">@${esc(name)}</button>` : `@${esc(name)}`;
+    }).join(', ')}</span>` : '';
+    const links = (result.links || []).filter(link => /^https?:\/\//.test(link.url));
+    $('#postLinks').hidden = !links.length;
+    $('#postLinks').innerHTML = links.map(link => `<li><a href="${esc(link.url)}" target="_blank" rel="noopener noreferrer">${icon('link')}<span>${esc(link.label || link.url)}</span></a></li>`).join('');
+    // A plain story's Instagram address dies after a day; highlights keep theirs.
     const external = String(result.permalink || '');
+    const expired = result.kind === 'story' && !result.collection && Date.now() / 1000 - result.published_at > 86400;
+    $('#openInstagram').hidden = expired;
     $('#openInstagram').href = /^https:\/\/www\.instagram\.com\//.test(external) ? external : 'https://www.instagram.com/';
     updateFavorite(); renderSlide(); $('#postDialog').showModal(); document.body.classList.add('dialog-open');
   }
@@ -365,11 +381,34 @@
     else { item.alt = post.caption?.slice(0, 150) || `Foto di @${post.username}`; item.decoding = 'async'; }
     item.addEventListener('error', () => { $('#viewerMedia').innerHTML = '<p class="viewer-missing">File non disponibile. Controlla che l’NVMe sia collegato.</p>'; }, {once: true});
     $('#viewerMedia').append(item);
+    placeStoryLinks(item);
     const many = post.media.length > 1;
     $('#previousMedia').hidden = !many || state.slide === 0; $('#nextMedia').hidden = !many || state.slide === post.media.length - 1;
     $('#carouselCount').hidden = !many; $('#carouselCount').textContent = `${state.slide + 1} / ${post.media.length}`;
     $('#downloadOriginal').href = `${BASE}/media/${media.id}?download=1`;
   }
+  // Tappable areas over the story, where Instagram drew the sticker or mention.
+  function placeStoryLinks(item) {
+    const layer = $('#storyLinks'); const links = (state.post?.links || []).filter(link => link.w > 0 && link.h > 0 && /^https?:\/\//.test(link.url));
+    layer.hidden = true; layer.replaceChildren();
+    if (!links.length) return;
+    const place = () => {
+      const natural = [item.naturalWidth || item.videoWidth, item.naturalHeight || item.videoHeight];
+      const stage = $('#viewerMedia').getBoundingClientRect();
+      if (!natural[0] || !natural[1] || !stage.width) return;
+      const scale = Math.min(stage.width / natural[0], stage.height / natural[1]);
+      const width = natural[0] * scale, height = natural[1] * scale;
+      Object.assign(layer.style, {left: `${(stage.width - width) / 2}px`, top: `${(stage.height - height) / 2}px`, width: `${width}px`, height: `${height}px`});
+      layer.innerHTML = links.map(link => `<a href="${esc(link.url)}" target="_blank" rel="noopener noreferrer" aria-label="${esc(link.label || link.url)}"
+        style="left:${(link.x - link.w / 2) * 100}%;top:${(link.y - link.h / 2) * 100}%;width:${link.w * 100}%;height:${link.h * 100}%"></a>`).join('');
+      layer.hidden = false;
+    };
+    if (item.complete || item.readyState >= 1) place();
+    item.addEventListener(item.tagName === 'VIDEO' ? 'loadedmetadata' : 'load', place, {once: true});
+    storyLinkResize = place;
+  }
+  let storyLinkResize = null;
+  window.addEventListener('resize', () => { if ($('#postDialog').open && storyLinkResize) storyLinkResize(); });
   function moveSlide(delta) {
     if (!state.post) return; const next = state.slide + delta;
     if (next < 0 || next >= state.post.media.length) return;

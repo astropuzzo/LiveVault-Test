@@ -120,10 +120,46 @@ class MediaAdapter:
     def video_url(self):
         return _url(_get(self.item, 'video_url'))
 
+    @property
+    def owner_username(self):
+        return str(_get(_get(self.item, 'user'), 'username', '') or '')
+
+    @property
+    def links(self):
+        return story_links(self.item)
+
     def get_sidecar_nodes(self):
         for resource in _get(self.item, 'resources', []) or []:
             yield SimpleNamespace(is_video=int(_get(resource, 'media_type', 1)) == 2,
                                   display_url=_thumbnail(resource), video_url=_url(_get(resource, 'video_url')))
+
+
+def _box(item):
+    try:
+        return {k: round(float(_get(item, n, 0) or 0), 4) for k, n in
+                [('x', 'x'), ('y', 'y'), ('w', 'width'), ('h', 'height')]}
+    except (TypeError, ValueError):
+        return {'x': 0, 'y': 0, 'w': 0, 'h': 0}
+
+
+def story_links(item):
+    """Tappable areas of a story: link stickers and @mentions, with their box
+    (centre x/y, width, height as fractions of the image)."""
+    found = []
+    for sticker in _get(item, 'stickers', []) or []:
+        link = _get(sticker, 'story_link')
+        url = _url(_get(link, 'url')) if link else ''
+        if url:
+            found.append({'url': url, 'label': str(_get(link, 'link_title', '') or _get(link, 'display_url', '') or url)} | _box(sticker))
+    for link in _get(item, 'links', []) or []:
+        url = _url(_get(link, 'webUri'))
+        if url and all(f['url'] != url for f in found):
+            found.append({'url': url, 'label': url} | _box(link))
+    for mention in _get(item, 'mentions', []) or []:
+        name = str(_get(_get(mention, 'user'), 'username', '') or '')
+        if re.fullmatch(r'[A-Za-z0-9._]{1,30}', name):
+            found.append({'url': f'https://www.instagram.com/{name}/', 'label': '@' + name} | _box(mention))
+    return [f for f in found if f['url'].startswith(('https://', 'http://'))][:20]
 
 
 class MediaIterator:
@@ -225,9 +261,12 @@ class HighlightAdapter:
     def __init__(self, source, item):
         self.source, self.item = source, item
         self.title = str(_get(item, 'title', '') or '')
+        self.pk = str(_get(item, 'pk', '')).split(':')[-1]
 
     def get_items(self):
-        value = self.source.client.highlight_info(str(_get(self.item, 'pk')))
+        # The v1 call only: the generic one falls back to a web query that
+        # Instagram refuses for mobile sessions.
+        value = self.source.client.highlight_info_v1(self.pk)
         for item in _get(value, 'items', []) or []:
             yield MediaAdapter(item)
 
@@ -281,7 +320,7 @@ class MobileSource:
             yield StoryCollection(self.client.user_stories_v1(str(userid)))
 
     def get_highlights(self, profile):
-        for item in self.client.user_highlights(str(profile.userid)):
+        for item in self.client.user_highlights_v1(str(profile.userid)):
             yield HighlightAdapter(self, item)
 
     def close(self):
