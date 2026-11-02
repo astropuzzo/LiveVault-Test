@@ -172,7 +172,7 @@
     if (!profile) { $('#profileHeader').replaceChildren(); $('#accessNote').hidden = true; return; }
     $('#profileHeader').innerHTML = `${avatar(profile, 'large')}<div class="profile-body">
       <button class="link back" type="button" data-clear-profile>${icon('left')}Tutti i profili</button>
-      <div class="profile-top"><h1>${esc(profile.username)}</h1><div class="page-actions"><button class="button" type="button" data-sync-profile="${profile.id}">${icon('refresh')}Aggiorna</button>${Number(profile.post_count) ? `<a class="button" href="${BASE}/api/profiles/${Number(profile.id)}/download" download>${icon('download')}Scarica tutto</a>` : ''}<button class="button" type="button" data-edit-profile="${profile.id}">Modifica</button><button class="button" type="button" data-remove-profile="${profile.id}">Rimuovi</button></div></div>
+      <div class="profile-top"><h1>${esc(profile.username)}</h1><div class="page-actions"><button class="button" type="button" data-sync-profile="${profile.id}">${icon('refresh')}Aggiorna</button>${Number(profile.post_count) ? `<a class="button" href="${BASE}/api/profiles/${Number(profile.id)}/download" download>${icon('download')}Scarica tutto</a>` : ''}<button class="button" type="button" data-notify-profile="${profile.id}" aria-pressed="${profile.notify ? 'true' : 'false'}" title="Notifica storie e post nuovi">${icon('bell')}${profile.notify ? 'Avvisi attivi' : 'Avvisami'}</button><button class="button" type="button" data-edit-profile="${profile.id}">Modifica</button><button class="button" type="button" data-remove-profile="${profile.id}">Rimuovi</button></div></div>
       <p class="profile-counts"><span><b>${number(profile.count_post)}</b> post</span><span><b>${number(profile.count_reel)}</b> Reel</span><span><b>${number(profile.count_story)}</b> storie</span><span><b>${number(profile.count_highlight)}</b> in evidenza</span>${Number(profile.count_tagged) ? `<span><b>${number(profile.count_tagged)}</b> taggati</span>` : ''}</p>
       ${profile.full_name ? `<p class="profile-name">${esc(profile.full_name)}</p>` : ''}
       ${profile.biography ? `<p class="profile-bio">${esc(profile.biography)}</p>` : ''}
@@ -306,6 +306,42 @@
     const path = values.map((v, i) => `${i ? 'L' : 'M'}${(i / (values.length - 1) * w).toFixed(1)},${(h - 4 - (v - min) / span * (h - 8)).toFixed(1)}`).join('');
     return `<svg class="sparkline" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" role="img" aria-label="Follower da ${number(values[0])} a ${number(values[values.length - 1])}"><path d="${path}"/></svg>`;
   }
+  // Notifications: one subscription per device, the text arrives encrypted.
+  let pushReady = false;
+  const pushSupported = 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+  async function pushRegistration() { return navigator.serviceWorker.register(BASE + '/sw.js', {scope: BASE + '/'}); }
+  async function renderPush() {
+    const say = (text, on, off, test) => { $('#pushState').textContent = text; $('#pushOn').hidden = !on; $('#pushOff').hidden = !off; $('#pushTest').hidden = !test; };
+    if (!pushSupported) {
+      const ios = /iPhone|iPad/.test(navigator.userAgent);
+      return say(ios ? 'Su iPhone aggiungi InstaVault alla schermata Home (Condividi › Aggiungi alla schermata Home) e aprila da lì.' : 'Questo browser non supporta le notifiche.', false, false, false);
+    }
+    if (Notification.permission === 'denied') return say('Notifiche bloccate: consentile nelle impostazioni del browser per questo sito.', false, false, false);
+    const subscription = await (await pushRegistration()).pushManager.getSubscription();
+    pushReady = !!subscription;
+    say(subscription ? 'Attive su questo dispositivo.' : 'Non attive su questo dispositivo.', !subscription, !!subscription, !!subscription);
+  }
+  function key(text) { const raw = atob(text.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - text.length % 4) % 4)); return Uint8Array.from(raw, c => c.charCodeAt(0)); }
+  $('#pushOn').addEventListener('click', event => busy(event.currentTarget, async () => {
+    try {
+      if (await Notification.requestPermission() !== 'granted') { await renderPush(); return; }
+      const registration = await pushRegistration(); await navigator.serviceWorker.ready;
+      const {key: publicKey} = await api('/api/push/key');
+      const subscription = await registration.pushManager.subscribe({userVisibleOnly: true, applicationServerKey: key(publicKey)});
+      await api('/api/push/subscribe', {method: 'POST', body: JSON.stringify(subscription.toJSON())});
+      toast('Notifiche attive su questo dispositivo'); await renderPush();
+    } catch (error) { report(error); }
+  }));
+  $('#pushOff').addEventListener('click', event => busy(event.currentTarget, async () => {
+    try {
+      const subscription = await (await pushRegistration()).pushManager.getSubscription();
+      if (subscription) { await api('/api/push/unsubscribe', {method: 'POST', body: JSON.stringify({endpoint: subscription.endpoint})}); await subscription.unsubscribe(); }
+      toast('Notifiche disattivate su questo dispositivo'); await renderPush();
+    } catch (error) { report(error); }
+  }));
+  $('#pushTest').addEventListener('click', event => busy(event.currentTarget, async () => {
+    try { await api('/api/push/test', {method: 'POST', body: '{}'}); toast('Prova inviata'); } catch (error) { report(error); }
+  }));
   async function playStories(profileId) {
     const since = Math.floor(Date.now() / 1000) - 86400;
     const page = await api('/api/posts?' + new URLSearchParams({profile: profileId, kind: 'story', since, order: 'oldest'}));
@@ -360,6 +396,7 @@
       if (GRIDS.includes(view)) loadPosts(true).catch(report);
       if (view === 'home') loadHome().catch(report);
       if (view === 'activity') loadJobs().catch(report);
+      if (view === 'settings') renderPush().catch(report);
     }
     const hash = '#' + view;
     if (location.hash !== hash) history[replace ? 'replaceState' : 'pushState'](null, '', hash);
@@ -715,6 +752,7 @@
     if (data.post && state.selecting && target.classList.contains('tile')) { toggleTile(target); return; }
     if (data.post) { openPost(data.post).catch(report); return; }
     if (data.editProfile) { openProfile(profileById(data.editProfile)); return; }
+    if (data.notifyProfile) { busy(target, async () => { try { const p = profileById(data.notifyProfile); await api('/api/profiles/' + p.id, {method: 'PATCH', body: JSON.stringify({notify: !p.notify})}); toast(p.notify ? 'Avvisi disattivati per questo profilo' : (pushReady ? 'Ti avviso per storie e post nuovi' : 'Avvisi attivi: accendi le notifiche in Impostazioni')); await refreshSummary(); } catch (error) { report(error); } }); return; }
     if (data.syncProfile) { busy(target, async () => { try { await api(`/api/profiles/${Number(data.syncProfile)}/sync`, {method: 'POST', body: '{}'}); toast('Aggiornamento in coda'); await refreshSummary(); } catch (error) { report(error); } }); return; }
     if (data.toggleProfile) { busy(target, async () => { try { const p = profileById(data.toggleProfile); await api('/api/profiles/' + p.id, {method: 'PATCH', body: JSON.stringify({enabled: !p.enabled})}); toast(p.enabled ? 'Profilo in pausa, i contenuti restano' : 'Aggiornamenti riattivati'); await refreshSummary(); } catch (error) { report(error); } }); return; }
     if (data.cancelJob) { busy(target, async () => { try { await api(`/api/jobs/${Number(data.cancelJob)}/cancel`, {method: 'POST', body: '{}'}); toast('Interruzione richiesta'); await refreshSummary(); await loadJobs(); } catch (error) { report(error); } }); return; }

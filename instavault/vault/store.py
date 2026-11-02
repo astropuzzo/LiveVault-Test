@@ -106,6 +106,11 @@ def initialize():
           followers INTEGER, following INTEGER, media_count INTEGER, full_name TEXT NOT NULL DEFAULT '',
           biography TEXT NOT NULL DEFAULT '', avatar TEXT NOT NULL DEFAULT '', avatar_key TEXT NOT NULL DEFAULT '')''')
         c.execute('CREATE INDEX IF NOT EXISTS history_profile ON profile_history(profile_id,at)')
+        # Browsers that receive notices, and profiles whose new content is announced.
+        c.execute('''CREATE TABLE IF NOT EXISTS push_subscriptions (
+          endpoint TEXT PRIMARY KEY, p256dh TEXT NOT NULL, auth TEXT NOT NULL, created_at INTEGER NOT NULL)''')
+        if 'notify' not in {row[1] for row in c.execute('PRAGMA table_info(profiles)')}:
+            c.execute('ALTER TABLE profiles ADD COLUMN notify INTEGER NOT NULL DEFAULT 0')
         # tagged: also archive the posts of other accounts that tag the profile.
         if 'tagged' not in {row[1] for row in c.execute('PRAGMA table_info(profiles)')}:
             c.execute('ALTER TABLE profiles ADD COLUMN tagged INTEGER NOT NULL DEFAULT 1')

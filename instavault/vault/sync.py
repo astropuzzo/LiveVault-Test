@@ -17,7 +17,7 @@ import instaloader
 import requests
 from PIL import Image, ImageOps
 
-from . import store, security
+from . import push, store, security
 
 WAKE = threading.Event()
 STOP = threading.Event()
@@ -93,7 +93,10 @@ def note_account_problem(exc):
     name = type(exc).__name__
     kind = next((k for k, names in ACCOUNT_PROBLEMS.items() if name in names), None)
     if kind:
+        known = store.settings().get('session_problem')
         store.set_setting('session_problem', {'kind': kind, 'message': error_message(exc), 'at': store.now()})
+        if not known:
+            push.notify('InstaVault si è fermato', error_message(exc), './#settings')
     return kind
 
 
@@ -641,6 +644,7 @@ class Worker:
                     c.execute("DELETE FROM settings WHERE key='session_problem'")
                 c.execute("UPDATE profiles SET status='ready',error=?,last_sync=?,next_sync=? WHERE id=?",
                           (' · '.join(warnings), store.now(), store.now() + (60 if more else next_check(profile)), profile['id']))
+            self.announce(profile, ident, deleted, more)
         except Exception as exc:
             message = error_message(exc)
             note_account_problem(exc)
@@ -665,6 +669,24 @@ class Worker:
                 value.close()
             self.source = None
             self.current = None
+
+    def announce(self, profile, job_id, deleted, more):
+        # New stories and posts only for profiles with the bell on and never
+        # during the first import; deletions for every profile.
+        try:
+            if profile.get('notify') and profile['last_sync']:
+                with store.db() as c:
+                    counts = dict(c.execute('''SELECT kind, COUNT(*) FROM posts WHERE job_id=? AND complete=1
+                        AND NOT (kind='story' AND collection<>'') GROUP BY kind''', (job_id,)).fetchall())
+                labels = [('story', 'storia nuova', 'storie nuove'), ('post', 'post nuovo', 'post nuovi'), ('reel', 'Reel nuovo', 'Reel nuovi')]
+                parts = [plural(counts[k], one, many) for k, one, many in labels if counts.get(k) and (k == 'story' or not more)]
+                if parts:
+                    push.notify('@' + profile['username'], ' · '.join(parts), './#home')
+            gone = sum(deleted.values())
+            if gone:
+                push.notify('@' + profile['username'], plural(gone, 'contenuto cancellato su Instagram', 'contenuti cancellati su Instagram'), './#deleted')
+        except Exception as exc:
+            print(f'InstaVault: notice @{profile["username"]}: {type(exc).__name__}', flush=True)
 
     def copy_verified(self, source, target):
         """True once target holds the same bytes as source. A different file

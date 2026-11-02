@@ -18,7 +18,9 @@ from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-from . import login, store, security, sync
+from . import login, push, store, security, sync
+
+mimetypes.add_type('application/manifest+json', '.webmanifest')
 
 
 def file_suffix(relative):
@@ -159,6 +161,16 @@ class Handler(BaseHTTPRequestHandler):
         body = self.body()
         if path == '/api/instagram/login/cancel':
             return self.send_json(login.cancel(str(body.get('attempt_id', ''))))
+        if path == '/api/push/subscribe':
+            push.subscribe(body)
+            return self.send_json({'ok': True})
+        if path == '/api/push/unsubscribe':
+            push.unsubscribe(body.get('endpoint', ''))
+            return self.send_json({'ok': True})
+        if path == '/api/push/test':
+            if not push.notify('InstaVault', 'Le notifiche funzionano su questo dispositivo.', './#settings'):
+                raise ValueError('Nessun dispositivo ha ricevuto la prova. Riattiva le notifiche e riprova.')
+            return self.send_json({'ok': True})
         if path == '/api/logout':
             secure = '; Secure' if os.environ.get('INSTAVAULT_COOKIE_SECURE', 'true') == 'true' else ''
             return self.send_json({'ok': True}, cookie='instavault_session=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict' + secure)
@@ -273,7 +285,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def profile_values(self, body):
         values = {}
-        for key in ['enabled', 'posts', 'reels', 'stories', 'highlights', 'tagged']:
+        for key in ['enabled', 'posts', 'reels', 'stories', 'highlights', 'tagged', 'notify']:
             if key in body:
                 values[key] = int(bool(body[key]))
         if 'interval_minutes' in body:
@@ -347,6 +359,8 @@ class Handler(BaseHTTPRequestHandler):
         match = re.fullmatch(r'/api/profiles/(\d+)/download', path)
         if match:
             return self.download_zip(int(match[1]), str(query.get('collection', ''))[:300])
+        if path == '/api/push/key':
+            return self.send_json({'key': push.keys()[1]})
         match = re.fullmatch(r'/api/profiles/(\d+)/history', path)
         if match:
             return self.send_json(store.profile_history(int(match[1])))
@@ -377,7 +391,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.file(store.safe_file(relative, row['location']), cache=True, download=query.get('download') == '1')
         if path == '/' or path == '/index.html':
             return self.file(store.STATIC / 'index.html')
-        if path in {'/app.js', '/app.css', '/icon.svg'}:
+        if path in {'/app.js', '/app.css', '/icon.svg', '/sw.js', '/manifest.webmanifest'}:
             return self.file(store.STATIC / path[1:])
         raise HTTPError(404, 'Pagina non trovata.')
 

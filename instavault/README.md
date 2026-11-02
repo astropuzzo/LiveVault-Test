@@ -115,3 +115,13 @@ box as fractions of the image) from link stickers and @mentions. The viewer
 places them over the story and lists them beside it. Highlights link to
 their stable Instagram address; a plain story's link is hidden after 24 hours,
 when Instagram drops it. Highlights use the v1 mobile calls only.
+
+Notifications are standard Web Push (`vault/push.py`, no extra package): the
+VAPID key is `vapid.pem` in the data folder, created on first use, and every
+notice is encrypted for the browser (RFC 8291), so the push service never
+reads it. Each device subscribes from Impostazioni › Notifiche
+(`push_subscriptions`); a subscription the push service reports gone is
+dropped. After each update a profile with the bell on (`profiles.notify`)
+announces its new stories, posts and Reel, except during the first import;
+deletions are announced for every profile, and so is a stopped Instagram
+session. On iPhone the web app must be added to the Home screen first.

@@ -816,3 +816,61 @@ def test_profile_history_keeps_a_row_a_day_and_every_change(vault, monkeypatch):
     assert [p['followers'] for p in history['points']] == [100, 100, 120]
     assert [(c['label'], c['before'], c['after']) for c in history['changes']] == [('Foto profilo', '', ''), ('Bio', 'Foto', 'Foto e viaggi')]
     assert history['changes'][0]['before_photo'] and history['changes'][0]['after_photo']
+
+
+def test_push_text_is_encrypted_for_the_browser_only(vault):
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+    from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+    from vault import push
+    browser = ec.generate_private_key(ec.SECP256R1()); auth = b'a' * 16
+    public = browser.public_key().public_bytes(serialization.Encoding.X962, serialization.PublicFormat.UncompressedPoint)
+    record = push.encrypt(push.b64(public), push.b64(auth), b'{"title":"x"}')
+    # Decrypt as the browser does (RFC 8291).
+    salt, local = record[:16], record[21:86]
+    shared = browser.exchange(ec.ECDH(), ec.EllipticCurvePublicKey.from_encoded_point(ec.SECP256R1(), local))
+    key = HKDF(hashes.SHA256(), 32, auth, b'WebPush: info\x00' + public + local).derive(shared)
+    cek = HKDF(hashes.SHA256(), 16, salt, b'Content-Encoding: aes128gcm\x00').derive(key)
+    nonce = HKDF(hashes.SHA256(), 12, salt, b'Content-Encoding: nonce\x00').derive(key)
+    assert AESGCM(cek).decrypt(nonce, record[86:], None) == b'{"title":"x"}\x02'
+    assert push.vapid_header('https://fcm.googleapis.com/x').startswith('vapid t=')
+
+
+def test_push_subscriptions_are_checked_and_gone_ones_removed(http, vault, monkeypatch):
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from vault import push
+    root, client = http
+    assert len(push.unb64(client.get(root + '/api/push/key').json()['key'])) == 65
+    assert client.post(root + '/api/push/subscribe', json={'endpoint': 'http://x', 'keys': {}}).status_code == 400
+    public = ec.generate_private_key(ec.SECP256R1()).public_key().public_bytes(serialization.Encoding.X962, serialization.PublicFormat.UncompressedPoint)
+    subscription = {'endpoint': 'https://push.example/1', 'keys': {'p256dh': push.b64(public), 'auth': push.b64(b'b' * 16)}}
+    assert client.post(root + '/api/push/subscribe', json=subscription).ok
+    sent = []
+    monkeypatch.setattr(push.requests, 'post', lambda url, **kw: sent.append(kw['headers']) or SimpleNamespace(status_code=410, ok=False))
+    assert client.post(root + '/api/push/test', json={}).status_code == 400
+    assert sent[0]['Content-Encoding'] == 'aes128gcm'
+    with store.db() as c:
+        assert c.execute('SELECT COUNT(*) FROM push_subscriptions').fetchone()[0] == 0
+
+
+def test_notices_cover_new_content_of_chosen_profiles_and_every_deletion(vault, monkeypatch):
+    notices = []
+    monkeypatch.setattr(sync.push, 'notify', lambda title, body, url='./': notices.append((title, body, url)))
+    job = store.enqueue(vault['profile'])
+    with store.db() as c:
+        for code, kind, collection in [('S1', 'story', ''), ('S2', 'story', ''), ('H1', 'story', 'In evidenza · x'), ('P1', 'post', '')]:
+            c.execute("INSERT INTO posts(profile_id,external_key,shortcode,kind,collection,published_at,archived_at,complete,job_id) VALUES (?,?,?,?,?,1,1,1,?)",
+                      (vault['profile'], kind + ':' + code, code, kind, collection, job))
+    profile = {'username': 'photographer', 'notify': 0, 'last_sync': 1}
+    sync.Worker.announce(None, profile, job, {}, False)
+    assert notices == []
+    sync.Worker.announce(None, profile | {'notify': 1}, job, {'post': 1}, False)
+    assert notices == [('@photographer', '2 storie nuove · 1 post nuovo', './#home'),
+                       ('@photographer', '1 contenuto cancellato su Instagram', './#deleted')]
+    notices.clear()
+    # The first import announces nothing new; during a long import only stories count.
+    sync.Worker.announce(None, profile | {'notify': 1, 'last_sync': None}, job, {}, True)
+    sync.Worker.announce(None, profile | {'notify': 1}, job, {}, True)
+    assert notices == [('@photographer', '2 storie nuove', './#home')]

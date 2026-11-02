@@ -1,0 +1,10 @@
+{
+  "name": "InstaVault",
+  "short_name": "InstaVault",
+  "start_url": "./#home",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#121213",
+  "theme_color": "#121213",
+  "icons": [{"src": "icon.svg", "sizes": "any", "type": "image/svg+xml"}]
+}
