@@ -347,6 +347,16 @@ class Handler(BaseHTTPRequestHandler):
         match = re.fullmatch(r'/api/profiles/(\d+)/download', path)
         if match:
             return self.download_zip(int(match[1]), str(query.get('collection', ''))[:300])
+        match = re.fullmatch(r'/api/profiles/(\d+)/history', path)
+        if match:
+            return self.send_json(store.profile_history(int(match[1])))
+        match = re.fullmatch(r'/api/history/(\d+)/photo', path)
+        if match:
+            with store.db() as c:
+                row = c.execute('SELECT avatar FROM profile_history WHERE id=?', (int(match[1]),)).fetchone()
+            if not row or not row['avatar']:
+                raise HTTPError(404, 'Foto non disponibile.')
+            return self.file(store.safe_file(row['avatar']), cache=True)
         match = re.fullmatch(r'/api/profiles/(\d+)/collections', path)
         if match:
             return self.send_json({'items': store.collections(int(match[1]))})

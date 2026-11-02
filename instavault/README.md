@@ -52,6 +52,17 @@ Rollback and deployment details: [HOSTING.md](../HOSTING.md#instavault).
 
 ## Archive layout
 
+Stories play like on Instagram (bars, five seconds a photo, tap left/right,
+hold to pause). Search covers captions, comments and their authors, with a
+month menu; #tags and @mentions in captions are links. A Taggati tab keeps
+posts by other accounts that tag the profile (`tagged:` keys, `usertag`
+mobile call; Instagram's newer Reposts tab has no supported call yet).
+`profile_history` keeps one row a day of followers, following and posts, plus
+a row whenever the name, bio or photo changes; old photos stay as
+`<id>/avatar-<time>.jpg`. A login or challenge refusal, or a temporary block,
+is kept in `settings.session_problem` and shown as a banner until a check
+succeeds or the account is connected again.
+
 InstaVault opens on Home: circles for profiles with stories from the last 24
 hours (a tap plays them), then posts and Reels of every profile, newest first,
 loading more while scrolling (`/api/stories`, `/api/posts?kind=feed`).

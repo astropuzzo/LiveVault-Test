@@ -186,6 +186,7 @@
     if (profile.access === 'not_followed') note.innerHTML = `${icon('lock')}<p><b>Profilo privato.</b> L’account Instagram collegato non lo segue, quindi Instagram non mostra i suoi contenuti.</p><button class="button primary small" type="button" data-follow="${profile.id}">Chiedi di seguire</button>`;
     $$('#kindTabs [data-kind]').forEach(button => { button.querySelector('.count').textContent = number(profile['count_' + button.dataset.kind]); });
     if (Number(profile.count_highlight) && $('#collections').dataset.profile !== String(profile.id)) loadCollections().catch(report);
+    if ($('#historyBox').dataset.profile !== String(profile.id)) loadHistory(profile).catch(report);
   }
   // Highlights sit under the profile header as circles, as on Instagram; a tap plays the collection.
   const highlightName = value => value.replace(/^In evidenza · /, '') || 'Senza titolo';
@@ -282,6 +283,29 @@
   // The card keeps the photo's own shape (between 4:5 and 1.91:1), set through the DOM because of the CSP.
   new MutationObserver(() => $$('#feed .feed-media[data-ratio]').forEach(button => { button.style.aspectRatio = button.dataset.ratio; button.removeAttribute('data-ratio'); })).observe($('#feed'), {childList: true});
   new IntersectionObserver(entries => { if (entries.some(e => e.isIntersecting) && state.view === 'home') loadFeed().catch(report); }, {rootMargin: '800px'}).observe($('#feedMore'));
+  // Profile history: followers over time as a line, then each change of name, bio or photo.
+  async function loadHistory(profile) {
+    const box = $('#historyBox'); box.dataset.profile = String(profile.id); box.hidden = true;
+    const data = await api(`/api/profiles/${Number(profile.id)}/history`);
+    if (box.dataset.profile !== String(state.profile)) return;
+    const points = data.points.filter(p => p.followers != null);
+    box.hidden = !points.length && !data.changes.length;
+    const last = points[points.length - 1], first = points[0];
+    const delta = last && first ? last.followers - first.followers : 0;
+    box.querySelector('summary').textContent = data.changes.length ? `Storia del profilo · ${plural(data.changes.length, 'cambiamento', 'cambiamenti')}` : 'Storia del profilo';
+    $('#historyChart').innerHTML = points.length > 1 ? `<p class="history-figure"><b>${number(last.followers)}</b> follower <span>${delta >= 0 ? '+' : '−'}${number(Math.abs(delta))} dal ${esc(day(first.at))}</span></p>${sparkline(points.map(p => p.followers))}`
+      : last ? `<p class="history-figure"><b>${number(last.followers)}</b> follower <span>il grafico si forma giorno dopo giorno</span></p>` : '';
+    $('#historyList').innerHTML = data.changes.map(change => `<li><span class="stamp">${esc(day(change.at))}</span><div>
+      <b>${esc(change.label)} cambiata</b>
+      ${change.field === 'avatar_key' ? `<p class="history-photos">${change.before_photo ? `<img src="${BASE}/api/history/${Number(change.before_photo)}/photo" alt="Foto precedente" loading="lazy">` : ''}${icon('right')}${change.after_photo ? `<img src="${BASE}/api/history/${Number(change.after_photo)}/photo" alt="Nuova foto" loading="lazy">` : ''}</p>`
+        : `<p class="history-before">${esc(change.before) || '<i>vuota</i>'}</p><p>${esc(change.after) || '<i>vuota</i>'}</p>`}</div></li>`).join('');
+    bindImageFallback(box);
+  }
+  function sparkline(values) {
+    const min = Math.min(...values), max = Math.max(...values), span = max - min || 1, w = 300, h = 60;
+    const path = values.map((v, i) => `${i ? 'L' : 'M'}${(i / (values.length - 1) * w).toFixed(1)},${(h - 4 - (v - min) / span * (h - 8)).toFixed(1)}`).join('');
+    return `<svg class="sparkline" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" role="img" aria-label="Follower da ${number(values[0])} a ${number(values[values.length - 1])}"><path d="${path}"/></svg>`;
+  }
   async function playStories(profileId) {
     const since = Math.floor(Date.now() / 1000) - 86400;
     const page = await api('/api/posts?' + new URLSearchParams({profile: profileId, kind: 'story', since, order: 'oldest'}));
@@ -707,7 +731,14 @@
       loadPosts(true).catch(report);
     }
   });
-  // A month narrows the grid to the posts published in it.
+  // A month narrows the grid to the posts published in it: the last five years to pick from.
+  (() => {
+    const select = $('#monthFilter'); const now = new Date(); const label = new Intl.DateTimeFormat('it-IT', {month: 'long', year: 'numeric'});
+    for (let i = 0; i < 60; i++) {
+      const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      select.add(new Option(label.format(date), `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`));
+    }
+  })();
   $('#monthFilter').addEventListener('change', event => {
     const [year, month] = event.target.value.split('-').map(Number);
     state.range = year ? [Date.UTC(year, month - 1, 1) / 1000, Date.UTC(year, month, 1) / 1000] : null;

@@ -454,6 +454,31 @@ class Worker:
             if STOP.is_set() or not self.save_comments(row['id'], row['shortcode']):
                 break
 
+    def record_profile(self, profile, remote, job_id):
+        # The photo's file name on Instagram's CDN changes only with a new photo.
+        url = str(remote.profile_pic_url or '')
+        key = urlparse(url).path.rsplit('/', 1)[-1][:120]
+        snapshot = {'followers': getattr(remote, 'followers', None), 'following': getattr(remote, 'followees', None),
+                    'media_count': getattr(remote, 'mediacount', None) or getattr(remote, 'media_count', None),
+                    'full_name': remote.full_name or '', 'biography': remote.biography or '', 'avatar_key': key}
+        with store.db() as c:
+            last = c.execute('SELECT avatar_key FROM profile_history WHERE profile_id=? ORDER BY at DESC, id DESC LIMIT 1', (profile['id'],)).fetchone()
+        new_photo = url and self.mode == 'media' and (not profile['avatar'] or (last and last['avatar_key'] != key))
+        if new_photo:
+            avatar = f'{profile["id"]}/avatar-{store.now()}.jpg'
+            try:
+                self.download(url, avatar, job_id)
+                snapshot['avatar'] = avatar
+                with store.db() as c:
+                    c.execute('UPDATE profiles SET avatar=? WHERE id=?', (avatar, profile['id']))
+            except (Paused, StorageFull):
+                raise
+            except Exception as exc:
+                print(f'InstaVault: @{profile["username"]} avatar: {type(exc).__name__}', flush=True)
+        elif profile['avatar']:
+            snapshot['avatar'] = profile['avatar']
+        store.record_history(profile['id'], snapshot)
+
     def stream(self, profile, iterator, kind, job_id):
         from instaloader.nodeiterator import FrozenNodeIterator
         with store.db() as c:
@@ -515,11 +540,7 @@ class Worker:
             with store.db() as c:
                 c.execute('UPDATE profiles SET full_name=?,biography=?,instagram_id=? WHERE id=?',
                           (remote.full_name, remote.biography, str(remote.userid), profile['id']))
-            if not profile['avatar'] and self.mode == 'media':
-                avatar = f'{profile["id"]}/avatar.jpg'
-                self.download(remote.profile_pic_url, avatar, ident)
-                with store.db() as c:
-                    c.execute('UPDATE profiles SET avatar=? WHERE id=?', (avatar, profile['id']))
+            self.record_profile(profile, remote, ident)
             access = access_of(value, remote)
             with store.db() as c:
                 c.execute('UPDATE profiles SET access=? WHERE id=?', (access, profile['id']))

@@ -100,6 +100,12 @@ def initialize():
         # removed: taken off the list but its archive kept, so adding it again resumes.
         if 'removed' not in {row[1] for row in c.execute('PRAGMA table_info(profiles)')}:
             c.execute('ALTER TABLE profiles ADD COLUMN removed INTEGER NOT NULL DEFAULT 0')
+        # One row a day, plus one whenever the name, bio or photo changes.
+        c.execute('''CREATE TABLE IF NOT EXISTS profile_history (
+          id INTEGER PRIMARY KEY, profile_id INTEGER NOT NULL REFERENCES profiles(id), at INTEGER NOT NULL,
+          followers INTEGER, following INTEGER, media_count INTEGER, full_name TEXT NOT NULL DEFAULT '',
+          biography TEXT NOT NULL DEFAULT '', avatar TEXT NOT NULL DEFAULT '', avatar_key TEXT NOT NULL DEFAULT '')''')
+        c.execute('CREATE INDEX IF NOT EXISTS history_profile ON profile_history(profile_id,at)')
         # tagged: also archive the posts of other accounts that tag the profile.
         if 'tagged' not in {row[1] for row in c.execute('PRAGMA table_info(profiles)')}:
             c.execute('ALTER TABLE profiles ADD COLUMN tagged INTEGER NOT NULL DEFAULT 1')
@@ -296,6 +302,8 @@ def remove_profile(profile_id, delete_data):
         avatar = c.execute('SELECT avatar FROM profiles WHERE id=?', (profile_id,)).fetchone()['avatar']
         if avatar:
             files.append((avatar, 'media'))
+        files += [(r['avatar'], 'media') for r in c.execute("SELECT DISTINCT avatar FROM profile_history WHERE profile_id=? AND avatar<>''", (profile_id,))]
+        c.execute('DELETE FROM profile_history WHERE profile_id=?', (profile_id,))
         posts = 'SELECT id FROM posts WHERE profile_id=?'
         c.execute(f'DELETE FROM comments WHERE post_id IN ({posts})', (profile_id,))
         c.execute(f'DELETE FROM media WHERE post_id IN ({posts})', (profile_id,))
@@ -320,6 +328,38 @@ def delete_files(files, profile_id):
                     folder.rmdir()
             with contextlib.suppress(OSError):
                 top.rmdir()
+
+
+def record_history(profile_id, snapshot):
+    """Stores the profile as Instagram shows it now when a day has passed or
+    something visible changed. Returns True when the photo is new."""
+    with db() as c:
+        last = c.execute('SELECT * FROM profile_history WHERE profile_id=? ORDER BY at DESC, id DESC LIMIT 1', (profile_id,)).fetchone()
+        changed = not last or any(snapshot[k] != last[k] for k in ['full_name', 'biography', 'avatar_key'])
+        if last and not changed and time.strftime('%Y-%m-%d', time.gmtime(last['at'])) == time.strftime('%Y-%m-%d', time.gmtime(now())):
+            return False
+        c.execute('''INSERT INTO profile_history(profile_id,at,followers,following,media_count,full_name,biography,avatar,avatar_key)
+            VALUES (?,?,?,?,?,?,?,?,?)''', (profile_id, now(), snapshot['followers'], snapshot['following'], snapshot['media_count'],
+                                           snapshot['full_name'], snapshot['biography'], snapshot.get('avatar', ''), snapshot['avatar_key']))
+        return not last or snapshot['avatar_key'] != last['avatar_key']
+
+
+def profile_history(profile_id):
+    with db() as c:
+        rows = [dict(r) for r in c.execute('SELECT * FROM profile_history WHERE profile_id=? ORDER BY at, id', (profile_id,))]
+    changes, previous = [], None
+    for row in rows:
+        if previous:
+            for field, label in [('full_name', 'Nome'), ('biography', 'Bio'), ('avatar_key', 'Foto profilo')]:
+                if row[field] != previous[field]:
+                    changes.append({'at': row['at'], 'field': field, 'label': label,
+                                    'before': previous[field] if field != 'avatar_key' else '',
+                                    'after': row[field] if field != 'avatar_key' else '',
+                                    'before_photo': previous['id'] if field == 'avatar_key' and previous['avatar'] else None,
+                                    'after_photo': row['id'] if field == 'avatar_key' and row['avatar'] else None})
+        previous = row
+    points = [{'at': r['at'], 'followers': r['followers'], 'following': r['following'], 'media_count': r['media_count']} for r in rows]
+    return {'points': points, 'changes': changes[::-1]}
 
 
 def recent_stories():

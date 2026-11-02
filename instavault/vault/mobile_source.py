@@ -240,6 +240,8 @@ class ProfileAdapter:
         self.profile_pic_url = _url(_get(item, 'profile_pic_url_hd') or _get(item, 'profile_pic_url'))
         self.media_count = int(_get(item, 'media_count', 0) or 0)
         self.is_private = bool(_get(item, 'is_private', False))
+        self.followers = int(_get(item, 'follower_count', 0) or 0)
+        self.followees = int(_get(item, 'following_count', 0) or 0)
 
     def get_posts(self):
         return MediaIterator(self.source, self, 'post')
