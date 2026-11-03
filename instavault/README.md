@@ -125,3 +125,17 @@ dropped. After each update a profile with the bell on (`profiles.notify`)
 announces its new stories, posts and Reel, except during the first import;
 deletions are announced for every profile, and so is a stopped Instagram
 session. On iPhone the web app must be added to the Home screen first.
+
+Several Instagram accounts can be connected (`ig_accounts`, id = Instagram's
+numeric user id). The session saved before this existed stays in
+`instagram.enc` / `instagram-device.enc` and becomes the first account in
+place, so an older image still finds it; each new account gets
+`instagram-<id>.enc` and its own device file. A profile uses the account
+chosen in Modifica profilo (`profiles.account`), otherwise the last one that
+worked for it (`account_used`), then the others: a private profile the first
+account cannot see is tried with the next one. When Instagram disconnects an
+account the job goes back in the queue on another account at once; a
+throttled account rests three hours instead, without moving the load at once,
+since all accounts share the node's address. Deletions are marked only when
+the same account made the previous pass, because accounts see different
+stories (close friends, hidden ones).

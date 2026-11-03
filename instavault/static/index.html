@@ -194,10 +194,10 @@
           <h2 id="igTitle">Account Instagram</h2>
           <p id="instagramState" class="card-state">Non collegato</p>
           <div id="igConnected" hidden>
-            <p class="help">InstaVault scarica con questo account. I profili privati si vedono solo se li segue.</p>
+            <ul id="igAccounts" class="accounts"></ul>
+            <p class="help">Con più account, ogni profilo usa quello che lo vede: un profilo privato passa all’account che lo segue. Se Instagram scollega un account, i profili continuano con un altro. In Modifica profilo puoi fissare l’account da usare.</p>
             <div class="form-actions">
-              <button id="changeInstagram" class="button" type="button">Usa un altro account</button>
-              <button id="disconnectInstagram" class="button" type="button">Scollega</button>
+              <button id="changeInstagram" class="button" type="button">Aggiungi un account</button>
             </div>
           </div>
           <div id="igConnect">
@@ -290,6 +290,10 @@
       <label><input id="pHighlights" type="checkbox"><span>In evidenza<small>Serve l’account Instagram</small></span></label>
       <label><input id="pTagged" type="checkbox" checked><span>Post in cui è taggato<small>Pubblicati da altri account. Serve l’account Instagram</small></span></label>
     </fieldset>
+    <div id="pAccountField" hidden>
+      <label for="pAccount">Account Instagram da usare</label>
+      <select id="pAccount"><option value="">Automatico</option></select>
+    </div>
     <label for="pInterval">Frequenza di aggiornamento</label>
     <select id="pInterval"><option value="10" selected>Ogni 10 minuti</option><option value="30">Ogni 30 minuti</option><option value="60">Ogni ora</option><option value="180">Ogni 3 ore</option><option value="360">Ogni 6 ore</option><option value="1440">Ogni 24 ore</option></select>
     <p id="profileError" class="form-error" role="alert"></p>

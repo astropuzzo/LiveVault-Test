@@ -89,25 +89,88 @@ ACCOUNT_PROBLEMS = {
 }
 
 
-def note_account_problem(exc):
+PAUSE_SECONDS = 3 * 3600
+
+
+def session_owner(cookies):
+    owner = str(cookies.get('ds_user_id') or '')
+    if not owner.isdigit():
+        match = re.match(r'^\d+', str(cookies.get('sessionid') or ''))
+        owner = match[0] if match else ''
+    return owner
+
+
+def accounts():
+    """The connected accounts, oldest first. A session saved before accounts
+    existed is registered in place, its files untouched."""
+    legacy = store.DATA / 'instagram.enc'
+    with store.db() as c:
+        known = c.execute("SELECT 1 FROM ig_accounts WHERE session_file='instagram.enc'").fetchone()
+    if legacy.exists() and not known:
+        try:
+            item = security.decrypt_json(legacy.read_bytes())
+            owner = session_owner(item.get('cookies') or {})
+            problem = store.settings().get('session_problem') or {}
+            with store.db() as c:
+                c.execute("""INSERT OR IGNORE INTO ig_accounts(id,username,session_file,device_file,added_at,problem,problem_message,problem_at)
+                    VALUES (?,?,'instagram.enc','instagram-device.enc',?,?,?,?)""", (owner or item['username'], item['username'],
+                    item.get('checked_at') or store.now(), problem.get('kind', ''), problem.get('message', ''), problem.get('at')))
+                c.execute("DELETE FROM settings WHERE key='session_problem'")
+        except (OSError, ValueError, KeyError, TypeError):
+            pass
+    with store.db() as c:
+        return [dict(r) for r in c.execute('SELECT * FROM ig_accounts ORDER BY added_at, id')]
+
+
+def usable(account):
+    if account['problem'] == 'login':
+        return False
+    return account['problem'] != 'pause' or store.now() - (account['problem_at'] or 0) >= PAUSE_SECONDS
+
+
+def account_choices(profile):
+    """Accounts to try for a profile: the chosen one, else the last that
+    worked, then the other usable ones. Never empty while one is connected."""
+    rows = accounts()
+    if not rows:
+        return [None]
+    pinned = [r for r in rows if r['id'] == profile.get('account')]
+    if pinned:
+        return [pinned[0]['id']]
+    good = sorted((r for r in rows if usable(r)), key=lambda r: r['id'] != profile.get('account_used'))
+    return [r['id'] for r in good] or [rows[0]['id']]
+
+
+def note_account_problem(exc, account=None):
     name = type(exc).__name__
     kind = next((k for k, names in ACCOUNT_PROBLEMS.items() if name in names), None)
-    if kind:
-        known = store.settings().get('session_problem')
-        store.set_setting('session_problem', {'kind': kind, 'message': error_message(exc), 'at': store.now()})
-        if not known:
-            push.notify('InstaVault si è fermato', error_message(exc), './#settings')
+    if kind and account:
+        with store.db() as c:
+            row = c.execute('SELECT username, problem FROM ig_accounts WHERE id=?', (account,)).fetchone()
+            c.execute('UPDATE ig_accounts SET problem=?,problem_message=?,problem_at=? WHERE id=?',
+                      (kind, error_message(exc), store.now(), account))
+        if row and not row['problem']:
+            others = [r['username'] for r in accounts() if r['id'] != account and usable(r)]
+            push.notify(f'InstaVault: @{row["username"]} si è fermato',
+                        error_message(exc) + (f' Continuo con @{others[0]}.' if others else ''), './#settings')
     return kind
 
 
+def clear_account_problem(account):
+    with store.db() as c:
+        c.execute("UPDATE ig_accounts SET problem='',problem_message='',problem_at=NULL WHERE id=?", (account,))
+
+
 def session_status():
-    path = store.DATA / 'instagram.enc'
-    problem = store.settings().get('session_problem')
-    try:
-        item = security.decrypt_json(path.read_bytes())
-        return {'configured': True, 'username': item['username'], 'checked_at': item.get('checked_at'), 'problem': problem}
-    except (OSError, ValueError, KeyError):
-        return {'configured': False, 'username': '', 'checked_at': None, 'problem': None}
+    rows = accounts()
+    listed = [{'id': r['id'], 'username': r['username'], 'added_at': r['added_at'], 'usable': usable(r),
+               'problem': {'kind': r['problem'], 'message': r['problem_message'], 'at': r['problem_at']} if r['problem'] else None}
+              for r in rows]
+    first = next((a for a in listed if a['usable']), listed[0] if listed else None)
+    # problem: only when no account can download any more.
+    stopped = first and not first['usable']
+    return {'configured': bool(listed), 'username': first['username'] if first else '', 'checked_at': None,
+            'problem': first['problem'] if stopped else None, 'accounts': listed}
 
 
 def new_loader():
@@ -117,19 +180,32 @@ def new_loader():
     return value
 
 
-def loader():
+def loader(account=None):
+    """A source signed in as `account` (default: the first usable one)."""
+    rows = accounts()
+    row = next((r for r in rows if r['id'] == account), None) if account else next((r for r in rows if usable(r)), rows[0] if rows else None)
     value = new_loader()
-    path = store.DATA / 'instagram.enc'
-    if path.exists():
-        item = security.decrypt_json(path.read_bytes())
+    value.account = row['id'] if row else None
+    if row:
+        item = security.decrypt_json((store.DATA / row['session_file']).read_bytes())
         if item.get('verified_via') == 'mobile_login':
             value.close()
             from .mobile_source import MobileSource
-            device = store.DATA / 'instagram-device.enc'
+            device = store.DATA / row['device_file']
             settings = security.decrypt_json(device.read_bytes()) if device.exists() else {}
-            return MobileSource(settings, item)
+            source = MobileSource(settings, item)
+            source.account = row['id']
+            return source
         value.load_session(item['username'], item['cookies'])
     return value
+
+
+def device_file(username):
+    """The device identity a login for `username` reuses; a new account gets its own."""
+    accounts()
+    with store.db() as c:
+        row = c.execute('SELECT device_file FROM ig_accounts WHERE lower(username)=lower(?)', (username,)).fetchone()
+    return row['device_file'] if row else f'instagram-device-{username.lower()}.enc'
 
 
 def save_session(value, verified_identity=None, verified_via='web_session'):
@@ -144,15 +220,39 @@ def save_session(value, verified_identity=None, verified_via='web_session'):
         if verified_identity and account.lower() != verified_identity.lower():
             raise ValueError('La sessione restituita da Instagram appartiene a un altro account.')
     value.load_session(account, cookies)
+    owner = session_owner(cookies)
+    if not owner:
+        raise ValueError('Instagram non ha indicato a quale account appartiene la sessione.')
     content = security.encrypt_json({'username': account, 'cookies': cookies,
                                     'checked_at': store.now(), 'verified_via': verified_via})
-    temporary = store.DATA / 'instagram.enc.tmp'
+    device = device_file(account)
+    with store.db() as c:
+        row = c.execute('SELECT session_file FROM ig_accounts WHERE id=?', (owner,)).fetchone()
+    target = store.DATA / (row['session_file'] if row else f'instagram-{owner}.enc')
+    temporary = target.with_name(target.name + '.tmp')
     with temporary.open('wb') as f:
         os.chmod(temporary, 0o600); f.write(content); f.flush(); os.fsync(f.fileno())
-    temporary.replace(store.DATA / 'instagram.enc')
-    store.set_setting('session_problem', None)
+    temporary.replace(target)
+    with store.db() as c:
+        c.execute("""INSERT INTO ig_accounts(id,username,session_file,device_file,added_at) VALUES (?,?,?,?,?)
+            ON CONFLICT(id) DO UPDATE SET username=excluded.username, problem='', problem_message='', problem_at=NULL""",
+                  (owner, account, target.name, device, store.now()))
     WAKE.set()
     return session_status()
+
+
+def remove_account(account):
+    """Disconnects one account: its session and device files go, profiles fall back to automatic."""
+    rows = accounts()
+    row = next((r for r in rows if r['id'] == account), None)
+    if not row:
+        raise ValueError('Account non trovato.')
+    for name in {row['session_file'], row['device_file']}:
+        (store.DATA / name).unlink(missing_ok=True)
+    with store.db() as c:
+        c.execute('DELETE FROM ig_accounts WHERE id=?', (account,))
+        c.execute("UPDATE profiles SET account='' WHERE account=?", (account,))
+        c.execute("UPDATE profiles SET account_used='' WHERE account_used=?", (account,))
 
 
 def import_cookies(body):
@@ -250,10 +350,10 @@ def access_of(value, remote):
 def follow(profile_id):
     """Sends the follow request for a private profile from the connected account."""
     with store.db() as c:
-        row = c.execute('SELECT username FROM profiles WHERE id=?', (profile_id,)).fetchone()
+        row = c.execute('SELECT username, account, account_used FROM profiles WHERE id=?', (profile_id,)).fetchone()
     if not row:
         raise ValueError('Profilo non trovato.')
-    value = loader()
+    value = loader(account_choices(dict(row))[0])
     try:
         if not hasattr(value, 'follow'):
             raise ValueError('Per chiedere di seguire da qui collega Instagram con username e password. '
@@ -535,16 +635,26 @@ class Worker:
         more = False
         value = None
         self.comments_blocked = False
+        account = None
         try:
-            value = loader()
-            self.source = value
-            self.check(ident)
-            remote = value.profile(profile['username']) if hasattr(value, 'profile') else instaloader.Profile.from_username(value.context, profile['username'])
+            choices = account_choices(profile)
+            for index, account in enumerate(choices):
+                value = loader(account)
+                self.source = value
+                self.check(ident)
+                remote = value.profile(profile['username']) if hasattr(value, 'profile') else instaloader.Profile.from_username(value.context, profile['username'])
+                access = access_of(value, remote)
+                if not access or index + 1 == len(choices):
+                    break
+                # This account cannot see the private profile: the next one may follow it.
+                value.close(); value = None
             with store.db() as c:
                 c.execute('UPDATE profiles SET full_name=?,biography=?,instagram_id=? WHERE id=?',
                           (remote.full_name, remote.biography, str(remote.userid), profile['id']))
             self.record_profile(profile, remote, ident)
-            access = access_of(value, remote)
+            # Accounts see different stories (close friends, hidden ones): only
+            # the account that made the previous pass can tell what vanished.
+            same_account = profile.get('account_used') in ('', account)
             with store.db() as c:
                 c.execute('UPDATE profiles SET access=? WHERE id=?', (access, profile['id']))
             if access:
@@ -601,7 +711,8 @@ class Worker:
                             live.add(str(item.mediaid))
                             self.archive(profile, item, 'story', ident)
                     # A story still inside its 24 hours that Instagram no longer lists was deleted.
-                    deleted['story'] = store.mark_deleted(profile['id'], (), live, store.now() - 86400 + 600, story=True)
+                    if same_account:
+                        deleted['story'] = store.mark_deleted(profile['id'], (), live, store.now() - 86400 + 600, story=True)
                 section('story', 'Storie', stories)
             if profile['highlights'] and value.context.is_logged_in:
                 def highlights():
@@ -630,7 +741,7 @@ class Worker:
                                         + ', le riprendo al prossimo controllo')
                 section('highlight', 'In evidenza', highlights)
             posts_seen = self.seen.get('post')
-            if posts_seen and posts_seen['fresh'] and posts_seen['oldest'] and 'post' in successful:
+            if posts_seen and posts_seen['fresh'] and posts_seen['oldest'] and 'post' in successful and same_account:
                 codes = posts_seen['codes'] | (self.seen.get('reel') or {}).get('codes', set())
                 deleted['post'] = store.mark_deleted(profile['id'], ('post', 'reel'), codes, posts_seen['oldest'])
             if warnings and not successful:
@@ -646,14 +757,15 @@ class Worker:
                 if warnings:
                     message += ' · ' + ' · '.join(warnings)
                 c.execute("UPDATE jobs SET state='done',finished_at=?,message=? WHERE id=?", (store.now(), message, ident))
-                if value.context.is_logged_in:
-                    c.execute("DELETE FROM settings WHERE key='session_problem'")
+                if account:
+                    c.execute("UPDATE ig_accounts SET problem='',problem_message='',problem_at=NULL WHERE id=?", (account,))
+                    c.execute('UPDATE profiles SET account_used=? WHERE id=?', (account, profile['id']))
                 c.execute("UPDATE profiles SET status='ready',error=?,last_sync=?,next_sync=? WHERE id=?",
                           (' · '.join(warnings), store.now(), store.now() + (60 if more else next_check(profile)), profile['id']))
             self.announce(profile, ident, deleted, more)
         except Exception as exc:
             message = error_message(exc)
-            note_account_problem(exc)
+            problem = note_account_problem(exc, account)
             if not isinstance(exc, Paused):
                 print(f'InstaVault: @{profile["username"]} job: {type(exc).__name__}: {instagram_detail(exc)}', flush=True)
             if isinstance(exc, BufferFull):
@@ -661,6 +773,11 @@ class Worker:
             # A restart or a disk change interrupted the job, not the user:
             # it goes back in the queue and runs again by itself.
             retry = STOP.is_set() or isinstance(exc, (ModeChanged, BufferFull))
+            # A disconnected account hands the profile to another one right away.
+            # A throttled one does not: the same IP would get the next one throttled too.
+            if problem == 'login' and not profile.get('account') and any(a['id'] != account for a in accounts() if usable(a)):
+                retry = True
+                message = 'Account scollegato da Instagram, continuo con un altro account.'
             with store.db() as c:
                 if retry and c.execute("UPDATE jobs SET state='queued',started_at=NULL,message=? WHERE id=? AND state='running'",
                                        (message, ident)).rowcount:

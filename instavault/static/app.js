@@ -99,6 +99,7 @@
     else if (!instagram.configured && profiles.length) notice.innerHTML = 'Instagram chiede l’accesso per scaricare quasi tutti i profili. <a href="#settings" data-view="settings">Collega l’account</a>';
     else if (instagram.problem?.kind === 'login') notice.innerHTML = `<b>Instagram ha scollegato @${esc(instagram.username)}.</b> ${esc(instagram.problem.message)} I download sono fermi finché non lo ricolleghi. <a href="#settings" data-view="settings">Ricollega l’account</a>`;
     else if (instagram.problem?.kind === 'pause') notice.innerHTML = `<b>Instagram ha messo in pausa @${esc(instagram.username)}</b> (${esc(moment(instagram.problem.at))}). ${esc(instagram.problem.message)}`;
+    else if (dropped(instagram)) { const lost = dropped(instagram); notice.innerHTML = `<b>Instagram ha scollegato @${esc(lost.username)}.</b> I profili continuano con @${esc(instagram.username)}. <a href="#settings" data-view="settings">Ricollega @${esc(lost.username)}</a>`; }
     else if (failing) notice.innerHTML = `<b>@${esc(failing.username)}</b>: ${esc(failing.error)} <button class="link" type="button" data-profile="${failing.id}">Apri il profilo</button>`;
     else { notice.hidden = true; return; }
     notice.hidden = false;
@@ -118,13 +119,30 @@
     else if (!settings.automatic) setSyncStatus('Automatico in pausa', 'off');
     else setSyncStatus('Aggiornato', 'ok');
     renderNotice(summary);
-    $('#instagramState').textContent = instagram.configured ? `Collegato come @${instagram.username}` : 'Non collegato';
+    const accounts = instagram.accounts || [];
+    $('#instagramState').textContent = accounts.length > 1 ? `${accounts.length} account collegati` : instagram.configured ? `Collegato come @${instagram.username}` : 'Non collegato';
+    renderAccounts(accounts);
     // Once connected the sign-in form steps aside; it comes back only to switch account.
     const connected = instagram.configured && !state.igChanging && !state.pendingCode && !loginAttemptId;
     $('#igConnected').hidden = !connected; $('#igConnect').hidden = connected;
     $('#keepInstagram').hidden = !(instagram.configured && state.igChanging);
     if (!$('#settingsForm').contains(document.activeElement)) { $('#automatic').checked = !!settings.automatic; $('#quotaGb').value = settings.quota_gb ?? 60; $('#reserveGb').value = settings.min_free_gb ?? 15; }
     renderArchive(); renderProfiles();
+  }
+  function dropped(instagram) { return (instagram.accounts || []).find(a => a.problem?.kind === 'login'); }
+  function accountState(account) {
+    if (!account.problem) return 'Attivo';
+    if (account.problem.kind === 'login') return 'Da ricollegare: Instagram lo ha scollegato';
+    return account.usable ? 'Attivo' : `In pausa per Instagram dalle ${clock(account.problem.at)}, riprova da solo`;
+  }
+  function clock(stamp) { return new Date(stamp * 1000).toLocaleTimeString('it-IT', {hour: '2-digit', minute: '2-digit'}); }
+  function renderAccounts(accounts) {
+    $('#igAccounts').innerHTML = accounts.map(a => `<li><div><b>@${esc(a.username)}</b><small class="${a.usable ? '' : 'warn'}">${esc(accountState(a))}</small></div>
+      <div class="row-actions">${a.problem?.kind === 'login' ? `<button class="button small" type="button" data-reconnect-account="${esc(a.username)}">Ricollega</button>` : ''}<button class="button small" type="button" data-disconnect-account="${esc(a.id)}" data-name="${esc(a.username)}">Scollega</button></div></li>`).join('');
+    const field = $('#pAccountField'), select = $('#pAccount'), chosen = select.value;
+    field.hidden = accounts.length < 2;
+    select.replaceChildren(new Option('Automatico', ''), ...accounts.map(a => new Option('@' + a.username, a.id)));
+    select.value = chosen;
   }
   async function refreshSummary(initial = false) {
     if (refreshBusy || !state.authenticated) return;
@@ -566,7 +584,9 @@
     const select = $('#pInterval'); const value = profile?.interval_minutes || 10;
     $$('option[data-custom]', select).forEach(option => option.remove());
     if (![...select.options].some(option => Number(option.value) === Number(value))) { const option = new Option(every(value, true), value); option.dataset.custom = '1'; select.add(option); }
-    select.value = String(value); $('#profileDialog').showModal();
+    select.value = String(value);
+    $('#pAccount').value = profile?.account || '';
+    $('#profileDialog').showModal();
   }
   function cleanupMedia() { stopStory(); $$('video', $('#viewerMedia')).forEach(video => { video.pause(); video.removeAttribute('src'); video.load(); }); $('#viewerMedia').replaceChildren(); }
 
@@ -752,6 +772,8 @@
     if (data.post && state.selecting && target.classList.contains('tile')) { toggleTile(target); return; }
     if (data.post) { openPost(data.post).catch(report); return; }
     if (data.editProfile) { openProfile(profileById(data.editProfile)); return; }
+    if (data.disconnectAccount) { disconnectAccount(target); return; }
+    if (data.reconnectAccount) { state.igChanging = true; renderSummary(); $('#igUsername').value = data.reconnectAccount; $('#igPassword').focus(); return; }
     if (data.notifyProfile) { busy(target, async () => { try { const p = profileById(data.notifyProfile); await api('/api/profiles/' + p.id, {method: 'PATCH', body: JSON.stringify({notify: !p.notify})}); toast(p.notify ? 'Avvisi disattivati per questo profilo' : (pushReady ? 'Ti avviso per storie e post nuovi' : 'Avvisi attivi: accendi le notifiche in Impostazioni')); await refreshSummary(); } catch (error) { report(error); } }); return; }
     if (data.syncProfile) { busy(target, async () => { try { await api(`/api/profiles/${Number(data.syncProfile)}/sync`, {method: 'POST', body: '{}'}); toast('Aggiornamento in coda'); await refreshSummary(); } catch (error) { report(error); } }); return; }
     if (data.toggleProfile) { busy(target, async () => { try { const p = profileById(data.toggleProfile); await api('/api/profiles/' + p.id, {method: 'PATCH', body: JSON.stringify({enabled: !p.enabled})}); toast(p.enabled ? 'Profilo in pausa, i contenuti restano' : 'Aggiornamenti riattivati'); await refreshSummary(); } catch (error) { report(error); } }); return; }
@@ -796,6 +818,7 @@
     event.preventDefault(); $('#profileError').textContent = '';
     const ident = $('#profileId').value;
     const body = {username: $('#profileUsername').value.trim(), interval_minutes: Number($('#pInterval').value), posts: $('#pPosts').checked, reels: $('#pReels').checked, stories: $('#pStories').checked, highlights: $('#pHighlights').checked, tagged: $('#pTagged').checked};
+    if (!$('#pAccountField').hidden) body.account = $('#pAccount').value;
     if (!body.posts && !body.reels && !body.stories && !body.highlights) { $('#profileError').textContent = 'Scegli almeno un tipo di contenuto.'; return; }
     busy(event.submitter, async () => {
       try { await api('/api/profiles' + (ident ? '/' + ident : ''), {method: ident ? 'PATCH' : 'POST', body: JSON.stringify(body)}); $('#profileDialog').close(); toast(ident ? 'Modifiche salvate' : 'Profilo aggiunto, primo download in coda'); await refreshSummary(); if (!ident && GRIDS.includes(state.view)) renderEmpty(); }
@@ -867,9 +890,11 @@
     const body = {cookies: $('#cookieText').value}; $('#cookieText').value = '';
     busy(event.submitter, async () => { try { await api('/api/instagram/cookies', {method: 'POST', body: JSON.stringify(body)}); toast('Account collegato, sessione cifrata sul server'); $('#cookieImport').closest('details').open = false; state.igChanging = false; await refreshSummary(); } catch (error) { report(error); } finally { body.cookies = ''; } });
   });
-  $('#disconnectInstagram').addEventListener('click', event => busy(event.currentTarget, async () => {
-    try { await api('/api/instagram/disconnect', {method: 'POST', body: '{}'}); state.pendingCode = false; $('#twoFactorBox').hidden = true; ['igUsername', 'igPassword', 'igCode'].forEach(id => { $('#' + id).value = ''; }); toast('Account scollegato, sessione rimossa dal server'); await refreshSummary(); } catch (error) { report(error); }
-  }));
+  function disconnectAccount(button) {
+    busy(button, async () => {
+      try { await api('/api/instagram/disconnect', {method: 'POST', body: JSON.stringify({account: button.dataset.disconnectAccount})}); state.pendingCode = false; $('#twoFactorBox').hidden = true; ['igUsername', 'igPassword', 'igCode'].forEach(id => { $('#' + id).value = ''; }); toast(`@${button.dataset.name} scollegato, sessione rimossa dal server`); await refreshSummary(); } catch (error) { report(error); }
+    });
+  }
   $('#closePost').addEventListener('click', () => $('#postDialog').close());
   $('#previousMedia').addEventListener('click', () => moveSlide(-1));
   $('#nextMedia').addEventListener('click', () => moveSlide(1));

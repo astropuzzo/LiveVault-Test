@@ -106,6 +106,15 @@ def initialize():
           followers INTEGER, following INTEGER, media_count INTEGER, full_name TEXT NOT NULL DEFAULT '',
           biography TEXT NOT NULL DEFAULT '', avatar TEXT NOT NULL DEFAULT '', avatar_key TEXT NOT NULL DEFAULT '')''')
         c.execute('CREATE INDEX IF NOT EXISTS history_profile ON profile_history(profile_id,at)')
+        # Connected Instagram accounts: id is Instagram's numeric user id. The
+        # first account keeps the original instagram.enc files.
+        c.execute('''CREATE TABLE IF NOT EXISTS ig_accounts (
+          id TEXT PRIMARY KEY, username TEXT NOT NULL, session_file TEXT NOT NULL, device_file TEXT NOT NULL,
+          added_at INTEGER NOT NULL, problem TEXT NOT NULL DEFAULT '', problem_message TEXT NOT NULL DEFAULT '', problem_at INTEGER)''')
+        # account: the one the user chose ('' = automatic); account_used: the last one that worked.
+        for column in ['account', 'account_used']:
+            if column not in {row[1] for row in c.execute('PRAGMA table_info(profiles)')}:
+                c.execute(f"ALTER TABLE profiles ADD COLUMN {column} TEXT NOT NULL DEFAULT ''")
         # Browsers that receive notices, and profiles whose new content is announced.
         c.execute('''CREATE TABLE IF NOT EXISTS push_subscriptions (
           endpoint TEXT PRIMARY KEY, p256dh TEXT NOT NULL, auth TEXT NOT NULL, created_at INTEGER NOT NULL)''')

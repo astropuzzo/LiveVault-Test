@@ -217,7 +217,7 @@ def test_a_full_buffer_puts_the_job_back_in_the_queue(vault, monkeypatch):
     ident = store.enqueue(vault['profile'])
     with store.db() as c:
         job = dict(c.execute('SELECT * FROM jobs WHERE id=?', (ident,)).fetchone())
-    def full():
+    def full(account=None):
         raise sync.BufferFull()
     monkeypatch.setattr(sync, 'loader', full)
     worker = sync.Worker(); worker.run_job(job)
@@ -300,7 +300,8 @@ def test_a_pasted_sessionid_alone_connects_the_account(vault, monkeypatch, paste
         return 'owner_account', dict(cookies, csrftoken='real-instagram-csrf')
     monkeypatch.setattr(instagram_session, 'validate_web_session', checked)
     result = sync.import_cookies({'cookies': pasted})
-    assert result == {'configured': True, 'username': 'owner_account', 'checked_at': result['checked_at'], 'problem': None}
+    assert result['configured'] and result['username'] == 'owner_account' and result['problem'] is None
+    assert [a['username'] for a in result['accounts']] == ['owner_account']
     assert fake.cookies['sessionid'] == '12345678%3AAbCdEfGhIjKlMn%3A17%3AAYfZ'
     assert fake.cookies['csrftoken'] == 'real-instagram-csrf' and fake.cookies['ds_user_id'] == '12345678'
 
@@ -372,7 +373,7 @@ class FakeClient:
 @pytest.fixture
 def instagram(vault, monkeypatch):
     fake = FakeLoader()
-    monkeypatch.setattr(sync, 'loader', lambda: fake)
+    monkeypatch.setattr(sync, 'loader', lambda account=None: fake)
     monkeypatch.setattr(login, 'Client', FakeClient)
     monkeypatch.setattr(login, 'CURRENT', None)
     monkeypatch.setattr(login, 'ATTEMPTS', __import__('collections').deque())
@@ -395,7 +396,8 @@ def test_an_emailed_code_completes_the_login_from_the_phone(instagram):
     assert first['channel'] == 'email'
     result = wait_login(login.password_login({'code': '123456', 'attempt_id': first['attempt_id']}), 'done')
     assert result['configured'] and result['username'] == 'owner_account'
-    saved = [security.decrypt_json((store.DATA / name).read_bytes()) for name in ['instagram.enc', 'instagram-device.enc']]
+    account = sync.accounts()[0]
+    saved = [security.decrypt_json((store.DATA / account[name]).read_bytes()) for name in ['session_file', 'device_file']]
     assert 'secret-pass' not in json.dumps(saved)
     assert saved[0]['cookies']['ds_user_id'] == '42' and saved[0]['verified_via'] == 'mobile_login'
     assert saved[1]['uuids'] == {'uuid': 'same-phone'} and not saved[1]['authorization_data']
@@ -497,7 +499,7 @@ def test_mobile_header_only_login_obtains_real_web_csrf(instagram, monkeypatch):
     monkeypatch.setattr(instagram_session, 'validate_web_session', web_check)
     result = wait_login(login.password_login({'username':'owner_account','password':'secret-pass'}), 'done')
     assert result['configured'] and len(called)==1 and 'csrftoken' not in called[0]
-    saved = security.decrypt_json((store.DATA/'instagram.enc').read_bytes())
+    saved = security.decrypt_json((store.DATA/sync.accounts()[0]['session_file']).read_bytes())
     assert saved['cookies']['csrftoken']=='real-web-csrf'
 
 
@@ -524,7 +526,7 @@ def test_mobile_login_loader_never_uses_anonymous_instaloader(vault, monkeypatch
     (store.DATA/'instagram.enc').write_bytes(security.encrypt_json(saved))
     (store.DATA/'instagram-device.enc').write_bytes(security.encrypt_json({'uuids':{'uuid':'stable'}}))
     seen=[]
-    marker=object()
+    marker=SimpleNamespace()
     monkeypatch.setattr(mobile_source,'MobileSource',lambda settings,session: (seen.append((settings,session)) or marker))
     assert sync.loader() is marker
     assert seen[0][0]['uuids']['uuid']=='stable' and seen[0][1]['verified_via']=='mobile_login'
@@ -541,7 +543,7 @@ def test_an_unavailable_story_category_does_not_block_posts(vault, monkeypatch):
         def profile(self,username):return profile
         def get_stories(self,ids):raise RuntimeError('story endpoint unavailable')
         def close(self):pass
-    monkeypatch.setattr(sync,'loader',lambda:Source())
+    monkeypatch.setattr(sync,'loader',lambda account=None:Source())
     worker=sync.Worker()
     monkeypatch.setattr(worker,'download',lambda *a:(1,'digest'))
     with store.db() as c:
@@ -768,14 +770,17 @@ def test_deleting_a_profile_removes_its_files_but_hands_collabs_over(http, vault
     assert [p['username'] for p in store.profile_rows()] == ['friend']
 
 
-def test_an_account_problem_is_remembered_until_a_good_check_or_new_login(vault):
+def test_an_account_problem_is_remembered_until_a_good_check_or_new_login(vault, monkeypatch):
+    monkeypatch.setattr(sync.push, 'notify', lambda *a, **k: 0)
+    add_account('11', 'first_account')
     class ChallengeRequired(Exception): pass
-    assert sync.note_account_problem(ChallengeRequired()) == 'login'
-    assert store.settings()['session_problem']['kind'] == 'login'
+    assert sync.note_account_problem(ChallengeRequired(), '11') == 'login'
+    status = sync.session_status()
+    assert status['problem']['kind'] == 'login' and not status['accounts'][0]['usable']
     class SomethingElse(Exception): pass
-    assert sync.note_account_problem(SomethingElse()) is None
-    store.set_setting('session_problem', None)
-    assert 'session_problem' not in store.settings()
+    assert sync.note_account_problem(SomethingElse(), '11') is None
+    sync.clear_account_problem('11')
+    assert sync.session_status()['problem'] is None
 
 
 def test_search_finds_comments_mentions_and_a_month(vault):
@@ -874,3 +879,95 @@ def test_notices_cover_new_content_of_chosen_profiles_and_every_deletion(vault, 
     sync.Worker.announce(None, profile | {'notify': 1, 'last_sync': None}, job, {}, True)
     sync.Worker.announce(None, profile | {'notify': 1}, job, {}, True)
     assert notices == [('@photographer', '2 storie nuove', './#home')]
+
+
+def add_account(owner, username, legacy=False):
+    name = 'instagram.enc' if legacy else f'instagram-{owner}.enc'
+    (store.DATA / name).write_bytes(security.encrypt_json({'username': username, 'verified_via': 'web_session',
+        'cookies': {'sessionid': f'{owner}%3Aabc', 'ds_user_id': owner, 'csrftoken': 'x'}}))
+    if not legacy:
+        with store.db() as c:
+            c.execute('INSERT INTO ig_accounts(id,username,session_file,device_file,added_at) VALUES (?,?,?,?,?)',
+                      (owner, username, name, f'instagram-device-{username}.enc', int(owner)))
+
+
+def test_the_original_session_becomes_the_first_account_in_place(vault):
+    add_account('11', 'first_account', legacy=True)
+    assert [(a['id'], a['session_file'], a['device_file']) for a in sync.accounts()] == [('11', 'instagram.enc', 'instagram-device.enc')]
+    assert (store.DATA / 'instagram.enc').exists()
+
+
+def test_disconnecting_one_account_keeps_the_other(http, vault):
+    root, client = http
+    add_account('11', 'first_account', legacy=True); add_account('22', 'second_account')
+    with store.db() as c:
+        c.execute("UPDATE profiles SET account='22' WHERE id=?", (vault['profile'],))
+    assert client.post(root + '/api/instagram/disconnect', json={'account': '22'}).ok
+    assert [a['username'] for a in client.get(root + '/api/summary').json()['instagram']['accounts']] == ['first_account']
+    assert (store.DATA / 'instagram.enc').exists() and not (store.DATA / 'instagram-22.enc').exists()
+    with store.db() as c:
+        assert c.execute('SELECT account FROM profiles WHERE id=?', (vault['profile'],)).fetchone()[0] == ''
+
+
+def source_for(private_to=None):
+    profile = SimpleNamespace(full_name='P', biography='', userid=42, profile_pic_url='https://cdninstagram.com/a.jpg',
+                              get_posts=lambda: iter([]))
+    class Source:
+        context = SimpleNamespace(is_logged_in=True)
+        def __init__(self, account): self.account = account
+        def profile(self, username): return profile
+        def access(self, remote): return 'not_followed' if private_to and self.account != private_to else ''
+        def get_stories(self, ids): return iter([])
+        def close(self): pass
+    return Source
+
+
+def run_with_accounts(vault, monkeypatch, behaviour, **profile):
+    job = store.enqueue(vault['profile'])
+    used = []
+    def fake_loader(account=None):
+        used.append(account)
+        return behaviour(account)
+    monkeypatch.setattr(sync, 'loader', fake_loader)
+    monkeypatch.setattr(sync, 'access_of', lambda value, remote: value.access(remote))
+    monkeypatch.setattr(sync.push, 'notify', lambda *a, **k: 0)
+    worker = sync.Worker(); monkeypatch.setattr(worker, 'download', lambda *a: (1, 'digest'))
+    values = {'avatar': 'existing.jpg', 'reels': 0, 'stories': 0, 'tagged': 0, 'highlights': 0} | profile
+    with store.db() as c:
+        for key, value in values.items():
+            c.execute(f'UPDATE profiles SET {key}=? WHERE id=?', (value, vault['profile']))
+        row = dict(c.execute('SELECT * FROM jobs WHERE id=?', (job,)).fetchone())
+    worker.run_job(row)
+    with store.db() as c:
+        return used, dict(c.execute('SELECT state,message FROM jobs WHERE id=?', (job,)).fetchone()), \
+            dict(c.execute('SELECT account_used,access FROM profiles WHERE id=?', (vault['profile'],)).fetchone())
+
+
+def test_a_private_profile_is_archived_through_the_account_that_follows_it(vault, monkeypatch):
+    add_account('11', 'first_account'); add_account('22', 'second_account')
+    used, job, profile = run_with_accounts(vault, monkeypatch, source_for(private_to='22'))
+    assert used == ['11', '22'] and job['state'] == 'done' and profile == {'account_used': '22', 'access': ''}
+
+
+def test_a_disconnected_account_hands_the_profile_to_another(vault, monkeypatch):
+    add_account('11', 'first_account'); add_account('22', 'second_account')
+    class ChallengeRequired(Exception): pass
+    def behaviour(account):
+        raise ChallengeRequired()
+    used, job, _ = run_with_accounts(vault, monkeypatch, behaviour)
+    assert used == ['11'] and job['state'] == 'queued'
+    assert [a['usable'] for a in sync.session_status()['accounts']] == [False, True]
+    assert sync.account_choices({'account': '', 'account_used': ''}) == ['22']
+
+
+def test_a_pass_by_another_account_marks_no_story_deleted(vault, monkeypatch):
+    add_account('11', 'first_account'); add_account('22', 'second_account')
+    with store.db() as c:
+        c.execute("INSERT INTO posts(profile_id,external_key,shortcode,kind,published_at,archived_at,complete) VALUES (?,?,?,'story',?,1,1)",
+                  (vault['profile'], 'story:CF', 'CF', store.now() - 600))
+    used, job, _ = run_with_accounts(vault, monkeypatch, source_for(), stories=1, posts=0, account='22', account_used='11')
+    assert used == ['22'] and job['state'] == 'done'
+    assert store.list_posts({'deleted': '1'})['items'] == []
+    # The same account on the next pass does notice it.
+    run_with_accounts(vault, monkeypatch, source_for(), stories=1, posts=0)
+    assert [p['shortcode'] for p in store.list_posts({'deleted': '1'})['items']] == ['CF']

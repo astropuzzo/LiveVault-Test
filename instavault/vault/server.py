@@ -279,7 +279,8 @@ class Handler(BaseHTTPRequestHandler):
         if path == '/api/instagram/disconnect':
             login.cancel_current()
             with sync.SESSION_LOCK:
-                (store.DATA / 'instagram.enc').unlink(missing_ok=True)
+                for account in [body['account']] if body.get('account') else [a['id'] for a in sync.accounts()]:
+                    sync.remove_account(str(account))
             return self.send_json({'ok': True})
         raise HTTPError(404, 'Operazione non trovata.')
 
@@ -288,6 +289,11 @@ class Handler(BaseHTTPRequestHandler):
         for key in ['enabled', 'posts', 'reels', 'stories', 'highlights', 'tagged', 'notify']:
             if key in body:
                 values[key] = int(bool(body[key]))
+        if 'account' in body:
+            account = str(body['account'] or '')
+            if account and account not in {a['id'] for a in sync.accounts()}:
+                raise ValueError('Questo account Instagram non è più collegato.')
+            values['account'] = account
         if 'interval_minutes' in body:
             value = int(body['interval_minutes'])
             if not 10 <= value <= 10080:

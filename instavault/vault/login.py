@@ -25,15 +25,15 @@ CURRENT = None
 ATTEMPTS = deque()
 
 
-def device_path():
-    return store.DATA / 'instagram-device.enc'
+def device_path(username):
+    return store.DATA / sync.device_file(username)
 
 
-def client():
+def client(username):
     value = Client()
     value.read_timeout = 25
     try:
-        saved = security.decrypt_json(device_path().read_bytes())
+        saved = security.decrypt_json(device_path(username).read_bytes())
         value.override_app_version = True
         value.set_settings(saved)
     except (OSError, ValueError, KeyError, TypeError):
@@ -45,16 +45,16 @@ def client():
     return value
 
 
-def save_device(value):
+def save_device(value, username):
     settings = value.get_settings()
     settings['authorization_data'] = {}
     settings['cookies'] = {k: v for k, v in (settings.get('cookies') or {}).items() if k not in {'sessionid', 'ds_user_id'}}
     content = security.encrypt_json(settings)
-    temporary = device_path().with_suffix('.tmp')
+    temporary = device_path(username).with_suffix('.tmp')
     with temporary.open('wb') as handle:
         __import__('os').chmod(temporary, 0o600)
         handle.write(content); handle.flush(); __import__('os').fsync(handle.fileno())
-    temporary.replace(device_path())
+    temporary.replace(device_path(username))
 
 
 def finish(value, cancelled=None, committed=None):
@@ -94,7 +94,7 @@ class Attempt:
         self.id = secrets.token_urlsafe(18)
         self.username = username
         self.created_at = time.time()
-        self.client = client()
+        self.client = client(username)
         self.client.challenge_code_handler = self.code
         self.codes = queue.Queue(maxsize=1)
         self.asking = threading.Event()
@@ -146,7 +146,7 @@ class Attempt:
             password = None
             self.client.password = None
             try:
-                save_device(self.client)
+                save_device(self.client, self.username)
             except Exception:
                 pass
             self.done.set(); self.asking.set()
