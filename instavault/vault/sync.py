@@ -159,6 +159,9 @@ def account_choices(profile):
 def note_account_problem(exc, account=None):
     name = type(exc).__name__
     kind = next((k for k, names in ACCOUNT_PROBLEMS.items() if name in names), None)
+    if name == 'AbortDownloadException':
+        # Instaloader uses it both for "logged out" and for throttling.
+        kind = 'login' if 'login' in str(exc).lower() else 'pause'
     if kind and account:
         with store.db() as c:
             row = c.execute('SELECT username, problem FROM ig_accounts WHERE id=?', (account,)).fetchone()
@@ -203,11 +206,20 @@ def loader(account=None):
     value.account = row['id'] if row else None
     if row:
         item = security.decrypt_json((store.DATA / row['session_file']).read_bytes())
-        if item.get('verified_via') == 'mobile_login':
+        if item.get('verified_via') == 'mobile_login' or (item.get('cookies') or {}).get('sessionid'):
             value.close()
             from .mobile_source import MobileSource
             device = store.DATA / row['device_file']
-            settings = security.decrypt_json(device.read_bytes()) if device.exists() else {}
+            if not device.exists():
+                # One stable phone identity per account, kept from the first use on.
+                from instagrapi import Client
+                fresh = Client().get_settings()
+                fresh['cookies'], fresh['authorization_data'] = {}, {}
+                temporary = device.with_name(device.name + '.tmp')
+                with temporary.open('wb') as handle:
+                    os.chmod(temporary, 0o600); handle.write(security.encrypt_json(fresh))
+                temporary.replace(device)
+            settings = security.decrypt_json(device.read_bytes())
             source = MobileSource(settings, item)
             source.account = row['id']
             return source

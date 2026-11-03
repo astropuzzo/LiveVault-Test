@@ -1000,3 +1000,22 @@ def test_only_a_clear_not_found_counts_as_removed(vault):
     assert sync.removed_from_instagram(source(ClientConnectionError()), 'X') is False
     alive = SimpleNamespace(client=SimpleNamespace(media_pk_from_code=lambda code: 1, media_info_v1=lambda pk: {}))
     assert sync.removed_from_instagram(alive, 'X') is False
+
+
+def test_a_browser_cookie_account_reads_through_the_mobile_api_with_a_stable_device(vault, monkeypatch):
+    from vault import mobile_source
+    add_account('22', 'second_account')
+    seen = []
+    monkeypatch.setattr(mobile_source, 'MobileSource', lambda settings, session: seen.append(settings) or SimpleNamespace())
+    assert sync.loader('22').account == '22'
+    sync.loader('22')
+    assert seen[0]['uuids'] == seen[1]['uuids'] and not seen[0]['cookies']
+    assert (store.DATA / 'instagram-device-second_account.enc').exists()
+
+
+def test_a_logout_redirect_counts_as_a_disconnected_account(vault, monkeypatch):
+    monkeypatch.setattr(sync.push, 'notify', lambda *a, **k: 0)
+    add_account('22', 'second_account')
+    class AbortDownloadException(Exception): pass
+    assert sync.note_account_problem(AbortDownloadException('Redirected to login page. You have been logged out'), '22') == 'login'
+    assert sync.note_account_problem(AbortDownloadException('429 Too Many Requests'), '22') == 'pause'

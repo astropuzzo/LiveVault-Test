@@ -281,7 +281,9 @@ class HighlightAdapter:
 
 class MobileSource:
     def __init__(self, settings, session, *, client=None, client_factory=None):
-        if not isinstance(session, dict) or session.get('verified_via') != 'mobile_login':
+        # A browser cookie session works on the mobile API too; the old web
+        # endpoints answer it with a redirect to the login page.
+        if not isinstance(session, dict) or session.get('verified_via') not in {'mobile_login', 'web_session'}:
             raise ValueError('Questa sessione non proviene da un accesso mobile verificato.')
         cookies = session.get('cookies')
         if not isinstance(cookies, dict) or not cookies.get('sessionid'):

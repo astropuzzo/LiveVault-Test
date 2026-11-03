@@ -146,3 +146,7 @@ stories (close friends, hidden ones).
 Every profile has its own address, `#@username`, and a tab other than the
 first one adds `/reel`, `/story`, `/tagged` or `/highlight`; back, forward,
 reload and bookmarks land on the same profile and tab.
+
+An account connected with the browser cookie reads through the same mobile
+API as a password login (the old web endpoints now answer with a redirect to
+the login page); on first use it gets its own stable device identity file.
