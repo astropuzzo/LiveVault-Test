@@ -10,8 +10,9 @@ In **App e ricavi**, sopra Bonsai Sensei, la scheda «Ricerca del server Oracle�
 `oracle_vm.py hunt` del repository Biglie (`tools/regia`), che sull'ASIAIR gira in
 `/home/astro/biglie-oci` e cerca la macchina Arm gratuita per la regia. Mostra stato, giro,
 ultimo aggiornamento, processo vivo o fermo, taglia e IP della macchina quando c'è, le ultime 40
-righe di `hunt.log` (orari del nodo, fuso di Londra) e i tasti Pausa/Riprendi, Ferma, Riavvia e
-Avvia. Usa `hunt.sh` così com'è; se va cambiato, la modifica sta nel repository Biglie.
+righe di `hunt.log` (orari del nodo, fuso di Londra), i tasti Pausa/Riprendi, Ferma, Riavvia e
+Avvia e la scelta «Riprova ogni» 15, 30, 60 o 90 secondi. Usa `hunt.sh` così com'è; se va
+cambiato, la modifica sta nel repository Biglie.
 
 - Lettura: `GET /api/biglie/hunt` (sessione) esegue `hunt.sh status` e `hunt.sh log 40` come
   astro, al massimo ogni 5 s per tutti i client insieme (`biglie_hunt.snapshot`). Il browser
@@ -22,6 +23,10 @@ Avvia. Usa `hunt.sh` così com'è; se va cambiato, la modifica sta nel repositor
   `Type=forking`). La ricerca resta fuori dal cgroup del pannello: un riavvio del pannello non la
   ferma. Riavvia è `hunt.sh stop` seguito dallo stesso avvio; il pannello non lancia mai
   `hunt.sh start` o `restart` dal proprio processo.
+- Attesa tra i giri: `{"action": "interval", "seconds": 15|30|60|90}` esegue `hunt.sh interval`
+  (repository Biglie, commit 4f79430). Vale sia per cercare la macchina sia per farla crescere, e
+  la ricerca in corso la rilegge entro 5 s; dopo un errore aspetta comunque 90 s. Con un `hunt.sh`
+  più vecchio lo stato non ha `"interval"`: la scelta resta spenta e la scheda dice di aggiornarlo.
 - Servizio: `ProtectHome=true` diventa `ProtectHome=tmpfs` con
   `BindPaths=-/home/astro/biglie-oci`. Della home il pannello vede solo quella cartella; chiavi
   SSH e `~/.oci` restano nascoste. Il `-` lascia partire il pannello anche senza la cartella.
@@ -67,7 +72,9 @@ e 412×915 con stato e registro letti dal nodo, `systemd-analyze verify` della n
 schema `Type=forking` con un'unità utente usa e getta che lanciava `sleep`. Non ancora provati:
 Riavvia dal pannello con la ricerca dentro `biglie-hunt-<epoch>.service`, una notifica su un
 telefono vero e la scheda vista con una sessione. La copia in `/opt/openastro-ops` (root, 0700)
-non è aggiornata: va allineata con root, senza sovrascrivere aggiunte di altri rami.
+non è aggiornata: va allineata con root, senza sovrascrivere aggiunte di altri rami. La scelta
+«Riprova ogni» è venuta dopo, su richiesta del proprietario: provata in locale e con `hunt.sh` sul
+nodo in una cartella di prova, non ancora installata nel pannello.
 
 ## Interfaccia grafite (2026-11-02)
 

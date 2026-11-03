@@ -26,9 +26,10 @@ spec.loader.exec_module(panel)
 hunt = panel.biglie_hunt
 push = panel.web_push
 
-# Real hunt.sh status lines: from the ASIAIR on 3 Nov 2026, and the shape before any run.
+# Real hunt.sh status lines: from the ASIAIR on 3 Nov 2026, the shape before any run, and hunt.sh with interval.
 SEARCHING = '{"alive": true, "time": "2026-11-03T11:41:58+0000", "state": "searching", "round": 4}\n'
 NEVER = '{"alive": false}\n'
+WITH_INTERVAL = '{"alive": true, "interval": 90, "time": "2026-11-03T12:53:00+0000", "state": "searching", "round": 50}\n'
 
 
 def status(state, alive=True, machine=None, error=None, round_=3):
@@ -42,9 +43,13 @@ def status(state, alive=True, machine=None, error=None, round_=3):
 
 def test_status_reads_the_real_hunt_sh_lines():
     live = hunt.parse_status(SEARCHING)
-    assert live == {"alive": True, "state": "searching", "round": 4, "machine": None, "error": None,
+    assert live == {"alive": True, "interval": None, "state": "searching", "round": 4, "machine": None, "error": None,
                     "updated": int(datetime(2026, 11, 3, 11, 41, 58, tzinfo=timezone.utc).timestamp())}
-    assert hunt.parse_status(NEVER) == {"alive": False, "state": None, "round": None, "updated": None, "machine": None, "error": None}
+    assert hunt.parse_status(NEVER) == {"alive": False, "interval": None, "state": None, "round": None, "updated": None,
+                                        "machine": None, "error": None}
+    assert hunt.parse_status(WITH_INTERVAL)["interval"] == 90
+    for odd in (20, "15", 15.0, True, None):
+        assert hunt.parse_status(json.dumps({"alive": True, "interval": odd}))["interval"] is None
     found = status("running", machine=(2, 12, "141.144.200.7"))
     assert found["machine"] == {"name": "biglie-regia", "ocpus": 2, "gb": 12, "ip": "141.144.200.7"}
     assert status("running", machine=(2, 12, "-"))["machine"]["ip"] is None
@@ -72,7 +77,7 @@ class FakeHunt:
             self.calls.append("helper:" + args[-1])
             return self.start_code, "Job failed" if self.start_code else "Ricerca Biglie avviata."
         command = args[1]
-        self.calls.append(command)
+        self.calls.append(" ".join(args[1:]) if command == "interval" else command)
         if command == "status":
             return 0, self.line
         if command == "log":
@@ -141,6 +146,25 @@ def test_pause_resume_and_stop_run_hunt_sh(hunt_dir, monkeypatch):
     assert hunt.action("stop")[0]["message"] == "La ricerca era già ferma."
     assert [call for call in fake.calls if call not in ("status", "log")] == ["pause", "resume", "stop"]
     assert hunt.action("rm -rf")[1] == 400
+
+
+def test_interval_takes_only_the_allowed_waits(hunt_dir, monkeypatch):
+    fake = FakeHunt(WITH_INTERVAL)
+    monkeypatch.setattr(hunt, "_run", fake)
+    assert hunt.action("interval", 15) == ({"ok": True, "message": "Ora la ricerca riprova ogni 15 secondi."}, 200)
+    for odd in (20, "15", 15.0, True, None):
+        assert hunt.action("interval", odd)[1] == 400
+    fake.line = fake.line.replace('"alive": true', '"alive": false')
+    assert hunt.action("interval", 60)[0]["message"] == "La ricerca riproverà ogni 60 secondi quando la avvii."
+    assert [call for call in fake.calls if call not in ("status", "log")] == ["interval 15", "interval 60"]
+
+
+def test_interval_waits_for_a_hunt_sh_that_knows_it(hunt_dir, monkeypatch):
+    fake = FakeHunt(SEARCHING)
+    monkeypatch.setattr(hunt, "_run", fake)
+    result, code = hunt.action("interval", 30)
+    assert code == 409 and "va aggiornato" in result["error"]
+    assert not any(call.startswith("interval") for call in fake.calls)
 
 
 def test_helper_failure_is_reported(hunt_dir, monkeypatch):
@@ -324,14 +348,15 @@ def call(url, body=None, csrf="csrf-1", cookie=True):
 def test_endpoints_need_the_session_and_actions_need_csrf(control_server, monkeypatch):
     actions = []
     monkeypatch.setattr(hunt, "snapshot", lambda force=False: {"ok": True, "installed": True, "alive": True, "state": "searching"})
-    monkeypatch.setattr(hunt, "action", lambda name: actions.append(name) or ({"ok": True, "message": "Fatto"}, 200))
+    monkeypatch.setattr(hunt, "action", lambda name, seconds=None: actions.append((name, seconds)) or ({"ok": True, "message": "Fatto"}, 200))
     assert call(control_server + "/api/biglie/hunt", cookie=False)[0] == 401
     assert call(control_server + "/api/biglie/hunt") == (200, {"ok": True, "installed": True, "alive": True, "state": "searching"})
     assert call(control_server + "/api/biglie/hunt", {"action": "pause"}, csrf="wrong")[0] == 403
     assert call(control_server + "/api/biglie/hunt", {"action": "pause"}, cookie=False)[0] == 401
     assert actions == []
     assert call(control_server + "/api/biglie/hunt", {"action": "pause"}) == (200, {"ok": True, "message": "Fatto"})
-    assert actions == ["pause"]
+    assert call(control_server + "/api/biglie/hunt", {"action": "interval", "seconds": 30})[0] == 200
+    assert actions == [("pause", None), ("interval", 30)]
 
 
 def test_push_endpoints(control_server, monkeypatch):

@@ -9,7 +9,7 @@ function setup() {
   const pending = [], nodes = new Map(), listeners = {}, toasts = [];
   function node(selector) {
     if (!nodes.has(selector)) nodes.set(selector, {textContent:'', hidden:false, disabled:false, className:'', scrollTop:0, scrollHeight:0, clientHeight:0,
-      setAttribute() {}, addEventListener(name, fn) { this[name] = fn; }});
+      setAttribute(name, value) { this[`@${name}`] = value; }, addEventListener(name, fn) { this[name] = fn; }});
     return nodes.get(selector);
   }
   const document = {hidden:false, querySelector:node, addEventListener:(name, fn) => { listeners[name] = fn; }};
@@ -97,6 +97,23 @@ test('the pause button follows the pause flag', async () => {
   assert.equal(s.pending[1].options.body, '{"action":"resume"}');
   s.pending[1].resolve(reply({ok:false, error:'Comando non riuscito.'}, 500)); await tick();
   assert.deepEqual(s.toasts.at(-1), ['Comando non riuscito.', true]);
+});
+
+test('the wait between rounds shows the chosen one and sends a new choice', async () => {
+  const wait = seconds => `#biglieHuntInterval [data-seconds="${seconds}"]`;
+  const s = await shown({...searching, interval:30});
+  assert.equal(s.node(wait(30)).className, 'active'); assert.equal(s.node(wait(30))['@aria-pressed'], 'true');
+  assert.equal(s.node(wait(15)).className, ''); assert.equal(s.node(wait(15))['@aria-pressed'], 'false');
+  assert.equal(s.node(wait(90)).disabled, false);
+  s.node(wait(30)).click(); assert.equal(s.pending.length, 1);
+  s.node(wait(15)).click();
+  assert.equal(s.pending[1].options.body, '{"action":"interval","seconds":15}');
+  assert.equal(s.node(wait(60)).disabled, true);
+  s.pending[1].resolve(reply({ok:true, message:'Ora la ricerca riprova ogni 15 secondi.'})); await tick();
+  assert.deepEqual(s.toasts.at(-1), ['Ora la ricerca riprova ogni 15 secondi.', false]);
+  const old = await shown(searching);
+  for (const seconds of [15, 30, 60, 90]) assert.equal(old.node(wait(seconds)).disabled, true);
+  assert.match(old.node('#biglieHuntIntervalNote').textContent, /va aggiornato/);
 });
 
 test('a missing folder disables every control and says why', async () => {

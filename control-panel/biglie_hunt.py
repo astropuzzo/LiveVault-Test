@@ -23,7 +23,9 @@ START_COMMAND = ["sudo", "-n", "/usr/local/sbin/openastro-action", "biglie_hunt_
 STATES = ("searching", "running", "growing", "top", "error", "paused", "stopped")
 LABELS = {"searching": "in cerca di posto", "running": "macchina attiva", "growing": "macchina attiva, cerca più spazio",
           "top": "taglia massima raggiunta", "error": "errore", "paused": "in pausa", "stopped": "fermata"}
-ACTIONS = ("start", "stop", "restart", "pause", "resume")
+ACTIONS = ("start", "stop", "restart", "pause", "resume", "interval")
+# Seconds between the hunt's rounds that hunt.sh interval accepts.
+INTERVALS = (15, 30, 60, 90)
 PROBE_SECONDS = 5
 WATCH_SECONDS = 30
 LOG_LINES = 40
@@ -74,7 +76,8 @@ def _epoch(value) -> int | None:
 
 
 def parse_status(text: str) -> dict:
-    """hunt.sh status: status.json with "alive" added, or {"alive": false} before the first run."""
+    """hunt.sh status: status.json with "alive" and "interval" added, or only those two before the first run. An older
+    hunt.sh has no "interval": the card then cannot change it."""
     lines = [line for line in text.splitlines() if line.strip()]
     try:
         raw = json.loads(lines[-1]) if lines else None
@@ -91,9 +94,10 @@ def parse_status(text: str) -> dict:
         except ValueError:
             ip = None
         machine = {"name": name, "ocpus": ocpus, "gb": gb, "ip": ip}
-    error = raw.get("error")
+    error, interval = raw.get("error"), raw.get("interval")
     return {
         "alive": raw.get("alive") is True,
+        "interval": interval if type(interval) is int and interval in INTERVALS else None,
         "state": state if state in STATES else ("unknown" if state is not None else None),
         "round": _count(raw.get("round"), 10 ** 9),
         "updated": _epoch(raw.get("time")),
@@ -148,9 +152,22 @@ def _stop() -> tuple[dict, int] | None:
     return None
 
 
-def action(name: str) -> tuple[dict, int]:
+def _interval(seconds: int, current: dict) -> tuple[dict, int]:
+    if current.get("ok") and current.get("interval") is None:
+        return {"ok": False, "error": "Lo script della ricerca su questo nodo non sa cambiare l’intervallo: va aggiornato dal repository Biglie."}, 409
+    code, output = _hunt("interval", str(seconds))
+    if code != 0:
+        return {"ok": False, "error": _clean(output, 300) or "Comando non riuscito."}, 500
+    if current.get("alive") is True:
+        return {"ok": True, "message": f"Ora la ricerca riprova ogni {seconds} secondi."}, 200
+    return {"ok": True, "message": f"La ricerca riproverà ogni {seconds} secondi quando la avvii."}, 200
+
+
+def action(name: str, seconds=None) -> tuple[dict, int]:
     if name not in ACTIONS:
         return {"ok": False, "error": "Azione non consentita."}, 400
+    if name == "interval" and (type(seconds) is not int or seconds not in INTERVALS):
+        return {"ok": False, "error": "Intervallo non consentito: scegli 15, 30, 60 o 90 secondi."}, 400
     if not (HUNT_DIR / "hunt.sh").is_file():
         return {"ok": False, "error": "La ricerca non è installata su questo nodo."}, 409
     if not _action_lock.acquire(blocking=False):
@@ -158,6 +175,8 @@ def action(name: str) -> tuple[dict, int]:
     try:
         current = snapshot(force=True)
         alive, paused = current.get("alive") is True, current.get("paused") is True
+        if name == "interval":
+            return _interval(seconds, current)
         if name in ("pause", "resume"):
             code, output = _hunt(name)
             if code != 0:

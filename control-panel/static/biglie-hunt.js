@@ -7,9 +7,13 @@
     error:['Errore','bad'], paused:['In pausa','warn'], stopped:['Ferma','']};
   const LABELS = {searching:'in cerca di posto', running:'macchina attiva', growing:'macchina attiva, cerca più spazio', top:'taglia massima raggiunta',
     error:'errore', paused:'in pausa', stopped:'fermata', unknown:'sconosciuto'};
+  // Seconds between the hunt's rounds that hunt.sh interval accepts.
+  const CHOICES = [15, 30, 60, 90];
+  const WAIT_NOTE = 'L’attesa tra un tentativo e l’altro, sia per trovare la macchina sia per farla crescere.';
   let view = 'dashboard', authenticated = true, controller = null, generation = 0, busy = false, data = null, pushSynced = false;
 
   const setText = (selector, value) => { const node = q(selector); if (node) node.textContent = value; };
+  const choice = seconds => q(`#biglieHuntInterval [data-seconds="${seconds}"]`);
   const token = () => typeof csrf === 'string' ? csrf : '';
   const say = (message, error = false) => { if (typeof toast === 'function') toast(message, error); };
   const sentence = text => /[.!?]$/.test(text) ? text : `${text}.`;
@@ -58,6 +62,15 @@
     for (const [selector, off] of [['#biglieHuntStop', !alive], ['#biglieHuntRestart', !alive], ['#biglieHuntStart', !installed || alive]]) {
       const button = q(selector); if (button) button.disabled = busy || off;
     }
+    // An older hunt.sh reports no interval: the choice stays off until the script is updated.
+    const current = installed ? data.interval : null, known = Number.isInteger(current);
+    for (const seconds of CHOICES) {
+      const button = choice(seconds); if (!button) continue;
+      button.className = seconds === current ? 'active' : '';
+      button.setAttribute('aria-pressed', String(seconds === current));
+      button.disabled = busy || !known;
+    }
+    setText('#biglieHuntIntervalNote', installed && !known ? 'Lo script della ricerca su questo nodo non sa ancora cambiare l’attesa: va aggiornato dal repository Biglie.' : WAIT_NOTE);
   }
 
   function setFacts(values) {
@@ -129,11 +142,11 @@
     return result;
   }
 
-  async function act(action) {
+  async function act(action, extra = {}) {
     if (busy || !authenticated) return;
     busy = true; setButtons();
     try {
-      const result = await post('/api/biglie/hunt', {action}, 45000);
+      const result = await post('/api/biglie/hunt', {action, ...extra}, 45000);
       say(result.message || 'Fatto.');
     } catch (error) {
       say(error.name === 'TimeoutError' || error.name === 'AbortError' ? 'Il pannello non ha risposto: controlla lo stato prima di riprovare.' : error.message, true);
@@ -218,6 +231,7 @@
   q('#biglieHuntStop').addEventListener('click', () => act('stop'));
   q('#biglieHuntRestart').addEventListener('click', () => act('restart'));
   q('#biglieHuntStart').addEventListener('click', () => act('start'));
+  for (const seconds of CHOICES) choice(seconds)?.addEventListener('click', () => { if (seconds !== data?.interval) act('interval', {seconds}); });
   q('#biglieHuntPushOn').addEventListener('click', event => pushStep(event.currentTarget, pushOn));
   q('#biglieHuntPushOff').addEventListener('click', event => pushStep(event.currentTarget, pushOff));
   q('#biglieHuntPushTest').addEventListener('click', event => pushStep(event.currentTarget, async () => say((await post('/api/push/test', {})).message)));

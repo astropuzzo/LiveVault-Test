@@ -1416,7 +1416,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json({"ok": False, "error": "Richiesta non valida."}, 400)
                 return
             if self.path == "/api/biglie/hunt":
-                result, status = biglie_hunt.action(str(payload.get("action", "")))
+                result, status = biglie_hunt.action(str(payload.get("action", "")), payload.get("seconds"))
                 self.send_json(result, status)
                 return
             try:

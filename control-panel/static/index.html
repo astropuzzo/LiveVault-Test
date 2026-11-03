@@ -16,7 +16,7 @@
   <link rel="stylesheet" href="/media-upload.css?v=3.5.1-graphite3">
   <link rel="stylesheet" href="/torrent-manager.css?v=3.5.1-graphite3">
   <link rel="stylesheet" href="/app.css?v=3.5.1-graphite3">
-  <link rel="stylesheet" href="/apps.css?v=3.5.1-biglie1">
+  <link rel="stylesheet" href="/apps.css?v=3.5.1-biglie2">
 </head>
 <body data-view="dashboard" class="is-loading">
   <div class="app-shell">
@@ -342,6 +342,12 @@
             <button id="biglieHuntRestart" class="button secondary" type="button" disabled>Riavvia</button>
             <button id="biglieHuntStart" class="button" type="button" disabled>Avvia</button>
           </div>
+          <div class="biglie-hunt-interval">
+            <div><h3 id="biglieHuntIntervalTitle" class="biglie-hunt-subtitle">Riprova ogni</h3><p id="biglieHuntIntervalNote">L’attesa tra un tentativo e l’altro, sia per trovare la macchina sia per farla crescere.</p></div>
+            <div id="biglieHuntInterval" class="range-switch" role="group" aria-labelledby="biglieHuntIntervalTitle">
+              <button type="button" data-seconds="15" aria-pressed="false" disabled>15 s</button><button type="button" data-seconds="30" aria-pressed="false" disabled>30 s</button><button type="button" data-seconds="60" aria-pressed="false" disabled>60 s</button><button type="button" data-seconds="90" aria-pressed="false" disabled>90 s</button>
+            </div>
+          </div>
           <h3 id="biglieHuntLogTitle" class="biglie-hunt-subtitle">Ultime righe del registro <small>orari dell’ASIAIR, fuso di Londra</small></h3>
           <div class="biglie-hunt-log" tabindex="0" role="region" aria-labelledby="biglieHuntLogTitle"><pre id="biglieHuntLog">In attesa del registro…</pre></div>
           <div class="biglie-hunt-push">
@@ -655,7 +661,7 @@
   <script src="/hls.min.js?v=1.7.2" defer></script>
   <script src="/diagnostics.js?v=3.5.1" defer></script>
   <script src="/apps.js?v=3.5.1-apps2" defer></script>
-  <script src="/biglie-hunt.js?v=3.5.1-biglie1" defer></script>
+  <script src="/biglie-hunt.js?v=3.5.1-biglie2" defer></script>
   <script src="/app.js?v=3.5.1-biglie1" defer></script>
   <script src="/torrent-manager.js?v=3.5.1-torrent5" defer></script>
   <script src="/media-upload.js?v=3.5.1" defer></script>
