@@ -985,3 +985,21 @@ def test_a_logout_redirect_counts_as_a_disconnected_account(vault, monkeypatch):
     class AbortDownloadException(Exception): pass
     assert sync.note_account_problem(AbortDownloadException('Redirected to login page. You have been logged out'), '22') == 'login'
     assert sync.note_account_problem(AbortDownloadException('429 Too Many Requests'), '22') == 'pause'
+
+
+def test_the_password_key_comes_from_launcher_sync(vault, monkeypatch):
+    calls = []
+    class Fake:
+        uuid = 'device-uuid'
+        last_response = None
+        def private_request(self, endpoint, data=None, login=False):
+            calls.append(endpoint)
+            self.last_response = SimpleNamespace(headers={'ig-set-password-encryption-key-id': '187', 'ig-set-password-encryption-pub-key': 'KEY'})
+    monkeypatch.setattr(login, 'Client', Fake)
+    assert login.client('someone').password_publickeys() == (187, 'KEY') and calls == ['launcher/sync/']
+    class Empty(Fake):
+        def private_request(self, endpoint, data=None, login=False):
+            self.last_response = SimpleNamespace(headers={})
+    monkeypatch.setattr(login, 'Client', Empty)
+    with pytest.raises(ValueError, match='chiave'):
+        login.client('someone').password_publickeys()

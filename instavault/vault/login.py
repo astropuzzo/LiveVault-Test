@@ -43,6 +43,16 @@ def client(username):
     def no_password_change(*_):
         raise ValueError('Instagram richiede una verifica dall’app ufficiale. Completala lì e riprova.')
     value.change_password_handler = no_password_change
+    # instagrapi 3.2.2 reads the password encryption key from GET qe/sync/,
+    # which Instagram now answers with 404; the app gets it from launcher/sync.
+    def password_publickeys():
+        value.private_request('launcher/sync/', data={'id': value.uuid, 'server_config_retrieval': '1'}, login=True)
+        headers = getattr(value.last_response, 'headers', {}) or {}
+        key_id, key = headers.get('ig-set-password-encryption-key-id'), headers.get('ig-set-password-encryption-pub-key')
+        if not key_id or not key:
+            raise ValueError('Instagram non ha mandato la chiave per cifrare la password. Riprova tra qualche minuto.')
+        return int(key_id), key
+    value.password_publickeys = password_publickeys
     return value
 
 
