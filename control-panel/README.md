@@ -21,7 +21,7 @@ dicono «ricerca» perché il 2026-11-03 un «Riavvia» è stato scambiato per �
   aspetta fino a 20 s (prima 8, meno dei due timeout server da 8 s). Se la lettura fallisce,
   conserva gli ultimi dati e il registro, mostra «Lettura in ritardo» e disabilita i comandi
   fino alla lettura riuscita. Un HTTP 429 Oracle appare come «In attesa», con l'ora prevista
-  del nuovo tentativo quando disponibile; non e' un timeout di lettura del pannello.
+  del nuovo tentativo quando disponibile; non è un timeout di lettura del pannello.
 - Comandi: `POST /api/biglie/hunt` con `{"action": ...}`, sessione e CSRF. Pausa, Riprendi e
   Ferma chiamano `hunt.sh`; Avvia passa da `sudo -n openastro-action biglie_hunt_start`, che con
   `systemd-run` crea l'unità transitoria `biglie-hunt-<epoch>.service` (utente astro,
@@ -30,11 +30,12 @@ dicono «ricerca» perché il 2026-11-03 un «Riavvia» è stato scambiato per �
   `hunt.sh start` o `restart` dal proprio processo.
 - Attesa tra i giri: `{"action": "interval", "seconds": 15|30|60|90}` esegue `hunt.sh interval`
   (repository Biglie, commit 4f79430). Vale sia per cercare la macchina sia per farla crescere, e
-  la ricerca in corso la rilegge entro 5 s. Il nuovo `oracle_vm.py` distanzia tutte le creazioni
-  di almeno 90 s, anche fra 2/12 e 1/6 e fra giri diversi: 15 s non evitavano il 429 sulla
-  seconda taglia. Dopo errori usa 90/180/360/720/900 s, con reset dopo creazione o resize
-  accettati. Con un `hunt.sh`
-  più vecchio lo stato non ha `"interval"`: la scelta resta spenta e la scheda dice di aggiornarlo.
+  la ricerca in corso la rilegge entro 5 s. Il nuovo `oracle_vm.py` (repository Biglie, commit
+  48198f2, test in `tools/regia/test_oracle_vm.py`, 1a4314b) distanzia tutte le creazioni di
+  almeno 90 s, anche fra 2/12 e 1/6 e fra giri diversi: 15 s non evitavano il 429 sulla seconda
+  taglia. Dopo errori usa 90/180/360/720/900 s, con reset dopo creazione o resize accettati.
+  Con un `hunt.sh` più vecchio lo stato non ha `"interval"`: la scelta resta spenta e la scheda
+  dice di aggiornarlo.
 - Servizio: `ProtectHome=true` diventa `ProtectHome=tmpfs` con
   `BindPaths=-/home/astro/biglie-oci`. Della home il pannello vede solo quella cartella; chiavi
   SSH e `~/.oci` restano nascoste. Il `-` lascia partire il pannello anche senza la cartella.
@@ -109,8 +110,8 @@ riavviata con `openastro-action biglie_hunt_start`: allora girava in `biglie-hun
 
 Verifica aggiuntiva del 2026-11-03: nessun timeout nel registro Oracle; richieste concluse in
 circa un secondo, risposte 500 Out of host capacity e 429 TooManyRequests. Lo stato del
-pannello e' stato letto tre volte in 46-65 ms; /healthz locale 3 ms e percorso HTTPS Tailscale
-92 ms. Il timeout segnalato sul telefono non e' stato riprodotto con una sessione autenticata.
+pannello è stato letto tre volte in 46-65 ms; /healthz locale 3 ms e percorso HTTPS Tailscale
+92 ms. Il timeout segnalato sul telefono non è stato riprodotto con una sessione autenticata.
 Fix mirato: solo `static/biglie-hunt.js`, `static/index.html`, `static/sw.js` in
 `/opt/openastro-control`, pubblicati senza riavviare il pannello; cache `3.5.1-biglie4`.
 `biglie_hunt.py`, login e sessioni restano identici. Sorgente nel ramo `codex/biglie-hunt`.
@@ -118,7 +119,10 @@ Backup e rollback: `/home/astro/rollback/biglie-timeout-20261103/runtime-before.
 i tre statici e `oracle_vm.py` precedenti; ripristinare solo quelli necessari, senza riavviare
 il pannello. Per la ricerca usare il comando dedicato `openastro-action biglie_hunt_start`
 dopo `hunt.sh stop`; nessun reboot del nodo. La copia root `/opt/openastro-ops` resta da
-allineare con privilegi amministrativi. Limite: acquisizione ARM non ancora riuscita.
+allineare con privilegi amministrativi. Limite: acquisizione ARM non ancora riuscita. Dalle 16:16
+UTC la ricerca gira con quel `oracle_vm.py` in `biglie-hunt-1793722568.service`; il pacchetto in
+`~/biglie-panel` è stato rifatto dal ramo, così lo script d'installazione non rimette gli statici
+di bcc90ce.
 
 Non ancora provati: Avvia e Riavvia premuti nella scheda, e un avviso vero della ricerca
 (macchina trovata, errore, processo fermo), che passa dallo stesso invio della prova. La copia in
