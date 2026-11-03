@@ -1028,3 +1028,15 @@ def test_activity_filters_and_clearing_keep_the_archive(http, vault):
     assert client.post(root + '/api/jobs/clear', json={}).json()['removed'] == 1
     assert ids() == {jobs['waiting']}
     assert [p['shortcode'] for p in store.list_posts({})['items']] == ['K']
+
+
+def test_a_video_without_preview_gets_a_poster_from_its_first_second(tmp_path):
+    import subprocess
+    import imageio_ffmpeg
+    video = tmp_path / '1.mp4'
+    subprocess.run([imageio_ffmpeg.get_ffmpeg_exe(), '-v', 'error', '-f', 'lavfi', '-i', 'testsrc=size=64x48:rate=10',
+                    '-t', '2', '-pix_fmt', 'yuv420p', str(video)], check=True, timeout=60)
+    sync.video_poster(video, tmp_path / '1.poster.jpg')
+    from PIL import Image
+    with Image.open(tmp_path / '1.poster.jpg') as image:
+        assert image.size == (64, 48)

@@ -3,3 +3,4 @@ instagrapi==3.2.2
 requests>=2.34.2,<3
 Pillow>=13,<14
 cryptography>=50,<51
+imageio-ffmpeg==0.7.0

@@ -275,9 +275,12 @@ def test_a_highlight_story_without_preview_does_not_drop_the_collection(setup):
             'image_versions2': {'candidates': [{'url': 'https://scontent.cdninstagram.com/a.jpg', 'width': 10, 'height': 10}]},
             'user': {'pk': '456', 'username': 'my_account'}}
     bare = dict(good, pk='2', id='2_456', code='Bare', media_type=2, image_versions2={'candidates': []},
-                video_versions=[{'url': 'https://scontent.cdninstagram.com/v.mp4'}])
+                video_versions=[{'url': 'https://scontent.cdninstagram.com/v.mp4', 'width': 720, 'height': 1280}])
     def broken(pk):
         client.last_json = {'reels': {'highlight:' + pk: {'items': [good, bare]}}}
         raise IndexError('list index out of range')
     client.highlight_info_v1 = broken
-    assert [m.mediaid for m in highlight.get_items()] == [1]
+    items = list(highlight.get_items())
+    # The video without a preview stays, with no picture: the archive draws one from the video.
+    assert [m.mediaid for m in items] == [1, 2] and items[1].is_video and items[1].url == ''
+    assert items[1].video_url.endswith('v.mp4')

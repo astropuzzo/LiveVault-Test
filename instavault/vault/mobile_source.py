@@ -283,10 +283,21 @@ class HighlightAdapter:
             from instagrapi.extractors import extract_story_v1
             raw = ((getattr(client, 'last_json', None) or {}).get('reels') or {}).get('highlight:' + self.pk) or {}
             entries = raw.get('items') or []
-            items = [extract_story_v1(e) for e in entries if ((e.get('image_versions2') or {}).get('candidates'))]
             if not entries:
                 raise
-            print(f'InstaVault: highlight «{self.title}»: {len(entries) - len(items)} story without preview skipped', flush=True)
+            items = []
+            for entry in entries:
+                if (entry.get('image_versions2') or {}).get('candidates'):
+                    items.append(extract_story_v1(entry))
+                elif entry.get('video_versions'):
+                    # A video without a preview picture: the archive draws
+                    # the poster from the video's first second instead.
+                    first = entry['video_versions'][0]
+                    video = {'url': first.get('url'), 'width': first.get('width') or 0, 'height': first.get('height') or 0}
+                    story = extract_story_v1(dict(entry, image_versions2={'candidates': [video]}))
+                    items.append(story.model_copy(update={'thumbnail_url': None}) if hasattr(story, 'model_copy') else story)
+            if len(items) < len(entries):
+                print(f'InstaVault: highlight «{self.title}»: {len(entries) - len(items)} story without media skipped', flush=True)
         for item in items:
             yield MediaAdapter(item)
 

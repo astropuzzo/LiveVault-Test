@@ -81,6 +81,18 @@ def poster_of(relative):
     return relative.rsplit('.', 1)[0] + '.poster.jpg'
 
 
+def video_poster(video, target):
+    """A poster from the video itself, for the stories Instagram sends
+    without a preview picture. Without it the grid shows a placeholder."""
+    import subprocess
+    import imageio_ffmpeg
+    try:
+        subprocess.run([imageio_ffmpeg.get_ffmpeg_exe(), '-v', 'error', '-y', '-ss', '0.5', '-i', str(video),
+                        '-frames:v', '1', '-q:v', '3', str(target)], check=True, timeout=60, capture_output=True)
+    except (OSError, subprocess.SubprocessError) as exc:
+        print(f'InstaVault: poster {video.name}: {type(exc).__name__}', flush=True)
+
+
 # The connected account needs the user: 'login' to reconnect, 'pause' to wait.
 ACCOUNT_PROBLEMS = {
     'login': {'LoginRequired', 'ClientLoginRequired', 'LoginRequiredException', 'BadCredentialsException',
@@ -513,7 +525,10 @@ class Worker:
             image_path = store.root(self.mode) / relative
             if video:
                 poster_relative = poster_of(relative)
-                self.download(poster, poster_relative, job_id)
+                if poster:
+                    self.download(poster, poster_relative, job_id)
+                else:
+                    video_poster(store.root(self.mode) / relative, store.root(self.mode) / poster_relative)
                 image_path = store.root(self.mode) / poster_relative
             thumb, width, height = self.thumbnail(image_path)
             with store.db() as c:
