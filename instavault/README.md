@@ -41,8 +41,9 @@ data, so the worker does not contact Instagram.
 
 Password login uses instagrapi's mobile flow in a bounded background attempt,
 including email/SMS codes and 2FA. Settings polls the authenticated attempt state
-and supports cancelling it. Browser cookie imports use authenticated web account
-data, not the legacy GraphQL login probe. Rate limiting, rejected sessions,
+and supports cancelling it; it is the only way to connect an account (pasting
+a browser cookie was removed on 3 November 2026: Instagram closed those
+sessions as soon as the server used them). Rate limiting, rejected sessions,
 manual verification and network failures have distinct messages. Passwords and
 codes are not persisted; the reusable Instagram session is encrypted. Mobile-authenticated sessions keep the same mobile transport for downloads;
 browser sessions keep the web transport. The selected photographer's real login
@@ -147,6 +148,6 @@ Every profile has its own address, `#@username`, and a tab other than the
 first one adds `/reel`, `/story`, `/tagged` or `/highlight`; back, forward,
 reload and bookmarks land on the same profile and tab.
 
-An account connected with the browser cookie reads through the same mobile
-API as a password login (the old web endpoints now answer with a redirect to
-the login page); on first use it gets its own stable device identity file.
+An account connected earlier with a browser cookie still reads through the
+mobile API until it is reconnected with the password; on first use it gets its
+own stable device identity file.

@@ -291,30 +291,6 @@ class FakeLoader:
         pass
 
 
-@pytest.mark.parametrize('pasted', ['12345678%3AAbCdEfGhIjKlMn%3A17%3AAYfZ',
-                                    'Cookie: mid=abc; sessionid=12345678%3AAbCdEfGhIjKlMn%3A17%3AAYfZ; rur="x"'])
-def test_a_pasted_sessionid_alone_connects_the_account(vault, monkeypatch, pasted):
-    from vault import instagram_session
-    fake = FakeLoader(); monkeypatch.setattr(sync, 'new_loader', lambda: fake)
-    def checked(cookies):
-        return 'owner_account', dict(cookies, csrftoken='real-instagram-csrf')
-    monkeypatch.setattr(instagram_session, 'validate_web_session', checked)
-    result = sync.import_cookies({'cookies': pasted})
-    assert result['configured'] and result['username'] == 'owner_account' and result['problem'] is None
-    assert [a['username'] for a in result['accounts']] == ['owner_account']
-    assert fake.cookies['sessionid'] == '12345678%3AAbCdEfGhIjKlMn%3A17%3AAYfZ'
-    assert fake.cookies['csrftoken'] == 'real-instagram-csrf' and fake.cookies['ds_user_id'] == '12345678'
-
-
-def test_login_errors_say_what_instagram_asked_for():
-    from instaloader.exceptions import LoginException, BadCredentialsException
-    checkpoint = LoginException('Login: Checkpoint required. Point your browser to /challenge/x/ - follow the instructions, then retry.')
-    assert 'Sono stato io' in sync.login_message(checkpoint)
-    assert 'pausa' in sync.login_message(LoginException('Login error: "fail" status, message "Please wait a few minutes before you try again.".'))
-    assert 'cookie' in sync.login_message(LoginException('Login error: Unexpected response, this might indicate a blocked IP.'))
-    assert 'non corretti' in sync.login_message(BadCredentialsException('Login error: Wrong password.'))
-
-
 def test_profiles_check_every_ten_minutes_with_a_random_offset(vault):
     with store.db() as c:
         profile = dict(c.execute('SELECT * FROM profiles WHERE id=?', (vault['profile'],)).fetchone())
@@ -436,16 +412,6 @@ def test_a_stale_attempt_cannot_submit_a_code(instagram):
         login.password_login({'code': '123456', 'attempt_id': 'other-attempt'})
     login.cancel(first['attempt_id'])
     assert login.CURRENT.done.wait(5)
-
-
-def test_cookie_connection_does_not_call_legacy_graphql(vault, monkeypatch):
-    from vault import instagram_session
-    value = FakeLoader()
-    value.test_login = lambda: pytest.fail('Legacy GraphQL must not gate valid web cookies')
-    monkeypatch.setattr(sync, 'new_loader', lambda: value)
-    monkeypatch.setattr(instagram_session, 'validate_web_session', lambda cookies: ('owner_account', dict(cookies, csrftoken='real-csrf')))
-    result = sync.import_cookies({'cookies': '42%3AAbCdEfGhIjKlMnOpQrStUv%3A17%3AAYfZ'})
-    assert result['configured'] and result['username'] == 'owner_account'
 
 
 def test_login_http_request_is_nonblocking_and_status_is_private(http, instagram):

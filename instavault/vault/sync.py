@@ -282,33 +282,6 @@ def remove_account(account):
         c.execute("UPDATE profiles SET account_used='' WHERE account_used=?", (account,))
 
 
-def import_cookies(body):
-    from .instagram_session import parse_cookies, validate_web_session
-    cookies = parse_cookies(body.get('cookies', ''))
-    account, cookies = validate_web_session(cookies)
-    value = new_loader()
-    try:
-        value.load_session(account, cookies)
-        return save_session(value, verified_identity=account)
-    finally:
-        value.close()
-
-
-def login_message(exc):
-    """Says which check Instagram asked for when logging in with a password."""
-    text = str(exc).lower()
-    if 'checkpoint' in text:
-        return ('Instagram vuole confermare che sei tu. Apri l’app Instagram, conferma l’accesso («Sono stato io») '
-                'e riprova qui entro pochi minuti, oppure collega con il cookie del browser.')
-    if 'wait a few minutes' in text or type(exc).__name__ == 'TooManyRequestsException':
-        return 'Instagram chiede una pausa prima di un altro accesso. Riprova tra 30 minuti oppure collega con il cookie del browser.'
-    if 'blocked ip' in text or 'json decode' in text or 'unexpected response' in text:
-        return 'Instagram non accetta l’accesso con password da questo server. Collega con il cookie del browser.'
-    if type(exc).__name__ == 'BadCredentialsException':
-        return 'Username o password Instagram non corretti.'
-    return error_message(exc)
-
-
 def error_message(exc):
     name = type(exc).__name__
     if isinstance(exc, BufferFull):

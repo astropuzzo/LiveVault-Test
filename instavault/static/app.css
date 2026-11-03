@@ -315,11 +315,6 @@ input[readonly]{background:var(--raised)}
 .switch small{display:block;font-size:13px;font-weight:400;color:var(--text-2)}
 .two-factor{display:grid;gap:8px}
 .two-factor .link{justify-self:start;font-size:13px}
-.cookies{padding-top:16px;border-top:1px solid var(--line)}
-.cookies summary{min-height:32px;font-weight:600}
-.cookies>.help{margin:4px 0 8px}
-.steps{margin:0 0 12px;padding-left:20px;display:grid;gap:4px}
-.cookies code{font-family:var(--mono);font-size:12px;padding:1px 4px;border-radius:4px;background:var(--raised-2);color:var(--text)}
 
 /* Add or edit a profile */
 .sheet{width:min(440px,calc(100vw - 32px));max-height:calc(100dvh - 32px);padding:24px;border:1px solid var(--line);border-radius:12px;background:var(--bg);color:var(--text)}

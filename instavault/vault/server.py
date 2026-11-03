@@ -253,14 +253,9 @@ class Handler(BaseHTTPRequestHandler):
                 c.executemany('INSERT OR REPLACE INTO settings VALUES (?,?)', [(k, json.dumps(v)) for k, v in values.items()])
             sync.WAKE.set()
             return self.send_json({'ok': True})
-        if path in {'/api/instagram/login', '/api/instagram/cookies'}:
+        if path == '/api/instagram/login':
             try:
-                if path.endswith('/login'):
-                    result = login.password_login(body)
-                else:
-                    login.cancel_current()
-                    with sync.SESSION_LOCK:
-                        result = sync.import_cookies(body)
+                result = login.password_login(body)
             except ValueError as exc:
                 from .instagram_session import SessionError
                 if isinstance(exc, SessionError):
@@ -270,11 +265,7 @@ class Handler(BaseHTTPRequestHandler):
                 # Plain ValueErrors carry InstaVault's own Italian message.
                 raise HTTPError(400, str(exc) if type(exc) is ValueError else 'Controlla i dati inseriti e riprova.') from None
             except Exception as exc:
-                raise HTTPError(400, (login.message if path.endswith('/login') else sync.login_message)(exc)) from None
-            if path.endswith('/cookies') and result.get('configured'):
-                with store.db() as c:
-                    c.execute('UPDATE profiles SET next_sync=0 WHERE enabled=1')
-                sync.WAKE.set()
+                raise HTTPError(400, login.message(exc)) from None
             return self.send_json(result)
         if path == '/api/instagram/disconnect':
             login.cancel_current()

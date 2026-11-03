@@ -41,7 +41,7 @@
     if ($('#postDialog').open) $('#postDialog').close();
     if ($('#profileDialog').open) $('#profileDialog').close();
     ['mediaGrid', 'profileCards', 'collections', 'profilesList', 'jobsList', 'profileHeader', 'postAuthor', 'postCaption', 'postMetadata'].forEach(id => $('#' + id).replaceChildren());
-    ['igPassword', 'igCode', 'cookieText', 'loginPassword'].forEach(id => { $('#' + id).value = ''; });
+    ['igPassword', 'igCode', 'loginPassword'].forEach(id => { $('#' + id).value = ''; });
     state.pendingCode = false; $('#twoFactorBox').hidden = true;
     $('#appShell').hidden = true; $('#loginGate').hidden = false; document.title = 'Accedi · InstaVault';
   }
@@ -904,11 +904,6 @@
   $('#changeInstagram').addEventListener('click', () => { state.igChanging = true; renderSummary(); $('#igUsername').focus(); });
   $('#keepInstagram').addEventListener('click', () => { state.igChanging = false; $('#igError').textContent = ''; renderSummary(); });
   $('#resetTwoFactor').addEventListener('click', () => cancelInstagramLogin());
-  $('#cookieImport').addEventListener('submit', event => {
-    event.preventDefault();
-    const body = {cookies: $('#cookieText').value}; $('#cookieText').value = '';
-    busy(event.submitter, async () => { try { await api('/api/instagram/cookies', {method: 'POST', body: JSON.stringify(body)}); toast('Account collegato, sessione cifrata sul server'); $('#cookieImport').closest('details').open = false; state.igChanging = false; await refreshSummary(); } catch (error) { report(error); } finally { body.cookies = ''; } });
-  });
   function disconnectAccount(button) {
     busy(button, async () => {
       try { await api('/api/instagram/disconnect', {method: 'POST', body: JSON.stringify({account: button.dataset.disconnectAccount})}); state.pendingCode = false; $('#twoFactorBox').hidden = true; ['igUsername', 'igPassword', 'igCode'].forEach(id => { $('#' + id).value = ''; }); toast(`@${button.dataset.name} scollegato, sessione rimossa dal server`); await refreshSummary(); } catch (error) { report(error); }
