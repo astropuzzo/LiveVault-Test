@@ -127,6 +127,17 @@ UTC la ricerca gira con quel `oracle_vm.py` in `biglie-hunt-1793722568.service`;
 `~/biglie-panel` è stato rifatto dal ramo, così lo script d'installazione non rimette gli statici
 di bcc90ce.
 
+Alle 16:44 UTC, con l'OK del proprietario, la ricerca è passata al commit Biglie b47d604: prima
+Oracle rispondeva 429 a ogni lancio partito 89-90 s dopo il precedente e l'attesa dopo errori era
+salita a 720 s. Prima della sostituzione `oracle_vm.py` sul nodo è stato confrontato con 1a4314b;
+la copia è in `~/biglie-oci/oracle_vm.py.before-spacing-fix-20261103`. La ricerca è ripartita con
+`hunt.sh stop` e `openastro-action biglie_hunt_start` in `biglie-hunt-1793724253.service`. Nei
+primi sei lanci (16:44:19-16:54:22) le risposte sono arrivate a 120-121 s l'una dall'altra, tutte
+«Out of host capacity», nessun 429: 6 tentativi veri in 10 minuti, contro 2 (più due 429) nei 10
+minuti prima. Il pacchetto `~/biglie-panel` è rifatto dal ramo: i file del server sono uguali a
+quelli installati, mentre i tre statici con la nota nuova (cache `3.5.1-biglie5`) non sono ancora
+copiati in `/opt/openastro-control`.
+
 Non ancora provati: Avvia e Riavvia premuti nella scheda, e un avviso vero della ricerca
 (macchina trovata, errore, processo fermo), che passa dallo stesso invio della prova. La copia in
 `/opt/openastro-ops` (root, 0700) non è aggiornata: va allineata con root, senza sovrascrivere
