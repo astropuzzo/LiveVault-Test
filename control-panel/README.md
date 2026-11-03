@@ -17,7 +17,11 @@ dicono «ricerca» perché il 2026-11-03 un «Riavvia» è stato scambiato per �
 
 - Lettura: `GET /api/biglie/hunt` (sessione) esegue `hunt.sh status` e `hunt.sh log 40` come
   astro, al massimo ogni 5 s per tutti i client insieme (`biglie_hunt.snapshot`). Il browser
-  chiede ogni 10 s solo con la vista App aperta e la pagina visibile.
+  chiede ogni 10 s solo con la vista App aperta e la pagina visibile. Dal fix del 2026-11-03
+  aspetta fino a 20 s (prima 8, meno dei due timeout server da 8 s). Se la lettura fallisce,
+  conserva gli ultimi dati e il registro, mostra «Lettura in ritardo» e disabilita i comandi
+  fino alla lettura riuscita. Un HTTP 429 Oracle appare come «In attesa», con l'ora prevista
+  del nuovo tentativo quando disponibile; non e' un timeout di lettura del pannello.
 - Comandi: `POST /api/biglie/hunt` con `{"action": ...}`, sessione e CSRF. Pausa, Riprendi e
   Ferma chiamano `hunt.sh`; Avvia passa da `sudo -n openastro-action biglie_hunt_start`, che con
   `systemd-run` crea l'unità transitoria `biglie-hunt-<epoch>.service` (utente astro,
@@ -26,7 +30,10 @@ dicono «ricerca» perché il 2026-11-03 un «Riavvia» è stato scambiato per �
   `hunt.sh start` o `restart` dal proprio processo.
 - Attesa tra i giri: `{"action": "interval", "seconds": 15|30|60|90}` esegue `hunt.sh interval`
   (repository Biglie, commit 4f79430). Vale sia per cercare la macchina sia per farla crescere, e
-  la ricerca in corso la rilegge entro 5 s; dopo un errore aspetta comunque 90 s. Con un `hunt.sh`
+  la ricerca in corso la rilegge entro 5 s. Il nuovo `oracle_vm.py` distanzia tutte le creazioni
+  di almeno 90 s, anche fra 2/12 e 1/6 e fra giri diversi: 15 s non evitavano il 429 sulla
+  seconda taglia. Dopo errori usa 90/180/360/720/900 s, con reset dopo creazione o resize
+  accettati. Con un `hunt.sh`
   più vecchio lo stato non ha `"interval"`: la scelta resta spenta e la scheda dice di aggiornarlo.
 - Servizio: `ProtectHome=true` diventa `ProtectHome=tmpfs` con
   `BindPaths=-/home/astro/biglie-oci`. Della home il pannello vede solo quella cartella; chiavi
@@ -98,7 +105,20 @@ delle 13:16:38 nella sua unità, giro 99 alle 13:44:49 e giro 100 alle 13:45:06.
 worker nuovo «Manda una prova» arriva sul telefono del proprietario (Firefox). Alle 15:08 UTC,
 mentre il proprietario passava l'account Oracle a Pay As You Go, la ricerca è stata limitata a 2
 OCPU e 12 GB, il massimo gratuito da giugno 2026 (repository Biglie, commit a9dac25), e
-riavviata con `openastro-action biglie_hunt_start`: ora gira in `biglie-hunt-1793718512.service`.
+riavviata con `openastro-action biglie_hunt_start`: allora girava in `biglie-hunt-1793718512.service`.
+
+Verifica aggiuntiva del 2026-11-03: nessun timeout nel registro Oracle; richieste concluse in
+circa un secondo, risposte 500 Out of host capacity e 429 TooManyRequests. Lo stato del
+pannello e' stato letto tre volte in 46-65 ms; /healthz locale 3 ms e percorso HTTPS Tailscale
+92 ms. Il timeout segnalato sul telefono non e' stato riprodotto con una sessione autenticata.
+Fix mirato: solo `static/biglie-hunt.js`, `static/index.html`, `static/sw.js` in
+`/opt/openastro-control`, pubblicati senza riavviare il pannello; cache `3.5.1-biglie4`.
+`biglie_hunt.py`, login e sessioni restano identici. Sorgente nel ramo `codex/biglie-hunt`.
+Backup e rollback: `/home/astro/rollback/biglie-timeout-20261103/runtime-before.tar.gz` contiene
+i tre statici e `oracle_vm.py` precedenti; ripristinare solo quelli necessari, senza riavviare
+il pannello. Per la ricerca usare il comando dedicato `openastro-action biglie_hunt_start`
+dopo `hunt.sh stop`; nessun reboot del nodo. La copia root `/opt/openastro-ops` resta da
+allineare con privilegi amministrativi. Limite: acquisizione ARM non ancora riuscita.
 
 Non ancora provati: Avvia e Riavvia premuti nella scheda, e un avviso vero della ricerca
 (macchina trovata, errore, processo fermo), che passa dallo stesso invio della prova. La copia in

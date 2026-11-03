@@ -3,13 +3,15 @@
   // Biglie's Oracle slot hunt in the App view: status and log while the view is on screen, controls and phone notices.
   const q = selector => document.querySelector(selector);
   const POLL_MS = 10000;
+  // The server can spend up to 8 s reading status and another 8 s reading the log.
+  const READ_TIMEOUT_MS = 20000;
   const CHIPS = {searching:['In cerca',''], running:['Macchina trovata','good'], growing:['Macchina trovata','good'], top:['Taglia massima','good'],
     error:['Errore','bad'], paused:['In pausa','warn'], stopped:['Ferma','']};
   const LABELS = {searching:'in cerca di posto', running:'macchina attiva', growing:'macchina attiva, cerca più spazio', top:'taglia massima raggiunta',
     error:'errore', paused:'in pausa', stopped:'fermata', unknown:'sconosciuto'};
   // Seconds between the hunt's rounds that hunt.sh interval accepts.
   const CHOICES = [15, 30, 60, 90];
-  const WAIT_NOTE = 'L’attesa tra un tentativo e l’altro, sia per trovare la macchina sia per farla crescere.';
+  const WAIT_NOTE = 'Attesa tra i giri. Le richieste di creazione sono distanziate di almeno 90 secondi; dopo errori ripetuti l’attesa cresce fino a 15 minuti.';
   let view = 'dashboard', authenticated = true, controller = null, generation = 0, busy = false, data = null, pushSynced = false;
 
   const setText = (selector, value) => { const node = q(selector); if (node) node.textContent = value; };
@@ -49,14 +51,22 @@
       case 'running': return [chip, `Macchina Arm attiva: ${size}${ip}. La ricerca prova a farla crescere.`];
       case 'growing': return [chip, `Macchina Arm attiva: ${size}${ip}. Oracle non ha spazio per una taglia più grande, la ricerca riprova da sola.`];
       case 'top': return [chip, `Macchina Arm alla taglia massima gratuita: ${size}${ip}. La ricerca è finita.`];
-      case 'error': return [chip, `Ultimo errore: ${sentence(d.error || 'senza dettagli')} La ricerca riprova da sola.`];
+      case 'error': {
+        if ((d.reason === 'rate_limited' && d.http_status === 429) || /HTTP\s+429|TooManyRequests/.test(d.error || '')) {
+          const wait = /Nuovo tentativo tra (\d+) s\./.exec(d.error || '');
+          const nextAt = Number.isFinite(d.next_retry_at) ? d.next_retry_at : wait && Number.isFinite(d.updated) ? d.updated + Number(wait[1]) : null;
+          const next = Number.isFinite(nextAt) ? ` Prossimo tentativo previsto alle ${new Date(nextAt * 1000).toLocaleTimeString('it-IT')}.` : '';
+          return [['In attesa', 'warn'], `Oracle chiede di rallentare (HTTP 429). La ricerca è attiva e riprova automaticamente.${next}`];
+        }
+        return [chip, `Ultimo errore: ${sentence(d.error || 'senza dettagli')} La ricerca riprova da sola.`];
+      }
       case 'paused': return [chip, `In pausa: nessun tentativo finché non premi «Riprendi».${m ? ` La macchina Arm resta attiva: ${size}${ip}.` : ''}`];
       default: return [chip, 'Stato non riconosciuto: controlla il registro qui sotto.'];
     }
   }
 
   function setButtons() {
-    const installed = Boolean(data?.ok && data.installed), alive = installed && data.alive === true;
+    const installed = Boolean(data?.ok && data.installed && !data.read_stale), alive = installed && data.alive === true;
     const pause = q('#biglieHuntPause');
     if (pause) { pause.textContent = data?.paused ? 'Riprendi' : 'Pausa'; pause.disabled = busy || !installed; }
     for (const [selector, off] of [['#biglieHuntStop', !alive], ['#biglieHuntRestart', !alive], ['#biglieHuntStart', !installed || alive]]) {
@@ -106,6 +116,15 @@
     setButtons();
   }
 
+  function readFailure(error) {
+    if (!data?.ok || !data.installed) return render({ok:false, error});
+    data = {...data, read_stale:true};
+    setText('#biglieHuntChip', 'Lettura in ritardo');
+    const chip = q('#biglieHuntChip'); if (chip) chip.className = 'status-chip warn';
+    setText('#biglieHuntSummary', `Il pannello non ha aggiornato lo stato: ${sentence(error)} Restano visibili gli ultimi dati ricevuti; nuovo controllo tra 10 secondi. Questo avviso non indica un arresto della ricerca Oracle.`);
+    setButtons();
+  }
+
   function stopRequest() {
     generation++; controller?.abort(); controller = null;
     q('#biglieHunt')?.setAttribute('aria-busy', 'false');
@@ -116,7 +135,7 @@
     const request = ++generation;
     controller = new AbortController(); const active = controller;
     let timedOut = false;
-    const timer = setTimeout(() => { timedOut = true; active.abort(); }, 8000);
+    const timer = setTimeout(() => { timedOut = true; active.abort(); }, READ_TIMEOUT_MS);
     q('#biglieHunt')?.setAttribute('aria-busy', 'true');
     try {
       const response = await fetch('/api/biglie/hunt', {cache:'no-store', signal:active.signal});
@@ -124,10 +143,11 @@
       if (response.status === 401) { if (typeof showLogin === 'function') showLogin(); else setAuthenticated(false); return; }
       const body = await response.json();
       if (request !== generation || !canLoad()) return;
-      render(response.ok ? body : {ok:false, error:body.error || `HTTP ${response.status}`});
+      if (response.ok && body.ok) render(body);
+      else readFailure(body.error || `HTTP ${response.status}`);
     } catch (error) {
       if (request !== generation || (error.name === 'AbortError' && !timedOut)) return;
-      render({ok:false, error:timedOut ? 'nessuna risposta in 8 secondi' : 'connessione assente'});
+      readFailure(timedOut ? 'nessuna risposta in 20 secondi' : 'connessione assente');
     } finally {
       clearTimeout(timer);
       if (request === generation) { controller = null; q('#biglieHunt')?.setAttribute('aria-busy', 'false'); }

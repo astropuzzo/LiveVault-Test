@@ -1,4 +1,4 @@
-const CACHE = "openastro-control-v3.5.1-biglie3";
+const CACHE = "openastro-control-v3.5.1-biglie4";
 const SHELL = ["/app.css", "/apps.css", "/apps.js", "/biglie-hunt.js", "/media-upload.css", "/torrent-manager.css", "/diagnostics.css", "/diagnostics.js", "/app.js", "/torrent-manager.js", "/fonts/mona-sans-latin-wght.woff2", "/media-upload.js", "/hls.min.js", "/icon.svg", "/manifest.webmanifest"];
 // One file at a time: a file that fails to load must not leave an older worker, without notices, in charge.
 self.addEventListener("install", event => event.waitUntil(caches.open(CACHE).then(cache => Promise.all(SHELL.map(path => cache.add(path).catch(() => {})))).then(() => self.skipWaiting())));

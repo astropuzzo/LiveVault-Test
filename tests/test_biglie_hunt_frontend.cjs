@@ -6,7 +6,7 @@ const source = fs.readFileSync('control-panel/static/biglie-hunt.js', 'utf8');
 const tick = () => new Promise(resolve => setImmediate(resolve));
 
 function setup() {
-  const pending = [], nodes = new Map(), listeners = {}, toasts = [];
+  const pending = [], nodes = new Map(), listeners = {}, toasts = [], timers = [];
   function node(selector) {
     if (!nodes.has(selector)) nodes.set(selector, {textContent:'', hidden:false, disabled:false, className:'', scrollTop:0, scrollHeight:0, clientHeight:0,
       setAttribute(name, value) { this[`@${name}`] = value; }, addEventListener(name, fn) { this[name] = fn; }});
@@ -18,9 +18,9 @@ function setup() {
     fetch:(url, options = {}) => new Promise((resolve, reject) => pending.push({url, options, resolve, reject})),
     toast:(message, error) => toasts.push([message, Boolean(error)]),
     showLogin:() => { logins++; ctx.OpenAstroBiglie.setAuthenticated(false); },
-    setTimeout:() => 0, clearTimeout:() => {}, setInterval:() => 0});
+    setTimeout:(fn, ms) => { timers.push({fn, ms}); return timers.length; }, clearTimeout:() => {}, setInterval:() => 0});
   vm.runInContext(source, ctx);
-  return {ctx, node, pending, listeners, document, toasts, logins:() => logins};
+  return {ctx, node, pending, listeners, document, toasts, timers, logins:() => logins};
 }
 const reply = (data, status = 200) => ({ok:status === 200, status, json:async () => data});
 const searching = {ok:true, installed:true, checked:1762170120, alive:true, state:'searching', round:4, updated:1762170118, machine:null,
@@ -121,6 +121,39 @@ test('a missing folder disables every control and says why', async () => {
   assert.equal(s.node('#biglieHuntChip').textContent, 'Non installata');
   assert.match(s.node('#biglieHuntSummary').textContent, /\/home\/astro\/biglie-oci/);
   for (const id of ['#biglieHuntPause', '#biglieHuntStop', '#biglieHuntRestart', '#biglieHuntStart']) assert.equal(s.node(id).disabled, true);
+});
+
+test('Oracle throttling is an automatic wait, not a panel timeout', async () => {
+  const s = await shown({...searching, state:'error', reason:'rate_limited', http_status:429,
+    retry_seconds:180, next_retry_at:1762170300, error:'HTTP 429 TooManyRequests'});
+  assert.equal(s.node('#biglieHuntChip').textContent, 'In attesa');
+  assert.match(s.node('#biglieHuntSummary').textContent, /Oracle chiede di rallentare \(HTTP 429\)/);
+  assert.match(s.node('#biglieHuntSummary').textContent, /Prossimo tentativo previsto alle/);
+  assert.equal(s.node('#biglieHuntProcess').textContent, 'Attivo');
+  const old = s.ctx.OpenAstroBiglie.describe({...searching, state:'error',
+    error:'HTTP 429 TooManyRequests: Too many requests for the user. Nuovo tentativo tra 180 s.'});
+  assert.equal(old[0][0], 'In attesa');
+  assert.match(old[1], /Prossimo tentativo previsto alle/);
+});
+
+test('a read timeout preserves the last data, disables commands and recovers', async () => {
+  const s = await shown(searching);
+  const reading = s.ctx.OpenAstroBiglie.refresh();
+  assert.equal(s.timers.at(-1).ms, 20000);
+  s.timers.at(-1).fn();
+  s.pending[1].reject(Object.assign(new Error('aborted'), {name:'AbortError'}));
+  await reading;
+  assert.equal(s.node('#biglieHuntChip').textContent, 'Lettura in ritardo');
+  assert.equal(s.node('#biglieHuntRound').textContent, '4');
+  assert.match(s.node('#biglieHuntSummary').textContent, /nessuna risposta in 20 secondi/);
+  assert.match(s.node('#biglieHuntSummary').textContent, /non indica un arresto/);
+  assert.equal(s.node('#biglieHuntStop').disabled, true);
+  assert.match(s.node('#biglieHuntLog').textContent, /round 4/);
+  const recovered = s.ctx.OpenAstroBiglie.refresh();
+  s.pending[2].resolve(reply({...searching, round:5})); await recovered;
+  assert.equal(s.node('#biglieHuntChip').textContent, 'In cerca');
+  assert.equal(s.node('#biglieHuntRound').textContent, '5');
+  assert.equal(s.node('#biglieHuntStop').disabled, false);
 });
 
 test('the service worker shows a pushed notice and opens the panel on tap', async () => {
