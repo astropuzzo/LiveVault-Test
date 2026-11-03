@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Installs the Biglie slot hunt section of OpenAstro Control on the node: panel files, the openastro-action
 # start action and the unit that lets the panel see /home/astro/biglie-oci. Restarts openastro-control only.
-# Bundle from the repo on the PC (git archive keeps LF endings):
-#   git archive --format=tar HEAD scripts/biglie-hunt-panel-install.sh control-panel \
+# Bundle from the repo on the PC; without the two -c a Windows checkout with autocrlf ships CRLF:
+#   git -c core.autocrlf=false -c core.eol=lf archive --format=tar HEAD scripts/biglie-hunt-panel-install.sh control-panel \
 #     | ssh astro@192.168.1.27 'rm -rf ~/biglie-panel && mkdir ~/biglie-panel && tar -x -C ~/biglie-panel'
 #   git rev-parse HEAD | ssh astro@192.168.1.27 'cat > ~/biglie-panel/COMMIT'
 # then on the node: sudo bash ~/biglie-panel/scripts/biglie-hunt-panel-install.sh
@@ -34,7 +34,7 @@ step "1/5 Controlli sul pacchetto"
 for name in "${PY_FILES[@]}"; do [[ -f $SRC/control-panel/$name ]] || { echo "Manca control-panel/$name" >&2; exit 1; }; done
 for name in "${STATIC_FILES[@]}"; do [[ -f $SRC/control-panel/static/$name ]] || { echo "Manca control-panel/static/$name" >&2; exit 1; }; done
 if grep -l $'\r' "$SRC"/control-panel/{openastro-action,openastro-control.service,*.py} >/dev/null; then
-  echo "Il pacchetto ha fine riga Windows: rifallo con git archive." >&2; exit 1
+  echo "Il pacchetto ha fine riga Windows: rifallo con i comandi in testa a questo script." >&2; exit 1
 fi
 python3 - "${PY_FILES[@]/#/$SRC/control-panel/}" <<'EOF'
 import ast, sys
