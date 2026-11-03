@@ -325,7 +325,7 @@ LiveVault runs in Coolify with `/data/livevault` mounted at `/data`. Docker/Cool
 
 The existing OpenAstro Control Center currently runs as `openastro-control.service` from `/opt/openastro-control` on internal storage because it performs host-level operations through narrow helpers. NINA Monitor does **not** run inside this service.
 
-Biglie's Oracle slot hunt section (prepared 2026-11-03 on `codex/biglie-hunt`, not installed yet) changes that unit to `ProtectHome=tmpfs` with `BindPaths=-/home/astro/biglie-oci`, so the panel sees only that folder of `/home`. The hunt it starts runs as its own transient unit `biglie-hunt-<epoch>.service` through `openastro-action biglie_hunt_start`, never inside the panel's cgroup, so restarting the panel does not stop it. Install and rollback: [control-panel/README.md](control-panel/README.md#ricerca-server-biglie-2026-11-03).
+Biglie's Oracle slot hunt section (installed 2026-11-03 from `codex/biglie-hunt`, commit d980414) changes that unit to `ProtectHome=tmpfs` with `BindPaths=-/home/astro/biglie-oci`, so the panel sees only that folder of `/home`. The hunt it starts runs as its own transient unit `biglie-hunt-<epoch>.service` through `openastro-action biglie_hunt_start`, never inside the panel's cgroup, so restarting the panel does not stop it. Install and rollback: [control-panel/README.md](control-panel/README.md#ricerca-server-biglie-2026-11-03).
 
 Keep existing credentials and system configuration. Never replace the LiveVault `APP_SECRET`, `/data/livevault-secrets/app.env`, `/etc/openastro-control-auth.json`, or Coolify application secrets during deployment.
 

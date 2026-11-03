@@ -53,17 +53,21 @@ in testa al file). Salva prima `/opt/openastro-control`, la unit e `openastro-ac
 `openastro-control.service`: le sessioni del pannello vanno rifatte. Ripristino: estrarre
 quell'archivio in `/`, togliere `biglie_hunt.py`, `web_push.py` e `static/biglie-hunt.js`, poi
 `systemctl daemon-reload` e riavvio del solo pannello. I file di stato si possono lasciare.
-Lo script non copia i documenti in `/opt/openastro-ops`: si ricopiano dopo averli aggiornati a
-«installato». Controllo senza un secondo riavvio: dopo un Riavvia dal pannello,
-`cat /proc/$(cat ~/biglie-oci/hunt.pid)/cgroup` deve mostrare `biglie-hunt-<epoch>.service`.
+Lo script non tocca i documenti in `/opt/openastro-ops`. Controllo senza un secondo riavvio: dopo
+un Riavvia dal pannello, `cat /proc/$(cat ~/biglie-oci/hunt.pid)/cgroup` deve mostrare
+`biglie-hunt-<epoch>.service`.
 
-Stato al 2026-11-03: sorgente e test sul ramo `codex/biglie-hunt`, **non ancora installato sul
-nodo**: il riavvio del pannello aspetta l'OK del proprietario. Verificati: `tests/test_biglie_hunt.py`,
-`tests/test_biglie_hunt_frontend.cjs`, anteprima locale a 1440×1000 e 412×915 con stato e
-registro letti dal nodo (giro 24, nessun posto), `systemd-analyze verify` della nuova unit sul
-nodo e lo schema `Type=forking` con un'unità utente usa e getta che lanciava `sleep`. Non ancora
-provati: una notifica su un telefono vero, l'avvio tramite `openastro-action` (serve root) e la
-scheda col pannello installato.
+Stato al 2026-11-03: installato sul nodo alle 12:46 UTC dal commit d980414 del ramo
+`codex/biglie-hunt`, copia di sicurezza in `/var/backups/openastro/20261103-biglie-hunt/`.
+Verificati sul nodo: i file installati coincidono con il ramo, `/healthz` risponde 200 e
+`/api/biglie/hunt` 401 senza sessione, il pannello vede `hunt.sh` nel suo spazio dei mount, il
+watcher ha salvato il primo stato (`searching`, processo vivo). Prima dell'installazione:
+`tests/test_biglie_hunt.py`, `tests/test_biglie_hunt_frontend.cjs`, anteprima locale a 1440×1000
+e 412×915 con stato e registro letti dal nodo, `systemd-analyze verify` della nuova unit e lo
+schema `Type=forking` con un'unità utente usa e getta che lanciava `sleep`. Non ancora provati:
+Riavvia dal pannello con la ricerca dentro `biglie-hunt-<epoch>.service`, una notifica su un
+telefono vero e la scheda vista con una sessione. La copia in `/opt/openastro-ops` (root, 0700)
+non è aggiornata: va allineata con root, senza sovrascrivere aggiunte di altri rami.
 
 ## Interfaccia grafite (2026-11-02)
 

@@ -343,9 +343,9 @@ d'installazione precedente; esistenza non verificata.
 | Media LAN | smbd, nmbd, minidlna, wsdd2 | SMB OPENASTRO/Media; DLNA OpenAstro Media |
 | Torrent Manager | `openastro-torrent.service` + `openastro-torrent-search.service` + Control worker | RPC `127.0.0.1:9091`; solver `127.0.0.1:9092`; provider 1337x verificato |
 
-Ricerca server Biglie nel Control (2026-11-03): preparata sul ramo `codex/biglie-hunt`, non ancora
-installata. Cambia la unit del Control (`ProtectHome=tmpfs`, `BindPaths=-/home/astro/biglie-oci`)
-e aggiunge l'azione `biglie_hunt_start` a `openastro-action`; dettagli, installazione e ripristino
+Ricerca server Biglie nel Control (2026-11-03): installata sul nodo dal ramo `codex/biglie-hunt`
+(commit d980414). Cambia la unit del Control (`ProtectHome=tmpfs`, `BindPaths=-/home/astro/biglie-oci`)
+e aggiunge l'azione `biglie_hunt_start` a `openastro-action`; dettagli, verifiche e ripristino
 in [control-panel/README.md](control-panel/README.md#ricerca-server-biglie-2026-11-03).
 
 Gli ingressi HTTPS pubblici principali hanno Funnel attivo. NINA non usa più una
