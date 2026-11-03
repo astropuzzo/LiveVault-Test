@@ -131,6 +131,7 @@ def test_real_ffmpeg_reads_synthetic_split_master(tmp_path):
 def test_transport_guard_restarts_only_on_destructive_hls_faults():
     assert stream_transport_fault("[hls] skipping 36 segments ahead, expired from playlists")
     assert stream_transport_fault("The specified session has been invalidated for some reason")
+    assert stream_transport_fault("[hls @ 0x55a4becef0] Failed to reload playlist 0") == "link della playlist scaduto"
     assert stream_transport_fault("Invalid NAL unit size (123 > 45)") == ""
     assert stream_transport_fault("missing picture in access unit with size 22123") == ""
     assert stream_transport_fault("Failed to open an initialization section in playlist 1")

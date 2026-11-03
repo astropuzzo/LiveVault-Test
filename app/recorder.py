@@ -242,6 +242,12 @@ def stream_transport_fault(line: str) -> str:
         return "segmenti video scaduti"
     if "session has been invalidated" in lowered:
         return "sessione HLS invalidata"
+    # The signed playlist URL expired (HTTP 403): FFmpeg cannot reload it and
+    # exits as if the show ended, which used to cost 11-13 minutes until the
+    # next probe. A restart fetches a fresh URL; a show that really ended is
+    # closed by the next probe, as for the other faults here.
+    if "failed to reload playlist" in lowered:
+        return "link della playlist scaduto"
     # Decoder warnings at a live fMP4 boundary are recoverable. Restarting on
     # one warning creates a reconnect storm; the byte-growth watchdog decides
     # whether the capture is actually stuck.
