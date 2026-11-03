@@ -30,10 +30,13 @@ dicono «ricerca» perché il 2026-11-03 un «Riavvia» è stato scambiato per �
   `hunt.sh start` o `restart` dal proprio processo.
 - Attesa tra i giri: `{"action": "interval", "seconds": 15|30|60|90}` esegue `hunt.sh interval`
   (repository Biglie, commit 4f79430). Vale sia per cercare la macchina sia per farla crescere, e
-  la ricerca in corso la rilegge entro 5 s. Il nuovo `oracle_vm.py` (repository Biglie, commit
-  48198f2, test in `tools/regia/test_oracle_vm.py`, 1a4314b) distanzia tutte le creazioni di
-  almeno 90 s, anche fra 2/12 e 1/6 e fra giri diversi: 15 s non evitavano il 429 sulla seconda
-  taglia. Dopo errori usa 90/180/360/720/900 s, con reset dopo creazione o resize accettati.
+  la ricerca in corso la rilegge entro 5 s. `oracle_vm.py` (repository Biglie, commit b47d604,
+  test in `tools/regia/test_oracle_vm.py`) fa partire ogni creazione almeno 120 s dopo l'ultima
+  risposta di Oracle, anche fra 2/12 e 1/6 e fra giri diversi: Oracle rispondeva 429 alle
+  creazioni a 89-90 s l'una dall'altra e normalmente a 91-92 s. Dopo errori aspetta 90, 180, 360
+  e al massimo 600 s; l'attesa torna a 90 s quando Oracle accetta una creazione o un resize, o
+  risponde che non ha posto. Distanziamento e attesa crescente vengono dal fix del proprietario
+  (48198f2, test in 1a4314b), che contava 90 s dall'inizio della richiesta precedente.
   Con un `hunt.sh` più vecchio lo stato non ha `"interval"`: la scelta resta spenta e la scheda
   dice di aggiornarlo.
 - Servizio: `ProtectHome=true` diventa `ProtectHome=tmpfs` con
