@@ -151,3 +151,9 @@ reload and bookmarks land on the same profile and tab.
 An account connected earlier with a browser cookie still reads through the
 mobile API until it is reconnected with the password; on first use it gets its
 own stable device identity file.
+
+Activity filters by profile and by kind (with news, errors and stops, queued
+and running) and can drop finished entries, only the empty checks or all of
+them; queued and running jobs stay, archived posts keep their files and only
+lose the link to that history line. While Instagram waits for a login code
+the form shows the code field alone.

@@ -1003,3 +1003,28 @@ def test_the_password_key_comes_from_launcher_sync(vault, monkeypatch):
     monkeypatch.setattr(login, 'Client', Empty)
     with pytest.raises(ValueError, match='chiave'):
         login.client('someone').password_publickeys()
+
+
+def test_activity_filters_and_clearing_keep_the_archive(http, vault):
+    root, client = http
+    with store.db() as c:
+        other = c.execute('INSERT INTO profiles(username,created_at) VALUES (?,?)', ('second', store.now())).lastrowid
+    jobs = {}
+    for name, profile, state, downloaded in [('empty', vault['profile'], 'done', 0), ('new', vault['profile'], 'done', 1),
+                                             ('failed', other, 'error', 0), ('waiting', other, 'queued', 0)]:
+        jobs[name] = store.enqueue(profile) if name != 'waiting' else None
+        with store.db() as c:
+            if jobs[name] is None:
+                jobs[name] = c.execute("INSERT INTO jobs(profile_id,state,created_at) VALUES (?,'queued',?)", (profile, store.now())).lastrowid
+            c.execute('UPDATE jobs SET state=?,downloaded=? WHERE id=?', (state, downloaded, jobs[name]))
+    with store.db() as c:
+        c.execute("INSERT INTO posts(profile_id,external_key,shortcode,kind,published_at,archived_at,complete,job_id) VALUES (?,'post:K','K','post',1,1,1,?)",
+                  (vault['profile'], jobs['new']))
+    ids = lambda **q: {j['id'] for j in client.get(root + '/api/jobs', params=q).json()['items']}
+    assert ids(show='new') == {jobs['new']} and ids(show='errors') == {jobs['failed']} and ids(show='active') == {jobs['waiting']}
+    assert ids(profile=other) == {jobs['failed'], jobs['waiting']}
+    assert client.post(root + '/api/jobs/clear', json={'only_empty': True}).json()['removed'] == 2
+    assert ids() == {jobs['new'], jobs['waiting']}
+    assert client.post(root + '/api/jobs/clear', json={}).json()['removed'] == 1
+    assert ids() == {jobs['waiting']}
+    assert [p['shortcode'] for p in store.list_posts({})['items']] == ['K']

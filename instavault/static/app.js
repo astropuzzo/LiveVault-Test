@@ -413,7 +413,7 @@
     if (state.authenticated) {
       if (GRIDS.includes(view)) loadPosts(true).catch(report);
       if (view === 'home') loadHome().catch(report);
-      if (view === 'activity') loadJobs().catch(report);
+      if (view === 'activity') { fillJobProfiles(); loadJobs().catch(report); }
       if (view === 'settings') renderPush().catch(report);
     }
     const hash = '#' + view;
@@ -533,7 +533,10 @@
   async function loadJobs() {
     const list = $('#jobsList');
     if (!list.children.length) list.innerHTML = '<p class="loading-line">Caricamento dell’attività</p>';
-    const result = await api('/api/jobs');
+    const params = new URLSearchParams({profile: $('#jobsProfile').value, show: $('#jobsShow').value});
+    const result = await api('/api/jobs?' + params);
+    $('#jobsClear').disabled = !result.finished;
+    const filtered = $('#jobsProfile').value || $('#jobsShow').value;
     list.innerHTML = result.items.length ? result.items.map(job => `<article class="row">
       <span class="row-icon${job.state === 'running' ? ' live' : ''}" aria-hidden="true">${icon(job.state === 'done' ? 'download' : 'refresh')}</span>
       <div class="row-main">
@@ -543,8 +546,29 @@
         ${job.items?.length ? `<div class="job-thumbs">${job.items.filter(item => item.media).map(item => `<button class="job-thumb" type="button" data-post="${Number(item.id)}" aria-label="Apri il contenuto scaricato"><img src="${BASE}/media/${Number(item.media)}/thumb" alt="" loading="lazy" decoding="async"></button>`).join('')}${job.downloaded > job.items.length ? `<span class="job-more">+${number(job.downloaded - job.items.length)}</span>` : ''}</div>` : ''}
       </div>
       <div class="row-side">${statusTag(job.state)}${['queued', 'running'].includes(job.state) ? `<button class="button small" type="button" data-cancel-job="${job.id}">Interrompi</button>` : ''}</div>
-    </article>`).join('') : '<div class="empty"><h2>Nessun aggiornamento</h2><p>Gli aggiornamenti dei profili compaiono qui, uno alla volta.</p></div>';
+    </article>`).join('') : filtered ? '<div class="empty"><h2>Niente con questi filtri</h2><p>Cambia profilo o tipo per vedere altri aggiornamenti.</p></div>'
+      : '<div class="empty"><h2>Nessun aggiornamento</h2><p>Gli aggiornamenti dei profili compaiono qui, uno alla volta.</p></div>';
   }
+  function fillJobProfiles() {
+    const select = $('#jobsProfile'), chosen = select.value;
+    select.replaceChildren(new Option('Tutti i profili', ''), ...(state.summary?.profiles || []).map(p => new Option('@' + p.username, p.id)));
+    select.value = chosen;
+  }
+  ['jobsProfile', 'jobsShow'].forEach(id => $('#' + id).addEventListener('change', () => loadJobs().catch(report)));
+  $('#jobsClear').addEventListener('click', () => {
+    const profile = profileById($('#jobsProfile').value);
+    $('#clearJobsWho').textContent = profile ? `Solo per @${profile.username}, come nel filtro.` : 'Per tutti i profili.';
+    $('#clearJobsDialog').showModal();
+  });
+  $('#clearJobsConfirm').addEventListener('click', event => busy(event.currentTarget, async () => {
+    try {
+      const onlyEmpty = $('#clearJobsDialog [name=clearScope]:checked').value === 'empty';
+      const {removed} = await api('/api/jobs/clear', {method: 'POST', body: JSON.stringify({profile: $('#jobsProfile').value, only_empty: onlyEmpty})});
+      $('#clearJobsDialog').close();
+      toast(removed ? `${plural(removed, 'aggiornamento tolto', 'aggiornamenti tolti')} dall’elenco` : 'Niente da togliere');
+      await loadJobs();
+    } catch (error) { report(error); }
+  }));
 
   let menu = null;
   function closeMenu() { menu?.remove(); menu = null; }
@@ -853,9 +877,15 @@
   const codeSentTo = {
     email: 'Instagram ha mandato un codice alla tua email. Scrivilo qui sotto entro 5 minuti.',
     sms: 'Instagram ha mandato un codice via SMS. Scrivilo qui sotto entro 5 minuti.',
-    two_factor: 'Scrivi il codice dell’autenticazione a due fattori.',
+    two_factor: 'Instagram chiede il codice a due fattori: prendilo dall’app di autenticazione o dall’SMS e scrivilo qui sotto.',
   };
+  // While Instagram waits for the code only the code field shows: no second password prompt.
+  function showCodeStep(on) {
+    $('#igCredentials').hidden = on; $('#igUsername').required = !on;
+    $('#igSubmit').textContent = on ? 'Conferma il codice' : 'Collega account';
+  }
   function resetInstagramLogin() {
+    showCodeStep(false);
     state.pendingCode = false; $('#twoFactorBox').hidden = true;
     $('#loginProgress').hidden = true; $('#igCode').value = '';
   }
@@ -890,8 +920,8 @@
         result = await awaitInstagramLogin(result);
         if (result.state === 'cancelled') return;
         if (result.code_required) {
-          state.pendingCode = true; $('#twoFactorBox').hidden = false;
-          $('#igError').textContent = codeSentTo[result.channel] || codeSentTo.email; $('#igCode').focus();
+          state.pendingCode = true; $('#twoFactorBox').hidden = false; showCodeStep(true);
+          $('#twoFactorNote').textContent = codeSentTo[result.channel] || codeSentTo.email; $('#igCode').focus();
         } else if (result.configured) {
           loginAttemptId = null; state.igChanging = false; resetInstagramLogin(); toast('Account Instagram collegato'); await refreshSummary();
         }

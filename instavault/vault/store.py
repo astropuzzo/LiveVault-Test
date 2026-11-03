@@ -385,6 +385,43 @@ def recent_stories():
             GROUP BY r.id ORDER BY latest DESC''', (now() - 86400,))]
 
 
+JOB_FILTERS = {'': '1=1', 'new': 'j.downloaded>0', 'errors': "j.state IN ('error','cancelled')",
+               'active': "j.state IN ('queued','running')"}
+FINISHED = "('done','error','cancelled')"
+
+
+def list_jobs(query):
+    """Activity, newest first, narrowed to one profile and one kind."""
+    conditions, args = [JOB_FILTERS.get(str(query.get('show', '')), '1=1')], []
+    if str(query.get('profile', '')).isdigit():
+        conditions.append('j.profile_id=?'); args.append(int(query['profile']))
+    with db() as c:
+        rows = [dict(r) for r in c.execute(f'''SELECT j.*,p.username FROM jobs j JOIN profiles p ON p.id=j.profile_id
+            WHERE {' AND '.join(conditions)} ORDER BY j.id DESC LIMIT 100''', args)]
+        for row in rows:
+            row['items'] = job_items(c, row['id']) if row['downloaded'] else []
+        finished = c.execute(f'SELECT COUNT(*) FROM jobs WHERE state IN {FINISHED}').fetchone()[0]
+    return {'items': rows, 'finished': finished}
+
+
+def clear_jobs(profile_id=None, only_empty=False):
+    """Removes finished entries from Activity; queued and running ones stay.
+    The archived posts keep their files, only the history line goes."""
+    conditions, args = [f'state IN {FINISHED}'], []
+    if profile_id:
+        conditions.append('profile_id=?'); args.append(int(profile_id))
+    if only_empty:
+        conditions.append('downloaded=0')
+    with db() as c:
+        ids = [r[0] for r in c.execute(f'SELECT id FROM jobs WHERE {" AND ".join(conditions)}', args)]
+        for start in range(0, len(ids), 500):
+            chunk = ids[start:start + 500]
+            marks = ','.join('?' * len(chunk))
+            c.execute(f'UPDATE posts SET job_id=NULL WHERE job_id IN ({marks})', chunk)
+            c.execute(f'DELETE FROM jobs WHERE id IN ({marks})', chunk)
+    return len(ids)
+
+
 def job_items(c, job_id, limit=12):
     # What one update downloaded: the first file of each new post, newest first.
     return [dict(r) for r in c.execute('''SELECT p.id, p.kind, p.collection,

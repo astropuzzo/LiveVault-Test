@@ -181,7 +181,15 @@
           <h1 id="activityTitle">Attività</h1>
           <p class="page-meta">Un download alla volta, per non caricare il server</p>
         </div>
+        <div class="filters">
+          <label class="sr-only" for="jobsProfile">Profilo</label>
+          <select id="jobsProfile"><option value="">Tutti i profili</option></select>
+          <label class="sr-only" for="jobsShow">Mostra</label>
+          <select id="jobsShow"><option value="">Tutte</option><option value="new">Solo con novità</option><option value="errors">Errori e interrotte</option><option value="active">In corso e in coda</option></select>
+          <button id="jobsClear" class="button" type="button">Svuota…</button>
+        </div>
       </header>
+
       <div id="jobsList" class="rows"></div>
     </section>
 
@@ -204,18 +212,21 @@
           <p class="help">Serve per i profili che Instagram mostra solo dopo l’accesso, per le storie e per i contenuti in evidenza. La password viene usata una volta per accedere e non viene salvata: sul server resta solo la sessione, cifrata. Se Instagram chiede di confermare che sei tu, qui compare il campo per il codice che ti manda via email o SMS.</p>
           <p class="help">Instagram può limitare gli account che scaricano molti contenuti. Se ne hai uno, usa un account secondario.</p>
           <form id="instagramLogin" class="form">
-            <label for="igUsername">Username Instagram</label>
-            <input id="igUsername" autocomplete="off" autocapitalize="none" spellcheck="false" required>
-            <label for="igPassword">Password</label>
-            <input id="igPassword" type="password" autocomplete="off">
+            <div id="igCredentials" class="form">
+              <label for="igUsername">Username Instagram</label>
+              <input id="igUsername" autocomplete="off" autocapitalize="none" spellcheck="false" required>
+              <label for="igPassword">Password</label>
+              <input id="igPassword" type="password" autocomplete="off">
+            </div>
             <div id="twoFactorBox" class="two-factor" hidden>
+              <p id="twoFactorNote" class="help"></p>
               <label for="igCode">Codice di verifica</label>
               <input id="igCode" inputmode="numeric" autocomplete="one-time-code">
               <button id="resetTwoFactor" class="link" type="button">Ricomincia l’accesso</button>
             </div>
             <div id="loginProgress" hidden role="status"><p id="loginProgressText">Connessione a Instagram in corso…</p><button id="cancelInstagramLogin" type="button" class="button small">Annulla tentativo</button></div><p id="igError" class="form-error" role="alert"></p>
             <div class="form-actions">
-              <button class="button primary" type="submit">Collega account</button>
+              <button id="igSubmit" class="button primary" type="submit">Collega account</button>
               <button id="keepInstagram" class="button" type="button" hidden>Annulla</button>
             </div>
           </form>
@@ -305,6 +316,26 @@
     <div class="form-actions">
       <button id="removeSubmit" class="button primary" type="submit">Rimuovi profilo</button>
       <button class="button" type="button" data-close="removeDialog">Annulla</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="clearJobsDialog" class="sheet" aria-labelledby="clearJobsTitle">
+  <form class="form">
+    <div class="sheet-head">
+      <h2 id="clearJobsTitle">Svuota l’attività</h2>
+      <button type="button" class="icon-button" data-close="clearJobsDialog" aria-label="Chiudi"><svg aria-hidden="true"><use href="#i-close"/></svg></button>
+    </div>
+    <p class="help">Toglie dall’elenco gli aggiornamenti finiti. Post, storie e file scaricati restano nell’archivio; quelli in corso o in coda non si toccano.</p>
+    <fieldset class="options">
+      <legend>Cosa togliere</legend>
+      <label><input type="radio" name="clearScope" value="empty" checked><span>Solo quelli senza novità<small>I controlli che non hanno scaricato niente</small></span></label>
+      <label><input type="radio" name="clearScope" value="all"><span>Tutti quelli finiti<small>Anche quelli con download ed errori</small></span></label>
+    </fieldset>
+    <p id="clearJobsWho" class="help"></p>
+    <div class="form-actions">
+      <button id="clearJobsConfirm" class="button primary" type="button">Svuota</button>
+      <button class="button" type="button" data-close="clearJobsDialog">Annulla</button>
     </div>
   </form>
 </dialog>

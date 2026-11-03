@@ -229,6 +229,9 @@ class Handler(BaseHTTPRequestHandler):
                 store.enqueue(ident)
             sync.WAKE.set()
             return self.send_json({'ok': True, 'queued': len(ids)})
+        if path == '/api/jobs/clear':
+            profile = str(body.get('profile') or '')
+            return self.send_json({'removed': store.clear_jobs(int(profile) if profile.isdigit() else None, bool(body.get('only_empty')))})
         match = re.fullmatch(r'/api/jobs/(\d+)/cancel', path)
         if match:
             with store.db() as c:
@@ -342,11 +345,7 @@ class Handler(BaseHTTPRequestHandler):
                     raise HTTPError(404, 'Contenuto non trovato.')
                 return self.send_json(store.post_json(c, row, True))
         if path == '/api/jobs':
-            with store.db() as c:
-                rows = [dict(r) for r in c.execute('SELECT j.*,p.username FROM jobs j JOIN profiles p ON p.id=j.profile_id ORDER BY j.id DESC LIMIT 100')]
-                for row in rows:
-                    row['items'] = store.job_items(c, row['id']) if row['downloaded'] else []
-            return self.send_json({'items': rows})
+            return self.send_json(store.list_jobs(query))
         if path == '/api/download':
             ids = [v for v in str(query.get('posts', '')).split(',') if v.isdigit()]
             rows = store.post_files(ids)
