@@ -344,7 +344,7 @@ d'installazione precedente; esistenza non verificata.
 | Torrent Manager | `openastro-torrent.service` + `openastro-torrent-search.service` + Control worker | RPC `127.0.0.1:9091`; solver `127.0.0.1:9092`; provider 1337x verificato |
 
 Ricerca server Biglie nel Control (2026-11-03): installata sul nodo dal ramo `codex/biglie-hunt`
-(commit 561e4a2, con la scelta «Riprova ogni»). Cambia la unit del Control (`ProtectHome=tmpfs`, `BindPaths=-/home/astro/biglie-oci`)
+(commit bcc90ce, con «Riprova ogni» e i tasti «… ricerca»). Cambia la unit del Control (`ProtectHome=tmpfs`, `BindPaths=-/home/astro/biglie-oci`)
 e aggiunge l'azione `biglie_hunt_start` a `openastro-action`; dettagli, verifiche e ripristino
 in [control-panel/README.md](control-panel/README.md#ricerca-server-biglie-2026-11-03).
 

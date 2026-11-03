@@ -91,6 +91,11 @@ Il proprietario ha lanciato `chmod -R a+rX /opt/openastro-control/static/fonts` 
 il font risponde 200 e la prova mandata alle 13:29 UTC con `web_push.notify` è arrivata sul
 telefono. Da allora si carica anche Mona Sans, il font dell'interfaccia grafite.
 
+Terza installazione alle 13:45:05 UTC dal bcc90ce: tasti «… ricerca» e `sw.js` che mette in cache
+un file alla volta. File uguali al ramo, `/healthz` 200, `/api/biglie/hunt` 401 senza sessione,
+font 200. La ricerca è passata attraverso il riavvio del pannello senza fermarsi: stesso processo
+delle 13:16:38 nella sua unità, giro 99 alle 13:44:49 e giro 100 alle 13:45:06.
+
 Non ancora provati: Avvia e Riavvia premuti nella scheda, e un avviso vero della ricerca
 (macchina trovata, errore, processo fermo), che passa dallo stesso invio della prova. La copia in
 `/opt/openastro-ops` (root, 0700) non è aggiornata: va allineata con root, senza sovrascrivere
