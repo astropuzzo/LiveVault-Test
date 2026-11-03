@@ -335,6 +335,9 @@ class MobileSource:
     def profile(self, username):
         return ProfileAdapter(self, self.client.user_info_by_username_v1(username))
 
+    def profile_by_id(self, user_id):
+        return ProfileAdapter(self, self.client.user_info_v1(str(user_id)))
+
     def access(self, profile):
         if not profile.is_private or profile.userid == self.account_id:
             return ''

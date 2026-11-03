@@ -1040,3 +1040,123 @@ def test_a_video_without_preview_gets_a_poster_from_its_first_second(tmp_path):
     from PIL import Image
     with Image.open(tmp_path / '1.poster.jpg') as image:
         assert image.size == (64, 48)
+
+
+class FakeSocialClient:
+    """Pages of a follower list keyed by cursor; counts requests."""
+    def __init__(self, pages):
+        self.pages, self.calls = pages, []
+
+    def private_request(self, endpoint, params=None):
+        self.calls.append((endpoint, dict(params or {})))
+        if '/likers/' in endpoint:
+            return {'users': [{'pk': 900, 'username': 'fan', 'full_name': 'Fan'}]}
+        users, following = self.pages[(params or {}).get('max_id', '')]
+        if isinstance(users, Exception):
+            raise users
+        return {'users': [{'pk': n, 'username': f'user{n}'} for n in users], 'next_max_id': following}
+
+    def media_pk_from_code(self, code):
+        return 1
+
+
+def social_setup(vault, monkeypatch, pages, followers=6):
+    from vault import social
+    monkeypatch.setattr(social, 'pause', lambda low, high: not sync.STOP.is_set())
+    monkeypatch.setattr(social, 'LISTS', ('followers',))
+    monkeypatch.setattr(sync.push, 'notify', lambda *a, **k: 0)
+    with store.db() as c:
+        c.execute("UPDATE profiles SET instagram_id='42', next_sync=? WHERE id=?", (store.now() + 3600, vault['profile']))
+        c.execute('INSERT INTO profile_history(profile_id,at,followers,following,media_count) VALUES (?,?,?,0,0)', (vault['profile'], store.now(), followers))
+    add_account('11', 'first_account')
+    client = FakeSocialClient(pages)
+    source = SimpleNamespace(client=client, close=lambda: None)
+    return social, client, (lambda account=None: source)
+
+
+def run_pass(social, loader, vault):
+    social.due_crawl()
+    with store.db() as c:
+        c.execute('UPDATE social_crawl SET next_at=0'); c.execute('UPDATE ig_accounts SET social_next=0')
+    return social.step(loader)
+
+
+def test_followers_are_read_in_passes_and_departures_need_two_complete_ones(vault, monkeypatch):
+    pages = {'': ([1, 2, 3], '3'), '3': ([4, 5, 6], '')}
+    social, client, loader = social_setup(vault, monkeypatch, pages)
+    assert run_pass(social, loader, vault)
+    data = social.overview(vault['profile'])
+    assert data['lists'][0]['known'] == 6 and data['lists'][0]['complete_passes'] == 1 and data['events'] == []
+    # User 6 leaves and 7 arrives: 7 is new at once, 6 is gone only after a second complete pass without them.
+    pages.update({'': ([1, 2, 3], '3'), '3': ([4, 5, 7], '')})
+    run_pass(social, loader, vault)
+    assert [(e['username'], e['kind']) for e in social.overview(vault['profile'])['events']] == [('user7', 'new')]
+    run_pass(social, loader, vault)
+    events = [(e['username'], e['kind']) for e in social.overview(vault['profile'])['events']]
+    assert ('user6', 'gone') in events
+
+
+def test_an_incomplete_pass_marks_nobody_gone(vault, monkeypatch):
+    pages = {'': ([1, 2, 3], '3'), '3': ([4, 5, 6], '')}
+    social, client, loader = social_setup(vault, monkeypatch, pages, followers=6)
+    run_pass(social, loader, vault)
+    pages.update({'': ([1, 2], '')})   # Instagram returned only two people this time
+    run_pass(social, loader, vault); run_pass(social, loader, vault)
+    assert all(e['kind'] != 'gone' for e in social.overview(vault['profile'])['events'])
+
+
+def test_a_truncated_list_is_marked_and_not_walked_again(vault, monkeypatch):
+    social, client, loader = social_setup(vault, monkeypatch, {'': (list(range(49)), '')}, followers=48653)
+    run_pass(social, loader, vault)
+    data = social.overview(vault['profile'])['lists'][0]
+    assert data['capped'] and data['complete_passes'] == 0
+    calls = len(client.calls)
+    run_pass(social, loader, vault)
+    assert len(client.calls) == calls
+
+
+def test_a_queued_download_or_stop_ends_the_batch_with_the_cursor_saved(vault, monkeypatch):
+    pages = {'': ([1, 2], 'a'), 'a': ([3, 4], 'b'), 'b': ([5, 6], '')}
+    social, client, loader = social_setup(vault, monkeypatch, pages)
+    original = client.private_request
+    def then_queue(endpoint, params=None):
+        reply = original(endpoint, params)
+        if '/likers/' not in endpoint:
+            store.enqueue(vault['profile'])
+        return reply
+    client.private_request = then_queue
+    run_pass(social, loader, vault)
+    with store.db() as c:
+        assert c.execute('SELECT cursor FROM social_crawl').fetchone()[0] == 'a'
+    assert social.step(loader) is False   # downloads first
+
+
+def test_an_account_problem_rests_the_account_and_spares_the_profile(vault, monkeypatch):
+    class FeedbackRequired(Exception): pass
+    social, client, loader = social_setup(vault, monkeypatch, {'': (FeedbackRequired('slow down'), '')})
+    run_pass(social, loader, vault)
+    account = sync.accounts()[0]
+    assert account['problem'] == 'pause' and account['social_next'] > store.now() + 40 * 3600
+    with store.db() as c:
+        assert c.execute('SELECT status, error FROM profiles WHERE id=?', (vault['profile'],)).fetchone()[:] != ('error',)
+
+
+def test_a_private_profile_is_read_only_by_the_account_that_sees_it(vault, monkeypatch):
+    social, client, loader = social_setup(vault, monkeypatch, {'': ([1], '')}, followers=1)
+    add_account('22', 'second_account')
+    with store.db() as c:
+        c.execute("UPDATE profiles SET is_private=1, account_used='22' WHERE id=?", (vault['profile'],))
+    used = []
+    run_pass(social, lambda account=None: used.append(account) or loader(account), vault)
+    assert used == ['22']
+
+
+def test_likes_of_recent_posts_feed_the_ranking(vault, monkeypatch):
+    social, client, loader = social_setup(vault, monkeypatch, {'': ([1], '')}, followers=1)
+    with store.db() as c:
+        post = c.execute("INSERT INTO posts(profile_id,external_key,shortcode,kind,published_at,archived_at,complete) VALUES (?,'post:L','L','post',?,1,1)",
+                         (vault['profile'], store.now() - 3600)).lastrowid
+        c.execute("INSERT INTO comments(post_id,external_id,username,text,created_at) VALUES (?,?,?,?,1)", (post, 'c1', 'fan', 'Bella'))
+    run_pass(social, loader, vault)
+    ranking = social.overview(vault['profile'])['ranking']
+    assert ranking[0]['username'] == 'fan' and ranking[0]['likes'] == 1 and ranking[0]['comments'] == 1

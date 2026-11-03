@@ -17,7 +17,7 @@ import instaloader
 import requests
 from PIL import Image, ImageOps
 
-from . import push, store, security
+from . import push, social, store, security
 
 WAKE = threading.Event()
 STOP = threading.Event()
@@ -572,13 +572,31 @@ class Worker:
             if STOP.is_set() or not self.save_comments(row['id'], row['shortcode']):
                 break
 
+    def find_profile(self, value, profile):
+        """By username; after a rename, by the Instagram id stored earlier."""
+        if not hasattr(value, 'profile'):
+            return instaloader.Profile.from_username(value.context, profile['username'])
+        try:
+            return value.profile(profile['username'])
+        except Exception as exc:
+            if type(exc).__name__ not in {'UserNotFound', 'ProfileNotExistsException'} or not profile.get('instagram_id') or not hasattr(value, 'profile_by_id'):
+                raise
+        remote = value.profile_by_id(profile['instagram_id'])
+        with store.db() as c:
+            if remote.username and not c.execute('SELECT 1 FROM profiles WHERE username=? AND id<>?', (remote.username, profile['id'])).fetchone():
+                c.execute('UPDATE profiles SET username=? WHERE id=?', (remote.username, profile['id']))
+                print(f'InstaVault: @{profile["username"]} is now @{remote.username}', flush=True)
+                profile['username'] = remote.username
+        return remote
+
     def record_profile(self, profile, remote, job_id):
         # The photo's file name on Instagram's CDN changes only with a new photo.
         url = str(remote.profile_pic_url or '')
         key = urlparse(url).path.rsplit('/', 1)[-1][:120]
         snapshot = {'followers': getattr(remote, 'followers', None), 'following': getattr(remote, 'followees', None),
                     'media_count': getattr(remote, 'mediacount', None) or getattr(remote, 'media_count', None),
-                    'full_name': remote.full_name or '', 'biography': remote.biography or '', 'avatar_key': key}
+                    'full_name': remote.full_name or '', 'biography': remote.biography or '', 'avatar_key': key,
+                    'username': getattr(remote, 'username', '') or profile['username']}
         with store.db() as c:
             last = c.execute('SELECT avatar_key FROM profile_history WHERE profile_id=? ORDER BY at DESC, id DESC LIMIT 1', (profile['id'],)).fetchone()
         new_photo = url and self.mode == 'media' and (not profile['avatar'] or (last and last['avatar_key'] != key))
@@ -659,8 +677,10 @@ class Worker:
                 value = loader(account)
                 self.source = value
                 self.check(ident)
-                remote = value.profile(profile['username']) if hasattr(value, 'profile') else instaloader.Profile.from_username(value.context, profile['username'])
+                remote = self.find_profile(value, profile)
                 access = access_of(value, remote)
+                with store.db() as c:
+                    c.execute('UPDATE profiles SET is_private=? WHERE id=?', (int(bool(getattr(remote, 'is_private', False))), profile['id']))
                 if not access or index + 1 == len(choices):
                     break
                 # This account cannot see the private profile: the next one may follow it.
@@ -932,6 +952,9 @@ class Worker:
                         row = c.execute("SELECT * FROM jobs WHERE state='queued' ORDER BY created_at,id LIMIT 1").fetchone()
                     if row:
                         self.run_job(dict(row))
+                        continue
+                    # Idle: read followers, following and likes a little at a time.
+                    if store.settings()['automatic'] and social.step():
                         continue
             except Exception:
                 # Individual failures do not terminate the unattended scheduler.

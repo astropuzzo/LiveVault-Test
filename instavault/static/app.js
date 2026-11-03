@@ -204,7 +204,8 @@
     if (profile.access === 'not_followed') note.innerHTML = `${icon('lock')}<p><b>Profilo privato.</b> L’account Instagram collegato non lo segue, quindi Instagram non mostra i suoi contenuti.</p><button class="button primary small" type="button" data-follow="${profile.id}">Chiedi di seguire</button>`;
     $$('#kindTabs [data-kind]').forEach(button => { button.querySelector('.count').textContent = number(profile['count_' + button.dataset.kind]); });
     if (Number(profile.count_highlight) && $('#collections').dataset.profile !== String(profile.id)) loadCollections().catch(report);
-    if ($('#historyBox').dataset.profile !== String(profile.id)) loadHistory(profile).catch(report);
+    if ($('#historyBox').dataset.profile !== String(profile.id)) { loadHistory(profile).catch(report); stopTimelapse(); $('#timelapse').hidden = true; timelapse.at = 0; }
+    if (social.profile && social.profile !== String(profile.id)) { social.profile = ''; social.data = null; $('#socialBox').open = false; }
   }
   // Highlights sit under the profile header as circles, as on Instagram; a tap plays the collection.
   const highlightName = value => value.replace(/^In evidenza · /, '') || 'Senza titolo';
@@ -373,6 +374,82 @@
   $('#pushTest').addEventListener('click', event => busy(event.currentTarget, async () => {
     try { await api('/api/push/test', {method: 'POST', body: '{}'}); toast('Prova inviata'); } catch (error) { report(error); }
   }));
+  // Interactions: who likes and comments most, likes log, followers and following read slowly over days.
+  const social = {tab: 'ranking', data: null, profile: '', query: '', offset: 0};
+  const LIST_NAMES = {followers: ['follower', 'follower'], following: ['seguito', 'seguiti']};
+  async function loadSocial() {
+    const id = String(state.profile); social.profile = id;
+    $('#socialBody').innerHTML = '<p class="loading-line">Caricamento</p>';
+    const data = await api(`/api/profiles/${Number(id)}/social`);
+    if (social.profile !== String(state.profile)) return;
+    social.data = data; renderSocial();
+  }
+  function listStatus(list) {
+    const [, many] = LIST_NAMES[list.list];
+    if (list.capped) return `Instagram mostra solo una parte dei ${many} di questo profilo agli account collegati: l’elenco completo non è disponibile.`;
+    const when = list.next_at > social.data.now ? `prossimo blocco verso le ${clock(list.next_at)}` : 'prossimo blocco appena un account è libero';
+    const round = list.complete_passes ? `${plural(list.complete_passes, 'giro completo', 'giri completi')} · ` : 'primo giro · ';
+    return `${number(list.known)} ${many} conosciuti di ${number(list.expected)} · ${round}letti ${number(list.pass_seen)} in questo giro${list.account ? ` con @${esc(list.account)}` : ''} · ${when}`;
+  }
+  function personLink(name) { return `<span class="mention"><button class="link name" type="button" data-mention="${esc(name)}" aria-haspopup="menu">@${esc(name)}</button></span>`; }
+  async function renderSocial() {
+    const data = social.data; if (!data) return;
+    $$('#socialBox [data-social-tab]').forEach(b => b.setAttribute('aria-selected', String(b.dataset.socialTab === social.tab)));
+    const body = $('#socialBody');
+    if (social.tab === 'ranking') {
+      body.innerHTML = `<p class="help">Chi interagisce di più: like visti da InstaVault (Instagram ne mostra circa 100 per post, sui post dell’ultimo mese) più i commenti archiviati.</p>`
+        + (data.ranking.length ? `<ol class="ranking">${data.ranking.map((r, i) => `<li><span class="rank">${i + 1}</span><div>${personLink(r.username)}${r.full_name ? `<small>${esc(r.full_name)}</small>` : ''}</div><span class="stamp">${plural(r.likes, 'like', 'like')} · ${plural(r.comments, 'commento', 'commenti')}</span></li>`).join('')}</ol>`
+          : '<p class="empty-line">Ancora nessuna interazione: i like si leggono a poco a poco, un post alla volta.</p>');
+    } else if (social.tab === 'likes') {
+      body.innerHTML = `<p class="help">${plural(data.liked_posts, 'post letto', 'post letti')}. La data è quando InstaVault ha visto il like, non quando è stato messo.</p>`
+        + (data.likes.length ? `<ul class="likes-log">${data.likes.map(l => `<li>${l.media ? `<button class="job-thumb" type="button" data-post="${Number(l.post_id)}" aria-label="Apri il post"><img src="${BASE}/media/${Number(l.media)}/thumb" alt="" loading="lazy"></button>` : ''}<div>${personLink(l.username)}${l.full_name ? `<small>${esc(l.full_name)}</small>` : ''}</div><span class="stamp">${esc(moment(l.first_seen))}</span></li>`).join('')}</ul>`
+          : '<p class="empty-line">Nessun like letto per ora.</p>');
+    } else if (social.tab === 'changes') {
+      body.innerHTML = '<p class="help">Chi arriva compare dopo il primo giro completo; chi se ne va solo se manca in due giri completi di fila.</p>'
+        + (data.events.length ? `<ul class="likes-log">${data.events.map(e => `<li><span class="change ${e.kind}">${e.kind === 'new' ? '+' : '−'}</span><div>${personLink(e.username)}<small>${e.list === 'followers' ? (e.kind === 'new' ? 'ha iniziato a seguire' : 'non segue più') : (e.kind === 'new' ? 'ora è seguito' : 'non è più seguito')}</small></div><span class="stamp">${esc(moment(e.at))}</span></li>`).join('')}</ul>`
+          : '<p class="empty-line">Nessun cambiamento registrato per ora.</p>');
+    } else {
+      const list = data.lists.find(l => l.list === social.tab);
+      body.innerHTML = `<p class="help">${list ? listStatus(list) : 'La lettura parte al prossimo momento libero.'}</p>
+        <label class="search"><span class="sr-only">Cerca</span><svg aria-hidden="true"><use href="#i-search"/></svg><input id="peopleSearch" type="search" placeholder="Cerca nome o username" value="${esc(social.query)}" autocomplete="off"></label>
+        <ul id="peopleList" class="likes-log"></ul><div class="form-actions"><button id="peopleMore" class="button small" type="button" hidden>Mostra altri</button></div>`;
+      $('#peopleSearch').addEventListener('input', event => { social.query = event.target.value; social.offset = 0; clearTimeout(social.timer); social.timer = setTimeout(() => loadPeople().catch(report), 250); });
+      $('#peopleMore').addEventListener('click', () => { social.offset += 100; loadPeople(true).catch(report); });
+      await loadPeople();
+    }
+  }
+  async function loadPeople(append = false) {
+    const params = new URLSearchParams({list: social.tab, q: social.query, offset: social.offset});
+    const result = await api(`/api/profiles/${Number(social.profile)}/people?${params}`);
+    const html = result.items.map(p => `<li><div>${personLink(p.username)}${p.full_name ? `<small>${esc(p.full_name)}</small>` : ''}</div><span class="stamp">${p.gone_at ? `andato via ${esc(day(p.gone_at))}` : `visto dal ${esc(day(p.first_seen))}`}</span></li>`).join('');
+    const list = $('#peopleList'); if (!list) return;
+    list.innerHTML = (append ? list.innerHTML : '') + (html || (append ? '' : '<li class="empty-line">Nessuno per ora.</li>'));
+    $('#peopleMore').hidden = !result.more;
+  }
+  $('#socialBox').addEventListener('toggle', event => { if (event.target.open && social.profile !== String(state.profile)) loadSocial().catch(report); });
+  $$('#socialBox [data-social-tab]').forEach(button => button.addEventListener('click', () => { social.tab = button.dataset.socialTab; social.query = ''; social.offset = 0; renderSocial().catch(report); }));
+
+  // Timelapse: the profile day by day, photo, name, bio and numbers.
+  const timelapse = {frames: [], at: 0, timer: 0};
+  function showFrame() {
+    const f = timelapse.frames[timelapse.at]; if (!f) return;
+    $('#timelapse').innerHTML = `<div class="timelapse-card">${f.photo ? `<img src="${BASE}/api/history/${Number(f.photo)}/photo" alt="Foto profilo del ${esc(day(f.at))}">` : '<span class="timelapse-photo" aria-hidden="true"></span>'}
+      <div><p class="stamp">${esc(day(f.at))} · ${timelapse.at + 1} di ${timelapse.frames.length}</p>${f.username ? `<b>@${esc(f.username)}</b>` : ''}${f.full_name ? `<p>${esc(f.full_name)}</p>` : ''}
+      <p class="history-figure">${f.followers != null ? `<b>${number(f.followers)}</b> follower` : ''}${f.following != null ? ` · ${number(f.following)} seguiti` : ''}${f.media_count != null ? ` · ${number(f.media_count)} post` : ''}</p>
+      ${f.biography ? `<p class="timelapse-bio">${esc(f.biography)}</p>` : ''}</div></div>
+      <input type="range" min="0" max="${timelapse.frames.length - 1}" value="${timelapse.at}" aria-label="Giorno del timelapse">`;
+    $('#timelapse input').addEventListener('input', event => { stopTimelapse(); timelapse.at = Number(event.target.value); showFrame(); });
+  }
+  function stopTimelapse() { clearInterval(timelapse.timer); timelapse.timer = 0; $('#timelapsePlay').textContent = 'Riproduci il timelapse'; }
+  $('#timelapsePlay').addEventListener('click', async () => {
+    if (timelapse.timer) { stopTimelapse(); return; }
+    const data = await api(`/api/profiles/${Number(state.profile)}/history`).catch(report); if (!data) return;
+    timelapse.frames = data.frames || []; if (!timelapse.frames.length) return;
+    if (timelapse.at >= timelapse.frames.length - 1) timelapse.at = 0;
+    $('#timelapse').hidden = false; showFrame();
+    $('#timelapsePlay').textContent = 'Ferma';
+    timelapse.timer = setInterval(() => { if (timelapse.at >= timelapse.frames.length - 1) { stopTimelapse(); return; } timelapse.at += 1; showFrame(); }, 900);
+  });
   async function playStories(profileId) {
     const since = Math.floor(Date.now() / 1000) - 86400;
     const page = await api('/api/posts?' + new URLSearchParams({profile: profileId, kind: 'story', since, order: 'oldest'}));
@@ -635,7 +712,7 @@
     $('#profileDialogTitle').textContent = profile ? `Modifica @${profile.username}` : 'Aggiungi un profilo';
     $('#profileUsername').value = profile?.username || username; $('#profileUsername').readOnly = !!profile;
     $('#profileSubmit').textContent = profile ? 'Salva modifiche' : 'Aggiungi profilo';
-    ['posts', 'reels', 'stories', 'highlights', 'tagged'].forEach(key => { $('#p' + key[0].toUpperCase() + key.slice(1)).checked = profile ? !!profile[key] : key !== 'highlights'; });
+    ['posts', 'reels', 'stories', 'highlights', 'tagged', 'social'].forEach(key => { $('#p' + key[0].toUpperCase() + key.slice(1)).checked = profile ? !!profile[key] : key !== 'highlights'; });
     const select = $('#pInterval'); const value = profile?.interval_minutes || 10;
     $$('option[data-custom]', select).forEach(option => option.remove());
     if (![...select.options].some(option => Number(option.value) === Number(value))) { const option = new Option(every(value, true), value); option.dataset.custom = '1'; select.add(option); }
@@ -880,7 +957,7 @@
   $('#profileForm').addEventListener('submit', event => {
     event.preventDefault(); $('#profileError').textContent = '';
     const ident = $('#profileId').value;
-    const body = {username: $('#profileUsername').value.trim(), interval_minutes: Number($('#pInterval').value), posts: $('#pPosts').checked, reels: $('#pReels').checked, stories: $('#pStories').checked, highlights: $('#pHighlights').checked, tagged: $('#pTagged').checked};
+    const body = {username: $('#profileUsername').value.trim(), interval_minutes: Number($('#pInterval').value), posts: $('#pPosts').checked, reels: $('#pReels').checked, stories: $('#pStories').checked, highlights: $('#pHighlights').checked, tagged: $('#pTagged').checked, social: $('#pSocial').checked};
     if (!$('#pAccountField').hidden) body.account = $('#pAccount').value;
     if (!body.posts && !body.reels && !body.stories && !body.highlights) { $('#profileError').textContent = 'Scegli almeno un tipo di contenuto.'; return; }
     busy(event.submitter, async () => {

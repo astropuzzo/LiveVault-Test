@@ -18,7 +18,7 @@ from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-from . import login, push, store, security, sync
+from . import login, push, social, store, security, sync
 
 mimetypes.add_type('application/manifest+json', '.webmanifest')
 
@@ -280,7 +280,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def profile_values(self, body):
         values = {}
-        for key in ['enabled', 'posts', 'reels', 'stories', 'highlights', 'tagged', 'notify']:
+        for key in ['enabled', 'posts', 'reels', 'stories', 'highlights', 'tagged', 'notify', 'social']:
             if key in body:
                 values[key] = int(bool(body[key]))
         if 'account' in body:
@@ -357,6 +357,16 @@ class Handler(BaseHTTPRequestHandler):
             return self.download_zip(int(match[1]), str(query.get('collection', ''))[:300])
         if path == '/api/push/key':
             return self.send_json({'key': push.keys()[1]})
+        match = re.fullmatch(r'/api/profiles/(\d+)/social', path)
+        if match:
+            return self.send_json(social.overview(int(match[1])))
+        match = re.fullmatch(r'/api/profiles/(\d+)/people', path)
+        if match:
+            name = str(query.get('list', ''))
+            if name not in social.LISTS:
+                raise HTTPError(400, 'Elenco non valido.')
+            offset = str(query.get('offset', '0'))
+            return self.send_json(social.people(int(match[1]), name, str(query.get('q', '')), int(offset) if offset.isdigit() else 0))
         match = re.fullmatch(r'/api/profiles/(\d+)/history', path)
         if match:
             return self.send_json(store.profile_history(int(match[1])))

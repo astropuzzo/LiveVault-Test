@@ -122,8 +122,21 @@
           <button id="collectionsMore" class="round-button scroll-more" type="button" aria-label="Altre raccolte" hidden><svg aria-hidden="true"><use href="#i-right"/></svg></button>
         </div>
         <div id="accessNote" class="access" role="status" hidden></div>
+        <details id="socialBox" class="history">
+          <summary>Interazioni</summary>
+          <div class="social-tabs" role="tablist" aria-label="Interazioni">
+            <button type="button" role="tab" data-social-tab="ranking" aria-selected="true">Classifica</button>
+            <button type="button" role="tab" data-social-tab="likes" aria-selected="false">Like</button>
+            <button type="button" role="tab" data-social-tab="followers" aria-selected="false">Follower</button>
+            <button type="button" role="tab" data-social-tab="following" aria-selected="false">Seguiti</button>
+            <button type="button" role="tab" data-social-tab="changes" aria-selected="false">Cambiamenti</button>
+          </div>
+          <div id="socialBody" class="social-body"></div>
+        </details>
         <details id="historyBox" class="history" hidden>
           <summary>Storia del profilo</summary>
+          <div class="form-actions history-play"><button id="timelapsePlay" class="button small" type="button">Riproduci il timelapse</button></div>
+          <div id="timelapse" class="timelapse" hidden aria-live="polite"></div>
           <div id="historyChart" class="history-chart"></div>
           <ol id="historyList" class="history-list"></ol>
         </details>
@@ -285,6 +298,7 @@
       <label><input id="pStories" type="checkbox" checked><span>Storie<small>Serve l’account Instagram</small></span></label>
       <label><input id="pHighlights" type="checkbox"><span>In evidenza<small>Serve l’account Instagram</small></span></label>
       <label><input id="pTagged" type="checkbox" checked><span>Post in cui è taggato<small>Pubblicati da altri account. Serve l’account Instagram</small></span></label>
+      <label><input id="pSocial" type="checkbox" checked><span>Interazioni<small>Follower, seguiti e like, letti a poco a poco con gli account collegati</small></span></label>
     </fieldset>
     <div id="pAccountField" hidden>
       <label for="pAccount">Account Instagram da usare</label>

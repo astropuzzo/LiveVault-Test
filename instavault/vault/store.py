@@ -120,6 +120,10 @@ def initialize():
           endpoint TEXT PRIMARY KEY, p256dh TEXT NOT NULL, auth TEXT NOT NULL, created_at INTEGER NOT NULL)''')
         if 'notify' not in {row[1] for row in c.execute('PRAGMA table_info(profiles)')}:
             c.execute('ALTER TABLE profiles ADD COLUMN notify INTEGER NOT NULL DEFAULT 0')
+        from . import social
+        social.initialize(c)
+        if 'username' not in {row[1] for row in c.execute('PRAGMA table_info(profile_history)')}:
+            c.execute("ALTER TABLE profile_history ADD COLUMN username TEXT NOT NULL DEFAULT ''")
         # tagged: also archive the posts of other accounts that tag the profile.
         if 'tagged' not in {row[1] for row in c.execute('PRAGMA table_info(profiles)')}:
             c.execute('ALTER TABLE profiles ADD COLUMN tagged INTEGER NOT NULL DEFAULT 1')
@@ -349,12 +353,13 @@ def record_history(profile_id, snapshot):
     something visible changed. Returns True when the photo is new."""
     with db() as c:
         last = c.execute('SELECT * FROM profile_history WHERE profile_id=? ORDER BY at DESC, id DESC LIMIT 1', (profile_id,)).fetchone()
-        changed = not last or any(snapshot[k] != last[k] for k in ['full_name', 'biography', 'avatar_key'])
+        changed = not last or any(snapshot.get(k, '') != last[k] for k in ['full_name', 'biography', 'avatar_key', 'username'] if k != 'username' or last[k])
         if last and not changed and time.strftime('%Y-%m-%d', time.gmtime(last['at'])) == time.strftime('%Y-%m-%d', time.gmtime(now())):
             return False
-        c.execute('''INSERT INTO profile_history(profile_id,at,followers,following,media_count,full_name,biography,avatar,avatar_key)
-            VALUES (?,?,?,?,?,?,?,?,?)''', (profile_id, now(), snapshot['followers'], snapshot['following'], snapshot['media_count'],
-                                           snapshot['full_name'], snapshot['biography'], snapshot.get('avatar', ''), snapshot['avatar_key']))
+        c.execute('''INSERT INTO profile_history(profile_id,at,followers,following,media_count,full_name,biography,avatar,avatar_key,username)
+            VALUES (?,?,?,?,?,?,?,?,?,?)''', (profile_id, now(), snapshot['followers'], snapshot['following'], snapshot['media_count'],
+                                           snapshot['full_name'], snapshot['biography'], snapshot.get('avatar', ''), snapshot['avatar_key'],
+                                           snapshot.get('username', '')))
         return not last or snapshot['avatar_key'] != last['avatar_key']
 
 
@@ -364,8 +369,8 @@ def profile_history(profile_id):
     changes, previous = [], None
     for row in rows:
         if previous:
-            for field, label in [('full_name', 'Nome'), ('biography', 'Bio'), ('avatar_key', 'Foto profilo')]:
-                if row[field] != previous[field]:
+            for field, label in [('username', 'Username'), ('full_name', 'Nome'), ('biography', 'Bio'), ('avatar_key', 'Foto profilo')]:
+                if row[field] != previous[field] and (field != 'username' or (row[field] and previous[field])):
                     changes.append({'at': row['at'], 'field': field, 'label': label,
                                     'before': previous[field] if field != 'avatar_key' else '',
                                     'after': row[field] if field != 'avatar_key' else '',
@@ -373,7 +378,11 @@ def profile_history(profile_id):
                                     'after_photo': row['id'] if field == 'avatar_key' and row['avatar'] else None})
         previous = row
     points = [{'at': r['at'], 'followers': r['followers'], 'following': r['following'], 'media_count': r['media_count']} for r in rows]
-    return {'points': points, 'changes': changes[::-1]}
+    # Timelapse: one frame per day kept, with the photo, name and bio of that day.
+    frames = [{'at': r['at'], 'username': r['username'], 'full_name': r['full_name'], 'biography': r['biography'],
+               'followers': r['followers'], 'following': r['following'], 'media_count': r['media_count'],
+               'photo': r['id'] if r['avatar'] else None} for r in rows]
+    return {'points': points, 'changes': changes[::-1], 'frames': frames}
 
 
 def recent_stories():

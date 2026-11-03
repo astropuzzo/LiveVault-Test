@@ -157,3 +157,23 @@ and running) and can drop finished entries, only the empty checks or all of
 them; queued and running jobs stay, archived posts keep their files and only
 lose the link to that history line. While Instagram waits for a login code
 the form shows the code field alone.
+
+Interazioni (`vault/social.py`) reads followers, following and likes while no
+download is due, a little at a time: batches of up to 40 pages (about 1000
+people) with random 3–9 s pauses and a longer one every ten pages, then the
+account rests 2–4 hours; each account has 120 pages a day for all of this.
+Measured on 3 November 2026: Instagram orders a list differently for each
+account (its cursor is just a position), so a pass is walked by one account
+from start to end and accounts take turns between passes; pages overlap, so
+people are counted by Instagram id. A pass is complete when it saw 95 % of the
+count the profile shows. New people are events only after the first complete
+pass; someone is gone only when missing from two complete passes in a row.
+Instagram shows only about 50 followers of a big profile the account does not
+follow: that list is marked capped and never used for departures. A private
+profile is read only by the account that sees it. Likes: the about 100 likers
+Instagram returns per post, for posts of the last 30 days, once a day; the
+ranking adds them to the archived comments. Any Instagram error ends the batch
+and rests that account (48 h after a throttle) without touching the profile's
+downloads. A renamed profile is found again by its Instagram id; the history
+records username, name, bio and photo, and "Storia del profilo" plays them as a
+day-by-day timelapse.

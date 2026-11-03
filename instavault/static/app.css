@@ -177,6 +177,25 @@ input[readonly]{background:var(--raised)}
 .button.danger{background:var(--danger);border-color:var(--danger);color:var(--on-primary)}
 .options input[type=radio]{flex:none;width:18px;height:18px;min-height:0;margin:0;padding:0;accent-color:var(--text)}
 .home{max-width:470px;margin:0 auto}
+.social-tabs{display:flex;flex-wrap:wrap;gap:6px;padding:12px 14px 0}
+.social-tabs button{min-height:36px;padding:0 12px;border:1px solid var(--line);border-radius:18px;font:inherit;font-size:14px;color:var(--text-2);background:none;cursor:pointer}
+.social-tabs button[aria-selected=true]{color:var(--text);border-color:var(--text);font-weight:600}
+.social-body{display:grid;gap:10px;padding:12px 14px 14px}
+.ranking,.likes-log{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.ranking li,.likes-log li{display:flex;align-items:center;gap:10px;min-height:44px;font-size:14px}
+.ranking li>div,.likes-log li>div{display:grid;flex:1;min-width:0}
+.ranking small,.likes-log small{color:var(--text-2);font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rank{width:28px;text-align:right;color:var(--text-2);font-variant-numeric:tabular-nums}
+.change{width:24px;text-align:center;font-weight:700}
+.change.new{color:var(--ok)}
+.change.gone{color:var(--danger)}
+.empty-line{color:var(--text-2);font-size:14px}
+.history-play{padding:12px 14px 0;margin:0}
+.timelapse{padding:12px 14px 0;display:grid;gap:10px}
+.timelapse-card{display:flex;gap:14px;align-items:flex-start;min-height:120px}
+.timelapse-card img,.timelapse-photo{width:96px;height:96px;border-radius:50%;object-fit:cover;flex:none;background:var(--raised)}
+.timelapse-bio{white-space:pre-line;color:var(--text-2);font-size:14px}
+.timelapse input[type=range]{width:100%}
 .accounts{list-style:none;margin:0 0 12px;padding:0;display:grid;gap:8px}
 .accounts li{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;padding:10px 12px;border:1px solid var(--line);border-radius:8px}
 .accounts li > div:first-child{display:grid;gap:2px;min-width:0}
