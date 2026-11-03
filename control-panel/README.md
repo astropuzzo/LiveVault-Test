@@ -95,7 +95,10 @@ Terza installazione alle 13:45:05 UTC dal bcc90ce: tasti «… ricerca» e `sw.j
 un file alla volta. File uguali al ramo, `/healthz` 200, `/api/biglie/hunt` 401 senza sessione,
 font 200. La ricerca è passata attraverso il riavvio del pannello senza fermarsi: stesso processo
 delle 13:16:38 nella sua unità, giro 99 alle 13:44:49 e giro 100 alle 13:45:06. Con il service
-worker nuovo «Manda una prova» arriva sul telefono del proprietario (Firefox).
+worker nuovo «Manda una prova» arriva sul telefono del proprietario (Firefox). Alle 15:08 UTC,
+mentre il proprietario passava l'account Oracle a Pay As You Go, la ricerca è stata limitata a 2
+OCPU e 12 GB, il massimo gratuito da giugno 2026 (repository Biglie, commit a9dac25), e
+riavviata con `openastro-action biglie_hunt_start`: ora gira in `biglie-hunt-1793718512.service`.
 
 Non ancora provati: Avvia e Riavvia premuti nella scheda, e un avviso vero della ricerca
 (macchina trovata, errore, processo fermo), che passa dallo stesso invio della prova. La copia in
