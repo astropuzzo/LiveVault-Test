@@ -326,6 +326,7 @@ if __name__ == '__main__':
     panel.threading.Thread(target=panel.history_loop, name='telemetry', daemon=True).start()
     panel.threading.Thread(target=panel.media_streaming.maintenance_loop, name='media-hls-cleanup', daemon=True).start()
     panel.threading.Thread(target=torrent_manager.maintenance_loop, name='torrent-import', daemon=True).start()
+    panel.threading.Thread(target=panel.biglie_hunt.watch_loop, name='biglie-hunt-watch', daemon=True).start()
     server = panel.ThreadingHTTPServer((panel.HOST, panel.PORT), Handler)
     print(f'OpenAstro Control listening on http://{panel.HOST}:{panel.PORT}', flush=True)
     server.serve_forever()

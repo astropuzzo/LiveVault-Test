@@ -99,6 +99,15 @@ case "$action" in
     storage_rollback)
         /usr/local/libexec/rollback-internal-runtime.sh
         ;;
+    biglie_hunt_start)
+        hunt=/home/astro/biglie-oci/hunt.sh
+        [[ -x "$hunt" ]] || { echo "Ricerca Biglie non installata in /home/astro/biglie-oci." >&2; exit 1; }
+        # Its own transient unit as astro, outside the panel's sandbox and cgroup: a panel restart never stops it.
+        systemd-run --quiet --collect --unit="biglie-hunt-$(date +%s)" --uid=astro --gid=astro \
+            --working-directory=/home/astro/biglie-oci -p Type=forking "$hunt" start
+        record started
+        echo "Ricerca Biglie avviata."
+        ;;
     reboot)
         record scheduled
         systemd-run --quiet --unit=openastro-control-reboot --on-active=3s /usr/bin/systemctl reboot

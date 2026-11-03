@@ -4,6 +4,62 @@ PWA mobile-first per monitorare e controllare il server ASIAIR/Debian. Il serviz
 vive sulla memoria interna, resta accessibile senza NVMe e viene pubblicato solo
 in HTTPS tramite Tailscale Funnel, con autenticazione applicativa.
 
+## Ricerca server Biglie (2026-11-03)
+
+In **App e ricavi**, sopra Bonsai Sensei, la scheda «Ricerca del server Oracle» segue
+`oracle_vm.py hunt` del repository Biglie (`tools/regia`), che sull'ASIAIR gira in
+`/home/astro/biglie-oci` e cerca la macchina Arm gratuita per la regia. Mostra stato, giro,
+ultimo aggiornamento, processo vivo o fermo, taglia e IP della macchina quando c'è, le ultime 40
+righe di `hunt.log` (orari del nodo, fuso di Londra) e i tasti Pausa/Riprendi, Ferma, Riavvia e
+Avvia. Usa `hunt.sh` così com'è; se va cambiato, la modifica sta nel repository Biglie.
+
+- Lettura: `GET /api/biglie/hunt` (sessione) esegue `hunt.sh status` e `hunt.sh log 40` come
+  astro, al massimo ogni 5 s per tutti i client insieme (`biglie_hunt.snapshot`). Il browser
+  chiede ogni 10 s solo con la vista App aperta e la pagina visibile.
+- Comandi: `POST /api/biglie/hunt` con `{"action": ...}`, sessione e CSRF. Pausa, Riprendi e
+  Ferma chiamano `hunt.sh`; Avvia passa da `sudo -n openastro-action biglie_hunt_start`, che con
+  `systemd-run` crea l'unità transitoria `biglie-hunt-<epoch>.service` (utente astro,
+  `Type=forking`). La ricerca resta fuori dal cgroup del pannello: un riavvio del pannello non la
+  ferma. Riavvia è `hunt.sh stop` seguito dallo stesso avvio; il pannello non lancia mai
+  `hunt.sh start` o `restart` dal proprio processo.
+- Servizio: `ProtectHome=true` diventa `ProtectHome=tmpfs` con
+  `BindPaths=-/home/astro/biglie-oci`. Della home il pannello vede solo quella cartella; chiavi
+  SSH e `~/.oci` restano nascoste. Il `-` lascia partire il pannello anche senza la cartella.
+- Dopo un riavvio dell'ASIAIR la ricerca non riparte da sola e la scheda propone Avvia. L'avvio
+  automatico all'accensione non c'è: si aggiunge solo con l'OK del proprietario.
+
+Avvisi sul telefono: lo stesso Web Push di InstaVault (`instavault/vault/push.py`, VAPID e
+cifratura RFC 8291), portato in `web_push.py` con chiave e iscrizioni del pannello in
+`/var/lib/openastro-control/vapid.pem` e `push-subscriptions.json` (0600). Le iscrizioni di
+InstaVault stanno nella sua cartella dati (uid 10002, 0700) e il pannello non le legge: ogni
+telefono attiva gli avvisi una volta dalla scheda, con «Attiva avvisi» e poi «Manda una prova».
+Sono accettati solo i servizi push dei browser (FCM, Mozilla, Apple, Windows), al massimo 20
+dispositivi. `sw.js` mostra la notifica e al tocco apre `/#apps`. Su iPhone il pannello deve
+stare sulla schermata Home.
+
+Il thread `biglie-hunt-watch`, avviato da `upload_server.py`, legge lo stato ogni 30 s e salva
+l'ultimo visto in `/var/lib/openastro-control/biglie-hunt.json`; al primo giro memorizza senza
+avvisare. Avvisa quando nello stato compare una macchina nuova o più grande (anche se `running`
+è durato meno di 30 s), per un errore a processo vivo (lo stesso testo al massimo una volta
+l'ora), quando il processo muore senza `stopped` o `top` e senza un Ferma o Riavvia dal pannello
+nell'ultimo minuto, e dopo un riavvio dell'ASIAIR se la ricerca era attiva (`boot_id` cambiato).
+Non avvia né ferma mai la ricerca.
+
+Installazione: `scripts/biglie-hunt-panel-install.sh`, con sudo sul nodo (comandi del pacchetto
+in testa al file). Salva prima `/opt/openastro-control`, la unit e `openastro-action` in
+`/var/backups/openastro/20261103-biglie-hunt/control-before.tar.gz` e riavvia solo
+`openastro-control.service`: le sessioni del pannello vanno rifatte. Ripristino: estrarre
+quell'archivio in `/`, togliere `biglie_hunt.py`, `web_push.py` e `static/biglie-hunt.js`, poi
+`systemctl daemon-reload` e riavvio del solo pannello. I file di stato si possono lasciare.
+
+Stato al 2026-11-03: sorgente e test sul ramo `codex/biglie-hunt`, **non ancora installato sul
+nodo**: il riavvio del pannello aspetta l'OK del proprietario. Verificati: `tests/test_biglie_hunt.py`,
+`tests/test_biglie_hunt_frontend.cjs`, anteprima locale a 1440×1000 e 412×915 con stato e
+registro letti dal nodo (giro 24, nessun posto), `systemd-analyze verify` della nuova unit sul
+nodo e lo schema `Type=forking` con un'unità utente usa e getta che lanciava `sleep`. Non ancora
+provati: una notifica su un telefono vero, l'avvio tramite `openastro-action` (serve root) e la
+scheda col pannello installato.
+
 ## Interfaccia grafite (2026-11-02)
 
 Sostituisce il tema cosmic glass. I colori blu e viola dell'interfaccia sono

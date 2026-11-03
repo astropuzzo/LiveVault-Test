@@ -837,6 +837,7 @@ function selectView(view, updateHash = false) {
   const labels = {dashboard:'Dashboard',media:'Media',apps:'App e ricavi',storage:'Storage',system:'Sistema',nina:'NINA',pihole:'Pi-hole',advanced:'Avanzate'};
   currentView = view;
   globalThis.OpenAstroApps?.setView(view);
+  globalThis.OpenAstroBiglie?.setView(view);
   document.body.dataset.view = view;
   $$('[data-view-panel]').forEach(panel => panel.classList.toggle('active', panel.dataset.viewPanel === view));
   $$('[data-route]').forEach(link => {
@@ -1000,6 +1001,7 @@ async function refresh() {
 function showLogin() {
   signedIn = false;
   globalThis.OpenAstroApps?.setAuthenticated(false);
+  globalThis.OpenAstroBiglie?.setAuthenticated(false);
   csrf = '';
   stopHold();
   if ($('#confirmDialog').open) $('#confirmDialog').close();
@@ -1012,6 +1014,7 @@ function showLogin() {
 function hideLogin() {
   signedIn = true;
   globalThis.OpenAstroApps?.setAuthenticated(true);
+  globalThis.OpenAstroBiglie?.setAuthenticated(true);
   $('main').inert = false;
   const sidebar = $('.sidebar'); if (sidebar) sidebar.inert = false;
   const mobileNav = $('.mobile-nav'); if (mobileNav) mobileNav.inert = false;

@@ -1,0 +1,134 @@
+const {test} = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const source = fs.readFileSync('control-panel/static/biglie-hunt.js', 'utf8');
+const tick = () => new Promise(resolve => setImmediate(resolve));
+
+function setup() {
+  const pending = [], nodes = new Map(), listeners = {}, toasts = [];
+  function node(selector) {
+    if (!nodes.has(selector)) nodes.set(selector, {textContent:'', hidden:false, disabled:false, className:'', scrollTop:0, scrollHeight:0, clientHeight:0,
+      setAttribute() {}, addEventListener(name, fn) { this[name] = fn; }});
+    return nodes.get(selector);
+  }
+  const document = {hidden:false, querySelector:node, addEventListener:(name, fn) => { listeners[name] = fn; }};
+  let logins = 0;
+  const ctx = vm.createContext({document, AbortController, AbortSignal, console, Date, URL, csrf:'csrf-1',
+    fetch:(url, options = {}) => new Promise((resolve, reject) => pending.push({url, options, resolve, reject})),
+    toast:(message, error) => toasts.push([message, Boolean(error)]),
+    showLogin:() => { logins++; ctx.OpenAstroBiglie.setAuthenticated(false); },
+    setTimeout:() => 0, clearTimeout:() => {}, setInterval:() => 0});
+  vm.runInContext(source, ctx);
+  return {ctx, node, pending, listeners, document, toasts, logins:() => logins};
+}
+const reply = (data, status = 200) => ({ok:status === 200, status, json:async () => data});
+const searching = {ok:true, installed:true, checked:1762170120, alive:true, state:'searching', round:4, updated:1762170118, machine:null,
+  error:null, paused:false, log:['11:40:28 round 3: no room', '11:41:58 round 4: no room'], log_ok:true};
+
+async function shown(data) {
+  const s = setup();
+  s.ctx.OpenAstroBiglie.setView('apps');
+  s.pending[0].resolve(reply(data)); await tick();
+  return s;
+}
+
+test('the hunt is read only while the App view is on screen', async () => {
+  const s = setup();
+  await s.ctx.OpenAstroBiglie.refresh(); assert.equal(s.pending.length, 0);
+  s.document.hidden = true; s.ctx.OpenAstroBiglie.setView('apps'); assert.equal(s.pending.length, 0);
+  s.document.hidden = false; s.listeners.visibilitychange();
+  assert.equal(s.pending.length, 1); assert.equal(s.pending[0].url, '/api/biglie/hunt');
+  const signal = s.pending[0].options.signal;
+  s.ctx.OpenAstroBiglie.setView('media'); assert.equal(signal.aborted, true);
+  s.pending[0].resolve(reply(searching)); await tick();
+  assert.equal(s.node('#biglieHuntRound').textContent, '');
+});
+
+test('a searching hunt shows its round, its log and only the controls that apply', async () => {
+  const s = await shown(searching);
+  assert.equal(s.node('#biglieHuntChip').textContent, 'In cerca');
+  assert.match(s.node('#biglieHuntSummary').textContent, /^Oracle non ha ancora posto/);
+  assert.equal(s.node('#biglieHuntProcess').textContent, 'Attivo');
+  assert.equal(s.node('#biglieHuntRound').textContent, '4');
+  assert.equal(s.node('#biglieHuntMachine').textContent, 'Non ancora');
+  assert.equal(s.node('#biglieHuntLog').textContent, '11:40:28 round 3: no room\n11:41:58 round 4: no room');
+  assert.equal(s.node('#biglieHuntStart').disabled, true);
+  assert.equal(s.node('#biglieHuntStop').disabled, false);
+  assert.equal(s.node('#biglieHuntRestart').disabled, false);
+  assert.equal(s.node('#biglieHuntPause').textContent, 'Pausa');
+  assert.ok(!source.includes('innerHTML'), 'log lines and errors are written as text only');
+});
+
+test('the machine, a stop, a crash and a first run each read as such', async () => {
+  const s = await shown({...searching, state:'growing', machine:{name:'biglie-regia', ocpus:2, gb:12, ip:'141.144.200.7'}});
+  assert.equal(s.node('#biglieHuntMachine').textContent, '2 OCPU · 12 GB');
+  assert.equal(s.node('#biglieHuntIp').textContent, '141.144.200.7');
+  assert.equal(s.node('#biglieHuntChip').className, 'status-chip good');
+  const describe = s.ctx.OpenAstroBiglie.describe;
+  assert.deepEqual(JSON.parse(JSON.stringify(describe({...searching, alive:false, state:'stopped'})[0])), ['Ferma', '']);
+  assert.deepEqual(JSON.parse(JSON.stringify(describe({...searching, alive:false, state:'searching'})[0])), ['Processo fermo', 'bad']);
+  assert.match(describe({...searching, alive:false, state:'searching'})[1], /ultimo stato: in cerca di posto/);
+  assert.equal(describe({...searching, alive:false, state:null})[1], 'La ricerca non è mai partita su questo nodo. Premi Avvia.');
+  assert.equal(describe({...searching, state:'error', error:'ServiceError: NotAuthenticated'})[1], 'Ultimo errore: ServiceError: NotAuthenticated. La ricerca riprova da sola.');
+  assert.equal(describe({...searching, paused:true})[0][0], 'Pausa richiesta');
+  const stopped = await shown({...searching, alive:false, state:'stopped'});
+  assert.equal(stopped.node('#biglieHuntStart').disabled, false);
+  assert.equal(stopped.node('#biglieHuntStop').disabled, true);
+  assert.equal(stopped.node('#biglieHuntRestart').disabled, true);
+});
+
+test('actions send the CSRF token, lock the controls and read the hunt again', async () => {
+  const s = await shown({...searching, alive:false, state:'stopped'});
+  s.node('#biglieHuntStart').click();
+  const post = s.pending[1];
+  assert.equal(post.url, '/api/biglie/hunt'); assert.equal(post.options.method, 'POST');
+  assert.equal(post.options.headers['X-CSRF-Token'], 'csrf-1'); assert.equal(post.options.body, '{"action":"start"}');
+  assert.equal(s.node('#biglieHuntStart').disabled, true); assert.equal(s.node('#biglieHuntPause').disabled, true);
+  post.resolve(reply({ok:true, message:'Ricerca avviata.'})); await tick();
+  assert.deepEqual(s.toasts.at(-1), ['Ricerca avviata.', false]);
+  assert.equal(s.pending.length, 3); assert.equal(s.pending[2].url, '/api/biglie/hunt');
+});
+
+test('the pause button follows the pause flag', async () => {
+  const s = await shown({...searching, state:'paused', paused:true});
+  assert.equal(s.node('#biglieHuntPause').textContent, 'Riprendi');
+  s.node('#biglieHuntPause').click();
+  assert.equal(s.pending[1].options.body, '{"action":"resume"}');
+  s.pending[1].resolve(reply({ok:false, error:'Comando non riuscito.'}, 500)); await tick();
+  assert.deepEqual(s.toasts.at(-1), ['Comando non riuscito.', true]);
+});
+
+test('a missing folder disables every control and says why', async () => {
+  const s = await shown({ok:true, installed:false, checked:1762170120});
+  assert.equal(s.node('#biglieHuntChip').textContent, 'Non installata');
+  assert.match(s.node('#biglieHuntSummary').textContent, /\/home\/astro\/biglie-oci/);
+  for (const id of ['#biglieHuntPause', '#biglieHuntStop', '#biglieHuntRestart', '#biglieHuntStart']) assert.equal(s.node(id).disabled, true);
+});
+
+test('the service worker shows a pushed notice and opens the panel on tap', async () => {
+  const handlers = {}, shown = [], opened = [];
+  const self = {addEventListener:(name, fn) => { handlers[name] = fn; }, location:{origin:'https://panel.example'}, skipWaiting:() => {},
+    registration:{scope:'https://panel.example/', showNotification:async (title, options) => { shown.push([title, options]); }},
+    clients:{matchAll:async () => [], openWindow:async url => { opened.push(url); }, claim:async () => {}}};
+  vm.runInContext(fs.readFileSync('control-panel/static/sw.js', 'utf8'), vm.createContext({self, URL}));
+  let waited;
+  handlers.push({data:{json:() => ({title:'Biglie: trovata la macchina Arm', body:'4 OCPU e 24 GB. IP 203.0.113.24.', url:'/#apps'})}, waitUntil:promise => { waited = promise; }});
+  await waited;
+  assert.deepEqual(JSON.parse(JSON.stringify(shown)), [['Biglie: trovata la macchina Arm', {body:'4 OCPU e 24 GB. IP 203.0.113.24.', data:{url:'/#apps'}, lang:'it'}]]);
+  let closed = false;
+  handlers.notificationclick({notification:{close:() => { closed = true; }, data:{url:'/#apps'}}, waitUntil:promise => { waited = promise; }});
+  await waited;
+  assert.equal(closed, true); assert.deepEqual(opened, ['https://panel.example/#apps']);
+});
+
+test('a 401 returns to the login and clears the log and the address', async () => {
+  const s = await shown({...searching, machine:{name:'biglie-regia', ocpus:4, gb:24, ip:'141.144.200.7'}});
+  const again = s.ctx.OpenAstroBiglie.refresh();
+  s.pending[1].resolve(reply({}, 401)); await again;
+  assert.equal(s.logins(), 1);
+  assert.equal(s.node('#biglieHuntIp').textContent, '…');
+  assert.equal(s.node('#biglieHuntLog').textContent, 'In attesa del registro…');
+  assert.equal(s.node('#biglieHuntStart').disabled, true);
+  await s.ctx.OpenAstroBiglie.refresh(); assert.equal(s.pending.length, 2);
+});
