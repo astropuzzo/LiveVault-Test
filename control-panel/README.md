@@ -10,9 +10,10 @@ In **App e ricavi**, sopra Bonsai Sensei, la scheda «Ricerca del server Oracle�
 `oracle_vm.py hunt` del repository Biglie (`tools/regia`), che sull'ASIAIR gira in
 `/home/astro/biglie-oci` e cerca la macchina Arm gratuita per la regia. Mostra stato, giro,
 ultimo aggiornamento, processo vivo o fermo, taglia e IP della macchina quando c'è, le ultime 40
-righe di `hunt.log` (orari del nodo, fuso di Londra), i tasti Pausa/Riprendi, Ferma, Riavvia e
-Avvia e la scelta «Riprova ogni» 15, 30, 60 o 90 secondi. Usa `hunt.sh` così com'è; se va
-cambiato, la modifica sta nel repository Biglie.
+righe di `hunt.log` (orari del nodo, fuso di Londra), i tasti Pausa/Riprendi, «Ferma ricerca»,
+«Riavvia ricerca» e «Avvia ricerca» e la scelta «Riprova ogni» 15, 30, 60 o 90 secondi. I tasti
+dicono «ricerca» perché il 2026-11-03 un «Riavvia» è stato scambiato per «Riavvia ASIAIR». Usa
+`hunt.sh` così com'è; se va cambiato, la modifica sta nel repository Biglie.
 
 - Lettura: `GET /api/biglie/hunt` (sessione) esegue `hunt.sh status` e `hunt.sh log 40` come
   astro, al massimo ogni 5 s per tutti i client insieme (`biglie_hunt.snapshot`). Il browser
@@ -39,8 +40,9 @@ cifratura RFC 8291), portato in `web_push.py` con chiave e iscrizioni del pannel
 InstaVault stanno nella sua cartella dati (uid 10002, 0700) e il pannello non le legge: ogni
 telefono attiva gli avvisi una volta dalla scheda, con «Attiva avvisi» e poi «Manda una prova».
 Sono accettati solo i servizi push dei browser (FCM, Mozilla, Apple, Windows), al massimo 20
-dispositivi. `sw.js` mostra la notifica e al tocco apre `/#apps`. Su iPhone il pannello deve
-stare sulla schermata Home.
+dispositivi. `sw.js` mostra la notifica e al tocco apre `/#apps`. Quando si installa mette in
+cache i file uno per uno: un file che non si scarica non blocca più l'installazione, e quindi gli
+avvisi. Su iPhone il pannello deve stare sulla schermata Home.
 
 Il thread `biglie-hunt-watch`, avviato da `upload_server.py`, legge lo stato ogni 30 s e salva
 l'ultimo visto in `/var/lib/openastro-control/biglie-hunt.json`; al primo giro memorizza senza

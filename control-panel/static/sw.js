@@ -1,6 +1,7 @@
-const CACHE = "openastro-control-v3.5.1-biglie2";
+const CACHE = "openastro-control-v3.5.1-biglie3";
 const SHELL = ["/app.css", "/apps.css", "/apps.js", "/biglie-hunt.js", "/media-upload.css", "/torrent-manager.css", "/diagnostics.css", "/diagnostics.js", "/app.js", "/torrent-manager.js", "/fonts/mona-sans-latin-wght.woff2", "/media-upload.js", "/hls.min.js", "/icon.svg", "/manifest.webmanifest"];
-self.addEventListener("install", event => event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(SHELL)).then(() => self.skipWaiting())));
+// One file at a time: a file that fails to load must not leave an older worker, without notices, in charge.
+self.addEventListener("install", event => event.waitUntil(caches.open(CACHE).then(cache => Promise.all(SHELL.map(path => cache.add(path).catch(() => {})))).then(() => self.skipWaiting())));
 self.addEventListener("activate", event => event.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(key => key.startsWith("openastro-control-") && key !== CACHE).map(key => caches.delete(key)))).then(() => self.clients.claim())));
 self.addEventListener("fetch", event => {
   const url = new URL(event.request.url);

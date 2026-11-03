@@ -36,10 +36,10 @@
     if (!d.ok) return [['Non raggiungibile','bad'], `Il pannello non risponde: ${sentence(d.error || 'errore senza dettagli')} Nuovo controllo tra 10 secondi.`];
     if (!d.installed) return [['Non installata',''], 'Il pannello non vede la cartella /home/astro/biglie-oci: la cartella manca oppure il servizio del pannello non la monta.'];
     if (!d.alive) {
-      if (!d.state) return [['Mai avviata',''], 'La ricerca non è mai partita su questo nodo. Premi Avvia.'];
+      if (!d.state) return [['Mai avviata',''], 'La ricerca non è mai partita su questo nodo. Premi «Avvia ricerca».'];
       if (d.state === 'top') return [['Finita','good'], `La macchina Arm ha la taglia massima gratuita: ${size}${ip}. La ricerca è finita.`];
-      if (d.state === 'stopped') return [['Ferma',''], 'La ricerca è ferma. Premi Avvia per farla ripartire.'];
-      return [['Processo fermo','bad'], `Il processo non è attivo (ultimo stato: ${LABELS[d.state] || 'sconosciuto'}). Dopo un riavvio dell’ASIAIR non riparte da solo: premi Avvia.`];
+      if (d.state === 'stopped') return [['Ferma',''], 'La ricerca è ferma. Premi «Avvia ricerca» per farla ripartire.'];
+      return [['Processo fermo','bad'], `Il processo non è attivo (ultimo stato: ${LABELS[d.state] || 'sconosciuto'}). Dopo un riavvio dell’ASIAIR non riparte da solo: premi «Avvia ricerca».`];
     }
     if (d.paused && d.state !== 'paused') return [['Pausa richiesta','warn'], 'Pausa richiesta: la ricerca si ferma entro 5 secondi.'];
     if (!d.state || d.state === 'stopped') return [['In avvio',''], 'Il processo è partito: lo stato arriva alla fine del primo giro.'];
@@ -50,7 +50,7 @@
       case 'growing': return [chip, `Macchina Arm attiva: ${size}${ip}. Oracle non ha spazio per una taglia più grande, la ricerca riprova da sola.`];
       case 'top': return [chip, `Macchina Arm alla taglia massima gratuita: ${size}${ip}. La ricerca è finita.`];
       case 'error': return [chip, `Ultimo errore: ${sentence(d.error || 'senza dettagli')} La ricerca riprova da sola.`];
-      case 'paused': return [chip, `In pausa: nessun tentativo finché non premi Riprendi.${m ? ` La macchina Arm resta attiva: ${size}${ip}.` : ''}`];
+      case 'paused': return [chip, `In pausa: nessun tentativo finché non premi «Riprendi».${m ? ` La macchina Arm resta attiva: ${size}${ip}.` : ''}`];
       default: return [chip, 'Stato non riconosciuto: controlla il registro qui sotto.'];
     }
   }

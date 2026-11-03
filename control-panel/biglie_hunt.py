@@ -139,7 +139,7 @@ def _start(paused: bool) -> tuple[dict, int]:
         return {"ok": False, "error": _clean(output, 300) or "Avvio non riuscito."}, 500
     message = "Ricerca avviata."
     if paused:
-        message += " È in pausa: premi Riprendi per farla cercare."
+        message += " È in pausa: premi «Riprendi» per farla cercare."
     return {"ok": True, "message": message}, 200
 
 
@@ -234,9 +234,9 @@ def notices(seen: dict | None, current: dict, boot: str, now: float, panel_stop_
     if seen.get("alive") and not alive:
         label = LABELS.get(state or "", "sconosciuto")
         if boot and seen.get("boot") and seen.get("boot") != boot:
-            due.append(("Biglie: ricerca ferma dopo il riavvio", "L’ASIAIR si è riavviata e la ricerca non riparte da sola. Premi Avvia nel pannello.", "normal"))
+            due.append(("Biglie: ricerca ferma dopo il riavvio", "L’ASIAIR si è riavviata e la ricerca non riparte da sola. Premi «Avvia ricerca» nel pannello.", "normal"))
         elif state not in ("stopped", "top") and now - panel_stop_at >= STOP_GRACE_SECONDS:
-            due.append(("Biglie: la ricerca si è fermata", f"Il processo non è più attivo (ultimo stato: {label}). Premi Avvia nel pannello.", "high"))
+            due.append(("Biglie: la ricerca si è fermata", f"Il processo non è più attivo (ultimo stato: {label}). Premi «Avvia ricerca» nel pannello.", "high"))
     elif alive and state == "error":
         error = current.get("error") or "Errore senza dettagli"
         if error != seen.get("error") or now - (seen.get("error_at") or 0) >= ERROR_REPEAT_SECONDS:

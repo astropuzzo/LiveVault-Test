@@ -236,7 +236,7 @@ def test_an_error_without_machine_fields_keeps_the_known_machine():
 def test_a_dead_process_notifies_unless_stopped_on_purpose_or_finished():
     notes, _ = seen_after((status("searching"), 0), (status("searching", alive=False), 30))
     assert notes == [("Biglie: la ricerca si è fermata",
-                      "Il processo non è più attivo (ultimo stato: in cerca di posto). Premi Avvia nel pannello.", "high")]
+                      "Il processo non è più attivo (ultimo stato: in cerca di posto). Premi «Avvia ricerca» nel pannello.", "high")]
     assert seen_after((status("searching"), 0), (status("searching", alive=False), 30), panel_stop_at=10)[0] == []
     assert seen_after((status("searching"), 0), (status("stopped", alive=False), 30))[0] == []
     assert seen_after((status("searching"), 0), (status("error", alive=False, error="x"), 30))[0][0][0] == "Biglie: la ricerca si è fermata"
@@ -246,7 +246,7 @@ def test_a_reboot_gets_its_own_notice():
     seen = hunt.notices(None, status("searching"), "boot-a", 0, 0)[1]
     due, _ = hunt.notices(seen, status("searching", alive=False), "boot-b", 600, 0)
     assert due == [("Biglie: ricerca ferma dopo il riavvio",
-                    "L’ASIAIR si è riavviata e la ricerca non riparte da sola. Premi Avvia nel pannello.", "normal")]
+                    "L’ASIAIR si è riavviata e la ricerca non riparte da sola. Premi «Avvia ricerca» nel pannello.", "normal")]
 
 
 def test_watcher_persists_and_sends_to_the_panel(tmp_path, monkeypatch):

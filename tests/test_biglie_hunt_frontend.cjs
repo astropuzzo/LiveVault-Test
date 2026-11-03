@@ -69,7 +69,7 @@ test('the machine, a stop, a crash and a first run each read as such', async () 
   assert.deepEqual(JSON.parse(JSON.stringify(describe({...searching, alive:false, state:'stopped'})[0])), ['Ferma', '']);
   assert.deepEqual(JSON.parse(JSON.stringify(describe({...searching, alive:false, state:'searching'})[0])), ['Processo fermo', 'bad']);
   assert.match(describe({...searching, alive:false, state:'searching'})[1], /ultimo stato: in cerca di posto/);
-  assert.equal(describe({...searching, alive:false, state:null})[1], 'La ricerca non è mai partita su questo nodo. Premi Avvia.');
+  assert.equal(describe({...searching, alive:false, state:null})[1], 'La ricerca non è mai partita su questo nodo. Premi «Avvia ricerca».');
   assert.equal(describe({...searching, state:'error', error:'ServiceError: NotAuthenticated'})[1], 'Ultimo errore: ServiceError: NotAuthenticated. La ricerca riprova da sola.');
   assert.equal(describe({...searching, paused:true})[0][0], 'Pausa richiesta');
   const stopped = await shown({...searching, alive:false, state:'stopped'});
@@ -137,6 +137,20 @@ test('the service worker shows a pushed notice and opens the panel on tap', asyn
   handlers.notificationclick({notification:{close:() => { closed = true; }, data:{url:'/#apps'}}, waitUntil:promise => { waited = promise; }});
   await waited;
   assert.equal(closed, true); assert.deepEqual(opened, ['https://panel.example/#apps']);
+});
+
+test('the service worker installs even when one cached file fails', async () => {
+  // On the node the fonts folder was unreadable for a month: every install failed and the old worker never showed a notice.
+  const handlers = {}, cached = [];
+  let waiting = false;
+  const self = {addEventListener:(name, fn) => { handlers[name] = fn; }, location:{origin:'https://panel.example'}, skipWaiting:() => { waiting = true; }};
+  const cache = {add:async path => { if (path.startsWith('/fonts/')) throw new TypeError('Failed to fetch'); cached.push(path); }};
+  vm.runInContext(fs.readFileSync('control-panel/static/sw.js', 'utf8'), vm.createContext({self, URL, caches:{open:async () => cache}}));
+  let installed;
+  handlers.install({waitUntil:promise => { installed = promise; }});
+  await installed;
+  assert.equal(waiting, true);
+  assert.ok(cached.includes('/biglie-hunt.js') && !cached.some(path => path.startsWith('/fonts/')));
 });
 
 test('a 401 returns to the login and clears the log and the address', async () => {
