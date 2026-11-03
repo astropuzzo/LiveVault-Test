@@ -971,3 +971,32 @@ def test_a_pass_by_another_account_marks_no_story_deleted(vault, monkeypatch):
     # The same account on the next pass does notice it.
     run_with_accounts(vault, monkeypatch, source_for(), stories=1, posts=0)
     assert [p['shortcode'] for p in store.list_posts({'deleted': '1'})['items']] == ['CF']
+
+
+def test_a_post_is_marked_deleted_only_when_instagram_confirms_it(vault):
+    profile = vault['profile']
+    with store.db() as c:
+        for code in ['Gone', 'Elsewhere', 'Seen']:
+            c.execute("INSERT INTO posts(profile_id,external_key,shortcode,kind,published_at,archived_at,complete) VALUES (?,?,?,'post',?,1,1)",
+                      (profile, 'post:' + code, code, store.now() - 3600))
+    asked = []
+    def gone(code):
+        asked.append(code)
+        return code == 'Gone'
+    # Elsewhere was just not reached in this pass (the feed is not in date order): Instagram still has it.
+    assert store.mark_deleted(profile, ('post', 'reel'), {'Seen'}, store.now() - 86400, gone=gone) == 1
+    assert sorted(asked) == ['Elsewhere', 'Gone']
+    assert [p['shortcode'] for p in store.list_posts({'deleted': '1'})['items']] == ['Gone']
+
+
+def test_only_a_clear_not_found_counts_as_removed(vault):
+    class MediaNotFound(Exception): pass
+    class ClientConnectionError(Exception): pass
+    def source(error):
+        def info(pk):
+            raise error
+        return SimpleNamespace(client=SimpleNamespace(media_pk_from_code=lambda code: 1, media_info_v1=info))
+    assert sync.removed_from_instagram(source(MediaNotFound()), 'X') is True
+    assert sync.removed_from_instagram(source(ClientConnectionError()), 'X') is False
+    alive = SimpleNamespace(client=SimpleNamespace(media_pk_from_code=lambda code: 1, media_info_v1=lambda pk: {}))
+    assert sync.removed_from_instagram(alive, 'X') is False

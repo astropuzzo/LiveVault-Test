@@ -92,6 +92,21 @@ ACCOUNT_PROBLEMS = {
 PAUSE_SECONDS = 3 * 3600
 
 
+def removed_from_instagram(source, shortcode):
+    """True only when Instagram answers that the post does not exist."""
+    try:
+        if hasattr(source, 'client'):
+            source.client.media_info_v1(source.client.media_pk_from_code(shortcode))
+        else:
+            instaloader.Post.from_shortcode(source.context, shortcode)
+        return False
+    except Exception as exc:
+        name = type(exc).__name__
+        if name in STOPPING:
+            raise
+        return name in {'MediaNotFound', 'ClientNotFoundError', 'QueryReturnedNotFoundException'}
+
+
 def session_owner(cookies):
     owner = str(cookies.get('ds_user_id') or '')
     if not owner.isdigit():
@@ -604,7 +619,9 @@ class Worker:
         for index, item in enumerate(iterator):
             self.check(job_id)
             seen['codes'].add(item.shortcode)
-            seen['oldest'] = int(item.date_utc.replace(tzinfo=__import__('datetime').timezone.utc).timestamp())
+            stamp = int(item.date_utc.replace(tzinfo=__import__('datetime').timezone.utc).timestamp())
+            # Pinned posts and collabs come first, so the feed is not in date order.
+            seen['oldest'] = min(seen['oldest'] or stamp, stamp)
             added = self.archive(profile, item, kind, job_id)
             known = 0 if added else known + 1
             with store.db() as c:
@@ -743,7 +760,10 @@ class Worker:
             posts_seen = self.seen.get('post')
             if posts_seen and posts_seen['fresh'] and posts_seen['oldest'] and 'post' in successful and same_account:
                 codes = posts_seen['codes'] | (self.seen.get('reel') or {}).get('codes', set())
-                deleted['post'] = store.mark_deleted(profile['id'], ('post', 'reel'), codes, posts_seen['oldest'])
+                # Only the last two weeks, and only what Instagram confirms is gone.
+                since = max(posts_seen['oldest'], store.now() - 14 * 86400)
+                deleted['post'] = store.mark_deleted(profile['id'], ('post', 'reel'), codes, since,
+                                                     gone=lambda code: removed_from_instagram(value, code))
             if warnings and not successful:
                 raise RuntimeError('Selected content categories temporarily unavailable')
             self.backfill_comments(profile)

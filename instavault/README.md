@@ -92,10 +92,13 @@ for that pass and never the media download. In the viewer a commenter's name
 opens a menu: the Instagram profile, and the archived profile or the add form.
 
 Activity shows thumbnails of what each update downloaded (`posts.job_id`).
-Deletions are read from what a check fetches anyway, never from extra
-requests: a pass over the posts that starts from the newest one marks
-`posts.deleted_at` on archived posts and Reels newer than the oldest item it
-listed but missing from it; a story still inside its 24 hours that the story
+Deletions start from what a check fetches anyway: an archived post or Reel
+from the last 14 days, newer than the oldest item a fresh pass listed and
+missing from it, is a candidate. The feed is not in date order (pinned posts
+and collabs come first), so each candidate is then asked about on its own, at
+most 5 per check, and `posts.deleted_at` is set only when Instagram answers
+that it does not exist. (On 3 November 2026 the old date-order rule wrongly
+marked 426 items of one profile; they were cleared.) A story still inside its 24 hours that the story
 list no longer has is marked the same way. An item that shows up again is
 restored. Older archive entries are never checked. Marked items carry a bin
 icon and the Cancellati view lists them. A private profile the connected account cannot

@@ -392,9 +392,11 @@ def job_items(c, job_id, limit=12):
         FROM posts p WHERE p.job_id=? AND p.complete=1 ORDER BY p.published_at DESC LIMIT ?''', (job_id, limit))]
 
 
-def mark_deleted(profile_id, kinds, seen, since, story=False):
+def mark_deleted(profile_id, kinds, seen, since, story=False, gone=None, limit=5):
     # Archived items newer than `since` that Instagram no longer lists were
-    # deleted (or hidden); one that shows up again is restored.
+    # deleted (or hidden); one that shows up again is restored. With `gone`,
+    # each candidate is asked about one by one and marked only when Instagram
+    # says it no longer exists: a feed is not always in date order.
     seen = list(seen)
     marks = ','.join('?' * len(seen)) or "''"
     kind_sql = "kind='story' AND collection=''" if story else f"kind IN ({','.join('?' * len(kinds))})"
@@ -403,9 +405,14 @@ def mark_deleted(profile_id, kinds, seen, since, story=False):
         if seen:
             c.execute(f'UPDATE posts SET deleted_at=NULL WHERE profile_id=? AND {kind_sql} AND shortcode IN ({marks})',
                       [profile_id, *args, *seen])
-        return c.execute(f'''UPDATE posts SET deleted_at=? WHERE profile_id=? AND {kind_sql} AND complete=1
-            AND deleted_at IS NULL AND published_at>? AND shortcode NOT IN ({marks})''',
-                         [now(), profile_id, *args, since, *seen]).rowcount
+        candidates = [r[0] for r in c.execute(f'''SELECT shortcode FROM posts WHERE profile_id=? AND {kind_sql} AND complete=1
+            AND deleted_at IS NULL AND published_at>? AND shortcode NOT IN ({marks}) ORDER BY published_at DESC''',
+                         [profile_id, *args, since, *seen])]
+    if gone:
+        candidates = [code for code in candidates[:limit] if gone(code)]
+    with db() as c:
+        return sum(c.execute(f'UPDATE posts SET deleted_at=? WHERE profile_id=? AND {kind_sql} AND shortcode=? AND deleted_at IS NULL',
+                             [now(), profile_id, *args, code]).rowcount for code in candidates)
 
 
 def post_files(ids):
