@@ -73,9 +73,13 @@ prima anche che il pannello vede `hunt.sh` nel suo spazio dei mount e che il wat
 il primo stato (`searching`, processo vivo). Prima dell'installazione:
 `tests/test_biglie_hunt.py`, `tests/test_biglie_hunt_frontend.cjs`, anteprima locale a 1440×1000
 e 412×915 con stato e registro letti dal nodo, `systemd-analyze verify` della nuova unit e lo
-schema `Type=forking` con un'unità utente usa e getta che lanciava `sleep`. Non ancora provati:
-Riavvia dal pannello con la ricerca dentro `biglie-hunt-<epoch>.service`, una notifica su un
-telefono vero e la scheda vista con una sessione. La copia in `/opt/openastro-ops` (root, 0700)
+schema `Type=forking` con un'unità utente usa e getta che lanciava `sleep`. Alle 13:14 UTC
+l'ASIAIR è stata riavviata dal tasto «Riavvia ASIAIR» del pannello (`reboot` nel registro delle
+azioni) e la ricerca si è fermata, come previsto. Alle 13:16:38 è ripartita da
+`sudo -n openastro-action biglie_hunt_start`, lanciato via ssh come astro, lo stesso comando del
+tasto Avvia: gira in `biglie-hunt-1793711798.service` (cgroup `system.slice`, MainPID il processo
+Python) con il nuovo `oracle_vm.py`. Non ancora provati: Avvia e Riavvia premuti nella scheda,
+un'attesa scelta letta dalla ricerca in corso e una notifica su un telefono vero. La copia in `/opt/openastro-ops` (root, 0700)
 non è aggiornata: va allineata con root, senza sovrascrivere aggiunte di altri rami.
 
 ## Interfaccia grafite (2026-11-02)
