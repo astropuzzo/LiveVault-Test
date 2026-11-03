@@ -177,3 +177,8 @@ and rests that account (48 h after a throttle) without touching the profile's
 downloads. A renamed profile is found again by its Instagram id; the history
 records username, name, bio and photo, and "Storia del profilo" plays them as a
 day-by-day timelapse.
+
+Like and comment counts (`posts.like_total`, `comment_total`, `counts_at`)
+come free with every check that lists a post. Commenters and likers of recent
+posts are read again by age (`REFRESH_AFTER`): every hour for two days, every
+six hours for a week, daily for a month, at most four posts each per check.

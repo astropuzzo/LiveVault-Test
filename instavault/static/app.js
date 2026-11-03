@@ -789,7 +789,7 @@
     bindImageFallback($('#postAuthor'));
     $('#postCaption').innerHTML = linkify(result.caption || result.collection || '');
     $('#postCaption').hidden = !(result.caption || result.collection);
-    $('#postMetadata').textContent = `pubblicato ${day(result.published_at)} · archiviato ${day(result.archived_at)}${result.deleted_at ? ` · cancellato su Instagram ${day(result.deleted_at)}` : ''}`;
+    $('#postMetadata').textContent = `${result.like_total != null ? `${plural(result.like_total, 'like', 'like')} · ${plural(result.comment_total, 'commento', 'commenti')} (dati del ${moment(result.counts_at)}) · ` : ''}pubblicato ${day(result.published_at)} · archiviato ${day(result.archived_at)}${result.deleted_at ? ` · cancellato su Instagram ${day(result.deleted_at)}` : ''}`;
     // A collab or repost shows once and names every archived profile that has it.
     const others = (result.profiles || []).filter(name => name !== result.username);
     $('#postShared').hidden = !others.length;

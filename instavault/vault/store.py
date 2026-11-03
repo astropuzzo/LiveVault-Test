@@ -122,6 +122,11 @@ def initialize():
             c.execute('ALTER TABLE profiles ADD COLUMN notify INTEGER NOT NULL DEFAULT 0')
         from . import social
         social.initialize(c)
+        # Counts as Instagram shows them, refreshed whenever a check lists the post.
+        columns = {row[1] for row in c.execute('PRAGMA table_info(posts)')}
+        for column in ['like_total', 'comment_total', 'counts_at']:
+            if column not in columns:
+                c.execute(f'ALTER TABLE posts ADD COLUMN {column} INTEGER')
         if 'username' not in {row[1] for row in c.execute('PRAGMA table_info(profile_history)')}:
             c.execute("ALTER TABLE profile_history ADD COLUMN username TEXT NOT NULL DEFAULT ''")
         # tagged: also archive the posts of other accounts that tag the profile.

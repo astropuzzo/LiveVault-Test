@@ -77,6 +77,27 @@ def plural(count, one, many):
     return f'{count} {one if count == 1 else many}'
 
 
+def engagement(item):
+    """Like and comment counts the listing already carries, or (None, None)."""
+    try:
+        likes, comments = getattr(item, 'likes', None), getattr(item, 'comments', None)
+        return (int(likes), int(comments or 0)) if isinstance(likes, int) else (None, None)
+    except (TypeError, ValueError):
+        return None, None
+
+
+# How often a post's commenters and likers are read again, by its age.
+REFRESH_AFTER = [(2 * 86400, 3600), (7 * 86400, 6 * 3600), (30 * 86400, 86400)]
+REFRESH_POSTS = 4
+
+
+def refresh_due(column, limit=REFRESH_POSTS):
+    rules = ' OR '.join(f'(p.published_at>=:now-{age} AND (p.{column} IS NULL OR p.{column}<:now-{every}))'
+                        for age, every in REFRESH_AFTER)
+    return f'''SELECT p.id, p.shortcode FROM posts p WHERE p.profile_id=:profile AND p.complete=1
+        AND p.kind IN ('post','reel') AND ({rules}) ORDER BY p.published_at DESC LIMIT {int(limit)}'''
+
+
 def poster_of(relative):
     return relative.rsplit('.', 1)[0] + '.poster.jpg'
 
@@ -478,9 +499,12 @@ class Worker:
             raise ValueError('Identificativo media non valido')
         # A tagged post is someone else's: its own key, so it never mixes with the profile's posts.
         external = ('story:' if story else 'tagged:' if kind == 'tagged' else 'post:') + shortcode
+        likes, comments = engagement(item) if not story else (None, None)
         with store.db() as c:
             existing = c.execute('SELECT * FROM posts WHERE profile_id=? AND external_key=?', (profile['id'], external)).fetchone()
             assets = list(c.execute('SELECT * FROM media WHERE post_id=?', (existing['id'],))) if existing else []
+            if existing and likes is not None:
+                c.execute('UPDATE posts SET like_total=?,comment_total=?,counts_at=? WHERE id=?', (likes, comments, store.now(), existing['id']))
             if existing and existing['complete'] and assets and all(self.stored(a) for a in assets):
                 if kind == 'reel' and existing['kind'] != 'reel':
                     c.execute("UPDATE posts SET kind='reel' WHERE id=?", (existing['id'],))
@@ -538,6 +562,8 @@ class Worker:
                           (ident, index, 'video' if video else 'image', relative, thumb, size, digest, width, height, self.mode))
         with store.db() as c:
             c.execute('UPDATE posts SET complete=1,caption=?,kind=?,owner=?,links=?,job_id=? WHERE id=?', (caption, kind, owner, links, job_id, ident))
+            if likes is not None:
+                c.execute('UPDATE posts SET like_total=?,comment_total=?,counts_at=? WHERE id=?', (likes, comments, store.now(), ident))
             c.execute('UPDATE jobs SET downloaded=downloaded+1 WHERE id=?', (job_id,))
         if not story:
             self.save_comments(ident, shortcode)
@@ -562,6 +588,33 @@ class Worker:
                           (post_id, item['id'], item['username'], item['full_name'], item['text'], item['created_at'], item['likes']))
             c.execute('UPDATE posts SET comments_at=? WHERE id=?', (store.now(), post_id))
         return True
+
+    def refresh_recent(self, profile):
+        """Comments and likers of recent posts: hourly while new, then less often."""
+        source = self.source
+        args = {'profile': profile['id'], 'now': store.now()}
+        with store.db() as c:
+            stale = list(c.execute(refresh_due('comments_at'), args))
+        for row in stale:
+            if STOP.is_set() or not self.save_comments(row['id'], row['shortcode']):
+                break
+        if not hasattr(source, 'likers') or self.comments_blocked:
+            return
+        with store.db() as c:
+            stale = list(c.execute(refresh_due('likes_at'), args))
+        for row in stale:
+            if STOP.is_set():
+                return
+            try:
+                found = source.likers(row['shortcode'])
+            except Exception as exc:
+                print(f'InstaVault: likers {row["shortcode"]}: {type(exc).__name__}: {instagram_detail(exc)}', flush=True)
+                return
+            with store.db() as c:
+                for user in found:
+                    c.execute('INSERT OR IGNORE INTO likes(post_id,pk,username,full_name,first_seen) VALUES (?,?,?,?,?)',
+                              (row['id'], user['pk'], user['username'], user['full_name'], store.now()))
+                c.execute('UPDATE posts SET likes_at=? WHERE id=?', (store.now(), row['id']))
 
     def backfill_comments(self, profile, limit=12):
         # Posts archived before comments existed get theirs a few at a time.
@@ -786,6 +839,7 @@ class Worker:
                                                      gone=lambda code: removed_from_instagram(value, code))
             if warnings and not successful:
                 raise RuntimeError('Selected content categories temporarily unavailable')
+            self.refresh_recent(profile)
             self.backfill_comments(profile)
             with store.db() as c:
                 message = 'Prima importazione in corso' if more else 'Archivio aggiornato'

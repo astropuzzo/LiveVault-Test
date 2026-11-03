@@ -22,8 +22,6 @@ DAILY_PAGES = 120           # per account, all lists and likes together
 ACCOUNT_REST = (2 * 3600, 4 * 3600)
 LIST_REST = (3600, 3 * 3600)
 COMPLETE_SHARE = 0.95
-LIKE_POSTS = 5              # posts per batch whose likers are read
-LIKE_WINDOW = 30 * 86400
 PROBLEM_REST = {'pause': 48 * 3600, 'login': 12 * 3600, None: 6 * 3600}
 
 
@@ -160,26 +158,6 @@ def finish_pass(crawl, pages_this_batch, first_page_users):
                   (1 if complete else 0, last_complete, now + random.randint(*LIST_REST), crawl['profile_id'], crawl['list']))
 
 
-def read_likes(source, account_id, profile_id, limit=LIKE_POSTS):
-    with store.db() as c:
-        posts = list(c.execute('''SELECT id, shortcode FROM posts WHERE profile_id=? AND complete=1 AND kind IN ('post','reel')
-            AND published_at>=? AND (likes_at IS NULL OR likes_at<?) ORDER BY published_at DESC LIMIT ?''',
-                               (profile_id, store.now() - LIKE_WINDOW, store.now() - 86400, limit)))
-    for post in posts:
-        if sync.STOP.is_set() or busy():
-            return
-        users = source.client.private_request(f'media/{source.client.media_pk_from_code(post["shortcode"])}/likers/').get('users', [])
-        spend(account_id)
-        with store.db() as c:
-            for user in users:
-                if user.get('pk') and user.get('username'):
-                    c.execute('INSERT OR IGNORE INTO likes(post_id,pk,username,full_name,first_seen) VALUES (?,?,?,?,?)',
-                              (post['id'], str(user['pk']), user['username'], str(user.get('full_name') or ''), store.now()))
-            c.execute('UPDATE posts SET likes_at=? WHERE id=?', (store.now(), post['id']))
-        if not pause(4, 12):
-            return
-
-
 def step(loader=None):
     """One batch for the most overdue list, if an account may read it now. True when something ran."""
     loader = loader or sync.loader
@@ -216,8 +194,6 @@ def run_batch(crawl, account, loader):
     pages, first_page_users = 0, 0
     try:
         source = loader(account['id'])
-        if crawl['list'] == 'followers':
-            read_likes(source, account['id'], crawl['profile_id'])
         cursor = crawl['cursor']
         limit = min(BATCH_PAGES, budget_left(next(a for a in sync.accounts() if a['id'] == account['id'])))
         while pages < limit and not sync.STOP.is_set() and not busy():

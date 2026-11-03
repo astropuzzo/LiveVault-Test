@@ -109,6 +109,16 @@ class MediaAdapter:
         return {1: 'GraphImage', 2: 'GraphVideo', 8: 'GraphSidecar'}[int(_get(self.item, 'media_type'))]
 
     @property
+    def likes(self):
+        value = _get(self.item, 'like_count')
+        return None if value is None else int(value)
+
+    @property
+    def comments(self):
+        value = _get(self.item, 'comment_count')
+        return None if value is None else int(value)
+
+    @property
     def is_video(self):
         return int(_get(self.item, 'media_type')) == 2
 
@@ -346,6 +356,13 @@ class MobileSource:
         if status.get('following'):
             return ''
         return 'requested' if status.get('outgoing_request') else 'not_followed'
+
+    def likers(self, shortcode):
+        # About the latest 100 people who liked it: all Instagram returns.
+        pk = self.client.media_pk_from_code(shortcode)
+        users = self.client.private_request(f'media/{pk}/likers/').get('users', [])
+        return [{'pk': str(u['pk']), 'username': u['username'], 'full_name': str(u.get('full_name') or '')[:150]}
+                for u in users if u.get('pk') and u.get('username')]
 
     def comments(self, shortcode):
         # One page, the newest ones: a single request per post.

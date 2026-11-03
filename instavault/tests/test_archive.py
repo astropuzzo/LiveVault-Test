@@ -1151,12 +1151,26 @@ def test_a_private_profile_is_read_only_by_the_account_that_sees_it(vault, monke
     assert used == ['22']
 
 
-def test_likes_of_recent_posts_feed_the_ranking(vault, monkeypatch):
-    social, client, loader = social_setup(vault, monkeypatch, {'': ([1], '')}, followers=1)
+def test_recent_posts_get_counts_commenters_and_likers_again_by_age(vault, monkeypatch):
+    from vault import social
+    profile = vault['profile']
     with store.db() as c:
-        post = c.execute("INSERT INTO posts(profile_id,external_key,shortcode,kind,published_at,archived_at,complete) VALUES (?,'post:L','L','post',?,1,1)",
-                         (vault['profile'], store.now() - 3600)).lastrowid
-        c.execute("INSERT INTO comments(post_id,external_id,username,text,created_at) VALUES (?,?,?,?,1)", (post, 'c1', 'fan', 'Bella'))
-    run_pass(social, loader, vault)
-    ranking = social.overview(vault['profile'])['ranking']
+        for code, age, read in [('N', 3600, store.now() - 7200), ('W', 5 * 86400, store.now() - 7200), ('O', 90 * 86400, None)]:
+            c.execute("INSERT INTO posts(profile_id,external_key,shortcode,kind,published_at,archived_at,complete,comments_at,likes_at) VALUES (?,?,?,'post',?,1,1,?,?)",
+                      (profile, 'post:' + code, code, store.now() - age, read, read))
+    asked = {'comments': [], 'likers': []}
+    class Source:
+        def comments(self, code):
+            asked['comments'].append(code)
+            return [{'id': 'c' + code, 'username': 'fan', 'full_name': 'Fan', 'text': 'Bella', 'created_at': 1, 'likes': 0}]
+        def likers(self, code):
+            asked['likers'].append(code)
+            return [{'pk': '900', 'username': 'fan', 'full_name': 'Fan'}]
+    worker = sync.Worker(); worker.source = Source(); worker.comments_blocked = False
+    worker.refresh_recent({'id': profile})
+    # Only the hour-old post is due: the five-day one was read two hours ago, the old one is out of the window.
+    assert asked == {'comments': ['N'], 'likers': ['N']}
+    ranking = social.overview(profile)['ranking']
     assert ranking[0]['username'] == 'fan' and ranking[0]['likes'] == 1 and ranking[0]['comments'] == 1
+    assert sync.engagement(SimpleNamespace(likes=10304, comments=120)) == (10304, 120)
+    assert sync.engagement(SimpleNamespace()) == (None, None)
