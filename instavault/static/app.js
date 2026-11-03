@@ -281,20 +281,33 @@
       $('#feedEmpty').hidden = !!$('#feed').children.length;
     } finally { feed.loading = false; }
   }
+  // A tagged post belongs to whoever published it, not to the archived profile it tags.
+  const author = post => post.kind === 'tagged' && post.owner ? post.owner : post.username;
+  function authorLink(post) {
+    const name = author(post);
+    if (name === post.username) return `<button class="link name" type="button" data-profile="${Number(post.profile_id)}">${esc(name)}</button>`;
+    const known = (state.summary?.profiles || []).find(p => p.username === name);
+    return known ? `<button class="link name" type="button" data-profile="${Number(known.id)}">${esc(name)}</button>`
+      : `<span class="mention"><button class="link name" type="button" data-mention="${esc(name)}" aria-haspopup="menu">${esc(name)}</button></span>`;
+  }
+  function authorAvatar(post, size) {
+    const name = author(post);
+    return name === post.username ? avatar(post, size) : avatar((state.summary?.profiles || []).find(p => p.username === name) || {username: name}, size);
+  }
   function feedCard(post) {
     const media = post.media?.[0]; if (!media) return '';
     const kind = post.kind === 'reel' || media.kind === 'video' ? 'reel' : post.media.length > 1 ? 'stack' : '';
     const ratio = media.width && media.height ? Math.min(Math.max(media.width / media.height, .8), 1.91) : .8;
     const others = (post.profiles || []).filter(name => name !== post.username);
     return `<article class="feed-card">
-      <header>${avatar(post, 'small')}<button class="link name" type="button" data-profile="${Number(post.profile_id)}">${esc(post.username)}</button><span class="stamp">${esc(day(post.published_at))}</span></header>
-      <button class="feed-media" type="button" data-post="${post.id}" aria-label="Apri il ${post.kind === 'reel' ? 'Reel' : 'post'} di @${esc(post.username)}" data-ratio="${ratio.toFixed(3)}">
+      <header>${authorAvatar(post, 'small')}${authorLink(post)}${post.kind === 'tagged' ? `<span class="stamp">tagga @${esc(post.username)}</span>` : ''}<span class="stamp">${esc(day(post.published_at))}</span></header>
+      <button class="feed-media" type="button" data-post="${post.id}" aria-label="Apri il ${post.kind === 'reel' ? 'Reel' : 'post'} di @${esc(author(post))}" data-ratio="${ratio.toFixed(3)}">
         <img src="${BASE}/media/${media.id}/thumb" alt="" loading="lazy" decoding="async" width="${media.width || 480}" height="${media.height || 600}">
         ${kind ? `<span class="tile-kind">${icon(kind)}</span>` : ''}${post.deleted_at ? `<span class="tile-deleted" title="Cancellato su Instagram">${icon('deleted')}</span>` : ''}
       </button>
       <div class="feed-body">
         ${others.length || post.comment_count ? `<p class="feed-meta">${others.length ? `<span>${icon('shared')}Con ${others.map(name => '@' + esc(name)).join(', ')}</span>` : ''}${post.comment_count ? `<button class="link" type="button" data-post="${post.id}">${icon('comment')}${plural(post.comment_count, 'commento', 'commenti')}</button>` : ''}</p>` : ''}
-        ${post.caption ? `<p class="feed-caption"><b>${esc(post.username)}</b> ${esc(post.caption)}</p>` : ''}
+        ${post.caption ? `<p class="feed-caption"><b>${esc(author(post))}</b> ${esc(post.caption)}</p>` : ''}
       </div>
     </article>`;
   }
@@ -457,12 +470,12 @@
     const media = post.media?.[0]; if (!media) return '';
     const kind = post.kind === 'reel' || media.kind === 'video' ? 'reel' : post.media.length > 1 ? 'stack' : post.collection ? 'ring' : post.kind === 'story' ? 'story' : '';
     const label = post.kind === 'reel' ? 'Reel' : post.collection ? 'In evidenza' : post.kind === 'story' ? 'Storia' : post.media.length > 1 ? 'Carosello' : 'Post';
-    const owner = state.profile ? '' : `@${esc(post.username)} · `;
+    const owner = state.profile && post.kind !== 'tagged' ? '' : `@${esc(author(post))} · `;
     const width = media.width || 480; const height = media.height || 600;
     const here = profileById(state.profile)?.username || post.username;
     const shared = (post.profiles || []).filter(name => name !== here);
     const picked = state.selecting && state.selected.has(post.id);
-    return `<button class="tile${picked ? ' selected' : ''}" type="button" data-post="${post.id}"${state.selecting ? ` aria-pressed="${picked}"` : ''} aria-label="${esc(label)} di @${esc(post.username)}, ${esc(day(post.published_at))}">
+    return `<button class="tile${picked ? ' selected' : ''}" type="button" data-post="${post.id}"${state.selecting ? ` aria-pressed="${picked}"` : ''} aria-label="${esc(label)} di @${esc(author(post))}${post.kind === 'tagged' ? ` che tagga @${esc(post.username)}` : ''}, ${esc(day(post.published_at))}">
       <span class="tile-check" aria-hidden="true">${icon('check')}</span>
       <img src="${BASE}/media/${media.id}/thumb" alt="" width="${width}" height="${height}" loading="lazy" decoding="async">
       ${kind ? `<span class="tile-kind">${icon(kind)}</span>` : ''}
@@ -695,7 +708,7 @@
     if (state.playlist && !state.playlist.ids.includes(Number(id))) state.playlist = null;
     const result = await api('/api/posts/' + Number(id)); state.post = result; state.slide = slide < 0 ? result.media.length - 1 : slide;
     $('#postAuthor').innerHTML = `${avatar(result, 'small')}<div><button class="link name" type="button" data-profile="${Number(result.profile_id)}">${esc(result.username)}</button>${result.full_name ? `<small>${esc(result.full_name)}</small>` : ''}</div>`;
-    if (result.kind === 'tagged' && result.owner) $('#postAuthor').innerHTML = `${avatar({username: result.owner})}<div><span class="mention"><button class="link name" type="button" data-mention="${esc(result.owner)}" aria-haspopup="menu">${esc(result.owner)}</button></span><small>tagga @${esc(result.username)}</small></div>`;
+    if (result.kind === 'tagged' && result.owner) $('#postAuthor').innerHTML = `${authorAvatar(result)}<div>${authorLink(result)}<small>tagga @${esc(result.username)}</small></div>`;
     bindImageFallback($('#postAuthor'));
     $('#postCaption').innerHTML = linkify(result.caption || result.collection || '');
     $('#postCaption').hidden = !(result.caption || result.collection);
@@ -740,7 +753,7 @@
     item.src = `${BASE}/media/${media.id}`;
     if (media.width && media.height) { item.width = media.width; item.height = media.height; }
     if (media.kind === 'video') { item.controls = true; item.playsInline = true; item.preload = 'auto'; item.poster = `${BASE}/media/${media.id}/thumb`; }
-    else { item.alt = post.caption?.slice(0, 150) || `Foto di @${post.username}`; item.decoding = 'async'; }
+    else { item.alt = post.caption?.slice(0, 150) || `Foto di @${author(post)}`; item.decoding = 'async'; }
     item.addEventListener('error', () => { $('#viewerMedia').innerHTML = '<p class="viewer-missing">File non disponibile. Controlla che l’NVMe sia collegato.</p>'; }, {once: true});
     $('#viewerMedia').append(item);
     placeStoryLinks(item);
