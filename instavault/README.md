@@ -142,3 +142,7 @@ throttled account rests three hours instead, without moving the load at once,
 since all accounts share the node's address. Deletions are marked only when
 the same account made the previous pass, because accounts see different
 stories (close friends, hidden ones).
+
+Every profile has its own address, `#@username`, and a tab other than the
+first one adds `/reel`, `/story`, `/tagged` or `/highlight`; back, forward,
+reload and bookmarks land on the same profile and tab.

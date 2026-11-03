@@ -420,16 +420,34 @@
     if (location.hash !== hash) history[replace ? 'replaceState' : 'pushState'](null, '', hash);
     window.scrollTo({top: 0, behavior: 'instant'});
   }
-  function selectProfile(id) {
+  // Each profile has its own address: #@username, plus /reel, /story, /tagged for a tab.
+  function profileHash() {
+    const profile = profileById(state.profile); if (!profile) return '#archive';
+    return '#@' + encodeURIComponent(profile.username) + (state.kind === firstKind(profile) ? '' : '/' + state.kind);
+  }
+  function firstKind(profile) { return ['post', 'reel', 'story'].find(kind => Number(profile?.['count_' + kind])) || 'post'; }
+  function showHash(replace = false) {
+    const hash = profileHash();
+    if (location.hash !== hash) history[replace ? 'replaceState' : 'pushState'](null, '', hash);
+  }
+  function route(replace = true) {
+    const hash = decodeURIComponent(location.hash.slice(1));
+    if (!hash.startsWith('@')) { state.profile = ''; setView(hash || 'home', replace); return; }
+    const [name, kind] = hash.slice(1).split('/');
+    const profile = (state.summary?.profiles || []).find(p => p.username.toLowerCase() === name.toLowerCase());
+    if (!profile) { toast(`@${name} non è nell’archivio`); setView('profiles', true); return; }
+    selectProfile(profile.id, {kind, replace: true});
+  }
+  function selectProfile(id, {kind = '', replace = false} = {}) {
     if (state.selecting) setSelecting(false);
     state.profile = String(id); state.view = 'archive';
     $$('.nav-item').forEach(item => { if (item.dataset.view === 'archive') item.setAttribute('aria-current', 'page'); else item.removeAttribute('aria-current'); });
     $('#archiveView').hidden = false; ['homeView', 'profilesView', 'activityView', 'settingsView'].forEach(id => { $('#' + id).hidden = true; });
     const profile = profileById(id); document.title = `@${profile?.username || ''} · InstaVault`;
     // Open on the first kind that has something to show, like Instagram opens on the grid.
-    state.kind = ['post', 'reel', 'story'].find(kind => Number(profile?.['count_' + kind])) || 'post';
+    state.kind = ['post', 'reel', 'story', 'tagged', 'highlight'].includes(kind) ? kind : firstKind(profile);
     state.collection = ''; pressKind(); $('#collections').replaceChildren(); delete $('#collections').dataset.profile;
-    if (location.hash !== '#archive') history.pushState(null, '', '#archive');
+    showHash(replace);
     renderSummary(); loadPosts(true).catch(report); window.scrollTo({top: 0, behavior: 'instant'});
   }
   function pressKind() { $$('#kindTabs [data-kind]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.kind === state.kind))); }
@@ -749,7 +767,7 @@
   function report(error) { if (error.status !== 401) toast(error.message || 'Operazione non riuscita.'); }
   async function start() {
     const me = await api('/api/me'); state.csrf = me.csrf; state.authenticated = true; $('#loginGate').hidden = true; $('#appShell').hidden = false;
-    await refreshSummary(true); setView(location.hash.slice(1) || 'home', true);
+    await refreshSummary(true); route();
   }
   async function logout(button) {
     await busy(button, async () => { try { await api('/api/logout', {method: 'POST', body: '{}'}); showLogin(); } catch (error) { report(error); } });
@@ -788,6 +806,7 @@
     if (data.addProfile) { $('#postDialog').close(); closeMenu(); openProfile(null, data.addProfile); return; }
     if (Object.hasOwn(data, 'kind')) {
       state.kind = data.kind; state.collection = ''; pressKind(); renderArchive();
+      if (state.profile) showHash();
       loadPosts(true).catch(report);
     }
   });
@@ -925,7 +944,7 @@
     if (dy > 90 && dy > Math.abs(dx) * 1.5) { $('#postDialog').close(); return; }
     if (Math.abs(dx) > 55 && Math.abs(dx) > Math.abs(dy) * 1.5) moveSlide(dx < 0 ? 1 : -1);
   }, {passive: true});
-  window.addEventListener('popstate', () => { if (state.authenticated) setView(location.hash.slice(1) || 'home', true); });
+  window.addEventListener('popstate', () => { if (state.authenticated) route(); });
   document.addEventListener('visibilitychange', () => { if (!document.hidden && state.authenticated) refreshSummary().catch(report); });
   setInterval(() => { if (!document.hidden && state.authenticated && !$('#profileDialog').open) refreshSummary().catch(error => { if (error.status === 401) showLogin(); }); }, 15000);
   start().catch(error => { showLogin(); if (error.status !== 401) $('#loginError').textContent = 'Server non raggiungibile. Riprova tra poco.'; });
