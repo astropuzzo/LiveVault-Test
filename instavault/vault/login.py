@@ -241,7 +241,8 @@ def message(exc):
     if isinstance(exc, ChallengeRequired) and ('not provided' in text or 'code required' in text):
         return 'Il codice non è arrivato in tempo. Ricomincia l’accesso: Instagram ne manderà uno nuovo.'
     if isinstance(exc, ChallengeRequired):
-        return 'Instagram richiede una conferma dall’app ufficiale. Completala sul telefono, poi riprova qui o importa la sessione del browser.'
+        return 'Instagram richiede una conferma dall’app ufficiale. Completala sul telefono («Sono stato io»), poi riprova qui.'
     if isinstance(exc, AssertionError):
         return 'Instagram non ha accettato il codice. Ricomincia l’accesso.'
-    return 'Instagram non ha completato l’accesso. Riprova o collega la sessione del browser.'
+    detail = str(exc).strip().splitlines()[0][:160] if str(exc).strip() else type(exc).__name__
+    return f'Instagram non ha completato l’accesso ({detail}). Riprova tra qualche minuto.'
