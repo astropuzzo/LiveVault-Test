@@ -30,6 +30,8 @@ LOG_LINES = 40
 # The hunt rewrites the same error every round while Oracle keeps failing: one notice an hour is enough.
 ERROR_REPEAT_SECONDS = 3600
 STOP_GRACE_SECONDS = 60
+# A notice no device took is sent again at every check for up to an hour (the line may be down right after a reboot).
+RETRY_SECONDS = 3600
 NOTICE_URL = "/#apps"
 
 _CONTROL = re.compile(r"\x1b\[[0-9;]*[A-Za-z]|[\x00-\x08\x0b-\x1f\x7f]")
@@ -40,6 +42,7 @@ _action_lock = threading.Lock()
 _panel_stop_at = 0.0
 _seen: dict | None = None
 _seen_loaded = False
+_failing_since: float | None = None
 
 
 def _run(args: list[str], timeout: int) -> tuple[int, str]:
@@ -232,7 +235,7 @@ def _boot() -> str:
 
 
 def watch_once(now: float | None = None) -> list[tuple[str, str, str]]:
-    global _seen, _seen_loaded
+    global _seen, _seen_loaded, _failing_since
     now = time.time() if now is None else now
     current = snapshot()
     if not current.get("ok") or not current.get("installed"):
@@ -244,8 +247,12 @@ def watch_once(now: float | None = None) -> list[tuple[str, str, str]]:
             _seen = None
         _seen_loaded = True
     due, remember = notices(_seen if isinstance(_seen, dict) else None, current, _boot(), now, _panel_stop_at)
-    for title, body, urgency in due:
-        web_push.notify(title, body, NOTICE_URL, urgency)
+    missed = [notice for notice in due if not web_push.notify(notice[0], notice[1], NOTICE_URL, notice[2])]
+    if missed and web_push.count():
+        _failing_since = _failing_since or now
+        if now - _failing_since < RETRY_SECONDS:
+            return due
+    _failing_since = None
     if remember != _seen:
         temporary = STATE_FILE.with_suffix(".tmp")
         temporary.write_text(json.dumps(remember), encoding="utf-8")

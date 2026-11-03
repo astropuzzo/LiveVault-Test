@@ -15,9 +15,8 @@ from urllib.parse import urlparse
 
 STATE_DIR = Path("/var/lib/openastro-control")
 SUBJECT = "https://openastro.tailf2871c.ts.net:8443"
-# Browser push services only, so a stolen session cannot make the server post to any address it likes.
-PUSH_HOSTS = ("fcm.googleapis.com", "android.googleapis.com", "push.services.mozilla.com", "push.apple.com",
-              "notify.windows.com")
+# Browser push services only, so a stolen session cannot point the server at the LAN or any other address.
+PUSH_HOSTS = ("googleapis.com", "google.com", "push.services.mozilla.com", "push.apple.com", "notify.windows.com")
 MAX_SUBSCRIPTIONS = 20
 SEND_TIMEOUT = 10
 
@@ -128,10 +127,13 @@ def _save(rows: list[dict]) -> None:
 
 def subscribe(subscription: dict) -> None:
     endpoint = str(subscription.get("endpoint", ""))
+    if len(endpoint) > 1000 or not _allowed(endpoint):
+        host = (urlparse(endpoint).hostname or "nessuno")[:100]
+        raise ValueError(f"Servizio di notifica del browser non accettato: {host}.")
     secrets = subscription.get("keys") or {}
     try:
         p256dh, auth = str(secrets["p256dh"]), str(secrets["auth"])
-        valid = len(endpoint) <= 1000 and _allowed(endpoint) and len(unb64(p256dh)) == 65 and len(unb64(auth)) == 16
+        valid = len(unb64(p256dh)) == 65 and len(unb64(auth)) == 16
     except (KeyError, ValueError, TypeError):
         valid = False
     if not valid:

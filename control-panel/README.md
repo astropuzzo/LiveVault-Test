@@ -43,6 +43,8 @@ avvisare. Avvisa quando nello stato compare una macchina nuova o più grande (an
 è durato meno di 30 s), per un errore a processo vivo (lo stesso testo al massimo una volta
 l'ora), quando il processo muore senza `stopped` o `top` e senza un Ferma o Riavvia dal pannello
 nell'ultimo minuto, e dopo un riavvio dell'ASIAIR se la ricerca era attiva (`boot_id` cambiato).
+Un avviso che nessun dispositivo iscritto ha ricevuto (rete giù, errore del servizio push) viene
+rimandato a ogni controllo per un'ora al massimo; senza dispositivi iscritti non si rimanda.
 Non avvia né ferma mai la ricerca.
 
 Installazione: `scripts/biglie-hunt-panel-install.sh`, con sudo sul nodo (comandi del pacchetto
@@ -51,6 +53,9 @@ in testa al file). Salva prima `/opt/openastro-control`, la unit e `openastro-ac
 `openastro-control.service`: le sessioni del pannello vanno rifatte. Ripristino: estrarre
 quell'archivio in `/`, togliere `biglie_hunt.py`, `web_push.py` e `static/biglie-hunt.js`, poi
 `systemctl daemon-reload` e riavvio del solo pannello. I file di stato si possono lasciare.
+Lo script non copia i documenti in `/opt/openastro-ops`: si ricopiano dopo averli aggiornati a
+«installato». Controllo senza un secondo riavvio: dopo un Riavvia dal pannello,
+`cat /proc/$(cat ~/biglie-oci/hunt.pid)/cgroup` deve mostrare `biglie-hunt-<epoch>.service`.
 
 Stato al 2026-11-03: sorgente e test sul ramo `codex/biglie-hunt`, **non ancora installato sul
 nodo**: il riavvio del pannello aspetta l'OK del proprietario. Verificati: `tests/test_biglie_hunt.py`,

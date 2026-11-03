@@ -246,6 +246,54 @@ def test_watcher_persists_and_sends_to_the_panel(tmp_path, monkeypatch):
     assert len(sent) == 1
 
 
+class Watcher:
+    """The watcher against a fake hunt and fake devices; check(seconds) runs one pass at a real-looking time."""
+
+    def __init__(self, tmp_path, monkeypatch, devices):
+        self.sent, self.delivered, self.current = [], 0, {"ok": True, "installed": True, **status("searching")}
+        for name, value in (("STATE_FILE", tmp_path / "biglie-hunt.json"), ("_seen", None), ("_seen_loaded", True),
+                            ("_failing_since", None), ("_panel_stop_at", 0.0)):
+            monkeypatch.setattr(hunt, name, value)
+        monkeypatch.setattr(hunt, "_boot", lambda: "boot-a")
+        monkeypatch.setattr(hunt, "snapshot", lambda force=False: self.current)
+        monkeypatch.setattr(hunt.web_push, "count", lambda: devices)
+        monkeypatch.setattr(hunt.web_push, "notify", lambda *args: self.sent.append(args[0]) or self.delivered)
+
+    def check(self, seconds):
+        hunt.watch_once(1_800_000_000 + seconds)
+
+
+def test_a_notice_no_device_took_is_sent_again_for_an_hour(tmp_path, monkeypatch):
+    w = Watcher(tmp_path, monkeypatch, devices=1)
+    w.check(0)
+    w.current.update(status("searching", alive=False))
+    w.check(30)
+    w.check(60)
+    assert w.sent == ["Biglie: la ricerca si è fermata"] * 2
+    w.delivered = 1
+    w.check(90)
+    w.check(120)
+    assert len(w.sent) == 3
+    w.current.update(status("searching"))
+    w.check(150)
+    w.current.update(status("searching", alive=False))
+    w.delivered = 0
+    for seconds in range(180, 180 + hunt.RETRY_SECONDS + 60, 30):
+        w.check(seconds)
+    retries = len(w.sent)
+    w.check(180 + hunt.RETRY_SECONDS + 90)
+    assert len(w.sent) == retries == 3 + hunt.RETRY_SECONDS // 30 + 1
+
+
+def test_without_subscriptions_notices_are_not_retried(tmp_path, monkeypatch):
+    w = Watcher(tmp_path, monkeypatch, devices=0)
+    w.check(0)
+    w.current.update(status("searching", alive=False))
+    w.check(30)
+    w.check(60)
+    assert w.sent == ["Biglie: la ricerca si è fermata"]
+
+
 @pytest.fixture
 def control_server(monkeypatch):
     monkeypatch.setattr(panel.Handler, "log_message", lambda *args: None)
@@ -345,8 +393,9 @@ def subscription(endpoint="https://fcm.googleapis.com/fcm/send/device-1"):
 
 
 def test_subscriptions_accept_only_browser_push_services(push_state):
-    for endpoint in ("http://fcm.googleapis.com/x", "https://example.com/x", "https://fcm.googleapis.com.evil.example/x"):
-        with pytest.raises(ValueError):
+    for endpoint, host in (("http://fcm.googleapis.com/x", "fcm.googleapis.com"), ("https://192.168.1.27:8443/x", "192.168.1.27"),
+                           ("https://fcm.googleapis.com.evil.example/x", "fcm.googleapis.com.evil.example")):
+        with pytest.raises(ValueError, match=f"non accettato: {host}"):
             push.subscribe(subscription(endpoint))
     broken = subscription()
     broken["keys"]["auth"] = push.b64(b"short")
