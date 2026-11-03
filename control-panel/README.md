@@ -82,14 +82,17 @@ Python) con il nuovo `oracle_vm.py`. Alle 13:18:23 il proprietario ha scelto 15 
 la ricerca in corso ha chiuso l'attesa di 90 s e da lì fa un giro ogni 16-17 s.
 
 Gli avvisi non arrivavano sul Firefox del proprietario, anche se Mozilla accetta i messaggi (201).
-`static/fonts` è `root:root 700` dal 2026-09-30: il pannello, che gira come astro, chiude la
+`static/fonts` era `root:root 700` dal 2026-09-30: il pannello, che gira come astro, chiudeva la
 connessione su `/fonts/mona-sans-latin-wght.woff2`, e il service worker, che mette quel file in
-cache quando si installa, non si aggiorna. Resta attivo uno vecchio senza gestore `push`.
-Correzione con root, senza riavvii: `chmod -R a+rX /opt/openastro-control/static/fonts`.
+cache quando si installa, non si aggiornava. Restava attivo uno vecchio senza gestore `push`.
+Il proprietario ha lanciato `chmod -R a+rX /opt/openastro-control/static/fonts` alle 13:28 UTC:
+il font risponde 200 e la prova mandata alle 13:29 UTC con `web_push.notify` è arrivata sul
+telefono. Da allora si carica anche Mona Sans, il font dell'interfaccia grafite.
 
-Non ancora provati: Avvia e Riavvia premuti nella scheda e una notifica su un telefono vero. La
-copia in `/opt/openastro-ops` (root, 0700) non è aggiornata: va allineata con root, senza
-sovrascrivere aggiunte di altri rami.
+Non ancora provati: Avvia e Riavvia premuti nella scheda, e un avviso vero della ricerca
+(macchina trovata, errore, processo fermo), che passa dallo stesso invio della prova. La copia in
+`/opt/openastro-ops` (root, 0700) non è aggiornata: va allineata con root, senza sovrascrivere
+aggiunte di altri rami.
 
 ## Interfaccia grafite (2026-11-02)
 
