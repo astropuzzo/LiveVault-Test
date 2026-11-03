@@ -1160,7 +1160,7 @@ def test_recent_posts_get_counts_commenters_and_likers_again_by_age(vault, monke
                       (profile, 'post:' + code, code, store.now() - age, read, read))
     asked = {'comments': [], 'likers': []}
     class Source:
-        def comments(self, code):
+        def comments(self, code, *args):
             asked['comments'].append(code)
             return [{'id': 'c' + code, 'username': 'fan', 'full_name': 'Fan', 'text': 'Bella', 'created_at': 1, 'likes': 0}]
         def likers(self, code):

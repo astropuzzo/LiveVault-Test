@@ -364,12 +364,20 @@ class MobileSource:
         return [{'pk': str(u['pk']), 'username': u['username'], 'full_name': str(u.get('full_name') or '')[:150]}
                 for u in users if u.get('pk') and u.get('username')]
 
-    def comments(self, shortcode):
-        # One page, the newest ones: a single request per post.
-        pk = self.client.media_pk_from_code(shortcode)
-        items, _, _ = self.client.media_comments_v1_chunk(str(pk))
+    def comments(self, shortcode, pages=1, wait=None):
+        # Newest first, about 15 a page; a few pages with a short pause for recent posts.
+        pk = str(self.client.media_pk_from_code(shortcode))
+        items, min_id, max_id = self.client.media_comments_v1_chunk(pk)
+        items = list(items or [])
+        for _ in range(pages - 1):
+            if not (min_id or max_id) or (wait and not wait()):
+                break
+            more, next_min, next_max = self.client.media_comments_v1_chunk(pk, min_id, max_id)
+            if not more or (next_min, next_max) == (min_id, max_id):
+                break
+            items += more; min_id, max_id = next_min, next_max
         found = []
-        for item in items or []:
+        for item in items:
             user = _get(item, 'user')
             name = str(_get(user, 'username', '') or '')
             if not re.fullmatch(r'[A-Za-z0-9._]{1,30}', name):

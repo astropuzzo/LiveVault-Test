@@ -569,14 +569,14 @@ class Worker:
             self.save_comments(ident, shortcode)
         return True
 
-    def save_comments(self, post_id, shortcode):
+    def save_comments(self, post_id, shortcode, pages=1):
         # Comments are a bonus: a refusal stops reading them for this pass,
         # never the download of the media.
         source = self.source
         if source is None or not hasattr(source, 'comments') or self.comments_blocked:
             return False
         try:
-            found = source.comments(shortcode)
+            found = source.comments(shortcode, pages, lambda: not STOP.wait(random.uniform(2, 5))) if pages > 1 else source.comments(shortcode)
         except Exception as exc:
             self.comments_blocked = True
             print(f'InstaVault: comments {shortcode}: {type(exc).__name__}: {instagram_detail(exc)}', flush=True)
@@ -596,7 +596,8 @@ class Worker:
         with store.db() as c:
             stale = list(c.execute(refresh_due('comments_at'), args))
         for row in stale:
-            if STOP.is_set() or not self.save_comments(row['id'], row['shortcode']):
+            # Up to ten pages (about 150 comments) for a post still being commented.
+            if STOP.is_set() or not self.save_comments(row['id'], row['shortcode'], pages=10):
                 break
         if not hasattr(source, 'likers') or self.comments_blocked:
             return

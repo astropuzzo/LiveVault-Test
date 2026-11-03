@@ -284,3 +284,14 @@ def test_a_highlight_story_without_preview_does_not_drop_the_collection(setup):
     # The video without a preview stays, with no picture: the archive draws one from the video.
     assert [m.mediaid for m in items] == [1, 2] and items[1].is_video and items[1].url == ''
     assert items[1].video_url.endswith('v.mp4')
+
+
+def test_comments_of_a_recent_post_are_read_over_several_pages(setup):
+    client, source, profile = setup
+    def comment(n):
+        return {'pk': str(n), 'user': {'username': f'fan{n}', 'full_name': ''}, 'text': 'ciao', 'created_at_utc': 1, 'like_count': 0}
+    pages = {('', ''): ([comment(1), comment(2)], 'm1', ''), ('m1', ''): ([comment(3)], 'm2', ''), ('m2', ''): ([], '', '')}
+    client.media_pk_from_code = lambda code: 7
+    client.media_comments_v1_chunk = lambda pk, min_id='', max_id='': pages[(min_id or '', max_id or '')]
+    assert [c['username'] for c in source.comments('X')] == ['fan1', 'fan2']
+    assert [c['username'] for c in source.comments('X', pages=10, wait=lambda: True)] == ['fan1', 'fan2', 'fan3']

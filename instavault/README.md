@@ -181,4 +181,5 @@ day-by-day timelapse.
 Like and comment counts (`posts.like_total`, `comment_total`, `counts_at`)
 come free with every check that lists a post. Commenters and likers of recent
 posts are read again by age (`REFRESH_AFTER`): every hour for two days, every
-six hours for a week, daily for a month, at most four posts each per check.
+six hours for a week, daily for a month, at most four posts each per check;
+a re-read takes up to ten pages of comments (about 150) with 2–5 s pauses.
