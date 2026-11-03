@@ -266,3 +266,18 @@ def test_tagged_feed_numeric_page_id_continues_to_the_next_page(setup):
     client.pages['tagged', ''] = ([item('T1')], 3674965766175925989)
     client.pages['tagged', '3674965766175925989'] = ([item('T2')], '')
     assert [m.shortcode for m in profile.get_tagged()] == ['T1', 'T2']
+
+
+def test_a_highlight_story_without_preview_does_not_drop_the_collection(setup):
+    client, source, profile = setup
+    highlight = next(source.get_highlights(profile))
+    good = {'pk': '1', 'id': '1_456', 'code': 'Good', 'media_type': 1, 'taken_at': 1767225600,
+            'image_versions2': {'candidates': [{'url': 'https://scontent.cdninstagram.com/a.jpg', 'width': 10, 'height': 10}]},
+            'user': {'pk': '456', 'username': 'my_account'}}
+    bare = dict(good, pk='2', id='2_456', code='Bare', media_type=2, image_versions2={'candidates': []},
+                video_versions=[{'url': 'https://scontent.cdninstagram.com/v.mp4'}])
+    def broken(pk):
+        client.last_json = {'reels': {'highlight:' + pk: {'items': [good, bare]}}}
+        raise IndexError('list index out of range')
+    client.highlight_info_v1 = broken
+    assert [m.mediaid for m in highlight.get_items()] == [1]

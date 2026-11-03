@@ -274,8 +274,20 @@ class HighlightAdapter:
     def get_items(self):
         # The v1 call only: the generic one falls back to a web query that
         # Instagram refuses for mobile sessions.
-        value = self.source.client.highlight_info_v1(self.pk)
-        for item in _get(value, 'items', []) or []:
+        client = self.source.client
+        try:
+            items = _get(client.highlight_info_v1(self.pk), 'items', []) or []
+        except IndexError:
+            # instagrapi drops the whole collection when one story arrives
+            # without a preview picture; keep the others, skip that one.
+            from instagrapi.extractors import extract_story_v1
+            raw = ((getattr(client, 'last_json', None) or {}).get('reels') or {}).get('highlight:' + self.pk) or {}
+            entries = raw.get('items') or []
+            items = [extract_story_v1(e) for e in entries if ((e.get('image_versions2') or {}).get('candidates'))]
+            if not entries:
+                raise
+            print(f'InstaVault: highlight «{self.title}»: {len(entries) - len(items)} story without preview skipped', flush=True)
+        for item in items:
             yield MediaAdapter(item)
 
 
