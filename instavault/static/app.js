@@ -634,7 +634,8 @@
 
   // Stories play like on Instagram: a bar per story, photos for five seconds,
   // videos to their end, a tap on the left goes back, hold to pause.
-  const story = {raf: 0, elapsed: 0, last: 0, paused: false, video: null, pressed: 0};
+  // muted: the choice made on one story carries over to the next ones, and to the next visit.
+  const story = {raf: 0, elapsed: 0, last: 0, paused: false, video: null, pressed: 0, muted: (() => { try { return localStorage.getItem('instavault-story-muted') === '1'; } catch { return false; } })()};
   const storyMode = () => !!state.playlist && state.post?.kind === 'story';
   function stopStory() { cancelAnimationFrame(story.raf); story.raf = 0; story.video = null; }
   function playMedia(video) { video.play().catch(() => { video.muted = true; updateMute(); video.play().catch(() => {}); }); }
@@ -658,7 +659,9 @@
     }));
     const fill = bar.children[at]?.firstChild;
     story.elapsed = 0; story.last = performance.now(); story.paused = false;
-    story.video = item.tagName === 'VIDEO' ? item : null; updateMute();
+    story.video = item.tagName === 'VIDEO' ? item : null;
+    if (story.video) story.video.muted = story.muted;
+    updateMute();
     if (story.video) { item.controls = false; playMedia(item); item.addEventListener('ended', advanceStory, {once: true}); }
     const tick = now => {
       if (!story.paused) story.elapsed += now - story.last; story.last = now;
@@ -682,7 +685,11 @@
     if (event.clientX - box.left < box.width * .3) moveSlide(-1); else advanceStory();
   });
   $('#viewerMedia').addEventListener('pointercancel', () => { story.pressed = 0; if (storyMode()) holdStory(false); });
-  $('#storyMute').addEventListener('click', () => { if (story.video) { story.video.muted = !story.video.muted; updateMute(); } });
+  $('#storyMute').addEventListener('click', () => {
+    if (!story.video) return;
+    story.video.muted = story.muted = !story.video.muted; updateMute();
+    try { localStorage.setItem('instavault-story-muted', story.muted ? '1' : '0'); } catch { /* private mode: this visit only */ }
+  });
   async function openPost(id, slide = 0) {
     if (!$('#postDialog').open) returnFocus = document.activeElement;
     if (state.playlist && !state.playlist.ids.includes(Number(id))) state.playlist = null;
