@@ -134,9 +134,12 @@ la copia è in `~/biglie-oci/oracle_vm.py.before-spacing-fix-20261103`. La ricer
 `hunt.sh stop` e `openastro-action biglie_hunt_start` in `biglie-hunt-1793724253.service`. Nei
 primi sei lanci (16:44:19-16:54:22) le risposte sono arrivate a 120-121 s l'una dall'altra, tutte
 «Out of host capacity», nessun 429: 6 tentativi veri in 10 minuti, contro 2 (più due 429) nei 10
-minuti prima. Il pacchetto `~/biglie-panel` è rifatto dal ramo: i file del server sono uguali a
-quelli installati, mentre i tre statici con la nota nuova (cache `3.5.1-biglie5`) non sono ancora
-copiati in `/opt/openastro-control`.
+minuti prima, e fino alle 17:11 nessun 429. Il pacchetto `~/biglie-panel` è rifatto dal ramo. Alle
+17:11:31 UTC il proprietario ne ha copiato i tre statici con la nota nuova (cache `3.5.1-biglie5`)
+in `/opt/openastro-control/static`, senza riavviare il pannello; i file di prima sono in
+`~/rollback/biglie-spacing-20261103/static-before.tar.gz`. Verificato dopo: file uguali al ramo,
+il pannello serve la nota nuova e `biglie-hunt.js?v=3.5.1-biglie5`, `/healthz` 200,
+`/api/biglie/hunt` 401 senza sessione.
 
 Non ancora provati: Avvia e Riavvia premuti nella scheda, e un avviso vero della ricerca
 (macchina trovata, errore, processo fermo), che passa dallo stesso invio della prova. La copia in
