@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 import logging
 import queue
 import re
@@ -142,6 +143,11 @@ class Attempt:
             step = str((getattr(self.client, 'last_json', None) or {}).get('step_name', ''))
             safe_step = step if re.fullmatch(r'[a-zA-Z_]{1,60}', step) else '-'
             print(f'InstaVault: Instagram login result={type(exc).__name__} step={safe_step}', flush=True)
+            if not isinstance(exc, ValueError):
+                # Where it broke (files and lines only, never the request data).
+                import traceback
+                where = ' < '.join(f'{Path(f.filename).name}:{f.lineno} {f.name}' for f in traceback.extract_tb(exc.__traceback__)[::-1][:8])
+                print(f'InstaVault: login trace {type(exc).__name__}: {str(exc)[:200]} at {where}', flush=True)
         finally:
             password = None
             self.client.password = None
