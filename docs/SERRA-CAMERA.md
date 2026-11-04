@@ -31,6 +31,40 @@ L'anteprima non ricodifica e non crea una copia video o Blob. Il download unisce
 con `-c copy`, senza una seconda copia persistente. L'aggiornamento conserva la
 posizione; il video disponibile si ripete alla fine.
 
+### Fotogrammi aggiornati e infrarossi automatici
+
+Correzione 2026-11-04 sera: il JPEG della camera era rimasto realmente fermo
+alle 18:26:04, anche via IPC locale; il collector stava salvando copie con date
+nuove. Riavviato solo Prudynt e impostato `stream2.jpeg_idle_fps=1` in
+`/etc/prudynt.user.json`, con backup privato `serra-jpeg-idle-*`. Mantiene il
+JPEG hardware a un fotogramma/secondo sulla camera, evitando il ciclo SDK
+stop/start che precedeva il blocco; nessuno streaming continuo verso il server.
+Scatti reali con orari successivi sono stati verificati nei pixel, non solo
+nei timestamp del database. Le immagini perse durante il blocco non si recuperano.
+
+Il collector confronta l'hash JPEG: con l'orologio impresso attivo, byte identici
+per oltre due intervalli (minimo 15 s) generano errore e non vengono archiviati
+come nuovi scatti. Il controllo locale `scripts/serra-camera-health.sh`, installato
+sulla camera come `/usr/sbin/serra-camera-health`, gira da cron ogni minuto.
+Usa snapshot IPC, timeout, lock e stato in RAM; dopo due controlli falliti o
+identici riavvia solo Prudynt, al massimo una volta ogni 15 minuti. Non apre
+porte, non contiene chiavi e non riavvia l'host. Richiede timestamp impresso;
+non disabilitarlo senza adattare entrambi i controlli di freschezza.
+
+Il sensore restava a luminosità 26 con soglia notte 25. Calibrata la soglia
+notte a 35, giorno invariato a 50, mantenendo `enabled=true`, `force_mode=""`
+e orario forzato disabilitato. Ricarica SIGHUP di daynightd; passaggio automatico
+DAY→NIGHT alle 22:07:18, ISP Night, GPIO illuminatore attivo e JPEG notturno
+leggibile in bianco e nero verificati. Le due soglie e i conteggi mantengono
+l'isteresi; il ritorno alla luce naturale sarà verificabile al mattino.
+Configurazione e logica nel [sorgente ufficiale Thingino](https://github.com/themactep/thingino-firmware/blob/master/package/thingino-daynightd/files/daynightd.c).
+
+Rollback camera: rimuovere solo la riga cron di questo controllo e ripristinare
+la configurazione dal rispettivo backup `serra-health-*`, `serra-daynight-*` o
+`serra-jpeg-idle-*`; HUP per daynightd, restart del solo Prudynt se cambia il suo
+JSON. Per il backend ripristinare il modulo dal backup `serra-recovery-*` e
+riavviare solo Control/collector; conservare archivio, indice e impostazioni.
+
 ### Rotazione salvata negli scatti
 
 Il selettore 0°/90°/180°/270° agisce sui pixel dei nuovi JPEG, tramite
@@ -88,6 +122,9 @@ Il browser non deve restare aperto per raccolta o manutenzione.
 ### Pulizia manuale con anteprima
 
 Preset “più vecchi di” 24/48/72 ore, 7/30 giorni oppure intervallo locale da/a.
+Una data finale futura (per esempio fine giornata) viene limitata all'istante
+del calcolo; la selezione firmata conserva quell'istante anche alla conferma.
+Progresso, errori e selezione vuota sono mostrati accanto al pulsante.
 “Calcola pulizia” mostra fotogrammi e spazio; nessun file viene rimosso prima
 della conferma esplicita. Lo storico annuale è escluso salvo spuntare l'opzione
 apposita. La selezione comprende tutti gli orientamenti del livello scelto.
@@ -139,15 +176,16 @@ con CSRF valido. Download e diretta sono limitati a uno e due client concorrenti
 
 ## Validazione e rollback
 
-22 test Linux Python 3.13.5: migrazione dell’indice senza perdita di righe,
+24 test Linux Python 3.13.5: migrazione dell’indice senza perdita di righe,
 rotazioni JPEG con controllo dei pixel nei quattro quadranti e dimensioni native,
 MP4 verticali separati, campioni orari e copia esatta dei pacchetti delle
 10/14/18 nello storico vecchio, concatenazione nativa continua, pulizia firmata,
-quota/ordine di eliminazione, protezione input attivi,
+quota/ordine di eliminazione, protezione input attivi, rifiuto di JPEG fermi,
+limite futuro della pulizia congelato senza cancellazioni durante il calcolo,
 lock di export, ripresa dopo interruzione, finestre e playlist senza segreti,
 vero encode/decode FFmpeg 2304×1296 con conteggio fotogrammi identico.
-Cinque regressioni frontend verificano il player desktop/mobile, rotazione,
-selezione anno/orientamenti e conferma della pulizia. Controlli sintattici JavaScript. CI del branch richiesta prima della
+Sette regressioni frontend verificano il player desktop/mobile, rotazione,
+selezione anno/orientamenti, conferma della pulizia, errori visibili e selezione vuota. Controlli sintattici JavaScript. CI del branch richiesta prima della
 fusione; prove live e limiti operativi vanno riportati separatamente dai test.
 
 Distribuzione mirata: backup dei file Control modificati e dell'helper storage in

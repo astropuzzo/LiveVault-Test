@@ -8,7 +8,7 @@ async function exercise(userAgent='',debug=false){
  const data={settings:{enabled:true,interval_seconds:15,quota_gb:4,rotation_degrees:0},storage_online:true,used_bytes:1,free_bytes:1e9,frames:3,pending_frames:1,blocks:1,last_compact:1,width:2304,height:1296};
  const context=vm.createContext({document,navigator:{userAgent},location:{search:debug?'?serraDebug=1':''},AbortController,AbortSignal,Date,Intl,URLSearchParams,console,
  setTimeout(fn,ms){timers.set(++next,{fn,ms});return next;},clearTimeout(id){timers.delete(id);},IntersectionObserver:class{constructor(fn){this.fn=fn;observers.push(this);}observe(){}},
- async fetch(url,options={}){requests.push(url);if(options.method==='POST'){const body=JSON.parse(options.body);if(body.action==='playback-report')reports.push(body.report);else posts.push(body);}if(options.method==='POST'&&responses[JSON.parse(options.body).action])return{ok:true,status:200,json:async()=>responses[JSON.parse(options.body).action]};return{ok:true,status:200,json:async()=>url.includes('preview-info')?{url:'/api/serra/preview.mp4?first=1&last=2&v=1',duration:3}:data};}});
+ async fetch(url,options={}){requests.push(url);if(options.method==='POST'){const body=JSON.parse(options.body);if(body.action==='playback-report')reports.push(body.report);else posts.push(body);}if(options.method==='POST'&&responses[JSON.parse(options.body).action])return{ok:responses[JSON.parse(options.body).action].ok!==false,status:responses[JSON.parse(options.body).action].ok===false?400:200,json:async()=>responses[JSON.parse(options.body).action]};return{ok:true,status:200,json:async()=>url.includes('preview-info')?{url:'/api/serra/preview.mp4?first=1&last=2&v=1',duration:3}:data};}});
  vm.runInContext(fs.readFileSync(process.env.SERRA_TEST_SOURCE||path.join(__dirname,'../control-panel/static/serra.js'),'utf8'),context);
  const api=context.OpenAstroSerra,video=element('serraVideo');api.setView('serra');api.setAuthenticated(true);api.update({csrf:'test-csrf'});await new Promise(setImmediate);
  assert.equal(video.src,undefined);assert.equal(element('serraLive').src,undefined);
@@ -52,4 +52,17 @@ test('cleanup previews first and sends no delete until the user confirms',async(
  h.context.confirm=()=>true;await h.element('serraCleanupDelete').events.click();assert.equal(h.posts.at(-1).action,'cleanup-delete');assert.equal(h.posts.at(-1).token,plan.token);
  h.element('serraCleanupHistory').checked=true;await h.element('serraCleanupPreview').events.click();assert.equal(h.posts.at(-1).include_history,true);
  h.element('serraCleanupPeriod').events.change();assert.equal(h.element('serraCleanupDelete').disabled,true);
+});
+
+test('cleanup displays invalid dates and backend errors beside the button',async()=>{
+ const h=await exercise();await h.reactivate();
+ h.element('serraCleanupPeriod').value='custom';h.element('serraCleanupTo').value='';
+ await h.element('serraCleanupPreview').events.click();assert.match(h.element('serraCleanupResult').textContent,/intervallo da\/a valido/);assert.equal(h.posts.length,0);
+ h.element('serraCleanupPeriod').value='24';h.responses['cleanup-preview']={ok:false,error:'Anteprima non disponibile: riprova.'};
+ await h.element('serraCleanupPreview').events.click();assert.equal(h.element('serraCleanupResult').textContent,'Anteprima non disponibile: riprova.');assert.equal(h.element('serraCleanupDelete').disabled,true);
+});
+test('cleanup explains an empty selection and shows progress during the request',async()=>{
+ const h=await exercise();await h.reactivate();h.responses['cleanup-preview']={ok:true,frames:0,bytes:0};
+ const pending=h.element('serraCleanupPreview').events.click();assert.match(h.element('serraCleanupResult').textContent,/Calcolo dei file/);await pending;
+ assert.match(h.element('serraCleanupResult').textContent,/Calcolo completato: nessun file eliminabile/);assert.equal(h.element('serraCleanupDelete').disabled,true);assert.equal(h.posts.some(v=>v.action==='cleanup-delete'),false);
 });

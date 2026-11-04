@@ -7,7 +7,10 @@ raccolta indipendente dal browser. Il lettore MP4 con buffer è condiviso tra PC
 e telefono. Finestre da un'ora a un anno: dettaglio recente, storico orario nei
 primi 30 giorni e poi alle 10/14/18 Europe/Rome. Quota unica configurabile
 (predefinita 4 GiB), pulizia manuale con conteggio e conferma; export senza
-ricodifica. Richiede FFmpeg/ffprobe e `libjpeg-turbo-progs` per la rotazione.
+ricodifica. La pulizia mostra anche avanzamento, errori e selezioni vuote;
+la fine futura di un intervallo è limitata al momento del calcolo. Controlli
+sui JPEG fermi e recupero locale della camera documentati insieme alle soglie
+IR automatiche calibrate. Richiede FFmpeg/ffprobe e `libjpeg-turbo-progs` per la rotazione.
 Configurazione, test, sicurezza e rollback in
 [SERRA-CAMERA.md](../docs/SERRA-CAMERA.md). Credenziali e identificativi storage
 si configurano solo sul server e non vanno pubblicati.

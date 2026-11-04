@@ -197,7 +197,7 @@
       if (request === active) { request = null; clearTimeout(timer); timer = setTimeout(refresh, 10000); }
     }
   }
-  async function action(payload) {
+  async function action(payload, onError) {
     if (busy || !csrf) return;
     busy = true; controls(); message('Operazione in corso…');
     try {
@@ -206,7 +206,7 @@
       if (!response.ok) throw new Error(result.error || 'Operazione non riuscita.');
       await refresh();
       return result;
-    } catch (error) { message(error.message, true); }
+    } catch (error) { message(error.message, true); onError?.(error.message); }
     finally { busy = false; controls(); }
   }
   function save() {
@@ -216,10 +216,16 @@
     cleanupPlan = null;
     const custom = q('serraCleanupPeriod').value === 'custom';
     q('serraCleanupFrom').disabled = !custom; q('serraCleanupTo').disabled = !custom;
-    q('serraCleanupResult').textContent = 'Nessun file selezionato.';
+    cleanupMessage('Nessun file selezionato.');
     controls();
   }
+  function cleanupMessage(text, error = false) {
+    q('serraCleanupResult').textContent = text;
+    q('serraCleanupResult').classList.toggle('bad',error);
+  }
   async function cleanup(execute) {
+    if (busy) return;
+    if (!csrf) return cleanupMessage('Sessione scaduta: accedi di nuovo prima di calcolare la pulizia.',true);
     let payload;
     if (execute) {
       if (!cleanupPlan?.frames || !globalThis.confirm(`Eliminare definitivamente ${cleanupPlan.frames} fotogrammi (${bytes(cleanupPlan.bytes)}) da ${cleanupPlan.from_ts ? when(cleanupPlan.from_ts) : 'inizio archivio'} a ${when(cleanupPlan.to_ts)}?`)) return;
@@ -229,14 +235,15 @@
     } else {
       const start = q('serraCleanupFrom').value ? new Date(q('serraCleanupFrom').value).getTime()/1000 : 0;
       const end = new Date(q('serraCleanupTo').value).getTime()/1000;
-      if (!Number.isFinite(start) || !Number.isFinite(end) || start >= end) return message('Scegli un intervallo da/a valido.',true);
+      if (!Number.isFinite(start) || !Number.isFinite(end) || start >= end) return cleanupMessage('Scegli un intervallo da/a valido.',true);
       payload = {action:'cleanup-preview',from_ts:start,to_ts:end};
     }
     if (!execute) payload.include_history = q('serraCleanupHistory').checked;
-    const result = await action(payload);
+    cleanupMessage(execute ? 'Pulizia in corso…' : 'Calcolo dei file e dello spazio…');
+    const result = await action(payload, error => cleanupMessage(error,true));
     if (!result) { cleanupPlan = null; controls(); return; }
     cleanupPlan = execute ? null : result;
-    q('serraCleanupResult').textContent = execute ? `Eliminati ${result.frames} fotogrammi · ${bytes(result.bytes)} liberati.` : `${result.frames} fotogrammi · ${bytes(result.bytes)} da liberare. Nessun file è stato eliminato.`;
+    cleanupMessage(execute ? `Eliminati ${result.frames} fotogrammi · ${bytes(result.bytes)} liberati.` : result.frames ? `${result.frames} fotogrammi · ${bytes(result.bytes)} da liberare. Nessun file è stato eliminato.` : 'Calcolo completato: nessun file eliminabile nel periodo scelto. I blocchi che attraversano i limiti del periodo e gli scatti in compressione sono protetti.');
     if (execute) { stopPlayer(); await refresh(); }
     controls();
   }

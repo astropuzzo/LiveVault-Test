@@ -74,13 +74,41 @@ class SerraTests(unittest.TestCase):
 
     def test_hourly_history_reuses_capture_and_is_independent_of_recent_interval(self):
         now = time.time()
-        with patch.object(camera,'photo',return_value=b'\xff\xd8native\xff\xd9') as photo, patch.object(camera.time,'time',return_value=now) as clock:
+        with patch.object(camera,'photo',side_effect=[b'frame1',b'frame2',b'frame3']) as photo, patch.object(camera.time,'time',return_value=now) as clock:
             camera.capture();clock.return_value=now+10;camera.capture()
             clock.return_value=now+3600;camera.capture(recent=False)
         with camera._db() as db:
             counts = dict(db.execute('SELECT tier,COUNT(*) FROM frames GROUP BY tier'))
         self.assertEqual(counts,{'recent':2,'history':2})
         self.assertEqual(photo.call_count,3)
+
+    def test_frozen_snapshot_is_not_archived_as_a_new_capture_and_recovers(self):
+        camera.set_settings({'enabled':True,'interval_seconds':60,'quota_gb':8})
+        now=time.time()
+        with patch.object(camera,'photo',return_value=b'jpeg with burned-in clock') as photo, patch.object(camera.time,'time',return_value=now) as clock:
+            camera.capture()
+            # One repeat can straddle a JPEG/clock boundary; a persistent repeat cannot.
+            clock.return_value=now+1;camera.capture()
+            last=camera._state()['last_capture']
+            clock.return_value=now+121
+            with self.assertRaisesRegex(camera.SerraError,'fotogramma fermo'): camera.capture()
+            self.assertEqual(camera._state()['last_capture'],last)
+            with camera._db() as db: self.assertEqual(db.execute("SELECT COUNT(*) FROM frames WHERE tier='recent'").fetchone()[0],2)
+            photo.return_value=b'new clock';clock.return_value=now+122;camera.capture()
+        self.assertEqual(camera._state()['last_capture'],now+122)
+        self.assertEqual(camera.settings()['quota_gb'],8)
+
+    def test_cleanup_future_end_is_frozen_at_preview_time_without_deleting(self):
+        now=time.time();name=self.frame(now-30)
+        with patch.object(camera.time,'time',return_value=now):
+            with patch.object(Path,'unlink',side_effect=AssertionError('preview must not delete')):
+                plan=camera.purge_archive({'from_ts':now-60,'to_ts':now+3600},execute=False)
+            self.assertEqual(plan['to_ts'],now);self.assertEqual(plan['photos'],1)
+            self.assertTrue((self.media/'pending'/name).exists())
+            with self.assertRaises(camera.SerraError): camera.purge_archive({**plan,'to_ts':now+3600},execute=True)
+            with self.assertRaises(camera.SerraError): camera.purge_archive({'from_ts':now+10,'to_ts':now+3600})
+            with self.assertRaises(camera.SerraError): camera.purge_archive({'to_ts':float('inf')})
+            self.assertEqual(camera.purge_archive(plan,execute=True)['photos'],1)
 
     def test_cleanup_requires_matching_preview_and_preserves_active_partial_and_history(self):
         now=time.time();first=self.frame(now-100);active=self.frame(now-90,batch='busy')

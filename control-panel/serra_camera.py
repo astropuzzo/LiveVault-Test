@@ -281,6 +281,14 @@ def capture(*, recent=True):
     with _lock('capture', blocking=False), storage(write=True) as root:
         rotation = _rotation()
         image, now = photo(rotation), time.time()
+        # This camera burns the clock into every JPEG. Identical bytes over
+        # multiple capture intervals mean its snapshot cache has stopped.
+        digest = hashlib.sha256(image).hexdigest()
+        previous = _state()
+        if digest != previous.get('capture_image_hash'):
+            _state(capture_image_hash=digest, capture_image_changed=now)
+        elif now - previous.get('capture_image_changed',now) > max(15,2*settings()['interval_seconds']):
+            raise SerraError('La camera restituisce un fotogramma fermo. Scatto non archiviato; riprovo automaticamente.')
         name = str(time.time_ns()) + '.jpg'
         slot = f'{rotation}:{int(now//3600)}'
         history = _state().get('history_slot') != slot
@@ -774,6 +782,10 @@ def purge_archive(payload, *, execute=False):
             start, end = 0.0, now-hours*3600
         else:
             start, end = float(payload.get('from_ts',0)), float(payload['to_ts'])
+        if not execute and math.isfinite(end):
+            # A local end-of-day selection may include hours not recorded yet.
+            # Freeze the preview at now; execution still validates this exact range.
+            end = min(end,now)
         expires = float(payload['expires_at']) if execute else now+300
         if not all(math.isfinite(v) for v in (start,end,expires)) or not 0 <= start < end <= now+1 or expires < now or expires > now+301:
             raise ValueError()

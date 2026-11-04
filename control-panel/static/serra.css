@@ -28,6 +28,7 @@
 .serra-note{font-size:12px;color:var(--muted);line-height:1.7}
 .serra-message{min-height:22px;font-size:13px;color:var(--muted);margin:20px 2px}
 .serra-message.bad{color:var(--warn)}
+#serraCleanupResult.bad{color:var(--warn)}
 .serra-archive{margin-top:22px}
 .serra-day{display:flex;justify-content:space-between;gap:18px;align-items:center;border-top:1px solid var(--line);padding:18px 0}
 .serra-day:last-child{padding-bottom:0}
