@@ -15,6 +15,7 @@ from urllib.parse import parse_qs, urlparse
 import media_center
 import media_streaming_patch
 import torrent_manager
+import serra_camera
 import server as panel
 
 
@@ -138,6 +139,10 @@ class Handler(panel.Handler):
 
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
+        if parsed.path.startswith('/api/serra/'):
+            if self.require_session():
+                serra_camera.handle_get(self, parsed)
+            return
         if parsed.path == '/api/torrents/status':
             if not self.require_session():
                 return
@@ -165,6 +170,18 @@ class Handler(panel.Handler):
 
     def do_POST(self) -> None:
         parsed = urlparse(self.path)
+        if parsed.path == '/api/serra/action':
+            if not self._torrent_session():
+                return
+            try:
+                self.send_json(serra_camera.handle_post(self._torrent_json()))
+            except serra_camera.SerraError as exc:
+                self.send_json({'ok': False, 'error': str(exc)}, exc.status)
+            except (ValueError, json.JSONDecodeError):
+                self.send_json({'ok': False, 'error': 'Richiesta non valida.'}, 400)
+            except Exception:
+                self.send_json({'ok': False, 'error': 'Operazione temporaneamente non disponibile.'}, 503)
+            return
         if parsed.path in {'/api/torrents/add', '/api/torrents/add-file', '/api/torrents/action', '/api/torrents/history/clear'}:
             if not self._torrent_session():
                 return

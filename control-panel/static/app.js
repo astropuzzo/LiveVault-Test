@@ -29,7 +29,7 @@ let mediaHls = null;
 let mediaHlsToken = '';
 let mediaPlaybackBase = 0;
 let mediaPlaybackDuration = 0;
-const VALID_VIEWS = new Set(['dashboard','media','apps','storage','system','nina','pihole','advanced']);
+const VALID_VIEWS = new Set(['dashboard','serra','media','apps','storage','system','nina','pihole','advanced']);
 let currentView = VALID_VIEWS.has(location.hash.slice(1)) ? location.hash.slice(1) : 'dashboard';
 
 const powerProfiles = [
@@ -834,9 +834,10 @@ function renderMedia(media = {}) {
 
 function selectView(view, updateHash = false) {
   view = VALID_VIEWS.has(view) ? view : 'dashboard';
-  const labels = {dashboard:'Dashboard',media:'Media',apps:'App e ricavi',storage:'Storage',system:'Sistema',nina:'NINA',pihole:'Pi-hole',advanced:'Avanzate'};
+  const labels = {dashboard:'Dashboard',serra:'SERRA',media:'Media',apps:'App e ricavi',storage:'Storage',system:'Sistema',nina:'NINA',pihole:'Pi-hole',advanced:'Avanzate'};
   currentView = view;
   globalThis.OpenAstroApps?.setView(view);
+  globalThis.OpenAstroSerra?.setView(view);
   document.body.dataset.view = view;
   $$('[data-view-panel]').forEach(panel => panel.classList.toggle('active', panel.dataset.viewPanel === view));
   $$('[data-route]').forEach(link => {
@@ -875,6 +876,7 @@ function render(data) {
   globalThis.OpenAstroDiagnostics?.update(data);
   document.body.classList.remove('stale','is-loading');
   csrf = data.csrf || csrf;
+  globalThis.OpenAstroSerra?.update(data);
   const host = data.host;
   const storage = data.storage;
   const lv = data.livevault || {};
@@ -1000,6 +1002,7 @@ async function refresh() {
 function showLogin() {
   signedIn = false;
   globalThis.OpenAstroApps?.setAuthenticated(false);
+  globalThis.OpenAstroSerra?.setAuthenticated(false);
   csrf = '';
   stopHold();
   if ($('#confirmDialog').open) $('#confirmDialog').close();
@@ -1012,6 +1015,7 @@ function showLogin() {
 function hideLogin() {
   signedIn = true;
   globalThis.OpenAstroApps?.setAuthenticated(true);
+  globalThis.OpenAstroSerra?.setAuthenticated(true);
   $('main').inert = false;
   const sidebar = $('.sidebar'); if (sidebar) sidebar.inert = false;
   const mobileNav = $('.mobile-nav'); if (mobileNav) mobileNav.inert = false;

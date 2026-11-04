@@ -1,5 +1,13 @@
 # OpenAstro Control
 
+## Serra: camera e timelapse
+
+Pagina `#serra` con diretta locale, raccolta continua alla risoluzione nativa,
+intervalli da 1 secondo e archivio circolare configurabile. Timelapse sulle ultime
+24/48/72 ore e download MP4 senza ricodifica. Configurazione, validazione e
+rollback in [SERRA-CAMERA.md](../docs/SERRA-CAMERA.md). Indirizzi, identificativi
+storage e credenziali si configurano esclusivamente sul server.
+
 PWA mobile-first per monitorare e controllare il server ASIAIR/Debian. Il servizio
 vive sulla memoria interna, resta accessibile senza NVMe e viene pubblicato solo
 in HTTPS tramite Tailscale Funnel, con autenticazione applicativa.
