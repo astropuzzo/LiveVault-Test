@@ -22,7 +22,7 @@ from urllib.request import ProxyHandler, Request, build_opener
 from uuid import uuid4
 
 STATE = Path(os.getenv('OPENASTRO_SERRA_STATE', '/var/lib/openastro-control/serra'))
-CONFIG = Path(os.getenv('OPENASTRO_SERRA_CONFIG', '/home/astro/.config/openastro-serra/camera.json'))
+CONFIG = Path(os.getenv('OPENASTRO_SERRA_CONFIG', '/var/lib/openastro-control/serra-camera.json'))
 MOUNT = Path(os.getenv('OPENASTRO_SERRA_MOUNT', '/mnt/livevault-nvme'))
 UUID = os.getenv('OPENASTRO_SERRA_UUID', '')
 STORAGE_STATE = Path('/run/openastro-serra-storage.json')

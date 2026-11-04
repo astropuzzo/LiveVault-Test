@@ -29,7 +29,9 @@ più vecchi dell'archivio della serra, mai altri media o il backup del firmware.
 Sorgente `control-panel/serra_camera.py`, runtime `/opt/openastro-control/serra_camera.py`.
 Servizio `openastro-serra.service`; indice e impostazioni in
 `/var/lib/openastro-control/serra`. Credenziali API private, mai esposte alla UI,
-in `/home/astro/.config/openastro-serra/camera.json` (0600). La chiave API della
+in `/var/lib/openastro-control/serra-camera.json` (0600). Il servizio Control
+carica anch'esso `/etc/openastro-serra.env` (o un drop-in equivalente), mantenendo
+`ProtectHome=true`. La chiave API della
 camera è dedicata; niente cloud o applicazioni Xiaomi. Nessuna password qui.
 
 ## Storage e recupero
