@@ -381,13 +381,14 @@ def playlist(hours):
     rows = window(hours)
     if not rows:
         raise SerraError('Il timelapse sarà disponibile dopo i primi due scatti compressi.', 503)
-    lines = ['#EXTM3U', '#EXT-X-VERSION:7', '#EXT-X-TARGETDURATION:13', f"#EXT-X-MEDIA-SEQUENCE:{rows[0]['id']}", f"#EXT-X-DISCONTINUITY-SEQUENCE:{rows[0]['id'] - 1}"]
+    lines = ['#EXTM3U', '#EXT-X-VERSION:7', '#EXT-X-PLAYLIST-TYPE:VOD', '#EXT-X-TARGETDURATION:13', f"#EXT-X-MEDIA-SEQUENCE:{rows[0]['id']}", f"#EXT-X-DISCONTINUITY-SEQUENCE:{rows[0]['id'] - 1}"]
     for index, row in enumerate(rows):
         if index:
             lines.append('#EXT-X-DISCONTINUITY')
         url = '/api/serra/segment?id=' + str(row['id'])
         lines += [f'#EXT-X-MAP:URI="{url}",BYTERANGE="{row["init"]}@0"', f'#EXTINF:{row["duration"]:.6f},',
                   f'#EXT-X-BYTERANGE:{row["size"] - row["init"]}@{row["init"]}', url]
+    lines.append('#EXT-X-ENDLIST')
     return ('\n'.join(lines) + '\n').encode()
 
 

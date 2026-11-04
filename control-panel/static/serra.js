@@ -1,7 +1,7 @@
 (() => {
   'use strict';
   const q = id => document.getElementById(id);
-  let authenticated = false, view = '', csrf = '', data = null, timer = null, request = null, busy = false, hls = null, loadedHours = null;
+  let authenticated = false, view = '', csrf = '', data = null, timer = null, request = null, busy = false, hls = null, loadedHours = null, loadedVersion = null;
   const when = seconds => seconds ? new Date(seconds * 1000).toLocaleString('it-IT', {timeZone:'Europe/Rome'}) : 'In attesa';
   const bytes = n => n >= 1024 ** 3 ? `${(n / 1024 ** 3).toFixed(2)} GB` : `${(n / 1024 ** 2).toFixed(1)} MB`;
   function message(text, error = false) {
@@ -13,7 +13,7 @@
     q('serraDownload').setAttribute('aria-disabled', !data?.blocks ? 'true' : 'false');
   }
   function stopPlayer() {
-    hls?.destroy(); hls = null; loadedHours = null;
+    hls?.destroy(); hls = null; loadedHours = null; loadedVersion = null;
     const video = q('serraVideo');
     video.pause(); video.removeAttribute('src'); video.load();
   }
@@ -26,12 +26,13 @@
   function loadPlayer(force = false) {
     const hours = q('serraWindow').value;
     q('serraDownload').href = `/api/serra/export.mp4?hours=${hours}`;
-    if (!data?.blocks || !authenticated || view !== 'serra' || document.hidden || (!force && loadedHours === hours)) return;
-    stopPlayer(); loadedHours = hours;
+    if (!data?.blocks || !authenticated || view !== 'serra' || document.hidden || (!force && loadedHours === hours && loadedVersion === data.last_compact)) return;
+    const previousPosition = loadedHours === hours && !force ? q('serraVideo').currentTime : 0;
+    stopPlayer(); loadedHours = hours; loadedVersion = data.last_compact;
     const video = q('serraVideo'), url = `/api/serra/playlist.m3u8?hours=${hours}`;
-    video.muted = true;
+    video.muted = true; video.loop = true;
     if (globalThis.Hls?.isSupported()) {
-      hls = new Hls({startPosition:0, maxBufferLength:30, maxMaxBufferLength:120, liveSyncDurationCount:3, backBufferLength:7200});
+      hls = new Hls({startPosition:previousPosition, maxBufferLength:30, maxMaxBufferLength:120, backBufferLength:60});
       hls.loadSource(url); hls.attachMedia(video);
       hls.on(Hls.Events.MANIFEST_PARSED, () => { video.playbackRate = Number(q('serraSpeed').value); video.play().catch(() => {}); });
       hls.on(Hls.Events.ERROR, (_event, detail) => {

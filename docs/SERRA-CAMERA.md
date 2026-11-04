@@ -25,6 +25,8 @@ il periodo già raccolto e ancora conservato; 4 GiB non garantiscono 72 ore per
 qualunque scena/intervallo. Il limite comprende JPEG pendenti, MP4 e spazio
 temporaneo riservato all'encoder. Per far posto si eliminano solo gli elementi
 più vecchi dell'archivio della serra, mai altri media o il backup del firmware.
+L'anteprima ripete il video disponibile e aggiorna la playlist a ogni nuovo blocco,
+conservando la posizione di visione; non resta in attesa a fine video.
 
 Sorgente `control-panel/serra_camera.py`, runtime `/opt/openastro-control/serra_camera.py`.
 Servizio `openastro-serra.service`; indice e impostazioni in
