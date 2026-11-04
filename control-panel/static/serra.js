@@ -2,6 +2,7 @@
   'use strict';
   const q = id => document.getElementById(id);
   let authenticated = false, view = '', csrf = '', data = null, timer = null, request = null, busy = false, hls = null, loadedHours = null, loadedVersion = null;
+  let liveEnabled = true, liveVisible = false, playerVisible = false, resumePosition = 0, resumeHours = null;
   const when = seconds => seconds ? new Date(seconds * 1000).toLocaleString('it-IT', {timeZone:'Europe/Rome'}) : 'In attesa';
   const bytes = n => n >= 1024 ** 3 ? `${(n / 1024 ** 3).toFixed(2)} GB` : `${(n / 1024 ** 2).toFixed(1)} MB`;
   function message(text, error = false) {
@@ -13,6 +14,7 @@
     q('serraDownload').setAttribute('aria-disabled', !data?.blocks ? 'true' : 'false');
   }
   function stopPlayer() {
+    if (loadedHours !== null) { resumePosition = q('serraVideo').currentTime || 0; resumeHours = loadedHours; }
     hls?.destroy(); hls = null; loadedHours = null; loadedVersion = null;
     const video = q('serraVideo');
     video.pause(); video.removeAttribute('src'); video.load();
@@ -23,11 +25,21 @@
     q('serraLive').removeAttribute('src');
     stopPlayer();
   }
+  function syncLive() {
+    const watch = authenticated && view === 'serra' && !document.hidden && liveEnabled && liveVisible;
+    const image = q('serraLive');
+    if (watch && !image.getAttribute('src')) image.src = `/api/serra/live?t=${Date.now()}`;
+    if (!watch) image.removeAttribute('src');
+    q('serraRetry').textContent = liveEnabled ? 'Ferma diretta' : 'Avvia diretta';
+    q('serraLiveStatus').textContent = watch ? 'Diretta locale · 3 fotogrammi al secondo' : 'Diretta sospesa · la raccolta delle foto continua';
+    image.closest('.serra-frame').classList.toggle('is-paused', !watch);
+  }
   function loadPlayer(force = false) {
     const hours = q('serraWindow').value;
     q('serraDownload').href = `/api/serra/export.mp4?hours=${hours}`;
-    if (!data?.blocks || !authenticated || view !== 'serra' || document.hidden || (!force && loadedHours === hours && loadedVersion === data.last_compact)) return;
-    const previousPosition = loadedHours === hours && !force ? q('serraVideo').currentTime : 0;
+    if (!force && loadedHours === hours && q('serraVideo').paused) return;
+    if (!data?.blocks || !authenticated || view !== 'serra' || document.hidden || !playerVisible || (!force && loadedHours === hours && loadedVersion === data.last_compact)) return;
+    const previousPosition = !force ? (loadedHours === hours ? q('serraVideo').currentTime : resumeHours === hours ? resumePosition : 0) : 0;
     stopPlayer(); loadedHours = hours; loadedVersion = data.last_compact;
     const video = q('serraVideo'), url = `/api/serra/playlist.m3u8?hours=${hours}`;
     video.muted = true; video.loop = true;
@@ -81,7 +93,7 @@
       if (!response.ok) throw new Error(result.error || 'Stato della serra non disponibile.');
       if (request !== active) return;
       data = result; render();
-      if (!q('serraLive').getAttribute('src')) q('serraLive').src = `/api/serra/live?t=${Date.now()}`;
+      syncLive();
     } catch (error) {
       if (request === active) message(error.name === 'AbortError' ? 'Aggiornamento in ritardo: nuovo tentativo automatico.' : error.message, true);
     } finally {
@@ -105,11 +117,12 @@
   }
   function sync() {
     stop();
+    syncLive();
     if (authenticated && view === 'serra' && !document.hidden) refresh();
   }
   globalThis.OpenAstroSerra = {
     setView(value) { if (view !== value) { view = value; sync(); } },
-    setAuthenticated(value) { authenticated = Boolean(value); if (!authenticated) { csrf = ''; data = null; } sync(); },
+    setAuthenticated(value) { authenticated = Boolean(value); if (!authenticated) { csrf = ''; data = null; resumePosition = 0; resumeHours = null; } sync(); },
     update(value) { csrf = value?.csrf || csrf; controls(); },
   };
   if (!q('serraLive')) return;
@@ -118,7 +131,7 @@
   q('serraQuota').addEventListener('change', save);
   q('serraCapture').addEventListener('click', () => action({action:'capture'}));
   q('serraFlush').addEventListener('click', () => action({action:'flush'}));
-  q('serraRetry').addEventListener('click', sync);
+  q('serraRetry').addEventListener('click', () => { liveEnabled = !liveEnabled; syncLive(); });
   q('serraWindow').addEventListener('change', () => loadPlayer(true));
   q('serraReloadVideo').addEventListener('click', () => loadPlayer(true));
   q('serraSpeed').addEventListener('change', () => { q('serraVideo').playbackRate = Number(q('serraSpeed').value); });
@@ -131,5 +144,19 @@
   q('serraLive').addEventListener('error', () => {
     if (authenticated && view === 'serra') { q('serraLive').removeAttribute('src'); message('Diretta interrotta. Riconnessione automatica tra pochi secondi.', true); }
   });
+  q('serraVideo').addEventListener('pause', () => hls?.stopLoad());
+  q('serraVideo').addEventListener('play', () => hls?.startLoad(q('serraVideo').currentTime));
+  if ('IntersectionObserver' in globalThis) {
+    const observer = new IntersectionObserver(entries => {
+      for (const entry of entries) {
+        if (entry.target === q('serraLive')) { liveVisible = entry.isIntersecting; syncLive(); }
+        if (entry.target === q('serraVideo')) {
+          playerVisible = entry.isIntersecting;
+          if (playerVisible) loadPlayer(); else stopPlayer();
+        }
+      }
+    }, {threshold:0.01});
+    observer.observe(q('serraLive')); observer.observe(q('serraVideo'));
+  } else { liveVisible = true; playerVisible = true; }
   document.addEventListener('visibilitychange', sync);
 })();

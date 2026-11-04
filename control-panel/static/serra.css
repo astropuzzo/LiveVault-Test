@@ -5,6 +5,9 @@
 .serra-panel-head p{color:var(--muted);font-size:12px;margin-top:5px}
 .serra-frame{aspect-ratio:16/9;background:#080809;border:1px solid var(--line);border-radius:14px;overflow:hidden;display:grid;place-items:center}
 .serra-frame img{display:block;width:100%;height:100%;object-fit:contain;color:var(--muted);font-size:13px}
+.serra-frame{cursor:zoom-in;position:relative}
+.serra-frame.is-paused img{visibility:hidden}
+.serra-frame.is-paused::after{content:"Diretta sospesa · clicca per una foto a piena risoluzione";position:absolute;inset:0;display:grid;place-items:center;padding:22px;text-align:center;color:var(--muted);font-size:13px}
 .serra-live-foot{display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px;align-items:center;margin-top:16px}
 .serra-live-foot>span{display:flex;gap:8px;align-items:center;color:var(--muted);font-size:12px}
 .serra-live-foot i{display:block;width:6px;height:6px;background:var(--mint);border-radius:50%}

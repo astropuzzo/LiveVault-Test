@@ -16,7 +16,7 @@
   <link rel="stylesheet" href="/media-upload.css?v=3.5.1-graphite3">
   <link rel="stylesheet" href="/torrent-manager.css?v=3.5.1-graphite3">
   <link rel="stylesheet" href="/app.css?v=3.5.1-graphite3">
-  <link rel="stylesheet" href="/serra.css?v=20261104-1">
+  <link rel="stylesheet" href="/serra.css?v=20261104-2">
   <link rel="stylesheet" href="/apps.css?v=3.5.1-graphite3">
 </head>
 <body data-view="dashboard" class="is-loading">
@@ -172,8 +172,8 @@
         <div class="serra-layout">
           <section class="serra-live-panel" aria-labelledby="serraLiveTitle">
             <div class="serra-panel-head"><div><h2 id="serraLiveTitle">Camera dal vivo</h2><p id="serraResolution">2304 × 1296 · risoluzione nativa</p></div><button id="serraRetry" class="button secondary" type="button">Ricollega</button></div>
-            <div class="serra-frame"><img id="serraLive" alt="Diretta della camera della serra"></div>
-            <div class="serra-live-foot"><span><i aria-hidden="true"></i>Diretta locale · 3 fotogrammi al secondo</span><a class="button secondary" href="/api/serra/photo" download="serra.jpg">Scarica foto</a></div>
+            <a class="serra-frame" href="/api/serra/photo" target="_blank" rel="noopener" aria-label="Apri immagine alla risoluzione nativa" title="Apri immagine a risoluzione nativa"><img id="serraLive" alt="Diretta della camera della serra"></a>
+            <div class="serra-live-foot"><span><i aria-hidden="true"></i><span id="serraLiveStatus">Diretta locale · 3 fotogrammi al secondo</span></span><a class="button secondary" href="/api/serra/photo" download="serra.jpg">Scarica foto</a></div>
           </section>
           <section class="serra-settings" aria-labelledby="serraSettingsTitle">
             <h2 id="serraSettingsTitle">Raccolta continua</h2>
@@ -656,7 +656,7 @@
   <script src="/hls.min.js?v=1.7.2" defer></script>
   <script src="/diagnostics.js?v=3.5.1" defer></script>
   <script src="/apps.js?v=3.5.1-apps2" defer></script>
-  <script src="/serra.js?v=20261104-1" defer></script>
+  <script src="/serra.js?v=20261104-2" defer></script>
   <script src="/app.js?v=3.5.1-serra-20261104-1" defer></script>
   <script src="/torrent-manager.js?v=3.5.1-torrent5" defer></script>
   <script src="/media-upload.js?v=3.5.1" defer></script>

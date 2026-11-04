@@ -8,6 +8,10 @@ nessun ridimensionamento negli MP4.
 ## Runtime e utilizzo
 
 Pagina autenticata `#serra` nel Control Center esistente, anche nel menu mobile.
+Il clic sull'anteprima apre una foto nativa in una nuova scheda. Diretta e lettore
+si scollegano quando escono dal viewport, quando la scheda è nascosta o quando
+si cambia sezione; la diretta ha anche Avvia/Ferma. La pausa del video ferma il
+caricamento HLS. Queste sospensioni non fermano il raccoglitore delle foto.
 Diretta MJPEG nativa a 3 fps, scatti ogni 1/5/10/15/30 secondi o intervalli più
 lunghi, pausa/ripresa, limite circolare 1–16 GiB (predefinito 4 GiB).
 Impostazione iniziale: uno scatto ogni 15 s. Raccolta indipendente dal browser.
