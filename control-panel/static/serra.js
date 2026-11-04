@@ -3,6 +3,7 @@
   const q = id => document.getElementById(id);
   let authenticated = false, view = '', csrf = '', data = null, timer = null, request = null, busy = false, hls = null, loadedHours = null, loadedVersion = null;
   let liveEnabled = true, liveVisible = false, playerVisible = false, resumePosition = 0, resumeHours = null;
+  let loadingPausedByUser = false;
   const when = seconds => seconds ? new Date(seconds * 1000).toLocaleString('it-IT', {timeZone:'Europe/Rome'}) : 'In attesa';
   const bytes = n => n >= 1024 ** 3 ? `${(n / 1024 ** 3).toFixed(2)} GB` : `${(n / 1024 ** 2).toFixed(1)} MB`;
   function message(text, error = false) {
@@ -16,6 +17,7 @@
   function stopPlayer() {
     if (loadedHours !== null) { resumePosition = q('serraVideo').currentTime || 0; resumeHours = loadedHours; }
     hls?.destroy(); hls = null; loadedHours = null; loadedVersion = null;
+    loadingPausedByUser = false;
     const video = q('serraVideo');
     video.pause(); video.removeAttribute('src'); video.load();
   }
@@ -44,15 +46,26 @@
     const video = q('serraVideo'), url = `/api/serra/playlist.m3u8?hours=${hours}`;
     video.muted = true; video.loop = true;
     if (globalThis.Hls?.isSupported()) {
-      hls = new Hls({startPosition:previousPosition, maxBufferLength:30, maxMaxBufferLength:120, backBufferLength:60});
-      hls.loadSource(url); hls.attachMedia(video);
-      hls.on(Hls.Events.MANIFEST_PARSED, () => { video.playbackRate = Number(q('serraSpeed').value); video.play().catch(() => {}); });
-      hls.on(Hls.Events.ERROR, (_event, detail) => {
+      const player = new Hls({startPosition:previousPosition, maxBufferLength:30, maxMaxBufferLength:120, backBufferLength:60});
+      hls = player;
+      // Mobile Firefox can emit pause/play while attaching a new MediaSource.
+      // Install handlers first and let HLS finish its initial load uninterrupted.
+      player.on(Hls.Events.MEDIA_ATTACHED, () => { if (hls === player) player.loadSource(url); });
+      player.on(Hls.Events.MANIFEST_PARSED, () => {
+        if (hls !== player) return;
+        video.playbackRate = Number(q('serraSpeed').value);
+        video.play().catch(error => {
+          if (hls === player && error.name === 'NotAllowedError') message('Video pronto: tocca Play per avviare il timelapse.');
+        });
+      });
+      player.on(Hls.Events.ERROR, (_event, detail) => {
+        if (hls !== player) return;
         if (detail.fatal) {
-          message('Timelapse in aggiornamento. Premi Ricarica video per riprovare.', true);
+          message('Riproduzione interrotta. Premi Ricarica video per riprovare.', true);
           hls?.destroy(); hls = null; loadedHours = null;
         }
       });
+      player.attachMedia(video);
     } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
       video.src = url; video.play().catch(() => {});
     } else {
@@ -144,8 +157,17 @@
   q('serraLive').addEventListener('error', () => {
     if (authenticated && view === 'serra') { q('serraLive').removeAttribute('src'); message('Diretta interrotta. Riconnessione automatica tra pochi secondi.', true); }
   });
-  q('serraVideo').addEventListener('pause', () => hls?.stopLoad());
-  q('serraVideo').addEventListener('play', () => hls?.startLoad(q('serraVideo').currentTime));
+  q('serraVideo').addEventListener('pause', () => {
+    const video = q('serraVideo');
+    if (!hls || video.readyState < 2 || !playerVisible || document.hidden) return;
+    loadingPausedByUser = true;
+    hls.stopLoad();
+  });
+  q('serraVideo').addEventListener('play', () => {
+    if (!hls || !loadingPausedByUser) return;
+    loadingPausedByUser = false;
+    hls.startLoad(q('serraVideo').currentTime);
+  });
   if ('IntersectionObserver' in globalThis) {
     const observer = new IntersectionObserver(entries => {
       for (const entry of entries) {

@@ -12,6 +12,12 @@ Il clic sull'anteprima apre una foto nativa in una nuova scheda. Diretta e letto
 si scollegano quando escono dal viewport, quando la scheda è nascosta o quando
 si cambia sezione; la diretta ha anche Avvia/Ferma. La pausa del video ferma il
 caricamento HLS. Queste sospensioni non fermano il raccoglitore delle foto.
+Avvio mobile: collegare prima MediaSource e poi caricare la playlist; le pause
+transitorie prima del primo fotogramma non devono fermare HLS. Il caricamento
+riprende su Play soltanto se era stato sospeso da una pausa a video già pronto.
+Questo evita il reset del caricamento iniziale sui browser mobili. Se il browser
+blocca l'autoplay viene mostrato l'invito a toccare Play. La verifica sul telefono
+fisico resta distinta dalla regressione degli eventi e dalla prova desktop.
 Diretta MJPEG nativa a 3 fps, scatti ogni 1/5/10/15/30 secondi o intervalli più
 lunghi, pausa/ripresa, limite circolare 1–16 GiB (predefinito 4 GiB).
 Impostazione iniziale: uno scatto ogni 15 s. Raccolta indipendente dal browser.

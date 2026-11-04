@@ -10,7 +10,7 @@ test('greenhouse streams stop offscreen, when hidden and on logout; capture is i
     if (!elements.has(id)) {
       const attributes = {}, events = {};
       elements.set(id, {
-        id, events, paused:true, currentTime:0, value:id === 'serraWindow' ? '24' : '1',
+        id, events, paused:true, readyState:0, currentTime:0, value:id === 'serraWindow' ? '24' : '1',
         classList:{toggle(){}}, addEventListener(name, fn){events[name]=fn;},
         getAttribute(name){return attributes[name] || null;}, removeAttribute(name){delete attributes[name];},
         setAttribute(name,value){attributes[name]=value;},
@@ -22,10 +22,11 @@ test('greenhouse streams stop offscreen, when hidden and on logout; capture is i
     return elements.get(id);
   }
   class Hls {
-    static Events = {MANIFEST_PARSED:'manifest',ERROR:'error'};
+    static Events = {MEDIA_ATTACHED:'attached',MANIFEST_PARSED:'manifest',ERROR:'error'};
     static isSupported(){return true;}
-    constructor(){players.push(this);}
-    loadSource(url){this.url=url;} attachMedia(){} on(){} stopLoad(){} startLoad(){}
+    constructor(){this.events={};this.stops=0;this.starts=0;players.push(this);}
+    loadSource(url){this.url=url;} attachMedia(){this.events.attached?.();} on(event,callback){this.events[event]=callback;}
+    stopLoad(){this.stops++;} startLoad(){this.starts++;}
     destroy(){this.destroyed=true;}
   }
   const document = {hidden:false,activeElement:null,getElementById:element,addEventListener(name,fn){handlers[name]=fn;}};
@@ -45,6 +46,18 @@ test('greenhouse streams stop offscreen, when hidden and on logout; capture is i
   observers[0].fn([{target:element('serraLive'),isIntersecting:true},{target:element('serraVideo'),isIntersecting:true}]);
   assert.match(element('serraLive').src,/^\/api\/serra\/live/);
   assert.equal(players.length,1);
+  assert.match(players[0].url,/playlist\.m3u8/);
+  // Firefox Android may pause/play during attachment, before media data exists.
+  element('serraVideo').events.pause();
+  element('serraVideo').events.play();
+  assert.equal(players[0].stops,0);
+  assert.equal(players[0].starts,0);
+  // A pause after the first frame still suspends buffering.
+  element('serraVideo').readyState=2;
+  element('serraVideo').events.pause();
+  assert.equal(players[0].stops,1);
+  element('serraVideo').events.play();
+  assert.equal(players[0].starts,1);
   observers[0].fn([{target:element('serraLive'),isIntersecting:false},{target:element('serraVideo'),isIntersecting:false}]);
   assert.equal(element('serraLive').src,undefined);
   assert.equal(players[0].destroyed,true);
