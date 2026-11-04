@@ -27,7 +27,21 @@ del browser restano nel file privato 0600
 rapporti da 4 KiB; niente immagini, credenziali o URL. Non registra a scheda
 nascosta o fuori dalla sezione. La diagnostica non ricodifica né riavvia il video.
 È stata aggiunta perché la sola prova desktop, anche con UA Android, non
-conferma la decodifica del telefono fisico: il blocco resta da diagnosticare.
+conferma la decodifica del telefono fisico. La traccia reale mostrava avanzamento
+a scatti e molti fotogrammi scartati durante il download, poi riproduzione alla
+velocità corretta senza nuovi scarti quando il buffer era completo.
+Avvio Firefox Android v8: `preload=auto` soltanto mentre il player è visibile,
+attesa di otto secondi di video contigui (sei volte la velocità scelta
+se maggiore, fino a trenta secondi), oppure dell'intero resto del video se più breve. La scritta
+“Preparazione video” mostra il progresso; Play anticipato mantiene l'attesa,
+poi la riproduzione parte automaticamente. Un esaurimento del buffer attende
+nuovi dati senza ricaricare la sorgente. Fuori viewport o scheda nascosta si
+annullano attesa e caricamento. Nessuna copia Blob, ricodifica o memoria video
+aggiuntiva sul server. Il formato diagnostico v7 è conservato; gli eventi
+`buffer-start-v8` e `buffer-ready-v8` distinguono il nuovo lettore.
+La correzione richiede ancora conferma sul telefono. Una connessione più lenta
+del video nativo può richiedere attese più lunghe; l'anteprima conserva tutti
+i pixel richiesti e non promette riproduzione immediata con qualsiasi rete.
 Avvio mobile: collegare prima MediaSource e poi caricare la playlist; le pause
 transitorie prima del primo fotogramma non devono fermare HLS. Il caricamento
 riprende su Play soltanto se era stato sospeso da una pausa a video già pronto.
@@ -109,3 +123,5 @@ conservano. Non riavviare Docker, LiveVault o l'intero server per questo rollbac
 Per annullare soltanto la correzione del polling v6, ripristinare `serra.js`,
 il riferimento versione in `index.html` e il documento dal backup mirato
 `serra-session-*`: nessun riavvio necessario, quindi ricaricare la pagina.
+Per annullare soltanto il buffer v8, ripristinare i tre asset SERRA e i riferimenti
+in `index.html` dal backup `serra-buffer-*`, senza riavviare servizi.

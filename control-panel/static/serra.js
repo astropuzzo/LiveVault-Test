@@ -6,6 +6,7 @@
   let loadingPausedByUser = false;
   let previewRequest = null, pendingSeek = 0;
   let diagnosticTimer = null, diagnosticRequest = null, diagnosticCount = 0;
+  let bufferTimer = null, nativeBuffering = false;
   const playbackEvents = [];
   const firefoxAndroid = /Android/i.test(globalThis.navigator?.userAgent || '') && /Firefox\//i.test(globalThis.navigator?.userAgent || '');
   async function reportPlayback() {
@@ -45,7 +46,42 @@
     for (const id of ['serraInterval','serraQuota','serraPause','serraCapture','serraFlush']) q(id).disabled = busy || !csrf || !data;
     q('serraDownload').setAttribute('aria-disabled', !data?.blocks ? 'true' : 'false');
   }
+  function checkNativeBuffer() {
+    clearTimeout(bufferTimer); bufferTimer = null;
+    if (!nativeBuffering || !authenticated || view !== 'serra' || document.hidden || !playerVisible || loadedHours === null) return;
+    const video = q('serraVideo'), position = video.currentTime || 0;
+    const remaining = Number.isFinite(video.duration) ? Math.max(0,video.duration-position) : Infinity;
+    const required = Math.min(remaining,30,Math.max(8,6 * Number(q('serraSpeed').value)));
+    let available = 0;
+    for (let i=0;i<video.buffered.length;i++) {
+      if (video.buffered.start(i) <= position+.05 && video.buffered.end(i) > position) available = Math.max(available,video.buffered.end(i)-position);
+    }
+    if (video.readyState >= 2 && Number.isFinite(required) && available+.05 >= required) {
+      nativeBuffering = false;
+      q('serraBufferStatus').textContent = '';
+      playbackEvents.push({event:'buffer-ready-v8',position,at:Date.now()});
+      video.play().catch(error => {
+        if (error.name === 'NotAllowedError') q('serraBufferStatus').textContent = 'Video pronto: tocca Play.';
+      });
+      return;
+    }
+    const percent = Number.isFinite(required) && required > 0 ? Math.min(99,Math.floor(100*available/required)) : 0;
+    q('serraBufferStatus').textContent = `Preparazione video · ${percent}%`;
+    bufferTimer = setTimeout(checkNativeBuffer,500);
+  }
+  function prepareNativeBuffer() {
+    if (!firefoxAndroid || loadedHours === null || !authenticated || !playerVisible || document.hidden) return;
+    nativeBuffering = true;
+    const video = q('serraVideo');
+    video.preload = 'auto';
+    video.pause();
+    playbackEvents.push({event:'buffer-start-v8',position:video.currentTime || 0,at:Date.now()});
+    if (playbackEvents.length > 12) playbackEvents.shift();
+    checkNativeBuffer();
+  }
   function stopPlayer() {
+    clearTimeout(bufferTimer); bufferTimer = null; nativeBuffering = false;
+    q('serraBufferStatus').textContent = '';
     clearTimeout(diagnosticTimer); diagnosticTimer = null;
     diagnosticRequest?.abort(); diagnosticRequest = null;
     previewRequest?.abort(); previewRequest = null;
@@ -53,6 +89,7 @@
     hls?.destroy(); hls = null; loadedHours = null; loadedVersion = null;
     loadingPausedByUser = false;
     const video = q('serraVideo');
+    video.preload = 'none';
     video.pause(); video.removeAttribute('src'); video.load();
   }
   function stop() {
@@ -90,12 +127,12 @@
           if (!response.ok) throw new Error(info.error || 'Anteprima non disponibile.');
           if (previewRequest !== active || !authenticated || view !== 'serra' || document.hidden || !playerVisible) return;
           pendingSeek = previousPosition;
+          nativeBuffering = true;
+          video.preload = 'auto';
           video.src = info.url;
           video.load();
           if (diagnosticCount < 8) diagnosticTimer = setTimeout(reportPlayback,3000);
-          video.play().catch(error => {
-            if (error.name === 'NotAllowedError') message('Video pronto: tocca Play per avviare il timelapse.');
-          });
+          prepareNativeBuffer();
         })
         .catch(error => { if (previewRequest === active && error.name !== 'AbortError') { loadedHours = null; message(error.message,true); } })
         .finally(() => { clearTimeout(timeout); if (previewRequest === active) previewRequest = null; });
@@ -236,8 +273,14 @@
     video.playbackRate = Number(q('serraSpeed').value);
     if (pendingSeek > 0 && Number.isFinite(video.duration)) video.currentTime = Math.min(pendingSeek,Math.max(0,video.duration-.01));
     pendingSeek = 0;
+    checkNativeBuffer();
+  });
+  for (const event of ['progress','loadeddata','canplay','canplaythrough','seeked']) q('serraVideo').addEventListener(event,checkNativeBuffer);
+  q('serraVideo').addEventListener('waiting', () => {
+    if (firefoxAndroid && !q('serraVideo').paused) prepareNativeBuffer();
   });
   q('serraVideo').addEventListener('play', () => {
+    if (firefoxAndroid && nativeBuffering) { q('serraVideo').pause(); checkNativeBuffer(); return; }
     if (!hls || !loadingPausedByUser) return;
     loadingPausedByUser = false;
     hls.startLoad(q('serraVideo').currentTime);

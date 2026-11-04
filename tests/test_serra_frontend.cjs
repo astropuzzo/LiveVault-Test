@@ -13,7 +13,7 @@ async function exercise(userAgent = '') {
       elements.set(id, {
         id, events, paused:true, readyState:0, currentTime:0, value:id === 'serraWindow' ? '24' : '1',
         classList:{toggle(){},remove(){}}, addEventListener(name, fn){const previous=events[name];events[name]=previous ? (...args)=>{previous(...args);fn(...args);} : fn;},
-        duration:3,networkState:1,videoWidth:2304,videoHeight:1296,buffered:{length:1,start(){return 0;},end(){return 3;}},
+        duration:3,networkState:1,videoWidth:2304,videoHeight:1296,buffered:{length:1,start(){return 0;},end(){return .083333;}},
         getVideoPlaybackQuality(){return {totalVideoFrames:36,droppedVideoFrames:0};},
         getAttribute(name){return attributes[name] || null;}, removeAttribute(name){delete attributes[name];},
         setAttribute(name,value){attributes[name]=value;},
@@ -49,6 +49,26 @@ async function exercise(userAgent = '') {
   observers[0].fn([{target:element('serraLive'),isIntersecting:true},{target:element('serraVideo'),isIntersecting:true}]);
   assert.match(element('serraLive').src,/^\/api\/serra\/live/);
   await new Promise(resolve=>setImmediate(resolve));
+  if (userAgent) {
+    const video=element('serraVideo');
+    video.readyState=2;video.events.loadedmetadata();
+    assert.equal(video.preload,'auto');
+    assert.equal(video.paused,true,'a two-frame buffer must not start a full MP4');
+    assert.match(element('serraBufferStatus').textContent,/Preparazione video/);
+    video.paused=false;video.events.play();
+    assert.equal(video.paused,true,'early Play waits for the required buffer');
+    video.buffered.end=()=>1;video.events.progress();
+    assert.equal(video.paused,true);
+    video.buffered.end=()=>3;video.events.progress();
+    assert.equal(video.paused,false,'the fully buffered short movie starts automatically');
+    assert.equal(element('serraBufferStatus').textContent,'');
+    video.duration=30;video.currentTime=4;video.buffered.end=()=>4.1;
+    video.events.waiting();
+    assert.equal(video.paused,true,'underruns wait for a useful buffer instead of advancing one frame');
+    video.buffered.end=()=>12;video.events.progress();
+    assert.equal(video.paused,false);
+    video.duration=3;video.currentTime=0;video.buffered.end=()=>3;
+  }
   // Run the main panel's actual refresh/login integration, not an isolated player.
   const app=fs.readFileSync(path.join(__dirname,'../control-panel/static/app.js'),'utf8');
   Object.assign(context, {refreshBusy:false,signedIn:true,latestState:{},$:element,render(value){api.update(value);}});
@@ -79,9 +99,13 @@ async function exercise(userAgent = '') {
     assert.equal(reports[0].position,1.5);
     assert.equal(reports[0].decoded_frames,36);
     assert.deepEqual(JSON.parse(JSON.stringify(reports[0].buffered)),[[0,3]]);
-    assert.equal(reports[0].events.at(-1).event,'waiting');
+    assert.equal(reports[0].events.some(item=>item.event==='waiting'),true);
     assert.equal([...timers.values()].some(value=>value.ms===3000),false);
+    video.duration=30;video.buffered.end=()=>1.5;video.events.waiting();
+    assert.equal([...timers.values()].some(value=>value.ms===500),true);
     document.hidden=true;handlers.visibilitychange();
+    assert.equal([...timers.values()].some(value=>value.ms===500),false);
+    assert.equal(video.preload,'none');
     assert.equal(element('serraVideo').src,undefined);
     assert.equal(element('serraLive').src,undefined);
     api.setAuthenticated(false);
