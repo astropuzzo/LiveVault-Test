@@ -19,6 +19,15 @@ di accesso, sezione o visibilità. La regressione esegue le funzioni reali
 `refresh()` e `hideLogin()` del pannello durante la riproduzione, sia per HLS sia
 per MP4 Android: nessun reset, nuova richiesta o perdita della posizione.
 Correzione distribuita con `serra.js?v=20261104-6`; nessun riavvio di servizi.
+Diagnosi mobile temporanea v7: Firefox Android invia al massimo otto piccoli
+rapporti per caricamento della pagina, solo con il player visibile e sessione
+autenticata con CSRF. Buffer, posizione, contatori di decodifica, eventi e versione
+del browser restano nel file privato 0600
+`/var/lib/openastro-control/serra/playback-diagnostics.json`, massimo sedici
+rapporti da 4 KiB; niente immagini, credenziali o URL. Non registra a scheda
+nascosta o fuori dalla sezione. La diagnostica non ricodifica né riavvia il video.
+È stata aggiunta perché la sola prova desktop, anche con UA Android, non
+conferma la decodifica del telefono fisico: il blocco resta da diagnosticare.
 Avvio mobile: collegare prima MediaSource e poi caricare la playlist; le pause
 transitorie prima del primo fotogramma non devono fermare HLS. Il caricamento
 riprende su Play soltanto se era stato sospeso da una pausa a video già pronto.

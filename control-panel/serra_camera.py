@@ -572,6 +572,30 @@ def handle_get(handler, parsed):
             handler.send_json({'ok': False, 'error': 'Risorsa temporaneamente non disponibile.'}, 503)
 
 
+def playback_report(report):
+    """Keep a small private trace while diagnosing physical Android playback."""
+    if not isinstance(report, dict) or report.get('build') != '20261104-7':
+        raise SerraError('Diagnostica non valida.', 400)
+    allowed = {'build','user_agent','position','duration','paused','ready','network','visible','hidden',
+               'width','height','buffered','decoded_frames','dropped_frames','error_code','error_message','events'}
+    clean = {key:value for key,value in report.items() if key in allowed}
+    try:
+        valid = len(json.dumps(clean, allow_nan=False)) <= 4096
+    except (TypeError, ValueError):
+        valid = False
+    if not valid:
+        raise SerraError('Diagnostica troppo grande o non valida.', 400)
+    with _lock('playback-report'):
+        path = STATE / 'playback-diagnostics.json'
+        previous = _read(path, {'reports':[]})['reports']
+        now = time.time()
+        if previous and now - previous[-1]['at'] < 1:
+            return {'ok':True}
+        _json(path, {'reports':(previous + [{'at':now, **clean}])[-16:]})
+        path.chmod(0o600)
+    return {'ok':True}
+
+
 def handle_post(payload):
     action = payload.get('action')
     if action == 'settings':
@@ -581,6 +605,8 @@ def handle_post(payload):
     if action == 'flush':
         _state(flush_requested=True)
         return {'ok': True}
+    if action == 'playback-report':
+        return playback_report(payload.get('report'))
     raise SerraError('Operazione non valida.', 400)
 
 

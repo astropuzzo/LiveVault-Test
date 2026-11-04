@@ -5,6 +5,36 @@
   let liveEnabled = true, liveVisible = false, playerVisible = false, resumePosition = 0, resumeHours = null;
   let loadingPausedByUser = false;
   let previewRequest = null, pendingSeek = 0;
+  let diagnosticTimer = null, diagnosticRequest = null, diagnosticCount = 0;
+  const playbackEvents = [];
+  const firefoxAndroid = /Android/i.test(globalThis.navigator?.userAgent || '') && /Firefox\//i.test(globalThis.navigator?.userAgent || '');
+  async function reportPlayback() {
+    diagnosticTimer = null;
+    if (!firefoxAndroid || diagnosticCount >= 8 || !authenticated || !csrf || view !== 'serra' || document.hidden || !playerVisible || loadedHours === null) return;
+    const video = q('serraVideo'), quality = video.getVideoPlaybackQuality?.();
+    const report = {build:'20261104-7', user_agent:navigator.userAgent.slice(0,256),
+      position:video.currentTime, duration:Number.isFinite(video.duration) ? video.duration : null,
+      paused:video.paused, ready:video.readyState, network:video.networkState,
+      visible:playerVisible, hidden:document.hidden, width:video.videoWidth, height:video.videoHeight,
+      buffered:Array.from({length:Math.min(video.buffered.length,4)},(_,i)=>[video.buffered.start(i),video.buffered.end(i)]),
+      decoded_frames:quality?.totalVideoFrames ?? video.mozDecodedFrames ?? null,
+      dropped_frames:quality?.droppedVideoFrames ?? null, error_code:video.error?.code || 0,
+      error_message:(video.error?.message || '').slice(0,256), events:playbackEvents.slice(-12)};
+    diagnosticCount++;
+    const active = new AbortController(); diagnosticRequest = active;
+    const timeout = setTimeout(() => active.abort(),5000);
+    try {
+      await fetch('/api/serra/action',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},
+        body:JSON.stringify({action:'playback-report',report}),signal:active.signal});
+    } catch (_) { /* Diagnostics must never interrupt playback. */ }
+    finally {
+      clearTimeout(timeout);
+      if (diagnosticRequest === active) {
+        diagnosticRequest = null;
+        if (diagnosticCount < 8) diagnosticTimer = setTimeout(reportPlayback,3000);
+      }
+    }
+  }
   const when = seconds => seconds ? new Date(seconds * 1000).toLocaleString('it-IT', {timeZone:'Europe/Rome'}) : 'In attesa';
   const bytes = n => n >= 1024 ** 3 ? `${(n / 1024 ** 3).toFixed(2)} GB` : `${(n / 1024 ** 2).toFixed(1)} MB`;
   function message(text, error = false) {
@@ -16,6 +46,8 @@
     q('serraDownload').setAttribute('aria-disabled', !data?.blocks ? 'true' : 'false');
   }
   function stopPlayer() {
+    clearTimeout(diagnosticTimer); diagnosticTimer = null;
+    diagnosticRequest?.abort(); diagnosticRequest = null;
     previewRequest?.abort(); previewRequest = null;
     if (loadedHours !== null) { resumePosition = q('serraVideo').currentTime || 0; resumeHours = loadedHours; }
     hls?.destroy(); hls = null; loadedHours = null; loadedVersion = null;
@@ -47,8 +79,7 @@
     stopPlayer(); loadedHours = hours; loadedVersion = data.last_compact;
     const video = q('serraVideo'), url = `/api/serra/playlist.m3u8?hours=${hours}`;
     video.muted = true; video.loop = true;
-    const agent = globalThis.navigator?.userAgent || '';
-    if (/Android/i.test(agent) && /Firefox\//i.test(agent)) {
+    if (firefoxAndroid) {
       // The complete index exposes duration and seek ranges before playback.
       // All video bytes are read directly from the existing archive chunks.
       const active = new AbortController(); previewRequest = active;
@@ -61,6 +92,7 @@
           pendingSeek = previousPosition;
           video.src = info.url;
           video.load();
+          if (diagnosticCount < 8) diagnosticTimer = setTimeout(reportPlayback,3000);
           video.play().catch(error => {
             if (error.name === 'NotAllowedError') message('Video pronto: tocca Play per avviare il timelapse.');
           });
@@ -169,6 +201,12 @@
     update(value) { csrf = value?.csrf || csrf; controls(); },
   };
   if (!q('serraLive')) return;
+  if (firefoxAndroid) for (const event of ['loadstart','emptied','play','playing','pause','waiting','stalled','error','suspend','ended']) {
+    q('serraVideo').addEventListener(event, () => {
+      playbackEvents.push({event,position:q('serraVideo').currentTime,at:Date.now()});
+      if (playbackEvents.length > 12) playbackEvents.shift();
+    });
+  }
   q('serraPause').addEventListener('click', () => action({action:'settings', enabled:!data.settings.enabled, interval_seconds:data.settings.interval_seconds, quota_gb:data.settings.quota_gb}));
   q('serraInterval').addEventListener('change', save);
   q('serraQuota').addEventListener('change', save);

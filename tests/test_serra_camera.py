@@ -65,6 +65,23 @@ class SerraTests(unittest.TestCase):
             with self.assertRaises(camera.SerraError):
                 camera.set_settings(bad)
 
+    def test_playback_diagnostics_are_bounded_private_and_do_not_change_capture(self):
+        camera.set_settings({'enabled':True,'interval_seconds':60,'quota_gb':4})
+        with patch.object(camera.time,'time',side_effect=range(100,120)):
+            for number in range(20):
+                camera.handle_post({'action':'playback-report','report':{'build':'20261104-7','position':number,'unrecognized':'discard'}})
+        path = self.state / 'playback-diagnostics.json'
+        reports = json.loads(path.read_text())['reports']
+        self.assertEqual(len(reports),16)
+        self.assertEqual(reports[0]['position'],4)
+        self.assertNotIn('unrecognized',reports[-1])
+        self.assertEqual(path.stat().st_mode & 0o777,0o600)
+        self.assertEqual(camera.settings()['interval_seconds'],60)
+        for invalid in (None,{}, {'build':'20261104-7','position':float('nan')},
+                        {'build':'20261104-7','user_agent':'x'*5000}):
+            with self.assertRaises(camera.SerraError):
+                camera.playback_report(invalid)
+
     def test_absent_nvme_never_creates_an_archive_on_the_system_disk(self):
         absent = self.root / 'absent-mount'
         absent.mkdir()

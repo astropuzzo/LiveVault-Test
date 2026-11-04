@@ -5,13 +5,16 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 async function exercise(userAgent = '') {
-  const elements = new Map(), observers = [], handlers = {}, players = [], posts = [], requests = [];
+  const elements = new Map(), observers = [], handlers = {}, players = [], posts = [], requests = [], reports = [], timers = new Map();
+  let timerId = 0;
   function element(id) {
     if (!elements.has(id)) {
       const attributes = {}, events = {};
       elements.set(id, {
         id, events, paused:true, readyState:0, currentTime:0, value:id === 'serraWindow' ? '24' : '1',
-        classList:{toggle(){},remove(){}}, addEventListener(name, fn){events[name]=fn;},
+        classList:{toggle(){},remove(){}}, addEventListener(name, fn){const previous=events[name];events[name]=previous ? (...args)=>{previous(...args);fn(...args);} : fn;},
+        duration:3,networkState:1,videoWidth:2304,videoHeight:1296,buffered:{length:1,start(){return 0;},end(){return 3;}},
+        getVideoPlaybackQuality(){return {totalVideoFrames:36,droppedVideoFrames:0};},
         getAttribute(name){return attributes[name] || null;}, removeAttribute(name){delete attributes[name];},
         setAttribute(name,value){attributes[name]=value;},
         get src(){return attributes.src;}, set src(value){attributes.src=value;},
@@ -33,9 +36,9 @@ async function exercise(userAgent = '') {
   const data={settings:{enabled:true,interval_seconds:15,quota_gb:4},storage_online:true,used_bytes:1,free_bytes:1e9,
     frames:3,pending_frames:1,blocks:1,last_compact:1,width:2304,height:1296};
   const context=vm.createContext({document,Hls,navigator:{userAgent},AbortController,AbortSignal,Date,Intl,URLSearchParams,console,
-    setTimeout(){return 1;},clearTimeout(){},
+    setTimeout(fn,ms){timers.set(++timerId,{fn,ms});return timerId;},clearTimeout(id){timers.delete(id);},
     IntersectionObserver:class {constructor(fn){this.fn=fn;observers.push(this);}observe(){}},
-    async fetch(url,options={}){requests.push(url);if(options.method==='POST')posts.push(url);return {ok:true,status:200,json:async()=>url.includes('preview-info')?{url:'/api/serra/preview.mp4?first=1&last=2&v=1',duration:3}:data};},
+    async fetch(url,options={}){requests.push(url);if(options.method==='POST'){const body=JSON.parse(options.body);if(body.action==='playback-report')reports.push(body.report);else posts.push(url);}return {ok:true,status:200,json:async()=>url.includes('preview-info')?{url:'/api/serra/preview.mp4?first=1&last=2&v=1',duration:3}:data};},
   });
   vm.runInContext(fs.readFileSync(path.join(__dirname,'../control-panel/static/serra.js'),'utf8'),context);
   const api=context.OpenAstroSerra;
@@ -67,6 +70,17 @@ async function exercise(userAgent = '') {
     await new Promise(resolve=>setImmediate(resolve));
     assert.equal(players.length,0);
     assert.match(element('serraVideo').src,/^\/api\/serra\/preview\.mp4\?first=1&last=2&v=1$/);
+    video.events.waiting();
+    for(let i=0;i<8;i++) {
+      const [id,task]=[...timers].find(([,value])=>value.ms===3000);
+      timers.delete(id); await task.fn();
+    }
+    assert.equal(reports.length,8);
+    assert.equal(reports[0].position,1.5);
+    assert.equal(reports[0].decoded_frames,36);
+    assert.deepEqual(JSON.parse(JSON.stringify(reports[0].buffered)),[[0,3]]);
+    assert.equal(reports[0].events.at(-1).event,'waiting');
+    assert.equal([...timers.values()].some(value=>value.ms===3000),false);
     document.hidden=true;handlers.visibilitychange();
     assert.equal(element('serraVideo').src,undefined);
     assert.equal(element('serraLive').src,undefined);
