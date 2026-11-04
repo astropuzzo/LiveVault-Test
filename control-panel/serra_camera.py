@@ -20,6 +20,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, urlencode
 from urllib.request import ProxyHandler, Request, build_opener
 from uuid import uuid4
+import mp4_view
 
 STATE = Path(os.getenv('OPENASTRO_SERRA_STATE', '/var/lib/openastro-control/serra'))
 CONFIG = Path(os.getenv('OPENASTRO_SERRA_CONFIG', '/var/lib/openastro-control/serra-camera.json'))
@@ -33,6 +34,8 @@ _http = build_opener(ProxyHandler({}))
 _viewers = threading.BoundedSemaphore(2)
 _downloads = threading.BoundedSemaphore(1)
 _previews = threading.BoundedSemaphore(1)
+_plan_lock = threading.Lock()
+_plan_key = _plan = None
 
 
 class SerraError(Exception):
@@ -477,6 +480,59 @@ def _export(handler, hours):
     return _mp4(handler, hours, download=True)
 
 
+def preview_info(hours):
+    rows = window(hours)
+    if not rows:
+        raise SerraError('Il timelapse sarà disponibile dopo i primi scatti compressi.', 503)
+    return {'ok': True, 'duration': sum(row['frames'] for row in rows) / FPS,
+            'url': f"/api/serra/preview.mp4?first={rows[0]['id']}&last={rows[-1]['id']}&v=1"}
+
+
+def _indexed_preview(handler, query):
+    global _plan_key, _plan
+    try:
+        first, last = int(query['first'][0]), int(query['last'][0])
+    except (KeyError, ValueError, IndexError):
+        info = preview_info(query.get('hours', ['24'])[0])
+        handler.send_response(307)
+        handler.send_header('Location', info['url'])
+        handler.send_header('Content-Length', '0')
+        handler.send_header('Cache-Control', 'private, no-store')
+        handler.end_headers()
+        return
+    if first < 1 or last < first:
+        raise SerraError('Finestra video non valida.', 400)
+    with storage() as root:
+        with _lock('retention', shared=True), _plan_lock:
+            with _db() as db:
+                rows = list(db.execute('SELECT * FROM segments WHERE id BETWEEN ? AND ? ORDER BY id', (first,last)))
+            if not rows or rows[0]['id'] != first or rows[-1]['id'] != last:
+                raise SerraError('Archivio aggiornato: ricarica la finestra del timelapse.', 410)
+            key = tuple((row['id'],row['name'],row['size']) for row in rows)
+            if key != _plan_key:
+                paths = [root / 'segments' / row['name'] for row in rows]
+                try:
+                    movie = mp4_view.build(paths)
+                except (ValueError, StopIteration, struct.error):
+                    raise SerraError('Indice video non disponibile: scegli una finestra più breve.', 503) from None
+                _plan_key, _plan = key, movie
+            movie = _plan
+            movie.read_allowed = lambda: not _quiescing()
+        # Only metadata is retained in memory. Actual bytes come directly from
+        # the original MP4 chunks, through the existing 200/206 range transport.
+        connection = getattr(handler, 'connection', None)
+        old_timeout = connection.gettimeout() if connection else None
+        try:
+            if connection:
+                connection.settimeout(5)
+            handler._serra_headers_sent = True
+            handler.send_media_file({'path': movie, 'size': movie.size,
+                                     'name': 'serra-timelapse.mp4', 'mime': 'video/mp4'})
+        finally:
+            if connection:
+                connection.settimeout(old_timeout)
+
+
 def handle_get(handler, parsed):
     query = parse_qs(parsed.query)
     try:
@@ -491,7 +547,9 @@ def handle_get(handler, parsed):
         elif parsed.path == '/api/serra/export.mp4':
             _export(handler, query.get('hours', ['24'])[0])
         elif parsed.path == '/api/serra/preview.mp4':
-            _mp4(handler, query.get('hours', ['24'])[0], download=False)
+            _indexed_preview(handler, query)
+        elif parsed.path == '/api/serra/preview-info':
+            handler.send_json(preview_info(query.get('hours', ['24'])[0]))
         elif parsed.path == '/api/serra/segment':
             try:
                 identifier = int(query.get('id', [''])[0])

@@ -9,10 +9,12 @@ import subprocess
 import tempfile
 import time
 import unittest
+import sys
 from unittest.mock import patch
 from urllib.parse import urlparse
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / 'control-panel'))
 spec = importlib.util.spec_from_file_location('serra_camera', ROOT / 'control-panel/serra_camera.py')
 camera = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(camera)
@@ -149,6 +151,42 @@ class SerraTests(unittest.TestCase):
         self.assertIn('#EXT-X-DISCONTINUITY\n', text)
         self.assertNotIn('token', text)
         self.assertNotIn('192.168.', text)
+
+    @unittest.skipUnless(shutil.which('ffmpeg') and shutil.which('ffprobe'), 'FFmpeg required')
+    def test_indexed_preview_has_full_duration_seek_and_identical_video_packets(self):
+        payloads = []
+        for color in ('green','red'):
+            image = self.root / (color + '.jpg')
+            subprocess.run(['ffmpeg','-nostdin','-hide_banner','-loglevel','error','-f','lavfi',
+                            '-i',f'color=c={color}:s=2304x1296','-frames:v','1','-threads','1','-y',str(image)],check=True)
+            payloads.append(image.read_bytes())
+        base = time.time()
+        for index in range(2): self.frame(base + index, payloads[0])
+        camera.compact()
+        for index in range(7): self.frame(base + 10 + index, payloads[1])
+        camera.compact()
+        with camera._db() as db:
+            paths = [self.media / 'segments' / row['name'] for row in db.execute('SELECT name FROM segments ORDER BY id')]
+        view = camera.mp4_view.build(paths)
+        with view.open() as reader:
+            contents = reader.read(view.size)
+            for start,length in [(0,16),(len(view.header)-4,24),(view.size-20,20)]:
+                reader.seek(start)
+                self.assertEqual(reader.read(length),contents[start:start+length])
+        movie = self.root / 'indexed.mp4'
+        movie.write_bytes(contents)
+        probe = json.loads(subprocess.check_output(['ffprobe','-v','error','-count_frames','-select_streams','v:0',
+                           '-show_entries','stream=width,height,nb_read_frames:format=duration','-of','json',str(movie)]))
+        stream = probe['streams'][0]
+        self.assertEqual((stream['width'],stream['height']),(2304,1296))
+        self.assertEqual(int(stream['nb_read_frames']),9)
+        self.assertAlmostEqual(float(probe['format']['duration']),9/24,places=5)
+        def packet_hashes(path):
+            output = json.loads(subprocess.check_output(['ffprobe','-v','error','-show_packets','-show_data_hash','sha256',
+                              '-select_streams','v:0','-show_entries','packet=data_hash','-of','json',str(path)]))
+            return [row['data_hash'] for row in output['packets']]
+        self.assertEqual(packet_hashes(movie),[value for path in paths for value in packet_hashes(path)])
+        self.assertFalse(any((self.media / 'segments').glob('*.tmp')))
 
     @unittest.skipUnless(shutil.which('ffmpeg') and shutil.which('ffprobe'), 'FFmpeg required')
     def test_continuous_preview_crosses_two_frame_boundary_without_losing_samples(self):

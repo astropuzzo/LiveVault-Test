@@ -4,6 +4,7 @@
   let authenticated = false, view = '', csrf = '', data = null, timer = null, request = null, busy = false, hls = null, loadedHours = null, loadedVersion = null;
   let liveEnabled = true, liveVisible = false, playerVisible = false, resumePosition = 0, resumeHours = null;
   let loadingPausedByUser = false;
+  let previewRequest = null, pendingSeek = 0;
   const when = seconds => seconds ? new Date(seconds * 1000).toLocaleString('it-IT', {timeZone:'Europe/Rome'}) : 'In attesa';
   const bytes = n => n >= 1024 ** 3 ? `${(n / 1024 ** 3).toFixed(2)} GB` : `${(n / 1024 ** 2).toFixed(1)} MB`;
   function message(text, error = false) {
@@ -15,6 +16,7 @@
     q('serraDownload').setAttribute('aria-disabled', !data?.blocks ? 'true' : 'false');
   }
   function stopPlayer() {
+    previewRequest?.abort(); previewRequest = null;
     if (loadedHours !== null) { resumePosition = q('serraVideo').currentTime || 0; resumeHours = loadedHours; }
     hls?.destroy(); hls = null; loadedHours = null; loadedVersion = null;
     loadingPausedByUser = false;
@@ -47,13 +49,24 @@
     video.muted = true; video.loop = true;
     const agent = globalThis.navigator?.userAgent || '';
     if (/Android/i.test(agent) && /Firefox\//i.test(agent)) {
-      // A single remuxed MP4 avoids decoder resets at very short HLS boundaries.
-      // The backend copies encoded packets; no resize, transcoding or extra cache.
-      video.src = `/api/serra/preview.mp4?hours=${hours}`;
-      video.load();
-      video.play().catch(error => {
-        if (error.name === 'NotAllowedError') message('Video pronto: tocca Play per avviare il timelapse.');
-      });
+      // The complete index exposes duration and seek ranges before playback.
+      // All video bytes are read directly from the existing archive chunks.
+      const active = new AbortController(); previewRequest = active;
+      const timeout = setTimeout(() => active.abort(), 20000);
+      fetch(`/api/serra/preview-info?hours=${hours}`, {cache:'no-store', signal:active.signal})
+        .then(async response => {
+          const info = await response.json();
+          if (!response.ok) throw new Error(info.error || 'Anteprima non disponibile.');
+          if (previewRequest !== active || !authenticated || view !== 'serra' || document.hidden || !playerVisible) return;
+          pendingSeek = previousPosition;
+          video.src = info.url;
+          video.load();
+          video.play().catch(error => {
+            if (error.name === 'NotAllowedError') message('Video pronto: tocca Play per avviare il timelapse.');
+          });
+        })
+        .catch(error => { if (previewRequest === active && error.name !== 'AbortError') { loadedHours = null; message(error.message,true); } })
+        .finally(() => { clearTimeout(timeout); if (previewRequest === active) previewRequest = null; });
     } else if (globalThis.Hls?.isSupported()) {
       const player = new Hls({startPosition:previousPosition, maxBufferLength:30, maxMaxBufferLength:120, backBufferLength:60});
       hls = player;
@@ -171,6 +184,12 @@
     if (!hls || video.readyState < 2 || !playerVisible || document.hidden) return;
     loadingPausedByUser = true;
     hls.stopLoad();
+  });
+  q('serraVideo').addEventListener('loadedmetadata', () => {
+    const video = q('serraVideo');
+    video.playbackRate = Number(q('serraSpeed').value);
+    if (pendingSeek > 0 && Number.isFinite(video.duration)) video.currentTime = Math.min(pendingSeek,Math.max(0,video.duration-.01));
+    pendingSeek = 0;
   });
   q('serraVideo').addEventListener('play', () => {
     if (!hls || !loadingPausedByUser) return;

@@ -18,12 +18,17 @@ riprende su Play soltanto se era stato sospeso da una pausa a video già pronto.
 Questo evita il reset del caricamento iniziale sui browser mobili. Se il browser
 blocca l'autoplay viene mostrato l'invito a toccare Play. La verifica sul telefono
 fisico resta distinta dalla regressione degli eventi e dalla prova desktop.
-Firefox Android usa `/api/serra/preview.mp4`: un unico MP4 con timeline continua,
-ottenuto dai blocchi esistenti con `-c copy`. Evita il passaggio HLS fra clip anche
-di soli 0,083 s. Non ricodifica, non ridimensiona e non crea una cache video su
-disco. Una sola anteprima MP4 concorrente; il download ha un limite separato.
-Quando la pagina non è visibile il browser scollega anche questa anteprima;
-il processo di remux si chiude e la raccolta delle foto prosegue.
+Firefox Android prepara la finestra con `/api/serra/preview-info`, quindi apre un
+MP4 indicizzato tramite URL immutabile con primo/ultimo blocco. `mp4_view.py`
+costruisce in memoria soltanto ftyp/moov, durata, indici di ricerca e tabella dei
+campioni; i byte video vengono letti direttamente dai blocchi originali. La vista
+ha Content-Length e richieste Range 206, durata completa fin dall'apertura e
+timestamp continui anche per B-frame e blocchi iniziali da soli 0,083 s.
+Non serve FFmpeg per l'anteprima: nessuna ricodifica, riduzione o seconda copia
+video. Un solo indice in cache, limitato a 4 MiB; finestre non più conservate
+restituiscono 410 e richiedono una ricarica. La raccolta delle foto prosegue
+anche con il player nascosto o chiuso. Le letture cooperano con l'espulsione NVMe.
+La precedente pipe MP4 con moov vuoto non viene più usata dall'anteprima mobile.
 Diretta MJPEG nativa a 3 fps, scatti ogni 1/5/10/15/30 secondi o intervalli più
 lunghi, pausa/ripresa, limite circolare 1–16 GiB (predefinito 4 GiB).
 Impostazione iniziale: uno scatto ogni 15 s. Raccolta indipendente dal browser.

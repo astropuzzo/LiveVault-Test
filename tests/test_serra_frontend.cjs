@@ -35,7 +35,7 @@ async function exercise(userAgent = '') {
   const context=vm.createContext({document,Hls,navigator:{userAgent},AbortController,Date,Intl,URLSearchParams,console,
     setTimeout(){return 1;},clearTimeout(){},
     IntersectionObserver:class {constructor(fn){this.fn=fn;observers.push(this);}observe(){}},
-    async fetch(url,options={}){if(options.method==='POST')posts.push(url);return {ok:true,status:200,json:async()=>data};},
+    async fetch(url,options={}){if(options.method==='POST')posts.push(url);return {ok:true,status:200,json:async()=>url.includes('preview-info')?{url:'/api/serra/preview.mp4?first=1&last=2&v=1',duration:3}:data};},
   });
   vm.runInContext(fs.readFileSync(path.join(__dirname,'../control-panel/static/serra.js'),'utf8'),context);
   const api=context.OpenAstroSerra;
@@ -46,8 +46,9 @@ async function exercise(userAgent = '') {
   observers[0].fn([{target:element('serraLive'),isIntersecting:true},{target:element('serraVideo'),isIntersecting:true}]);
   assert.match(element('serraLive').src,/^\/api\/serra\/live/);
   if (userAgent) {
+    await new Promise(resolve=>setImmediate(resolve));
     assert.equal(players.length,0);
-    assert.match(element('serraVideo').src,/^\/api\/serra\/preview\.mp4\?hours=24$/);
+    assert.match(element('serraVideo').src,/^\/api\/serra\/preview\.mp4\?first=1&last=2&v=1$/);
     document.hidden=true;handlers.visibilitychange();
     assert.equal(element('serraVideo').src,undefined);
     assert.equal(element('serraLive').src,undefined);
