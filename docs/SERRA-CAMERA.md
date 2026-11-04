@@ -12,6 +12,13 @@ Il clic sull'anteprima apre una foto nativa in una nuova scheda. Diretta e letto
 si scollegano quando escono dal viewport, quando la scheda è nascosta o quando
 si cambia sezione; la diretta ha anche Avvia/Ferma. La pausa del video ferma il
 caricamento HLS. Queste sospensioni non fermano il raccoglitore delle foto.
+La conferma di una sessione già autenticata è idempotente: il polling `/api/state`
+del pannello chiama `hideLogin()` a ogni risposta, ma non deve ricreare il lettore
+né riaprire la diretta. Si sincronizza il ciclo dei media solo al vero cambio
+di accesso, sezione o visibilità. La regressione esegue le funzioni reali
+`refresh()` e `hideLogin()` del pannello durante la riproduzione, sia per HLS sia
+per MP4 Android: nessun reset, nuova richiesta o perdita della posizione.
+Correzione distribuita con `serra.js?v=20261104-6`; nessun riavvio di servizi.
 Avvio mobile: collegare prima MediaSource e poi caricare la playlist; le pause
 transitorie prima del primo fotogramma non devono fermare HLS. Il caricamento
 riprende su Play soltanto se era stato sospeso da una pausa a video già pronto.
@@ -90,3 +97,6 @@ Distribuzione mirata: backup dei file Control modificati e dell'helper storage i
 Ripristinare quei file e fermare/disabilitare `openastro-serra.service`, quindi
 riavviare soltanto `openastro-control.service`. Archivio e backup firmware si
 conservano. Non riavviare Docker, LiveVault o l'intero server per questo rollback.
+Per annullare soltanto la correzione del polling v6, ripristinare `serra.js`,
+il riferimento versione in `index.html` e il documento dal backup mirato
+`serra-session-*`: nessun riavvio necessario, quindi ricaricare la pagina.

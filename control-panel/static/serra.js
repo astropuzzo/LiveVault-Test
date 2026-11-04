@@ -157,7 +157,15 @@
   }
   globalThis.OpenAstroSerra = {
     setView(value) { if (view !== value) { view = value; sync(); } },
-    setAuthenticated(value) { authenticated = Boolean(value); if (!authenticated) { csrf = ''; data = null; resumePosition = 0; resumeHours = null; } sync(); },
+    setAuthenticated(value) {
+      const next = Boolean(value);
+      // The main panel confirms the same session after every telemetry update.
+      // Only a real login/logout transition should reset the media lifecycle.
+      if (authenticated === next) return;
+      authenticated = next;
+      sync();
+      if (!authenticated) { csrf = ''; data = null; resumePosition = 0; resumeHours = null; }
+    },
     update(value) { csrf = value?.csrf || csrf; controls(); },
   };
   if (!q('serraLive')) return;

@@ -5,17 +5,17 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 async function exercise(userAgent = '') {
-  const elements = new Map(), observers = [], handlers = {}, players = [], posts = [];
+  const elements = new Map(), observers = [], handlers = {}, players = [], posts = [], requests = [];
   function element(id) {
     if (!elements.has(id)) {
       const attributes = {}, events = {};
       elements.set(id, {
         id, events, paused:true, readyState:0, currentTime:0, value:id === 'serraWindow' ? '24' : '1',
-        classList:{toggle(){}}, addEventListener(name, fn){events[name]=fn;},
+        classList:{toggle(){},remove(){}}, addEventListener(name, fn){events[name]=fn;},
         getAttribute(name){return attributes[name] || null;}, removeAttribute(name){delete attributes[name];},
         setAttribute(name,value){attributes[name]=value;},
         get src(){return attributes.src;}, set src(value){attributes.src=value;},
-        closest(){return {classList:{toggle(){}}};}, pause(){this.paused=true;}, load(){},
+        loads:0, closest(){return {classList:{toggle(){}}};}, pause(){this.paused=true;}, load(){this.loads++;},
         play(){this.paused=false;return Promise.resolve();}, canPlayType(){return '';},
       });
     }
@@ -29,13 +29,13 @@ async function exercise(userAgent = '') {
     stopLoad(){this.stops++;} startLoad(){this.starts++;}
     destroy(){this.destroyed=true;}
   }
-  const document = {hidden:false,activeElement:null,getElementById:element,addEventListener(name,fn){handlers[name]=fn;}};
+  const document = {hidden:false,activeElement:null,body:{classList:{remove(){},add(){}}},getElementById:element,addEventListener(name,fn){handlers[name]=fn;}};
   const data={settings:{enabled:true,interval_seconds:15,quota_gb:4},storage_online:true,used_bytes:1,free_bytes:1e9,
     frames:3,pending_frames:1,blocks:1,last_compact:1,width:2304,height:1296};
-  const context=vm.createContext({document,Hls,navigator:{userAgent},AbortController,Date,Intl,URLSearchParams,console,
+  const context=vm.createContext({document,Hls,navigator:{userAgent},AbortController,AbortSignal,Date,Intl,URLSearchParams,console,
     setTimeout(){return 1;},clearTimeout(){},
     IntersectionObserver:class {constructor(fn){this.fn=fn;observers.push(this);}observe(){}},
-    async fetch(url,options={}){if(options.method==='POST')posts.push(url);return {ok:true,status:200,json:async()=>url.includes('preview-info')?{url:'/api/serra/preview.mp4?first=1&last=2&v=1',duration:3}:data};},
+    async fetch(url,options={}){requests.push(url);if(options.method==='POST')posts.push(url);return {ok:true,status:200,json:async()=>url.includes('preview-info')?{url:'/api/serra/preview.mp4?first=1&last=2&v=1',duration:3}:data};},
   });
   vm.runInContext(fs.readFileSync(path.join(__dirname,'../control-panel/static/serra.js'),'utf8'),context);
   const api=context.OpenAstroSerra;
@@ -45,6 +45,24 @@ async function exercise(userAgent = '') {
   assert.equal(players.length,0);
   observers[0].fn([{target:element('serraLive'),isIntersecting:true},{target:element('serraVideo'),isIntersecting:true}]);
   assert.match(element('serraLive').src,/^\/api\/serra\/live/);
+  await new Promise(resolve=>setImmediate(resolve));
+  // Run the main panel's actual refresh/login integration, not an isolated player.
+  const app=fs.readFileSync(path.join(__dirname,'../control-panel/static/app.js'),'utf8');
+  Object.assign(context, {refreshBusy:false,signedIn:true,latestState:{},$:element,render(value){api.update(value);}});
+  vm.runInContext(app.slice(app.indexOf('async function refresh() {'),app.indexOf('function showLogin() {')) +
+    app.slice(app.indexOf('function hideLogin() {'),app.indexOf('function toast(')),context);
+  const video=element('serraVideo'), loads=video.loads, source=video.src, liveSource=element('serraLive').src;
+  const mediaRequests=requests.filter(url=>url.startsWith('/api/serra/')).length;
+  video.currentTime=1.5; video.paused=false;
+  for(let i=0;i<3;i++) await context.refresh();
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(video.loads,loads,'panel telemetry must not reload the video');
+  assert.equal(video.src,source);
+  assert.equal(element('serraLive').src,liveSource);
+  assert.equal(video.currentTime,1.5);
+  assert.equal(video.paused,false);
+  assert.equal(requests.filter(url=>url.startsWith('/api/serra/')).length,mediaRequests);
+  assert.equal(players.some(player=>player.destroyed),false);
   if (userAgent) {
     await new Promise(resolve=>setImmediate(resolve));
     assert.equal(players.length,0);
@@ -52,6 +70,8 @@ async function exercise(userAgent = '') {
     document.hidden=true;handlers.visibilitychange();
     assert.equal(element('serraVideo').src,undefined);
     assert.equal(element('serraLive').src,undefined);
+    api.setAuthenticated(false);
+    assert.equal(element('serraVideo').src,undefined);
     assert.deepEqual(posts,[]);
     return;
   }
