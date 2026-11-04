@@ -10,8 +10,7 @@ nessun ridimensionamento negli MP4.
 Pagina autenticata `#serra` nel Control Center esistente, anche nel menu mobile.
 Il clic sull'anteprima apre una foto nativa in una nuova scheda. Diretta e lettore
 si scollegano quando escono dal viewport, quando la scheda è nascosta o quando
-si cambia sezione; la diretta ha anche Avvia/Ferma. La pausa del video ferma il
-caricamento HLS. Queste sospensioni non fermano il raccoglitore delle foto.
+si cambia sezione; la diretta ha anche Avvia/Ferma. Queste sospensioni non fermano il raccoglitore delle foto.
 La conferma di una sessione già autenticata è idempotente: il polling `/api/state`
 del pannello chiama `hideLogin()` a ogni risposta, ma non deve ricreare il lettore
 né riaprire la diretta. Si sincronizza il ciclo dei media solo al vero cambio
@@ -19,7 +18,7 @@ di accesso, sezione o visibilità. La regressione esegue le funzioni reali
 `refresh()` e `hideLogin()` del pannello durante la riproduzione, sia per HLS sia
 per MP4 Android: nessun reset, nuova richiesta o perdita della posizione.
 Correzione distribuita con `serra.js?v=20261104-6`; nessun riavvio di servizi.
-Diagnosi mobile temporanea v7: Firefox Android invia al massimo otto piccoli
+Diagnostica v7 solo su richiesta con `?serraDebug=1`: il lettore invia al massimo otto piccoli
 rapporti per caricamento della pagina, solo con il player visibile e sessione
 autenticata con CSRF. Buffer, posizione, contatori di decodifica, eventi e versione
 del browser restano nel file privato 0600
@@ -30,7 +29,7 @@ nascosta o fuori dalla sezione. La diagnostica non ricodifica né riavvia il vid
 conferma la decodifica del telefono fisico. La traccia reale mostrava avanzamento
 a scatti e molti fotogrammi scartati durante il download, poi riproduzione alla
 velocità corretta senza nuovi scarti quando il buffer era completo.
-Avvio Firefox Android v8: `preload=auto` soltanto mentre il player è visibile,
+Avvio MP4 v9 per tutti i browser desktop e mobili: `preload=auto` soltanto mentre il player è visibile,
 attesa di otto secondi di video contigui (sei volte la velocità scelta
 se maggiore, fino a trenta secondi), oppure dell'intero resto del video se più breve. La scritta
 “Preparazione video” mostra il progresso; Play anticipato mantiene l'attesa,
@@ -39,16 +38,15 @@ nuovi dati senza ricaricare la sorgente. Fuori viewport o scheda nascosta si
 annullano attesa e caricamento. Nessuna copia Blob, ricodifica o memoria video
 aggiuntiva sul server. Il formato diagnostico v7 è conservato; gli eventi
 `buffer-start-v8` e `buffer-ready-v8` distinguono il nuovo lettore.
-La correzione richiede ancora conferma sul telefono. Una connessione più lenta
+La riproduzione v8 è confermata dall’utente sul telefono fisico. Il vecchio
+percorso HLS desktop non riceveva lo stesso buffer: v9 usa un solo lettore MP4
+indicizzato per desktop e mobile. Tre regressioni verificano gli stessi eventi
+di avvio, Play anticipato, stallo, polling e sospensione su entrambi. Senza
+`serraDebug=1` non si invia diagnostica. La prova fisica PC resta da confermare.
+Una connessione più lenta
 del video nativo può richiedere attese più lunghe; l'anteprima conserva tutti
 i pixel richiesti e non promette riproduzione immediata con qualsiasi rete.
-Avvio mobile: collegare prima MediaSource e poi caricare la playlist; le pause
-transitorie prima del primo fotogramma non devono fermare HLS. Il caricamento
-riprende su Play soltanto se era stato sospeso da una pausa a video già pronto.
-Questo evita il reset del caricamento iniziale sui browser mobili. Se il browser
-blocca l'autoplay viene mostrato l'invito a toccare Play. La verifica sul telefono
-fisico resta distinta dalla regressione degli eventi e dalla prova desktop.
-Firefox Android prepara la finestra con `/api/serra/preview-info`, quindi apre un
+Il lettore prepara la finestra con `/api/serra/preview-info`, quindi apre un
 MP4 indicizzato tramite URL immutabile con primo/ultimo blocco. `mp4_view.py`
 costruisce in memoria soltanto ftyp/moov, durata, indici di ricerca e tabella dei
 campioni; i byte video vengono letti direttamente dai blocchi originali. La vista
@@ -125,3 +123,24 @@ il riferimento versione in `index.html` e il documento dal backup mirato
 `serra-session-*`: nessun riavvio necessario, quindi ricaricare la pagina.
 Per annullare soltanto il buffer v8, ripristinare i tre asset SERRA e i riferimenti
 in `index.html` dal backup `serra-buffer-*`, senza riavviare servizi.
+
+
+## Sicurezza della camera
+
+Verifica 2026-11-04: SSH accetta solo chiave pubblica (`dropbear -s`), provato
+anche il rifiuto del metodo password. IPv6 disabilitato in runtime e in
+`/etc/sysctl.conf`, perché l'integrazione usa solo la LAN IPv4. La camera non
+aveva un firewall locale installato; non confondere l'assenza di un indirizzo
+IPv6 con un audit completo del router. Il resto della LAN non è stato modificato.
+Foto dirette senza chiave e RTSP senza credenziali restituiscono 401; la home
+web pubblica nella LAN non implica accesso anonimo alle immagini. Il pannello
+richiede sessione anche per la camera ed espone HTTPS, cookie Secure/HttpOnly/
+SameSite e protezione dei tentativi di login. La chiave API resta solo sul server.
+La lettura UPnP del gateway non ha elencato mappature verso la camera. Porte
+manuali, DMZ e firewall WAN del router non sono stati verificati tramite una
+sessione amministrativa: non si dichiara esclusa ogni esposizione pubblica.
+Backup privato della configurazione camera in `/root/serra-security-*` e fuori
+Git nel workspace. Per rollback SSH ripristinare `S30dropbear` e riavviare solo
+Dropbear; per IPv6 ripristinare sysctl e applicare le impostazioni volute.
+Per annullare soltanto il player desktop v9 ripristinare JS, riferimento versione
+e documento dal backup `serra-desktop-*`, poi ricaricare: nessun servizio da riavviare.
