@@ -18,6 +18,12 @@ riprende su Play soltanto se era stato sospeso da una pausa a video già pronto.
 Questo evita il reset del caricamento iniziale sui browser mobili. Se il browser
 blocca l'autoplay viene mostrato l'invito a toccare Play. La verifica sul telefono
 fisico resta distinta dalla regressione degli eventi e dalla prova desktop.
+Firefox Android usa `/api/serra/preview.mp4`: un unico MP4 con timeline continua,
+ottenuto dai blocchi esistenti con `-c copy`. Evita il passaggio HLS fra clip anche
+di soli 0,083 s. Non ricodifica, non ridimensiona e non crea una cache video su
+disco. Una sola anteprima MP4 concorrente; il download ha un limite separato.
+Quando la pagina non è visibile il browser scollega anche questa anteprima;
+il processo di remux si chiude e la raccolta delle foto prosegue.
 Diretta MJPEG nativa a 3 fps, scatti ogni 1/5/10/15/30 secondi o intervalli più
 lunghi, pausa/ripresa, limite circolare 1–16 GiB (predefinito 4 GiB).
 Impostazione iniziale: uno scatto ogni 15 s. Raccolta indipendente dal browser.

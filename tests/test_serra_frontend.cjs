@@ -4,7 +4,7 @@ const vm = require('node:vm');
 const fs = require('node:fs');
 const path = require('node:path');
 
-test('greenhouse streams stop offscreen, when hidden and on logout; capture is independent', async () => {
+async function exercise(userAgent = '') {
   const elements = new Map(), observers = [], handlers = {}, players = [], posts = [];
   function element(id) {
     if (!elements.has(id)) {
@@ -32,7 +32,7 @@ test('greenhouse streams stop offscreen, when hidden and on logout; capture is i
   const document = {hidden:false,activeElement:null,getElementById:element,addEventListener(name,fn){handlers[name]=fn;}};
   const data={settings:{enabled:true,interval_seconds:15,quota_gb:4},storage_online:true,used_bytes:1,free_bytes:1e9,
     frames:3,pending_frames:1,blocks:1,last_compact:1,width:2304,height:1296};
-  const context=vm.createContext({document,Hls,AbortController,Date,Intl,URLSearchParams,console,
+  const context=vm.createContext({document,Hls,navigator:{userAgent},AbortController,Date,Intl,URLSearchParams,console,
     setTimeout(){return 1;},clearTimeout(){},
     IntersectionObserver:class {constructor(fn){this.fn=fn;observers.push(this);}observe(){}},
     async fetch(url,options={}){if(options.method==='POST')posts.push(url);return {ok:true,status:200,json:async()=>data};},
@@ -45,6 +45,15 @@ test('greenhouse streams stop offscreen, when hidden and on logout; capture is i
   assert.equal(players.length,0);
   observers[0].fn([{target:element('serraLive'),isIntersecting:true},{target:element('serraVideo'),isIntersecting:true}]);
   assert.match(element('serraLive').src,/^\/api\/serra\/live/);
+  if (userAgent) {
+    assert.equal(players.length,0);
+    assert.match(element('serraVideo').src,/^\/api\/serra\/preview\.mp4\?hours=24$/);
+    document.hidden=true;handlers.visibilitychange();
+    assert.equal(element('serraVideo').src,undefined);
+    assert.equal(element('serraLive').src,undefined);
+    assert.deepEqual(posts,[]);
+    return;
+  }
   assert.equal(players.length,1);
   assert.match(players[0].url,/playlist\.m3u8/);
   // Firefox Android may pause/play during attachment, before media data exists.
@@ -69,4 +78,7 @@ test('greenhouse streams stop offscreen, when hidden and on logout; capture is i
   api.setAuthenticated(false);
   assert.equal(element('serraLive').src,undefined);
   assert.deepEqual(posts,[]);
-});
+}
+
+test('greenhouse streams stop offscreen, when hidden and on logout; capture is independent', () => exercise());
+test('Firefox Android plays one continuous MP4 and suspends it when hidden', () => exercise('Mozilla/5.0 (Android 15; Mobile; rv:145.0) Gecko/145.0 Firefox/145.0'));

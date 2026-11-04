@@ -45,7 +45,16 @@
     stopPlayer(); loadedHours = hours; loadedVersion = data.last_compact;
     const video = q('serraVideo'), url = `/api/serra/playlist.m3u8?hours=${hours}`;
     video.muted = true; video.loop = true;
-    if (globalThis.Hls?.isSupported()) {
+    const agent = globalThis.navigator?.userAgent || '';
+    if (/Android/i.test(agent) && /Firefox\//i.test(agent)) {
+      // A single remuxed MP4 avoids decoder resets at very short HLS boundaries.
+      // The backend copies encoded packets; no resize, transcoding or extra cache.
+      video.src = `/api/serra/preview.mp4?hours=${hours}`;
+      video.load();
+      video.play().catch(error => {
+        if (error.name === 'NotAllowedError') message('Video pronto: tocca Play per avviare il timelapse.');
+      });
+    } else if (globalThis.Hls?.isSupported()) {
       const player = new Hls({startPosition:previousPosition, maxBufferLength:30, maxMaxBufferLength:120, backBufferLength:60});
       hls = player;
       // Mobile Firefox can emit pause/play while attaching a new MediaSource.

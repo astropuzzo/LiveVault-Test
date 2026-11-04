@@ -32,6 +32,7 @@ FPS, MAX_BATCH, RESERVE, MAX_IMAGE = 24, 300, 2 * 1024**3, 8 * 1024**2
 _http = build_opener(ProxyHandler({}))
 _viewers = threading.BoundedSemaphore(2)
 _downloads = threading.BoundedSemaphore(1)
+_previews = threading.BoundedSemaphore(1)
 
 
 class SerraError(Exception):
@@ -420,9 +421,10 @@ def _live(handler):
         _viewers.release()
 
 
-def _export(handler, hours):
-    if not _downloads.acquire(blocking=False):
-        raise SerraError('Un download MP4 è già in corso.', 429)
+def _mp4(handler, hours, *, download=True):
+    slots = _downloads if download else _previews
+    if not slots.acquire(blocking=False):
+        raise SerraError('Una riproduzione o un download MP4 è già in corso.', 429)
     process = listing = None
     try:
         with storage() as root, _lock('retention', shared=True):
@@ -442,7 +444,8 @@ def _export(handler, hours):
                 raise SerraError('Preparazione MP4 non riuscita.', 502)
             handler.send_response(200)
             handler.send_header('Content-Type', 'video/mp4')
-            handler.send_header('Content-Disposition', f'attachment; filename="serra-ultime-{int(hours)}h.mp4"')
+            disposition = 'attachment' if download else 'inline'
+            handler.send_header('Content-Disposition', f'{disposition}; filename="serra-ultime-{int(hours)}h.mp4"')
             handler.send_header('Cache-Control', 'private, no-store')
             handler.send_header('Connection', 'close')
             handler.end_headers()
@@ -467,7 +470,11 @@ def _export(handler, hours):
             process.stdout.close()
         if listing:
             listing.unlink(missing_ok=True)
-        _downloads.release()
+        slots.release()
+
+
+def _export(handler, hours):
+    return _mp4(handler, hours, download=True)
 
 
 def handle_get(handler, parsed):
@@ -483,6 +490,8 @@ def handle_get(handler, parsed):
             _send(handler, playlist(query.get('hours', ['24'])[0]), 'application/vnd.apple.mpegurl')
         elif parsed.path == '/api/serra/export.mp4':
             _export(handler, query.get('hours', ['24'])[0])
+        elif parsed.path == '/api/serra/preview.mp4':
+            _mp4(handler, query.get('hours', ['24'])[0], download=False)
         elif parsed.path == '/api/serra/segment':
             try:
                 identifier = int(query.get('id', [''])[0])

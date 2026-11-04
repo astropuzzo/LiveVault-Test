@@ -151,6 +151,42 @@ class SerraTests(unittest.TestCase):
         self.assertNotIn('192.168.', text)
 
     @unittest.skipUnless(shutil.which('ffmpeg') and shutil.which('ffprobe'), 'FFmpeg required')
+    def test_continuous_preview_crosses_two_frame_boundary_without_losing_samples(self):
+        image = self.root / 'native.jpg'
+        subprocess.run(['ffmpeg','-nostdin','-hide_banner','-loglevel','error','-f','lavfi',
+                        '-i','color=c=green:s=2304x1296','-frames:v','1','-threads','1','-y',str(image)],check=True)
+        payload = image.read_bytes()
+        base = time.time()
+        for index in range(2):
+            self.frame(base + index, payload)
+        camera.compact()
+        for index in range(7):
+            self.frame(base + 10 + index, payload)
+        camera.compact()
+
+        class Request:
+            close_connection = False
+            wfile = io.BytesIO()
+            headers = {}
+            def send_response(self, code): self.code = code
+            def send_header(self, name, value): self.headers[name] = value
+            def end_headers(self): pass
+            def authenticated_session(self): return {'test': True}
+
+        request = Request()
+        camera._mp4(request, 24, download=False)
+        self.assertEqual(request.code, 200)
+        self.assertTrue(request.headers['Content-Disposition'].startswith('inline;'))
+        movie = self.root / 'continuous.mp4'
+        movie.write_bytes(request.wfile.getvalue())
+        probe = json.loads(subprocess.check_output(['ffprobe','-v','error','-count_frames','-select_streams','v:0',
+                           '-show_entries','stream=width,height,nb_read_frames','-of','json',str(movie)]))
+        stream = probe['streams'][0]
+        self.assertEqual((stream['width'],stream['height']), (2304,1296))
+        self.assertEqual(int(stream['nb_read_frames']),9)
+        self.assertEqual(len(list((self.media / 'segments').glob('*.mp4'))),2)
+
+    @unittest.skipUnless(shutil.which('ffmpeg') and shutil.which('ffprobe'), 'FFmpeg required')
     def test_real_native_mp4_preserves_resolution_and_every_frame(self):
         image = self.root / 'native.jpg'
         subprocess.run(['ffmpeg','-nostdin','-hide_banner','-loglevel','error','-f','lavfi',
