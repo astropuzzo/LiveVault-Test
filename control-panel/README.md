@@ -2,11 +2,15 @@
 
 ## Serra: camera e timelapse
 
-Pagina `#serra` con diretta locale, raccolta continua alla risoluzione nativa,
-intervalli da 1 secondo e archivio circolare configurabile. Timelapse sulle ultime
-24/48/72 ore e download MP4 senza ricodifica. Configurazione, validazione e
-rollback in [SERRA-CAMERA.md](../docs/SERRA-CAMERA.md). Indirizzi, identificativi
-storage e credenziali si configurano esclusivamente sul server.
+Pagina `#serra` con diretta, rotazione salvata nei pixel delle foto native e
+raccolta indipendente dal browser. Il lettore MP4 con buffer è condiviso tra PC
+e telefono. Finestre da un'ora a un anno: dettaglio recente, storico orario nei
+primi 30 giorni e poi alle 10/14/18 Europe/Rome. Quota unica configurabile
+(predefinita 4 GiB), pulizia manuale con conteggio e conferma; export senza
+ricodifica. Richiede FFmpeg/ffprobe e `libjpeg-turbo-progs` per la rotazione.
+Configurazione, test, sicurezza e rollback in
+[SERRA-CAMERA.md](../docs/SERRA-CAMERA.md). Credenziali e identificativi storage
+si configurano solo sul server e non vanno pubblicati.
 
 PWA mobile-first per monitorare e controllare il server ASIAIR/Debian. Il servizio
 vive sulla memoria interna, resta accessibile senza NVMe e viene pubblicato solo

@@ -40,20 +40,135 @@ class SerraTests(unittest.TestCase):
             yield self.media
         patch.object(camera, 'storage', storage).start()
 
-    def frame(self, timestamp, content=b'original frame', batch=None):
-        name = str(int(timestamp * 1e9)) + '.jpg'
+    def frame(self, timestamp, content=b'original frame', batch=None, rotation=0, tier='recent'):
+        name = ('h' if tier=='history' else '')+str(int(timestamp * 1e9)) + '.jpg'
         (self.media / 'pending' / name).write_bytes(content)
         with camera._db() as db:
-            db.execute('INSERT INTO frames VALUES(?,?,?,?)', (name, timestamp, len(content), batch))
+            db.execute('INSERT INTO frames(name,ts,size,batch,rotation,tier) VALUES(?,?,?,?,?,?)', (name, timestamp, len(content), batch, rotation, tier))
         return name
 
-    def segment(self, timestamp, content=b'compact video'):
-        name = str(int(timestamp * 1e9)) + '.mp4'
+    def segment(self, timestamp, content=b'compact video', tier='recent', rotation=0):
+        name = ('h' if tier=='history' else '')+str(int(timestamp * 1e9)) + '.mp4'
         (self.media / 'segments' / name).write_bytes(content)
         with camera._db() as db:
-            db.execute('INSERT INTO segments(name,start,end,frames,size,init,duration) VALUES(?,?,?,?,?,?,?)',
-                       (name, timestamp, timestamp + 1, 2, len(content), 4, 2/24))
+            db.execute('INSERT INTO segments(name,start,end,frames,size,init,duration,tier,rotation) VALUES(?,?,?,?,?,?,?,?,?)',
+                       (name, timestamp, timestamp + 1, 2, len(content), 4, 2/24,tier,rotation))
         return name
+
+    def native_image(self):
+        target = self.root/'quadrants.jpg'
+        expression = 'color=black:s=2304x1296,drawbox=x=0:y=0:w=1152:h=648:color=red:t=fill,drawbox=x=1152:y=0:w=1152:h=648:color=green:t=fill,drawbox=x=0:y=648:w=1152:h=648:color=blue:t=fill,drawbox=x=1152:y=648:w=1152:h=648:color=yellow:t=fill'
+        subprocess.run(['ffmpeg','-nostdin','-hide_banner','-loglevel','error','-f','lavfi','-i',expression,'-frames:v','1','-threads','1','-y',str(target)],check=True)
+        return target.read_bytes()
+
+    def test_existing_schema_is_extended_without_losing_rows(self):
+        self.state.mkdir()
+        db = camera.sqlite3.connect(self.state/'archive.sqlite3')
+        with db:
+            db.execute('CREATE TABLE frames(name TEXT PRIMARY KEY,ts REAL,size INTEGER,batch TEXT)')
+            db.execute("INSERT INTO frames VALUES('legacy.jpg',1,2,NULL)")
+        db.close()
+        with camera._db() as db:
+            row = db.execute('SELECT * FROM frames').fetchone()
+        self.assertEqual((row['name'],row['rotation'],row['tier']),('legacy.jpg',0,'recent'))
+
+    def test_hourly_history_reuses_capture_and_is_independent_of_recent_interval(self):
+        now = time.time()
+        with patch.object(camera,'photo',return_value=b'\xff\xd8native\xff\xd9') as photo, patch.object(camera.time,'time',return_value=now) as clock:
+            camera.capture();clock.return_value=now+10;camera.capture()
+            clock.return_value=now+3600;camera.capture(recent=False)
+        with camera._db() as db:
+            counts = dict(db.execute('SELECT tier,COUNT(*) FROM frames GROUP BY tier'))
+        self.assertEqual(counts,{'recent':2,'history':2})
+        self.assertEqual(photo.call_count,3)
+
+    def test_cleanup_requires_matching_preview_and_preserves_active_partial_and_history(self):
+        now=time.time();first=self.frame(now-100);active=self.frame(now-90,batch='busy')
+        history=self.frame(now-80,tier='history');whole=self.segment(now-110);partial=self.segment(now-150)
+        with camera._db() as db: db.execute('UPDATE segments SET end=? WHERE name=?',(now-90,partial))
+        foreign=self.root/'family.mp4';foreign.write_bytes(b'keep')
+        request={'from_ts':now-120,'to_ts':now-50}
+        preview=camera.purge_archive(request)
+        self.assertEqual((preview['photos'],preview['blocks'],preview['frames']),(1,1,3))
+        self.assertTrue((self.media/'pending'/first).exists())
+        with camera._lock('retention',shared=True):
+            with self.assertRaises(camera.SerraError): camera.purge_archive(preview,execute=True)
+        changed=self.frame(now-70)
+        with self.assertRaises(camera.SerraError): camera.purge_archive(preview,execute=True)
+        preview=camera.purge_archive(request);result=camera.purge_archive(preview,execute=True)
+        self.assertEqual(result['frames'],4)
+        self.assertFalse((self.media/'pending'/first).exists());self.assertFalse((self.media/'pending'/changed).exists())
+        self.assertFalse((self.media/'segments'/whole).exists())
+        for folder,name in [('pending',active),('pending',history),('segments',partial)]: self.assertTrue((self.media/folder/name).exists())
+        self.assertEqual(foreign.read_bytes(),b'keep')
+        preview=camera.purge_archive({**request,'include_history':True})
+        self.assertEqual(preview['photos'],1)
+
+    def test_quota_prefers_recent_detail_over_older_year_history(self):
+        now=time.time();old=self.segment(now-1000,b'h'*40,tier='history');recent=self.segment(now-10,b'r'*40)
+        patch.object(camera,'settings',lambda:{'quota_gb':100/1024**3}).start()
+        camera._room(self.media,30)
+        self.assertTrue((self.media/'segments'/old).exists());self.assertFalse((self.media/'segments'/recent).exists())
+
+    @unittest.skipUnless(shutil.which('jpegtran') and shutil.which('ffmpeg'),'JPEG tools required')
+    def test_rotation_changes_jpeg_pixels_at_all_four_native_orientations(self):
+        image=self.native_image();original=None
+        for angle,expected in [(0,[0,1,2,3]),(90,[2,0,3,1]),(180,[3,2,1,0]),(270,[1,3,0,2])]:
+            rotated=camera.rotate_jpeg(image,angle)
+            if angle==0:self.assertEqual(rotated,image)
+            self.assertEqual(camera._jpeg_rotation(rotated),angle)
+            path=self.root/f'rotation-{angle}.jpg';path.write_bytes(rotated)
+            probe=json.loads(subprocess.check_output(['ffprobe','-v','error','-select_streams','v:0','-show_entries','stream=width,height','-of','json',str(path)]))['streams'][0]
+            w,h=probe['width'],probe['height'];self.assertEqual((w,h),(1296,2304) if angle in (90,270) else (2304,1296))
+            rgb=subprocess.check_output(['ffmpeg','-nostdin','-hide_banner','-loglevel','error','-i',str(path),'-frames:v','1','-threads','1','-pix_fmt','rgb24','-f','rawvideo','-'])
+            colors=[rgb[(y*w+x)*3:(y*w+x)*3+3] for y in (h//4,3*h//4) for x in (w//4,3*w//4)]
+            if original is None:original=colors
+            for color,index in zip(colors,expected):self.assertLessEqual(max(abs(a-b) for a,b in zip(color,original[index])),2)
+        camera.set_settings({'enabled':True,'interval_seconds':60,'quota_gb':4,'rotation_degrees':90})
+        camera.set_settings({'enabled':True,'interval_seconds':15,'quota_gb':4})
+        self.assertEqual(camera.settings()['rotation_degrees'],90)
+
+    @unittest.skipUnless(shutil.which('jpegtran') and shutil.which('ffmpeg'),'JPEG tools required')
+    def test_portrait_blocks_are_kept_separate_from_landscape_and_survive_recovery(self):
+        image=self.native_image();rotated=camera.rotate_jpeg(image,90);now=time.time()
+        for i in range(2):self.frame(now-20+i,image)
+        camera.compact()
+        self.frame(now-15,image)
+        for i in range(2):self.frame(now-10+i,rotated,rotation=90)
+        camera.compact();camera.compact()
+        with camera._db() as db:rows=list(db.execute('SELECT * FROM segments ORDER BY id'))
+        self.assertEqual([(r['rotation'],r['width'],r['height']) for r in rows],[(0,2304,1296),(0,2304,1296),(90,1296,2304)])
+        camera.mp4_view.build([self.media/'segments'/r['name'] for r in rows if r['rotation']==0])
+        self.assertEqual(len(camera.window(24,90)),1)
+        orphan='h'+str(time.time_ns())+'.jpg';(self.media/'pending'/orphan).write_bytes(rotated)
+        camera.recover()
+        with camera._db() as db:row=db.execute('SELECT * FROM frames WHERE name=?',(orphan,)).fetchone()
+        self.assertEqual((row['rotation'],row['tier']),(90,'history'))
+
+    @unittest.skipUnless(shutil.which('ffmpeg') and shutil.which('ffprobe'),'FFmpeg required')
+    def test_old_history_keeps_local_10_14_18_and_still_builds_a_continuous_native_movie(self):
+        from datetime import datetime,timedelta
+        image=self.native_image();day=datetime.now(camera.HISTORY_ZONE).replace(hour=0,minute=0,second=0,microsecond=0)-timedelta(days=40)
+        for hour in (8,10,12,14,16,18):self.frame(day.replace(hour=hour).timestamp(),image,tier='history')
+        camera.compact('history')
+        with camera._db() as db:original=dict(db.execute("SELECT * FROM segments WHERE tier='history'").fetchone())
+        def hashes(path):
+            data=json.loads(subprocess.check_output(['ffprobe','-v','error','-show_packets','-show_data_hash','sha256','-select_streams','v:0','-show_entries','packet=data_hash','-of','json',str(path)]))
+            return [packet['data_hash'] for packet in data['packets']]
+        before=hashes(self.media/'segments'/original['name'])
+        camera.maintain_history()
+        with camera._db() as db:old=dict(db.execute("SELECT * FROM segments WHERE tier='history'").fetchone())
+        self.assertEqual(old['frames'],3)
+        self.assertEqual(hashes(self.media/'segments'/old['name']),[before[index] for index in (1,3,5)])
+        self.assertEqual([datetime.fromtimestamp(ts,camera.HISTORY_ZONE).hour for ts in json.loads(old['sample_times'])],[10,14,18])
+        now=time.time()
+        for i in range(2):self.frame(now-3600+i*1800,image,tier='history')
+        camera.compact('history')
+        rows=camera.window(8760);self.assertEqual(sum(r['frames'] for r in rows),5)
+        view=camera.mp4_view.build([self.media/'segments'/r['name'] for r in rows]);path=self.root/'year.mp4'
+        with view.open() as reader:path.write_bytes(reader.read(view.size))
+        probe=json.loads(subprocess.check_output(['ffprobe','-v','error','-count_frames','-select_streams','v:0','-show_entries','stream=width,height,nb_read_frames','-of','json',str(path)]))['streams'][0]
+        self.assertEqual((probe['width'],probe['height'],int(probe['nb_read_frames'])),(2304,1296,5))
 
     def test_allowed_intervals_quota_and_validation(self):
         for interval in (1, 5, 15, 30, 60):
@@ -155,7 +270,7 @@ class SerraTests(unittest.TestCase):
         self.assertEqual(len(camera.window(24)), 1)
         self.assertEqual(len(camera.window(48)), 2)
         self.assertEqual(len(camera.window(72)), 2)
-        for invalid in ('../secret', 0, 721):
+        for invalid in ('../secret', 0, 8761):
             with self.assertRaises(camera.SerraError):
                 camera.window(invalid)
 

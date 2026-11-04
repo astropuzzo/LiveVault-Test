@@ -7,75 +7,107 @@ nessun ridimensionamento negli MP4.
 
 ## Runtime e utilizzo
 
-Pagina autenticata `#serra` nel Control Center esistente, anche nel menu mobile.
-Il clic sull'anteprima apre una foto nativa in una nuova scheda. Diretta e lettore
-si scollegano quando escono dal viewport, quando la scheda è nascosta o quando
-si cambia sezione; la diretta ha anche Avvia/Ferma. Queste sospensioni non fermano il raccoglitore delle foto.
-La conferma di una sessione già autenticata è idempotente: il polling `/api/state`
-del pannello chiama `hideLogin()` a ogni risposta, ma non deve ricreare il lettore
-né riaprire la diretta. Si sincronizza il ciclo dei media solo al vero cambio
-di accesso, sezione o visibilità. La regressione esegue le funzioni reali
-`refresh()` e `hideLogin()` del pannello durante la riproduzione, sia per HLS sia
-per MP4 Android: nessun reset, nuova richiesta o perdita della posizione.
-Correzione distribuita con `serra.js?v=20261104-6`; nessun riavvio di servizi.
-Diagnostica v7 solo su richiesta con `?serraDebug=1`: il lettore invia al massimo otto piccoli
-rapporti per caricamento della pagina, solo con il player visibile e sessione
-autenticata con CSRF. Buffer, posizione, contatori di decodifica, eventi e versione
-del browser restano nel file privato 0600
-`/var/lib/openastro-control/serra/playback-diagnostics.json`, massimo sedici
-rapporti da 4 KiB; niente immagini, credenziali o URL. Non registra a scheda
-nascosta o fuori dalla sezione. La diagnostica non ricodifica né riavvia il video.
-È stata aggiunta perché la sola prova desktop, anche con UA Android, non
-conferma la decodifica del telefono fisico. La traccia reale mostrava avanzamento
-a scatti e molti fotogrammi scartati durante il download, poi riproduzione alla
-velocità corretta senza nuovi scarti quando il buffer era completo.
-Avvio MP4 v9 per tutti i browser desktop e mobili: `preload=auto` soltanto mentre il player è visibile,
-attesa di otto secondi di video contigui (sei volte la velocità scelta
-se maggiore, fino a trenta secondi), oppure dell'intero resto del video se più breve. La scritta
-“Preparazione video” mostra il progresso; Play anticipato mantiene l'attesa,
-poi la riproduzione parte automaticamente. Un esaurimento del buffer attende
-nuovi dati senza ricaricare la sorgente. Fuori viewport o scheda nascosta si
-annullano attesa e caricamento. Nessuna copia Blob, ricodifica o memoria video
-aggiuntiva sul server. Il formato diagnostico v7 è conservato; gli eventi
-`buffer-start-v8` e `buffer-ready-v8` distinguono il nuovo lettore.
-La riproduzione v8 è confermata dall’utente sul telefono fisico. Il vecchio
-percorso HLS desktop non riceveva lo stesso buffer: v9 usa un solo lettore MP4
-indicizzato per desktop e mobile. Tre regressioni verificano gli stessi eventi
-di avvio, Play anticipato, stallo, polling e sospensione su entrambi. Senza
-`serraDebug=1` non si invia diagnostica. La prova fisica PC resta da confermare.
-Una connessione più lenta
-del video nativo può richiedere attese più lunghe; l'anteprima conserva tutti
-i pixel richiesti e non promette riproduzione immediata con qualsiasi rete.
-Il lettore prepara la finestra con `/api/serra/preview-info`, quindi apre un
-MP4 indicizzato tramite URL immutabile con primo/ultimo blocco. `mp4_view.py`
-costruisce in memoria soltanto ftyp/moov, durata, indici di ricerca e tabella dei
-campioni; i byte video vengono letti direttamente dai blocchi originali. La vista
-ha Content-Length e richieste Range 206, durata completa fin dall'apertura e
-timestamp continui anche per B-frame e blocchi iniziali da soli 0,083 s.
-Non serve FFmpeg per l'anteprima: nessuna ricodifica, riduzione o seconda copia
-video. Un solo indice in cache, limitato a 4 MiB; finestre non più conservate
-restituiscono 410 e richiedono una ricarica. La raccolta delle foto prosegue
-anche con il player nascosto o chiuso. Le letture cooperano con l'espulsione NVMe.
-La precedente pipe MP4 con moov vuoto non viene più usata dall'anteprima mobile.
-Diretta MJPEG nativa a 3 fps, scatti ogni 1/5/10/15/30 secondi o intervalli più
-lunghi, pausa/ripresa, limite circolare 1–16 GiB (predefinito 4 GiB).
-Impostazione iniziale: uno scatto ogni 15 s. Raccolta indipendente dal browser.
+Pagina autenticata `#serra`, anche nel menu mobile. Foto e video mantengono
+2304×1296 pixel; a 90°/270° diventano 1296×2304 senza ridimensionamento.
+Il clic sulla diretta apre una foto nativa. Diretta e lettore si scollegano
+fuori viewport, a scheda nascosta, cambiando sezione o uscendo dalla sessione.
+Queste sospensioni non fermano il raccoglitore indipendente delle foto.
 
-Il timelapse H.264 nativo a 24 fps viene compresso in piccoli blocchi, con x264
-`veryfast`, CRF 28, un solo thread. Il primo blocco richiede due scatti; i
-successivi vengono pubblicati dopo 120 scatti o circa cinque minuti, fino a
-300 scatti per blocco. Il pulsante di aggiornamento anticipa la compressione.
-Il servizio ha Nice=15 e CPUQuota=75% di **un** core, non del server intero.
+Il lettore MP4 è unico per PC e telefono: l'utente ha confermato la riproduzione
+sia su Firefox Android sia su PC dopo la correzione v9. La conferma ripetuta della
+sessione durante il polling non deve ricrearlo. Prima del Play si preparano otto
+secondi di buffer, sei volte la velocità scelta se maggiore (massimo trenta),
+oppure l'intero resto del filmato se più breve. “Preparazione video” mostra il
+progresso; Play anticipato aspetta il buffer e gli stalli riprendono da soli.
+Una connessione più lenta del video nativo può richiedere attese più lunghe.
 
-Finestre 1/6/12/24/48/72 ore, 7/14/30 giorni: la playlist HLS usa direttamente
-intervalli byte degli stessi blocchi MP4. Il download MP4 li unisce con `-c copy`
-senza ricodifica e senza una seconda copia persistente. Le finestre mostrano solo
-il periodo già raccolto e ancora conservato; 4 GiB non garantiscono 72 ore per
-qualunque scena/intervallo. Il limite comprende JPEG pendenti, MP4 e spazio
-temporaneo riservato all'encoder. Per far posto si eliminano solo gli elementi
-più vecchi dell'archivio della serra, mai altri media o il backup del firmware.
-L'anteprima ripete il video disponibile e aggiorna la playlist a ogni nuovo blocco,
-conservando la posizione di visione; non resta in attesa a fine video.
+`/api/serra/preview-info` restituisce un MP4 indicizzato con primo/ultimo blocco,
+rotazione, livello di archivio e revisione. `mp4_view.py` costruisce solo gli
+indici in memoria, fino a 4 MiB; i byte video restano nei file originali.
+Content-Length, durata iniziale completa, Range 206 e timestamp continui sono
+verificati. Una revisione modificata o non più conservata restituisce 410,
+richiedendo la ricarica, senza mescolare risposte byte di filmati diversi.
+L'anteprima non ricodifica e non crea una copia video o Blob. Il download unisce
+con `-c copy`, senza una seconda copia persistente. L'aggiornamento conserva la
+posizione; il video disponibile si ripete alla fine.
+
+### Rotazione salvata negli scatti
+
+Il selettore 0°/90°/180°/270° agisce sui pixel dei nuovi JPEG, tramite
+`jpegtran -perfect -rotate`: trasformazione senza perdita, ritaglio o resize.
+È necessaria la dipendenza Debian `libjpeg-turbo-progs` (anche in CI).
+A 0° i byte originali restano identici. La rotazione scelta viene salvata nelle
+impostazioni e nell'indice; un commento JPEG consente il recupero del metadato
+anche se manca la riga SQLite dopo un'interruzione. Il commento non è un tag
+EXIF di visualizzazione: i pixel sono già orientati. Il server ruota gli scatti,
+mentre la sola diretta usa la trasformazione equivalente nel browser, senza
+avviare una ricodifica per ogni fotogramma MJPEG.
+
+Ogni blocco MP4 contiene un solo orientamento. “Riprese” permette di consultare
+quelli precedenti, che non vengono cancellati né ruotati retroattivamente.
+Il JPEG originale della camera usa multipli di 16; se una trasformazione non
+può essere perfetta, lo scatto non viene pubblicato tagliato o degradato.
+
+### Dettaglio recente e storico fino a un anno
+
+Il limite totale di archivio resta unico: 1–16 GiB, predefinito 4 GiB. Comprende
+foto pendenti di entrambi i livelli, MP4 e spazio temporaneo dell'encoder.
+Impostazioni di acquisizione già salvate vengono preservate; da 1 secondo a
+un'ora, con pausa/ripresa. Il dettaglio recente viene codificato con x264
+`veryfast`, CRF 28, un thread, 24 fps: 120 scatti o cinque minuti, massimo 300;
+il primo blocco di ogni orientamento arriva dopo almeno due scatti.
+
+| Periodo richiesto | Livello e campioni conservati |
+| --- | --- |
+| 1/6/12/24/48/72 ore | Dettaglio recente, tutti gli scatti dell'intervallo scelto finché rimangono nello spazio disponibile |
+| 5/7/15/30 giorni | Storico, una foto ogni ora |
+| 3/6 mesi o 1 anno | Ultimi 30 giorni orari; prima, foto delle 10:00, 14:00 e 18:00, ora italiana |
+
+Il servizio prende il campione orario anche se l'intervallo recente supera
+l'ora e riusa lo stesso JPEG quando l'acquisizione coincide. Se si mette in pausa
+la raccolta, si sospendono entrambi. Non vengono inventati periodi precedenti
+alla raccolta o foto di ore in cui la camera era spenta. Per un giorno privo
+degli orari richiesti si conserva un solo campione realmente disponibile,
+il più vicino alle 14, invece di inventare o duplicare immagini.
+
+Lo storico viene codificato per giornata, fino a 24 campioni per blocco,
+con fotogrammi indipendenti. Dopo 30 giorni un filtro sui pacchetti conserva
+solo i campioni richiesti e corregge i timestamp con copia codec: niente seconda
+ricodifica, nessuna perdita aggiuntiva e stessi pixel nativi. La manutenzione
+lavora su un giorno alla volta, al massimo una volta al minuto; scade lo storico
+oltre 365 giorni. Un anno completo corrisponde a circa 1.725 campioni invece
+di tutti gli scatti frequenti. La prima anteprima dello storico arriva dopo due
+campioni orari; nel frattempo la vista lunga mostra il dettaglio già disponibile.
+
+Quando serve spazio vengono eliminati prima i dettagli recenti più vecchi,
+proteggendo i campioni diradati. Non è garantita una durata precisa del dettaglio
+ad alta frequenza per qualsiasi scena: restano determinanti qualità, intervallo,
+orientamenti usati e quota. Il servizio ha Nice 15 e CPUQuota 75% di **un** core.
+Il browser non deve restare aperto per raccolta o manutenzione.
+
+### Pulizia manuale con anteprima
+
+Preset “più vecchi di” 24/48/72 ore, 7/30 giorni oppure intervallo locale da/a.
+“Calcola pulizia” mostra fotogrammi e spazio; nessun file viene rimosso prima
+della conferma esplicita. Lo storico annuale è escluso salvo spuntare l'opzione
+apposita. La selezione comprende tutti gli orientamenti del livello scelto.
+Sono protetti scatti già assegnati all'encoder, export in corso, altri media e
+riprese che attraversano i limiti del periodo: un file MP4 viene rimosso solo
+quando tutto il suo intervallo è compreso nella selezione.
+
+Il backend firma la selezione con HMAC e scadenza di cinque minuti. Cambiamenti
+nell'archivio tra anteprima e conferma richiedono un nuovo calcolo, prima di
+qualsiasi rimozione. Restano obbligatori sessione e CSRF. Le prove distruttive
+si eseguono soltanto nell'archivio temporaneo di test, mai sui filmati reali.
+
+### Diagnostica su richiesta
+
+Solo `?serraDebug=1` abilita gli otto piccoli rapporti per pagina, su PC o mobile,
+con player visibile e sessione CSRF valida. Buffer, posizione, errori, eventi e
+contatori di decodifica restano nel file privato 0600
+`/var/lib/openastro-control/serra/playback-diagnostics.json`: massimo sedici
+rapporti da 4 KiB, senza foto, credenziali o URL. La visualizzazione normale
+non invia questi rapporti. Nessuna modifica di acquisizione è causata dal lettore.
 
 Sorgente `control-panel/serra_camera.py`, runtime `/opt/openastro-control/serra_camera.py`.
 Servizio `openastro-serra.service`; indice e impostazioni in
@@ -107,10 +139,15 @@ con CSRF valido. Download e diretta sono limitati a uno e due client concorrenti
 
 ## Validazione e rollback
 
-Test Linux Python 3.13.5: quota/ordine di eliminazione, protezione input attivi,
+21 test Linux Python 3.13.5: migrazione dell’indice senza perdita di righe,
+rotazioni JPEG con controllo dei pixel nei quattro quadranti e dimensioni native,
+MP4 verticali separati, campioni orari e copia esatta dei pacchetti delle
+10/14/18 nello storico vecchio, concatenazione nativa continua, pulizia firmata,
+quota/ordine di eliminazione, protezione input attivi,
 lock di export, ripresa dopo interruzione, finestre e playlist senza segreti,
 vero encode/decode FFmpeg 2304×1296 con conteggio fotogrammi identico.
-Controlli JavaScript e regressioni frontend. CI del branch richiesta prima della
+Cinque regressioni frontend verificano il player desktop/mobile, rotazione,
+selezione anno/orientamenti e conferma della pulizia. Controlli sintattici JavaScript. CI del branch richiesta prima della
 fusione; prove live e limiti operativi vanno riportati separatamente dai test.
 
 Distribuzione mirata: backup dei file Control modificati e dell'helper storage in
@@ -136,6 +173,11 @@ Foto dirette senza chiave e RTSP senza credenziali restituiscono 401; la home
 web pubblica nella LAN non implica accesso anonimo alle immagini. Il pannello
 richiede sessione anche per la camera ed espone HTTPS, cookie Secure/HttpOnly/
 SameSite e protezione dei tentativi di login. La chiave API resta solo sul server.
+Password casuali forti sono state impostate per root, HTTP e RTSP: il vecchio
+default RTSP restituisce 401, la nuova password 200 e gli snapshot del pannello
+continuano a funzionare. Il firmware conserva gli override in
+`/etc/prudynt.user.json` (0600); leggere il solo JSON di base non descrive le
+credenziali realmente attive. La copia per l’utente è privata, fuori da Git.
 La lettura UPnP del gateway non ha elencato mappature verso la camera. Porte
 manuali, DMZ e firewall WAN del router non sono stati verificati tramite una
 sessione amministrativa: non si dichiara esclusa ogni esposizione pubblica.
@@ -144,3 +186,22 @@ Git nel workspace. Per rollback SSH ripristinare `S30dropbear` e riavviare solo
 Dropbear; per IPv6 ripristinare sysctl e applicare le impostazioni volute.
 Per annullare soltanto il player desktop v9 ripristinare JS, riferimento versione
 e documento dal backup `serra-desktop-*`, poi ricaricare: nessun servizio da riavviare.
+
+
+## Migrazione e rollback delle funzioni v10
+
+Distribuire solo il modulo Serra, i suoi JS/CSS, la sezione SERRA dell'HTML e
+questo documento, preservando le altre sezioni runtime e il checkout host.
+Prima della migrazione effettuare un backup SQLite consistente con il collector
+fermo, oltre ai file e alle impostazioni. Le colonne nuove sono additive:
+rotazione, livello e tempi dei campioni; le righe precedenti diventano dettaglio
+recente a 0°. Non serve cancellare o ricodificare lo storico precedente.
+Riavviare solo Control e il collector per caricare il nuovo backend; non Docker,
+LiveVault o l'host. Le impostazioni utente e l'UUID privato non vanno sostituiti.
+
+Per annullare solo l'interfaccia ripristinare gli asset dal backup
+`serra-features-*`, lasciando il collector nuovo per gestire correttamente i due
+livelli. Per un rollback completo fermare il collector e conservare tutti i
+media e il DB nuovo: non rimettere in esecuzione il vecchio raccoglitore su JPEG
+misti o ripristinare una copia DB che perda acquisizioni successive. Riconciliare
+prima i nuovi file e i metadati con la versione da ripristinare.

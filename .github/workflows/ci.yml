@@ -23,7 +23,7 @@ jobs:
         with:
           node-version: '22'
       - name: Install FFmpeg
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg libjpeg-turbo-progs
       - name: Install dependencies
         run: pip install -r requirements-dev.txt
       - name: Compile Python

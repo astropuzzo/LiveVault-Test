@@ -16,7 +16,7 @@
   <link rel="stylesheet" href="/media-upload.css?v=3.5.1-graphite3">
   <link rel="stylesheet" href="/torrent-manager.css?v=3.5.1-graphite3">
   <link rel="stylesheet" href="/app.css?v=3.5.1-graphite3">
-  <link rel="stylesheet" href="/serra.css?v=20261104-4">
+  <link rel="stylesheet" href="/serra.css?v=20261104-5">
   <link rel="stylesheet" href="/apps.css?v=3.5.1-graphite3">
 </head>
 <body data-view="dashboard" class="is-loading">
@@ -177,6 +177,8 @@
           </section>
           <section class="serra-settings" aria-labelledby="serraSettingsTitle">
             <h2 id="serraSettingsTitle">Raccolta continua</h2>
+            <label>Rotazione degli scatti<select id="serraRotation" disabled><option value="0">0° · originale</option><option value="90">90° · verso destra</option><option value="180">180° · capovolta</option><option value="270">270° · verso sinistra</option></select></label>
+            <p class="serra-note">Si applica ai pixel delle nuove foto e ai loro timelapse. Tutta la risoluzione nativa viene conservata.</p>
             <label>Uno scatto ogni<select id="serraInterval" disabled><option value="1">1 secondo</option><option value="5">5 secondi</option><option value="10">10 secondi</option><option value="15" selected>15 secondi</option><option value="30">30 secondi</option><option value="60">1 minuto</option><option value="120">2 minuti</option><option value="300">5 minuti</option><option value="600">10 minuti</option><option value="900">15 minuti</option><option value="1800">30 minuti</option><option value="3600">1 ora</option></select></label>
             <label>Dimensione massima dell’archivio<select id="serraQuota" disabled><option value="1">1 GB</option><option value="2">2 GB</option><option value="4" selected>4 GB</option><option value="8">8 GB</option><option value="16">16 GB</option></select></label>
             <div class="serra-actions"><button id="serraPause" class="button secondary" type="button" disabled>Metti in pausa</button><button id="serraCapture" class="button secondary" type="button" disabled>Scatta adesso</button></div>
@@ -186,13 +188,24 @@
         </div>
         <p id="serraMessage" class="serra-message" role="status" aria-live="polite">Collegamento alla serra…</p>
         <section class="serra-player" aria-labelledby="serraVideoTitle">
+          <label id="serraArchiveLabel" class="serra-archive-choice" hidden>Riprese<select id="serraArchive"><option value="">Orientamento attuale</option></select></label>
           <div class="serra-panel-head"><div><h2 id="serraVideoTitle">Timelapse in aggiornamento</h2><p id="serraUpdated">In preparazione</p></div><button id="serraFlush" class="button secondary" type="button" disabled>Comprimi gli ultimi scatti</button></div>
-          <div class="serra-window-controls"><label>Periodo da vedere<select id="serraWindow"><option value="1">Ultima ora</option><option value="6">Ultime 6 ore</option><option value="12">Ultime 12 ore</option><option value="24" selected>Ultime 24 ore</option><option value="48">Ultime 48 ore</option><option value="72">Ultime 72 ore</option><option value="168">Ultimi 7 giorni</option><option value="336">Ultimi 14 giorni</option><option value="720">Ultimi 30 giorni</option></select></label><label>Velocità di visione<select id="serraSpeed"><option value="1">1×</option><option value="2">2×</option><option value="4">4×</option><option value="8">8×</option><option value="16">16×</option></select></label><button id="serraReloadVideo" class="button secondary" type="button">Ricarica video</button><button id="serraLatest" class="button secondary" type="button">Vai agli ultimi scatti</button><a id="serraDownload" class="button" href="/api/serra/export.mp4?hours=24" aria-disabled="true">Scarica MP4</a></div>
+          <div class="serra-window-controls"><label>Periodo da vedere<select id="serraWindow"><option value="1">Ultima ora</option><option value="6">Ultime 6 ore</option><option value="12">Ultime 12 ore</option><option value="24" selected>Ultime 24 ore</option><option value="48">Ultime 48 ore</option><option value="72">Ultime 72 ore</option><option value="120">Ultimi 5 giorni</option><option value="168">Ultimi 7 giorni</option><option value="360">Ultimi 15 giorni</option><option value="720">Ultimi 30 giorni</option><option value="2160">Ultimi 3 mesi</option><option value="4320">Ultimi 6 mesi</option><option value="8760">Ultimo anno</option></select></label><label>Velocità di visione<select id="serraSpeed"><option value="1">1×</option><option value="2">2×</option><option value="4">4×</option><option value="8">8×</option><option value="16">16×</option></select></label><button id="serraReloadVideo" class="button secondary" type="button">Ricarica video</button><button id="serraLatest" class="button secondary" type="button">Vai agli ultimi scatti</button><a id="serraDownload" class="button" href="/api/serra/export.mp4?hours=24" aria-disabled="true">Scarica MP4</a></div>
+          <p id="serraSampling" class="serra-note"></p>
           <div id="serraTimelapseEmpty" class="serra-empty"><p>Il primo timelapse arriva dopo almeno due scatti.<br>Puoi lasciare la pagina: il server continua a raccogliere le immagini.</p></div>
           <video id="serraVideo" controls playsinline muted preload="none" hidden aria-label="Timelapse della serra"></video>
           <p id="serraBufferStatus" class="serra-note serra-buffer-status" role="status" aria-live="polite"></p>
           <p class="serra-coverage">Periodo attualmente conservato: <span id="serraCoverage">In attesa</span></p>
-          <p class="serra-note">MP4 H.264 alla risoluzione nativa, 24 fps. La visione si aggiorna quando viene compresso un nuovo blocco; il download unisce soltanto i blocchi del periodo scelto. Le 24, 48 o 72 ore diventano disponibili man mano che vengono raccolte e finché rientrano nello spazio impostato.</p>
+          <p class="serra-note">MP4 H.264 alla risoluzione nativa, 24 fps. La visione si aggiorna quando viene compresso un nuovo blocco; il download unisce soltanto i blocchi del periodo scelto. Le finestre, da un’ora a un anno, mostrano soltanto il periodo già raccolto e ancora conservato.</p>
+        </section>
+        <section class="serra-archive" aria-labelledby="serraCleanupTitle">
+          <h2 id="serraCleanupTitle">Pulizia archivio</h2>
+          <p class="serra-note">Il limite di spazio elimina già i file più vecchi. Qui puoi liberare un periodo preciso: prima calcoli la selezione, poi confermi l’eliminazione.</p>
+          <div class="serra-window-controls"><label>Periodo da eliminare<select id="serraCleanupPeriod"><option value="24">Più vecchi di 24 ore</option><option value="48">Più vecchi di 48 ore</option><option value="72">Più vecchi di 72 ore</option><option value="168">Più vecchi di 7 giorni</option><option value="720">Più vecchi di 30 giorni</option><option value="custom">Date da/a</option></select></label><label>Da<input id="serraCleanupFrom" type="datetime-local" disabled></label><label>Fino a<input id="serraCleanupTo" type="datetime-local" disabled></label><button id="serraCleanupPreview" class="button secondary" type="button" disabled>Calcola pulizia</button></div>
+          <p id="serraCleanupResult" class="serra-note" role="status">Nessun file selezionato.</p>
+          <label class="serra-cleanup-history"><input id="serraCleanupHistory" type="checkbox"> Includi anche lo storico fino a un anno</label>
+          <button id="serraCleanupDelete" class="button secondary" type="button" disabled>Elimina i file selezionati</button>
+          <p class="serra-note">Le riprese che attraversano i limiti del periodo e gli scatti in compressione vengono conservati. La pulizia riguarda tutti gli orientamenti del livello selezionato. L’eliminazione non si può annullare.</p>
         </section>
       </section>
 
@@ -657,7 +670,7 @@
   <script src="/hls.min.js?v=1.7.2" defer></script>
   <script src="/diagnostics.js?v=3.5.1" defer></script>
   <script src="/apps.js?v=3.5.1-apps2" defer></script>
-  <script src="/serra.js?v=20261104-9" defer></script>
+  <script src="/serra.js?v=20261104-10" defer></script>
   <script src="/app.js?v=3.5.1-serra-20261104-1" defer></script>
   <script src="/torrent-manager.js?v=3.5.1-torrent5" defer></script>
   <script src="/media-upload.js?v=3.5.1" defer></script>
