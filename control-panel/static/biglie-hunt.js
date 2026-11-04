@@ -11,7 +11,7 @@
     error:'errore', paused:'in pausa', stopped:'fermata', unknown:'sconosciuto'};
   // Seconds between the hunt's rounds that hunt.sh interval accepts.
   const CHOICES = [15, 30, 60, 90];
-  const WAIT_NOTE = 'Attesa tra i giri. Le richieste di creazione partono almeno 2 minuti dopo l’ultima risposta di Oracle; dopo errori ripetuti l’attesa cresce fino a 10 minuti.';
+  const WAIT_NOTE = 'Attesa tra i giri. Le richieste di creazione partono almeno 90 secondi dopo l’ultima risposta di Oracle; dopo errori ripetuti l’attesa cresce fino a 10 minuti.';
   let view = 'dashboard', authenticated = true, controller = null, generation = 0, busy = false, data = null, pushSynced = false;
 
   const setText = (selector, value) => { const node = q(selector); if (node) node.textContent = value; };

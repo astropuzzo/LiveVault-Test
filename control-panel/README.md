@@ -4,7 +4,7 @@ PWA mobile-first per monitorare e controllare il server ASIAIR/Debian. Il serviz
 vive sulla memoria interna, resta accessibile senza NVMe e viene pubblicato solo
 in HTTPS tramite Tailscale Funnel, con autenticazione applicativa.
 
-## Ricerca server Biglie (2026-11-03)
+## Ricerca server Biglie (2026-11-04)
 
 In **App e ricavi**, sopra Bonsai Sensei, la scheda «Ricerca del server Oracle» segue
 `oracle_vm.py hunt` del repository Biglie (`tools/regia`), che sull'ASIAIR gira in
@@ -30,15 +30,29 @@ dicono «ricerca» perché il 2026-11-03 un «Riavvia» è stato scambiato per �
   `hunt.sh start` o `restart` dal proprio processo.
 - Attesa tra i giri: `{"action": "interval", "seconds": 15|30|60|90}` esegue `hunt.sh interval`
   (repository Biglie, commit 4f79430). Vale sia per cercare la macchina sia per farla crescere, e
-  la ricerca in corso la rilegge entro 5 s. `oracle_vm.py` (repository Biglie, commit b47d604,
-  test in `tools/regia/test_oracle_vm.py`) fa partire ogni creazione almeno 120 s dopo l'ultima
-  risposta di Oracle, anche fra 2/12 e 1/6 e fra giri diversi: Oracle rispondeva 429 alle
-  creazioni a 89-90 s l'una dall'altra e normalmente a 91-92 s. Dopo errori aspetta 90, 180, 360
+  la ricerca in corso la rilegge entro 5 s. `oracle_vm.py` (repository Biglie,
+  test in `tools/regia/test_oracle_vm.py`) dal 2026-11-04 fa partire ogni creazione almeno
+  90 s dopo l'ultima risposta di Oracle, anche fra 2/12 e 1/6 e fra giri diversi. La prova
+  prolungata ha verificato 32 richieste consecutive a 90 s senza 429 o timeout; nella prova
+  preliminare 85 s hanno prodotto un 429. Prima il limite prudente era 120 s, dopo che
+  il conteggio dall'inizio della richiesta aveva prodotto richieste troppo ravvicinate. Dopo errori aspetta 90, 180, 360
   e al massimo 600 s; l'attesa torna a 90 s quando Oracle accetta una creazione o un resize, o
   risponde che non ha posto. Distanziamento e attesa crescente vengono dal fix del proprietario
   (48198f2, test in 1a4314b), che contava 90 s dall'inizio della richiesta precedente.
   Con un `hunt.sh` più vecchio lo stato non ha `"interval"`: la scelta resta spenta e la scheda
   dice di aggiornarlo.
+- Validazione del 2026-11-04: prova preliminare con risposte di capacità esaurita a 120, 110,
+  100, 95 e 90 s; primo 429 a 85 s. La successiva prova prolungata ha raccolto 32 richieste
+  consecutive a 90 s dalla risposta, alternando 2/12 e 1/6, senza 429, timeout o altri errori
+  diversi dalla capacità esaurita, poi l'utente ha richiesto di fermare il test e confermare
+  il cambio. Per questo è stato impostato `MIN_LAUNCH_INTERVAL = 90`
+  e selezionato `hunt.sh interval 90`. Rimane l'attesa progressiva in caso di nuovi errori.
+  Runtime: `/home/astro/biglie-oci/oracle_vm.py`; nota e cache del pannello `3.5.1-biglie6`
+  in `/opt/openastro-control/static`, senza riavvio del servizio del pannello. Rollback in
+  `/home/astro/rollback/biglie-90s-20261104/runtime-before.tar.gz`: sorgente, intervallo e
+  tre statici precedenti. Ripristinare il sorgente e l'intervallo, poi riavviare soltanto
+  la ricerca con l'aiutante; lasciare almeno 120 s dall'ultima risposta prima del primo
+  lancio dopo il ripristino. I file statici non richiedono un riavvio del pannello.
 - Servizio: `ProtectHome=true` diventa `ProtectHome=tmpfs` con
   `BindPaths=-/home/astro/biglie-oci`. Della home il pannello vede solo quella cartella; chiavi
   SSH e `~/.oci` restano nascoste. Il `-` lascia partire il pannello anche senza la cartella.
