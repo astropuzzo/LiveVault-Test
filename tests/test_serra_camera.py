@@ -110,6 +110,13 @@ class SerraTests(unittest.TestCase):
         camera._room(self.media,30)
         self.assertTrue((self.media/'segments'/old).exists());self.assertFalse((self.media/'segments'/recent).exists())
 
+    def test_history_defers_during_export_and_clears_recovered_transient_errors(self):
+        with camera._lock('retention',shared=True):camera.maintain_history()
+        self.assertEqual(camera._state().get('history_error',''),'')
+        camera._state(history_error='transient')
+        camera.maintain_history()
+        self.assertEqual(camera._state()['history_error'],'')
+
     @unittest.skipUnless(shutil.which('jpegtran') and shutil.which('ffmpeg'),'JPEG tools required')
     def test_rotation_changes_jpeg_pixels_at_all_four_native_orientations(self):
         image=self.native_image();original=None

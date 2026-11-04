@@ -464,6 +464,7 @@ def maintain_history():
                 db.commit()
                 if expired: _state(last_history_maintenance=time.time())
                 if not rows or any(row['end']<cutoff for row in rows):
+                    _state(history_error='')
                     return
                 samples = [(row['id'],index,ts) for row in rows for index,ts in enumerate(json.loads(row['sample_times']))]
                 chosen = []
@@ -503,6 +504,7 @@ def maintain_history():
                     db.commit()
                 _state(history_error='',last_history_maintenance=time.time())
     except (SerraError,OSError,ValueError,KeyError,subprocess.SubprocessError) as exc:
+        if isinstance(exc,SerraError) and exc.status==409: return
         _state(history_error=str(exc) if isinstance(exc,SerraError) else 'Manutenzione storico rinviata.')
     finally:
         if temporary: temporary.unlink(missing_ok=True)

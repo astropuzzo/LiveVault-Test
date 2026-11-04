@@ -139,7 +139,7 @@ con CSRF valido. Download e diretta sono limitati a uno e due client concorrenti
 
 ## Validazione e rollback
 
-21 test Linux Python 3.13.5: migrazione dell’indice senza perdita di righe,
+22 test Linux Python 3.13.5: migrazione dell’indice senza perdita di righe,
 rotazioni JPEG con controllo dei pixel nei quattro quadranti e dimensioni native,
 MP4 verticali separati, campioni orari e copia esatta dei pacchetti delle
 10/14/18 nello storico vecchio, concatenazione nativa continua, pulizia firmata,
