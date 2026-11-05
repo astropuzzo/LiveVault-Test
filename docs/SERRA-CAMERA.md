@@ -1,6 +1,6 @@
 # SERRA: camera locale e timelapse nativo
 
-Verifica: 2026-11-04. Camera Xiaomi MJSXJ03HL convertita a Thingino ufficiale
+Verifica: 2026-11-05. Camera Xiaomi MJSXJ03HL convertita a Thingino ufficiale
 `firmware-2026-11-02`, T31N/JXQ03P/RTL8189FTV. Backup integrale originale verificato e conservato
 privatamente nel workspace dell'utente, fuori da Git. Risoluzione 2304×1296:
 nessun ridimensionamento negli MP4.
@@ -95,14 +95,15 @@ il primo blocco di ogni orientamento arriva dopo almeno due scatti.
 | --- | --- |
 | 1/6/12/24/48/72 ore | Dettaglio recente, tutti gli scatti dell'intervallo scelto finché rimangono nello spazio disponibile |
 | 5/7/15/30 giorni | Storico, una foto ogni ora |
-| 3/6 mesi o 1 anno | Ultimi 30 giorni orari; prima, foto delle 10:00, 14:00 e 18:00, ora italiana |
+| 3/6 mesi o 1 anno | Solo foto delle 10:00, 14:00 e 18:00 Europe/Rome, anche per i giorni più recenti |
 
 Il servizio prende il campione orario anche se l'intervallo recente supera
 l'ora e riusa lo stesso JPEG quando l'acquisizione coincide. Se si mette in pausa
 la raccolta, si sospendono entrambi. Non vengono inventati periodi precedenti
 alla raccolta o foto di ore in cui la camera era spenta. Per un giorno privo
 degli orari richiesti si conserva un solo campione realmente disponibile,
-il più vicino alle 14, invece di inventare o duplicare immagini.
+il più vicino alle 14, invece di inventare o duplicare immagini. Quel campione
+fuori dagli orari richiesti resta escluso dalla vista 3/6 mesi e annuale.
 
 Lo storico viene codificato per giornata, fino a 24 campioni per blocco,
 con fotogrammi indipendenti. Dopo 30 giorni un filtro sui pacchetti conserva
@@ -110,8 +111,28 @@ solo i campioni richiesti e corregge i timestamp con copia codec: niente seconda
 ricodifica, nessuna perdita aggiuntiva e stessi pixel nativi. La manutenzione
 lavora su un giorno alla volta, al massimo una volta al minuto; scade lo storico
 oltre 365 giorni. Un anno completo corrisponde a circa 1.725 campioni invece
-di tutti gli scatti frequenti. La prima anteprima dello storico arriva dopo due
-campioni orari; nel frattempo la vista lunga mostra il dettaglio già disponibile.
+di tutti gli scatti frequenti. Ogni campione orario viene compresso e pubblicato
+appena lo slot encoder è libero, anche se è il solo scatto del giorno. Ha
+priorità sul prossimo lotto recente; non aspetta 24 foto o il cambio giornata.
+Le finestre da 5 a 30 giorni possono usare il dettaglio recente finché manca
+lo storico. Le viste da 3 mesi a un anno non hanno quel ripiego: attendono un
+campione degli orari richiesti, senza mostrare per errore filmati notturni.
+
+Correzione verificata 2026-11-05: la vista annuale mostrava soltanto i due
+campioni delle 23:00/00:00 già compressi; quelli delle 10:00 e 14:00 erano ancora
+JPEG pendenti. La raccolta degli orari funzionava, la selezione e la pubblicazione
+non rispettavano la vista richiesta. Ora il filmato annuale sceglie al massimo
+un campione per data e ora locale 10/14/18 fin dal primo giorno. Anteprima e
+download usano la stessa selezione; il pannello mostra il numero effettivo di
+foto diurne. Nessun orario mancante viene sostituito con una foto notturna.
+
+Il filtro opera solo sugli indici del MP4: `mp4_view.build(..., selections=...)`
+mappa i pacchetti I-frame originali, con nuovo indice durata/seek/Range, senza
+ricodifica, resize o copia persistente. I pacchetti non selezionati restano
+nell'archivio per le viste orarie. La revisione e la cache includono gli indici
+dei campioni; gli URL annuali indicano `sampling=daylight`. Il vecchio endpoint
+HLS non serve selezioni parziali: restituisce un errore esplicito per queste
+viste; il player usa già solo MP4. Nessuna migrazione o eliminazione retroattiva.
 
 Quando serve spazio vengono eliminati prima i dettagli recenti più vecchi,
 proteggendo i campioni diradati. Non è garantita una durata precisa del dettaglio
@@ -176,7 +197,7 @@ con CSRF valido. Download e diretta sono limitati a uno e due client concorrenti
 
 ## Validazione e rollback
 
-24 test Linux Python 3.13.5: migrazione dell’indice senza perdita di righe,
+27 test Linux Python 3.13.5: migrazione dell’indice senza perdita di righe,
 rotazioni JPEG con controllo dei pixel nei quattro quadranti e dimensioni native,
 MP4 verticali separati, campioni orari e copia esatta dei pacchetti delle
 10/14/18 nello storico vecchio, concatenazione nativa continua, pulizia firmata,
@@ -184,8 +205,12 @@ quota/ordine di eliminazione, protezione input attivi, rifiuto di JPEG fermi,
 limite futuro della pulizia congelato senza cancellazioni durante il calcolo,
 lock di export, ripresa dopo interruzione, finestre e playlist senza segreti,
 vero encode/decode FFmpeg 2304×1296 con conteggio fotogrammi identico.
-Sette regressioni frontend verificano il player desktop/mobile, rotazione,
-selezione anno/orientamenti, conferma della pulizia, errori visibili e selezione vuota. Controlli sintattici JavaScript. CI del branch richiesta prima della
+La selezione annuale verifica fuso/DST, ore mancanti, singoli scatti pubblicati,
+packet hash identici per i soli tre orari, Range/seek e download uguale al preview.
+Gli originali rimangono byte per byte invariati.
+Otto regressioni frontend verificano il player desktop/mobile, rotazione,
+selezione anno/orientamenti, esclusione dei filmati notturni, conteggio foto diurne,
+conferma della pulizia, errori visibili e selezione vuota. Controlli sintattici JavaScript. CI del branch richiesta prima della
 fusione; prove live e limiti operativi vanno riportati separatamente dai test.
 
 Distribuzione mirata: backup dei file Control modificati e dell'helper storage in
@@ -243,3 +268,11 @@ livelli. Per un rollback completo fermare il collector e conservare tutti i
 media e il DB nuovo: non rimettere in esecuzione il vecchio raccoglitore su JPEG
 misti o ripristinare una copia DB che perda acquisizioni successive. Riconciliare
 prima i nuovi file e i metadati con la versione da ripristinare.
+
+## Rollback della vista diurna v12
+
+Backup mirato `serra-daylight-*` prima di distribuire insieme `serra_camera.py`,
+`mp4_view.py`, `serra.js` e il suo riferimento versione. Riavviare solo Control
+e collector. Per annullare ripristinare questi file dallo stesso backup e
+riavviare solo i due servizi; database, media e impostazioni restano compatibili.
+Non ripristinare un vecchio database sopra le foto raccolte successivamente.

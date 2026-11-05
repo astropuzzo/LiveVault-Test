@@ -13,6 +13,7 @@
   const selectedArchive = () => {
     if (!data?.orientations) return data;
     const rows = data.orientations.filter(item=>item.rotation===archiveRotation());
+    if (Number(q('serraWindow').value)>720) return rows.find(item=>item.tier==='daylight') || {blocks:0,frames:0,tier:'daylight'};
     return (Number(q('serraWindow').value)>72 ? rows.find(item=>item.tier==='history') : null) || rows.find(item=>item.tier==='recent') || {blocks:0};
   };
   async function reportPlayback() {
@@ -115,7 +116,7 @@
   }
   function loadPlayer(force = false) {
     const hours = q('serraWindow').value, rotation = archiveRotation(), archive = selectedArchive();
-    const version = `${archive?.newest || data?.last_compact}:${data?.last_cleanup || 0}:${archive?.tier==='history' ? data?.last_history_maintenance || 0 : 0}`;
+    const version = `${archive?.newest || data?.last_compact}:${data?.last_cleanup || 0}:${['history','daylight'].includes(archive?.tier) ? data?.last_history_maintenance || 0 : 0}`;
     q('serraDownload').href = `/api/serra/export.mp4?hours=${hours}&rotation=${rotation}`;
     if (!force && loadedHours === hours && loadedRotation === rotation && q('serraVideo').paused) return;
     if (!archive?.blocks || !authenticated || view !== 'serra' || document.hidden || !playerVisible || (!force && loadedHours === hours && loadedRotation === rotation && loadedVersion === version)) return;
@@ -170,7 +171,8 @@
     q('serraPending').textContent = data.encoding ? 'Compressione di un piccolo blocco in corso' : `${data.pending_frames} scatti in attesa di compressione`;
     const archive = selectedArchive();
     q('serraCoverage').textContent = archive?.oldest ? `${when(archive.oldest)} → ${when(archive.newest)}` : 'Il primo video arriva dopo almeno due scatti';
-    q('serraSampling').textContent = archive?.tier==='history' ? 'Storico lungo: una foto all’ora nei primi 30 giorni; poi alle 10:00, 14:00 e 18:00, ora italiana. Conservazione fino a un anno entro il limite di spazio.' : 'Dettaglio recente: usa tutti gli scatti dell’intervallo scelto. Lo storico lungo si raccoglie automaticamente.';
+    q('serraSampling').textContent = archive?.tier==='daylight' ? `Solo foto delle 10:00, 14:00 e 18:00, ora italiana · ${archive.frames || 0} fotogrammi disponibili. Gli orari mancanti non vengono sostituiti da foto notturne.` : archive?.tier==='history' ? 'Storico lungo: una foto all’ora nei primi 30 giorni; poi alle 10:00, 14:00 e 18:00, ora italiana. Conservazione fino a un anno entro il limite di spazio.' : 'Dettaglio recente: usa tutti gli scatti dell’intervallo scelto. Lo storico lungo si raccoglie automaticamente.';
+    q('serraTimelapseEmpty').textContent = archive?.tier==='daylight' ? 'In attesa di una foto delle 10:00, 14:00 o 18:00. Gli scatti vengono aggiunti al video durante la giornata.' : 'Il timelapse sarà disponibile dopo i primi scatti compressi.';
     q('serraTimelapseEmpty').hidden = Boolean(archive?.blocks);
     q('serraVideo').hidden = !archive?.blocks;
     if (!archive?.blocks && loadedHours !== null) stopPlayer();

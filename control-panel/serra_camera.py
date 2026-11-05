@@ -364,7 +364,7 @@ def compact(tier='recent'):
             owned = True
             with _lock('media'), _db() as db:
                 rows = list(db.execute('SELECT * FROM frames WHERE batch IS NULL AND tier=? ORDER BY ts LIMIT ?', (tier,24 if tier=='history' else MAX_BATCH)))
-                if not rows or (len(rows)<2 and (tier!='history' or rows[0]['ts'] >= int(time.time()//86400)*86400)):
+                if not rows or (len(rows)<2 and tier!='history'):
                     return
                 rotation = rows[0]['rotation']
                 day = int(rows[0]['ts']//86400)
@@ -434,13 +434,46 @@ def window(hours, rotation=None):
         tier = 'history' if hours>72 else 'recent'
         params = (time.time()-hours*3600,_rotation(rotation))
         rows = [dict(row) for row in db.execute('SELECT * FROM segments WHERE end>=? AND rotation=? AND tier=? ORDER BY id', (*params,tier))]
-        if not rows and tier=='history':
+        if not rows and tier=='history' and hours<=720:
             rows = [dict(row) for row in db.execute("SELECT * FROM segments WHERE end>=? AND rotation=? AND tier='recent' ORDER BY id",params)]
-        return rows
+        return _daylight_rows(rows) if hours>720 else rows
+
+
+def _daylight_rows(rows):
+    """Select one actual sample per requested local hour/date, never a night fallback."""
+    chosen = {}
+    for row in rows:
+        if row['tier'] != 'history':
+            continue
+        times = json.loads(row['sample_times'] or '[]')
+        if len(times) != row['frames']:
+            raise SerraError('Orari dello storico non disponibili: campioni esclusi dalla vista annuale.')
+        for index,ts in enumerate(times):
+            local = datetime.fromtimestamp(ts,HISTORY_ZONE)
+            if local.hour in HISTORY_HOURS:
+                key = (row['rotation'],local.date(),local.hour)
+                if key not in chosen or ts < chosen[key][2]:
+                    chosen[key] = (row['id'],index,ts)
+    selected = {}
+    for ident,index,ts in chosen.values():
+        selected.setdefault(ident,[]).append((index,ts))
+    result = []
+    for row in rows:
+        samples = sorted(selected.get(row['id'],[]))
+        if samples:
+            result.append({**dict(row),'sample_indices':[index for index,_ in samples],
+                           'selected_times':[ts for _,ts in samples],'frames':len(samples),
+                           'start':samples[0][1],'end':samples[-1][1],'duration':len(samples)/FPS})
+    return result
+
+
+def _build_view(root, rows):
+    return mp4_view.build([root/'segments'/row['name'] for row in rows],
+                          selections=[row.get('sample_indices') for row in rows])
 
 
 def _revision(rows):
-    return hashlib.sha256(json.dumps([(row['id'],row['name'],row['size'],row['frames']) for row in rows]).encode()).hexdigest()[:20]
+    return hashlib.sha256(json.dumps([(row['id'],row['name'],row['size'],row['frames'],row.get('sample_indices')) for row in rows]).encode()).hexdigest()[:20]
 
 
 def maintain_history():
@@ -525,6 +558,12 @@ def status():
         totals = db.execute('SELECT COUNT(*) blocks,COALESCE(SUM(frames),0) frames,COALESCE(SUM(size),0) bytes,MIN(start) oldest,MAX(end) newest FROM segments').fetchone()
         pending = db.execute('SELECT COUNT(*) n,COALESCE(SUM(size),0) bytes FROM frames').fetchone()
         orientations = [dict(row) for row in db.execute('SELECT rotation,tier,COUNT(*) blocks,SUM(frames) frames,MIN(start) oldest,MAX(end) newest FROM segments GROUP BY rotation,tier ORDER BY rotation,tier')]
+        daily = _daylight_rows([dict(row) for row in db.execute("SELECT * FROM segments WHERE tier='history' AND end>=? ORDER BY id",(time.time()-365*86400,))])
+        for angle in sorted({row['rotation'] for row in daily}):
+            rows = [row for row in daily if row['rotation']==angle]
+            orientations.append({'rotation':angle,'tier':'daylight','blocks':len(rows),
+                                 'frames':sum(row['frames'] for row in rows),
+                                 'oldest':min(row['start'] for row in rows),'newest':max(row['end'] for row in rows)})
     rotation = _rotation()
     online = _mounted()
     return {'ok': True, 'settings': settings(), 'storage_online': online,
@@ -553,6 +592,8 @@ def playlist(hours, rotation=None):
     rows = window(hours, rotation)
     if not rows:
         raise SerraError('Il timelapse sarà disponibile dopo i primi due scatti compressi.', 503)
+    if any('sample_indices' in row for row in rows):
+        raise SerraError('La vista con soli campioni diurni è disponibile come MP4 indicizzato.',400)
     lines = ['#EXTM3U', '#EXT-X-VERSION:7', '#EXT-X-PLAYLIST-TYPE:VOD', '#EXT-X-TARGETDURATION:13', f"#EXT-X-MEDIA-SEQUENCE:{rows[0]['id']}", f"#EXT-X-DISCONTINUITY-SEQUENCE:{rows[0]['id'] - 1}"]
     for index, row in enumerate(rows):
         if index:
@@ -645,6 +686,19 @@ def _mp4(handler, hours, *, download=True, rotation=None):
 
 
 def _export(handler, hours, rotation=None):
+    try:
+        daily = int(hours)>720
+    except (ValueError,TypeError):
+        raise SerraError('Finestra temporale non valida.',400) from None
+    if daily:
+        if not _downloads.acquire(blocking=False):
+            raise SerraError('Un download MP4 è già in corso.',429)
+        try:
+            with _lock('retention',shared=True):
+                info = preview_info(hours,rotation)
+                return _indexed_preview(handler,parse_qs(info['url'].split('?',1)[1]),download=True)
+        finally:
+            _downloads.release()
     return _mp4(handler, hours, download=True, rotation=rotation)
 
 
@@ -652,17 +706,22 @@ def preview_info(hours, rotation=None):
     rotation = _rotation(rotation)
     rows = window(hours, rotation)
     if not rows:
-        raise SerraError('Il timelapse sarà disponibile dopo i primi scatti compressi.', 503)
+        raise SerraError('Nessuna foto delle 10:00, 14:00 o 18:00 ancora disponibile.' if int(hours)>720 else 'Il timelapse sarà disponibile dopo i primi scatti compressi.', 503)
     return {'ok': True, 'duration': sum(row['frames'] for row in rows) / FPS,
-            'url': f"/api/serra/preview.mp4?first={rows[0]['id']}&last={rows[-1]['id']}&rotation={rotation}&tier={rows[0]['tier']}&rev={_revision(rows)}&v=3"}
+            'sampling':'daylight' if int(hours)>720 else 'archive',
+            'sample_count':sum(row['frames'] for row in rows),
+            'url': f"/api/serra/preview.mp4?first={rows[0]['id']}&last={rows[-1]['id']}&rotation={rotation}&tier={rows[0]['tier']}&rev={_revision(rows)}&sampling={'daylight' if int(hours)>720 else 'archive'}&v=4"}
 
 
-def _indexed_preview(handler, query):
+def _indexed_preview(handler, query, *, download=False):
     global _plan_key, _plan
     rotation = _rotation(query.get('rotation',[None])[0])
     tier = query.get('tier',['recent'])[0]
     if tier not in ('recent','history'):
         raise SerraError('Archivio non valido.',400)
+    sampling = query.get('sampling',['archive'])[0]
+    if sampling not in ('archive','daylight') or (sampling=='daylight' and tier!='history'):
+        raise SerraError('Campionamento non valido.',400)
     try:
         first, last = int(query['first'][0]), int(query['last'][0])
     except (KeyError, ValueError, IndexError):
@@ -678,16 +737,17 @@ def _indexed_preview(handler, query):
     with storage() as root:
         with _lock('retention', shared=True), _plan_lock:
             with _db() as db:
-                rows = list(db.execute('SELECT * FROM segments WHERE id BETWEEN ? AND ? AND rotation=? AND tier=? ORDER BY id', (first,last,rotation,tier)))
+                rows = [dict(row) for row in db.execute('SELECT * FROM segments WHERE id BETWEEN ? AND ? AND rotation=? AND tier=? ORDER BY id', (first,last,rotation,tier))]
+            if sampling=='daylight':
+                rows = _daylight_rows(rows)
             if not rows or rows[0]['id'] != first or rows[-1]['id'] != last:
                 raise SerraError('Archivio aggiornato: ricarica la finestra del timelapse.', 410)
             if query.get('rev') and not hmac.compare_digest(query['rev'][0],_revision(rows)):
                 raise SerraError('Archivio aggiornato: ricarica il timelapse.',410)
-            key = tuple((row['id'],row['name'],row['size'],row['frames'],row['init']) for row in rows)
+            key = tuple((row['id'],row['name'],row['size'],row['frames'],row['init'],tuple(row.get('sample_indices',[]))) for row in rows)
             if key != _plan_key:
-                paths = [root / 'segments' / row['name'] for row in rows]
                 try:
-                    movie = mp4_view.build(paths)
+                    movie = _build_view(root,rows)
                 except (ValueError, StopIteration, struct.error):
                     raise SerraError('Indice video non disponibile: scegli una finestra più breve.', 503) from None
                 _plan_key, _plan = key, movie
@@ -701,8 +761,11 @@ def _indexed_preview(handler, query):
             if connection:
                 connection.settimeout(5)
             handler._serra_headers_sent = True
-            handler.send_media_file({'path': movie, 'size': movie.size,
-                                     'name': 'serra-timelapse.mp4', 'mime': 'video/mp4'})
+            info = {'path': movie, 'size': movie.size,'name': 'serra-timelapse.mp4', 'mime': 'video/mp4'}
+            if download:
+                handler.send_media_file(info,download=True)
+            else:
+                handler.send_media_file(info)
         finally:
             if connection:
                 connection.settimeout(old_timeout)
@@ -911,17 +974,16 @@ def collector():
                     pending = db.execute("SELECT COUNT(*) n,MIN(ts) oldest FROM frames WHERE tier='recent'").fetchone()
                     history_pending = db.execute("SELECT COUNT(*) n,MIN(ts) oldest FROM frames WHERE tier='history'").fetchone()
                     count = db.execute("SELECT COUNT(*) FROM segments WHERE tier='recent' AND rotation=?",(_rotation(config.get('rotation_degrees',0)),)).fetchone()[0]
-                    history_count = db.execute("SELECT COUNT(*) FROM segments WHERE tier='history' AND rotation=?",(_rotation(config.get('rotation_degrees',0)),)).fetchone()[0]
                 state = _state()
                 due = pending['n'] >= 120 or (pending['oldest'] and time.time() - pending['oldest'] >= 300) or not count or state.get('flush_requested')
-                if pending['n'] >= 2 and due and now >= retry_encode:
+                if history_pending['n'] and now >= retry_encode:
+                    encoder = threading.Thread(target=compact,kwargs={'tier':'history'},name='serra-history-encoder',daemon=True)
+                    encoder.start();retry_encode=now+10
+                elif pending['n'] >= 2 and due and now >= retry_encode:
                     _state(flush_requested=False)
                     encoder = threading.Thread(target=compact, name='serra-encoder', daemon=True)
                     encoder.start()
                     retry_encode = now + 10
-                elif history_pending['n'] and now >= retry_encode and (history_pending['n']>=24 or history_pending['oldest']<int(time.time()//86400)*86400 or (not history_count and history_pending['n']>=2)):
-                    encoder = threading.Thread(target=compact,kwargs={'tier':'history'},name='serra-history-encoder',daemon=True)
-                    encoder.start();retry_encode=now+10
                 elif now-last_history>=60:
                     encoder = threading.Thread(target=maintain_history,name='serra-history-maintenance',daemon=True)
                     encoder.start();last_history=now

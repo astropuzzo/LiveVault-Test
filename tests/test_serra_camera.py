@@ -196,14 +196,85 @@ class SerraTests(unittest.TestCase):
         self.assertEqual(old['frames'],3)
         self.assertEqual(hashes(self.media/'segments'/old['name']),[before[index] for index in (1,3,5)])
         self.assertEqual([datetime.fromtimestamp(ts,camera.HISTORY_ZONE).hour for ts in json.loads(old['sample_times'])],[10,14,18])
-        now=time.time()
-        for i in range(2):self.frame(now-3600+i*1800,image,tier='history')
+        fresh=datetime.now(camera.HISTORY_ZONE).replace(hour=10,minute=0,second=0,microsecond=0)-timedelta(days=1)
+        for hour in (10,14):self.frame(fresh.replace(hour=hour).timestamp(),image,tier='history')
         camera.compact('history')
         rows=camera.window(8760);self.assertEqual(sum(r['frames'] for r in rows),5)
-        view=camera.mp4_view.build([self.media/'segments'/r['name'] for r in rows]);path=self.root/'year.mp4'
+        view=camera._build_view(self.media,rows);path=self.root/'year.mp4'
         with view.open() as reader:path.write_bytes(reader.read(view.size))
         probe=json.loads(subprocess.check_output(['ffprobe','-v','error','-count_frames','-select_streams','v:0','-show_entries','stream=width,height,nb_read_frames','-of','json',str(path)]))['streams'][0]
         self.assertEqual((probe['width'],probe['height'],int(probe['nb_read_frames'])),(2304,1296,5))
+
+    def test_daily_selection_groups_local_dates_and_never_fills_missing_hours_with_night(self):
+        from datetime import datetime
+        # Both sides of a DST boundary still use 10/14/18 Europe/Rome.
+        times=[datetime(2026,10,day,hour,minute,tzinfo=camera.HISTORY_ZONE).timestamp()
+               for day,hour,minute in [(24,23,0),(25,0,0),(25,10,0),(25,10,4),(25,14,0),(25,23,0),(26,10,0)]]
+        row={'id':1,'rotation':0,'tier':'history','sample_times':json.dumps(times),'frames':len(times)}
+        selected=camera._daylight_rows([row])[0]
+        self.assertEqual(selected['sample_indices'],[2,4,6])
+        self.assertEqual(selected['selected_times'],[times[i] for i in (2,4,6)])
+        self.assertEqual(camera._daylight_rows([{**row,'sample_times':json.dumps(times[:2]),'frames':2}]),[])
+        with self.assertRaises(camera.SerraError): camera._daylight_rows([{**row,'frames':100}])
+
+    @unittest.skipUnless(shutil.which('ffmpeg') and shutil.which('ffprobe'),'FFmpeg required')
+    def test_single_hourly_sample_is_published_during_the_day_and_year_has_no_recent_fallback(self):
+        from datetime import datetime,timedelta
+        day=datetime.now(camera.HISTORY_ZONE).replace(hour=0,minute=0,second=0,microsecond=0)-timedelta(days=1)
+        image=self.native_image()
+        self.segment(time.time()-60)  # Existing recent footage must never fill the annual view.
+        self.assertEqual(camera.window(8760),[])
+        self.frame(day.replace(hour=1).timestamp(),image,tier='history');camera.compact('history')
+        self.assertEqual(camera.window(8760),[])
+        with self.assertRaisesRegex(camera.SerraError,'10:00'): camera.preview_info(8760)
+        self.frame(day.replace(hour=10).timestamp(),image,tier='history');camera.compact('history')
+        self.assertEqual(camera._state().get('encode_error',''),'')
+        info=camera.preview_info(8760)
+        self.assertEqual(info['sample_count'],1);self.assertIn('sampling=daylight',info['url'])
+        with self.assertRaisesRegex(camera.SerraError,'MP4 indicizzato'): camera.playlist(8760)
+        self.assertEqual(sum(row['frames'] for row in camera.window(720)),2)
+        daily=next(row for row in camera.status()['orientations'] if row['tier']=='daylight')
+        self.assertEqual(daily['frames'],1)
+
+    @unittest.skipUnless(shutil.which('ffmpeg') and shutil.which('ffprobe'),'FFmpeg required')
+    def test_year_preview_and_download_keep_only_daytime_packets_without_reencoding_or_deleting(self):
+        from datetime import datetime,timedelta
+        day=datetime.now(camera.HISTORY_ZONE).replace(hour=0,minute=0,second=0,microsecond=0)-timedelta(days=1)
+        subprocess.run(['ffmpeg','-nostdin','-hide_banner','-loglevel','error','-f','lavfi','-i','testsrc2=s=2304x1296:r=1',
+                        '-frames:v','8','-threads','1',str(self.root/'sample-%02d.jpg')],check=True)
+        hours=(0,8,10,12,14,16,18,23)
+        for index,hour in enumerate(hours):
+            self.frame(day.replace(hour=hour).timestamp(),(self.root/f'sample-{index+1:02d}.jpg').read_bytes(),tier='history')
+            if index==4: camera.compact('history')
+        camera.compact('history')
+        full=camera.window(720);self.assertEqual(sum(row['frames'] for row in full),8)
+        paths=[self.media/'segments'/row['name'] for row in full]
+        before=[camera.hashlib.sha256(path.read_bytes()).hexdigest() for path in paths]
+        def hashes(path):
+            output=json.loads(subprocess.check_output(['ffprobe','-v','error','-show_packets','-show_data_hash','sha256',
+                              '-select_streams','v:0','-show_entries','packet=data_hash','-of','json',str(path)]))
+            return [row['data_hash'] for row in output['packets']]
+        original=sum((hashes(path) for path in paths),[])
+        self.assertEqual(len(set(original)),8)
+        info=camera.preview_info(8760);self.assertEqual(info['sample_count'],3)
+        class Handler:
+            def send_media_file(self,media,*,download=False):
+                self.download=download;self.movie=media['path']
+                with self.movie.open() as reader:self.contents=reader.read(self.movie.size)
+        handler=Handler();camera._indexed_preview(handler,camera.parse_qs(info['url'].split('?',1)[1]))
+        movie=self.root/'selected.mp4';movie.write_bytes(handler.contents)
+        self.assertEqual(hashes(movie),[original[i] for i in (2,4,6)])
+        probe=json.loads(subprocess.check_output(['ffprobe','-v','error','-count_frames','-select_streams','v:0',
+                          '-show_entries','stream=width,height,nb_read_frames:format=duration','-of','json',str(movie)]))
+        self.assertEqual((probe['streams'][0]['width'],probe['streams'][0]['height'],int(probe['streams'][0]['nb_read_frames'])),(2304,1296,3))
+        self.assertAlmostEqual(float(probe['format']['duration']),3/24,places=5)
+        with handler.movie.open() as reader:
+            for start,length in [(0,20),(len(handler.movie.header)-4,32),(handler.movie.size-20,20)]:
+                reader.seek(start);self.assertEqual(reader.read(length),handler.contents[start:start+length])
+        export=Handler();camera._export(export,8760)
+        self.assertTrue(export.download);self.assertEqual(export.contents,handler.contents)
+        self.assertEqual([camera.hashlib.sha256(path.read_bytes()).hexdigest() for path in paths],before)
+        with self.assertRaises(ValueError): camera.mp4_view.build(paths,selections=[[99],None])
 
     def test_allowed_intervals_quota_and_validation(self):
         for interval in (1, 5, 15, 30, 60):
@@ -335,6 +406,7 @@ class SerraTests(unittest.TestCase):
         with camera._db() as db:
             paths = [self.media / 'segments' / row['name'] for row in db.execute('SELECT name FROM segments ORDER BY id')]
         view = camera.mp4_view.build(paths)
+        with self.assertRaises(ValueError): camera.mp4_view.build(paths,selections=[[0,1],None])
         with view.open() as reader:
             contents = reader.read(view.size)
             for start,length in [(0,16),(len(view.header)-4,24),(view.size-20,20)]:

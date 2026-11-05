@@ -5,7 +5,11 @@
 Pagina `#serra` con diretta, rotazione salvata nei pixel delle foto native e
 raccolta indipendente dal browser. Il lettore MP4 con buffer è condiviso tra PC
 e telefono. Finestre da un'ora a un anno: dettaglio recente, storico orario nei
-primi 30 giorni e poi alle 10/14/18 Europe/Rome. Quota unica configurabile
+primi 30 giorni e poi alle 10/14/18 Europe/Rome. Le viste 3/6 mesi e un anno
+mostrano soltanto i campioni delle 10/14/18, anche nei giorni recenti; conteggio
+reale, nessun ripiego notturno. Ogni campione orario viene pubblicato durante
+la giornata, anche singolo. Anteprima e download filtrano gli stessi pacchetti
+senza ricodifica o eliminazione degli originali. Quota unica configurabile
 (predefinita 4 GiB), pulizia manuale con conteggio e conferma; export senza
 ricodifica. La pulizia mostra anche avanzamento, errori e selezioni vuote;
 la fine futura di un intervallo è limitata al momento del calcolo. Controlli

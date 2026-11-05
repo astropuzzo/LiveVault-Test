@@ -32,7 +32,7 @@ test('Firefox Android uses the same player with bounded opt-in diagnostics',()=>
 test('desktop diagnostics are available only when requested',()=>exercise('Mozilla/5.0 (Windows NT 10.0) Firefox/159.0',true));
 test('rotation saves capture preferences and prior orientation/year archives remain selectable',async()=>{
  const h=await exercise();h.data.settings.rotation_degrees=90;
- h.data.orientations=[{rotation:90,tier:'recent',blocks:1,oldest:1,newest:2},{rotation:90,tier:'history',blocks:1,oldest:1,newest:3},{rotation:0,tier:'recent',blocks:1,oldest:1,newest:1}];
+ h.data.orientations=[{rotation:90,tier:'recent',blocks:1,oldest:1,newest:2},{rotation:90,tier:'history',blocks:1,oldest:1,newest:3},{rotation:90,tier:'daylight',blocks:1,frames:2,oldest:2,newest:3},{rotation:0,tier:'recent',blocks:1,oldest:1,newest:1}];
  await h.reactivate();assert.match(h.element('serraArchive').innerHTML,/Precedenti · 0°/);
  h.element('serraRotation').value='270';h.element('serraRotation').events.change();await new Promise(setImmediate);
  const setting=h.posts.find(v=>v.action==='settings');assert.equal(setting.rotation_degrees,270);assert.equal(setting.interval_seconds,15);assert.equal(setting.quota_gb,4);assert.equal(setting.enabled,true);
@@ -65,4 +65,13 @@ test('cleanup explains an empty selection and shows progress during the request'
  const h=await exercise();await h.reactivate();h.responses['cleanup-preview']={ok:true,frames:0,bytes:0};
  const pending=h.element('serraCleanupPreview').events.click();assert.match(h.element('serraCleanupResult').textContent,/Calcolo dei file/);await pending;
  assert.match(h.element('serraCleanupResult').textContent,/Calcolo completato: nessun file eliminabile/);assert.equal(h.element('serraCleanupDelete').disabled,true);assert.equal(h.posts.some(v=>v.action==='cleanup-delete'),false);
+});
+
+test('annual view excludes recent and hourly night footage and shows only the scheduled daytime count',async()=>{
+ const h=await exercise();h.data.orientations=[{rotation:0,tier:'recent',blocks:5,frames:50},{rotation:0,tier:'history',blocks:1,frames:2}];await h.reactivate();
+ h.element('serraWindow').value='8760';h.element('serraWindow').events.change();await new Promise(setImmediate);
+ assert.equal(h.element('serraVideo').hidden,true);assert.match(h.element('serraSampling').textContent,/0 fotogrammi/);assert.match(h.element('serraTimelapseEmpty').textContent,/10:00, 14:00 o 18:00/);
+ h.data.orientations.push({rotation:0,tier:'daylight',blocks:1,frames:2,oldest:10,newest:14});h.api.setAuthenticated(false);await h.reactivate();
+ assert.equal(h.element('serraVideo').hidden,false);assert.match(h.element('serraSampling').textContent,/2 fotogrammi/);assert.match(h.element('serraSampling').textContent,/non vengono sostituiti da foto notturne/);
+ h.element('serraWindow').value='720';h.element('serraWindow').events.change();await new Promise(setImmediate);assert.match(h.element('serraSampling').textContent,/una foto all’ora/);
 });

@@ -149,15 +149,22 @@ class Reader:
         return bytes(result)
 
 
-def build(paths):
+def build(paths, selections=None):
     """Construct ftyp/moov/mdat headers and byte mappings; never read mdat payloads."""
     paths = list(paths)
     if not paths:
         raise ValueError('Empty movie')
+    selections = [None] * len(paths) if selections is None else list(selections)
+    if len(selections) != len(paths):
+        raise ValueError('Sample selection does not match media')
     sizes, sync, runs, chunks, sample_map = array('I'), array('I'), array('i'), [], array('I')
     total, count, minimum, original, codec = 0, 0, 0, None, None
     scale, step = None, None
-    for path in paths:
+    for path, selected in zip(paths,selections):
+        selected = None if selected is None else frozenset(selected)
+        if selected is not None and any(type(index) is not int or index < 0 for index in selected):
+            raise ValueError('Invalid sample selection')
+        source_index = 0
         if path.is_symlink():
             raise ValueError('Symlink media is not allowed')
         for start, kind, payload in top_boxes(path):
@@ -206,7 +213,7 @@ def build(paths):
                 first_flags = None
                 if run_flags & 4:
                     first_flags = struct.unpack_from('>I', run, at)[0]; at += 4
-                length = 0
+                length, kept = 0, []
                 for index in range(sample_count):
                     sample_duration, size, current_flags, composition = duration, sample_size, sample_flags, 0
                     if run_flags & 0x100:
@@ -225,7 +232,19 @@ def build(paths):
                         step = sample_duration
                     if sample_duration != step:
                         raise ValueError('Archive sample rate changed')
-                    sizes.append(size); count += 1; length += size
+                    offset = source_offset + length
+                    length += size
+                    include = selected is None or source_index in selected
+                    source_index += 1
+                    if not include:
+                        continue
+                    if selected is not None and (current_flags & 0x10000 or composition):
+                        raise ValueError('Sample selection requires independent frames')
+                    if kept and kept[-1][0] + kept[-1][1] == offset:
+                        kept[-1][1] += size; kept[-1][2] += 1
+                    else:
+                        kept.append([offset,size,1])
+                    sizes.append(size); count += 1
                     if not current_flags & 0x10000:
                         sync.append(count)
                     minimum = min(minimum, composition)
@@ -235,11 +254,14 @@ def build(paths):
                         runs.extend((1, composition))
                 if source_offset < 0 or source_offset + length > path.stat().st_size:
                     raise ValueError('Invalid MP4 media bounds')
-                chunks.append(Chunk(path, source_offset, length, total)); total += length
-                if not sample_map or sample_map[-2] != sample_count:
-                    sample_map.extend((len(chunks), sample_count, 1))
+                for offset, size, kept_count in kept:
+                    chunks.append(Chunk(path, offset, size, total)); total += size
+                    if not sample_map or sample_map[-2] != kept_count:
+                        sample_map.extend((len(chunks), kept_count, 1))
                 if sizes.itemsize * len(sizes) + runs.itemsize * len(runs) + 20 * len(chunks) > MAX_INDEX:
                     raise ValueError('Preview index too large; choose a shorter window')
+        if selected is not None and any(index >= source_index for index in selected):
+            raise ValueError('Selected sample missing from media')
     if not count or not original or not scale or not step:
         raise ValueError('No video samples')
     lead, duration = -minimum, count * step
