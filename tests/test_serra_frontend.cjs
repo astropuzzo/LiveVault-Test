@@ -25,7 +25,7 @@ async function exercise(userAgent='',debug=false){
  assert.equal(video.loads,loads);assert.equal(video.src,src);assert.equal(video.currentTime,1.5);assert.equal(video.paused,false);assert.equal(element('serraLive').src,live);assert.equal(requests.filter(url=>url.startsWith('/api/serra/')).length,count);
  if(debug){video.events.waiting();for(let i=0;i<8;i++){const[id,task]=[...timers].find(([,v])=>v.ms===3000);timers.delete(id);await task.fn();}assert.equal(reports.length,8);assert.equal(reports[0].decoded_frames,36);assert.equal(reports[0].events.some(v=>v.event==='waiting'),true);}else assert.equal([...timers.values()].some(v=>v.ms===3000),false,'normal viewing must not send diagnostics');
  video.duration=30;video.buffered.end=()=>1.5;video.events.waiting();assert.equal([...timers.values()].some(v=>v.ms===500),true);document.hidden=true;handlers.visibilitychange();assert.equal([...timers.values()].some(v=>v.ms===500),false);assert.equal(video.src,undefined);assert.equal(video.preload,'none');assert.equal(element('serraLive').src,undefined);api.setAuthenticated(false);assert.deepEqual(posts,[],'viewing never changes capture settings');
- return{api,context,data,elements,observers,handlers,requests,posts,responses,element,async reactivate(){document.hidden=false;api.setAuthenticated(true);api.update({csrf:"test-csrf"});observers[0].fn([{target:video,isIntersecting:true}]);await new Promise(setImmediate);}};
+ return{api,context,data,elements,observers,handlers,requests,posts,responses,element,timers,async reactivate(){document.hidden=false;api.setAuthenticated(true);api.update({csrf:"test-csrf"});observers[0].fn([{target:video,isIntersecting:true}]);await new Promise(setImmediate);}};
 }
 test('desktop buffers indexed MP4, survives panel polling and stops when hidden',()=>exercise());
 test('Firefox Android uses the same player with bounded opt-in diagnostics',()=>exercise('Mozilla/5.0 (Android 17; Mobile; rv:159.0) Gecko/159.0 Firefox/159.0',true));
@@ -74,4 +74,15 @@ test('annual view excludes recent and hourly night footage and shows only the sc
  h.data.orientations.push({rotation:0,tier:'daylight',blocks:1,frames:2,oldest:10,newest:14});h.api.setAuthenticated(false);await h.reactivate();
  assert.equal(h.element('serraVideo').hidden,false);assert.match(h.element('serraSampling').textContent,/2 fotogrammi/);assert.match(h.element('serraSampling').textContent,/non vengono sostituiti da foto notturne/);
  h.element('serraWindow').value='720';h.element('serraWindow').events.change();await new Promise(setImmediate);assert.match(h.element('serraSampling').textContent,/una foto all’ora/);
+});
+
+test('SD collection shows pending photos and capture time without requiring online archive storage',async()=>{
+ const h=await exercise();h.data.storage_online=false;h.data.sd={enabled:true,online:true,pending:12,used_bytes:1000,quota_bytes:8*1024**3,last_capture:100,last_sync:90};await h.reactivate();
+ assert.equal(h.element('serraSDRow').hidden,false);assert.match(h.element('serraSDPending').textContent,/12 foto in attesa/);assert.match(h.element('serraMessage').textContent,/microSD/);
+ h.data.sd.error='MicroSD al limite: foto protette.';h.api.setAuthenticated(false);await h.reactivate();assert.match(h.element('serraMessage').textContent,/MicroSD al limite/);
+});
+test('backfilled older frames refresh the playing movie even when newest capture stays the same',async()=>{
+ const h=await exercise();h.data.orientations=[{rotation:0,tier:'recent',blocks:1,frames:3,oldest:10,newest:20}];await h.reactivate();
+ const video=h.element('serraVideo');video.paused=false;const before=video.loads,requests=h.requests.filter(url=>url.includes('preview-info')).length;h.data.orientations[0].frames=5;
+ const task=[...h.timers.values()].find(t=>t.ms===10000);assert.ok(task);await task.fn();await new Promise(setImmediate);assert.ok(video.loads>before);assert.equal(h.requests.filter(url=>url.includes('preview-info')).length,requests+1);
 });

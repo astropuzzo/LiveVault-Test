@@ -1,6 +1,6 @@
 # SERRA: camera locale e timelapse nativo
 
-Verifica: 2026-11-05. Camera Xiaomi MJSXJ03HL convertita a Thingino ufficiale
+Verifica: 2026-11-06. Camera Xiaomi MJSXJ03HL convertita a Thingino ufficiale
 `firmware-2026-11-02`, T31N/JXQ03P/RTL8189FTV. Backup integrale originale verificato e conservato
 privatamente nel workspace dell'utente, fuori da Git. Risoluzione 2304×1296:
 nessun ridimensionamento negli MP4.
@@ -30,6 +30,64 @@ richiedendo la ricarica, senza mescolare risposte byte di filmati diversi.
 L'anteprima non ricodifica e non crea una copia video o Blob. Il download unisce
 con `-c copy`, senza una seconda copia persistente. L'aggiornamento conserva la
 posizione; il video disponibile si ripete alla fine.
+
+### Acquisizione autonoma sulla microSD
+
+Dal 2026-11-06 la camera salva prima i JPEG nativi sulla propria microSD, nella
+sola cartella `serra-spool-v1`. Il pannello resta sul server e l'archivio MP4 sul
+NVMe. Non è stata formattata la scheda e i file di installazione/recupero sono
+preservati. La scheda verificata è da 32 GB, exFAT; il buffer ha quota separata
+8 GiB e lascia almeno 128 MiB liberi. Una cartella con identità dedicata e la
+verifica del mount impediscono scritture sulla flash interna se manca la SD.
+
+`scripts/serra-camera-spool.sh` viene installato come
+`/usr/sbin/serra-camera-spool`, avviato da `S85serra-spool` a priorità Nice 10.
+Usa il JPEG hardware, un'immagine temporanea in RAM e sottocartelle per ora;
+nessun video viene ricodificato sulla camera. Il vecchio driver exFAT della
+camera è stato provato sul dispositivo: nomi con estensioni aggiunte possono
+risolvere allo stesso file (`a.jpg.meta` sovrascrive `a.jpg`). Si usano prefissi
+distinti per JPEG temporanei e metadati, oltre al controllo delle dimensioni
+dopo la pubblicazione. Non sostituirli con suffissi `.part`/`.meta` sulla SD.
+Il CGI richiede modo 0755 per essere eseguito da uhttpd; codice e configurazione
+privata sul resto della camera restano rispettivamente 0700 e 0600.
+Intervallo, pausa e rotazione
+sono ricevuti dal pannello, persistiti sulla camera e continuano a valere senza
+server o Wi-Fi. Un campione orario indipendente alimenta lo storico 10/14/18.
+La rotazione è registrata nel nome sorgente e applicata fisicamente, senza
+perdita, all'importazione: gli originali sulla SD mantengono i pixel nativi.
+
+Il server interroga lo spool ogni cinque secondi, fino a 24 file per giro:
+`control-panel/serra_spool.py` confronta dimensione e SHA-256 del JPEG, ruota
+secondo la preferenza registrata al momento dello scatto, scrive e sincronizza
+file/directory NVMe e indice SQLite, poi invia la conferma. Solo tale conferma
+permette alla camera di liberare le foto trasferite. Una risposta perduta non
+crea duplicati: nomi locali stabili e ricevute transazionali persistono anche
+dopo compressione. Ricevute confermate conservate per 24 ore; quelle senza
+conferma rimangono fino alla riconciliazione. Non si spostano JPEG sulla eMMC.
+
+Il nuovo CGI `/x/serra-spool` richiede esplicitamente la chiave API esistente;
+cookie e IP attendibili non bastano. Configurazione, scatto manuale e conferme
+richiedono POST. Nomi, dimensioni e digest sono validati; non può leggere o
+rimuovere file fuori dallo spool. Nessuna porta o chiave SSH aggiuntiva.
+La chiave API resta nel file privato del server: `sd_spool=true` abilita questo
+percorso e `sd_quota_gb=8` stabilisce il buffer camera. Non pubblicare il file.
+
+Il pannello mostra spazio SD, foto in attesa, ultimo scatto locale e ultimo
+recupero. Se manca l'NVMe, la raccolta sulla camera continua e l'importazione
+aspetta. Quando torna disponibile, le foto arretrate mantengono data, rotazione
+e ordine cronologico, anche se arrivano dopo segmenti più recenti. Preview e
+Range congelano limite temporale, ID e revisione senza mescolare finestre.
+Se la camera è raggiungibile ma la SD non salva, il server può usare il vecchio
+salvataggio diretto sull'NVMe. Se manca anche il Wi-Fi non può farlo.
+
+Limiti: a buffer pieno i file non confermati vengono conservati e i nuovi scatti
+locali attendono spazio; non vengono sovrascritti in silenzio. Le modifiche alle
+impostazioni fatte mentre la camera è irraggiungibile sono ritentate al ritorno
+del collegamento. Il firmware ha soltanto `sync` globale: lo spool raggruppa i
+flush entro dieci secondi, oltre al flush delle conferme; una perdita improvvisa
+di alimentazione può perdere le scritture non ancora persistite. Intervallo
+1 s soggetto ai tempi effettivi di JPEG, SD e trasferimento; non è una garanzia
+di frequenza esatta su questa camera. La scrittura continua consuma la SD.
 
 ### Fotogrammi aggiornati e infrarossi automatici
 
@@ -177,11 +235,13 @@ camera è dedicata; niente cloud o applicazioni Xiaomi. Nessuna password qui.
 
 ## Storage e recupero
 
-Media solo nel mount configurato, sottocartelle `serra/{pending,segments}`.
+Media del server solo nel mount configurato, sottocartelle `serra/{pending,segments}`.
+Lo spool sorgente sulla camera è separato e prosegue anche senza questo mount.
 Configurare `OPENASTRO_SERRA_MOUNT` e `OPENASTRO_SERRA_UUID` nel file locale
 `/etc/openastro-serra.env`, che non va pubblicato. UUID assente, mount assente o UUID diverso:
-nessuna scrittura sulla memoria di sistema. Sotto 2 GiB liberi l'acquisizione
-attende, senza cancellare dati esterni. La diretta resta indipendente dall'NVMe.
+nessuna scrittura sulla memoria di sistema. Sotto 2 GiB liberi l'importazione
+attende, mentre la camera continua sulla SD finché c'è spazio, senza cancellare
+dati esterni. La diretta resta indipendente dall'NVMe.
 
 `scripts/nvme-handoff.py` pubblica per il solo servizio installato il modo storage
 in `/run/openastro-serra-storage.json` (root, 0644), senza il token privato.
@@ -197,7 +257,7 @@ con CSRF valido. Download e diretta sono limitati a uno e due client concorrenti
 
 ## Validazione e rollback
 
-27 test Linux Python 3.13.5: migrazione dell’indice senza perdita di righe,
+39 test Linux Python 3.13.5: migrazione dell’indice senza perdita di righe,
 rotazioni JPEG con controllo dei pixel nei quattro quadranti e dimensioni native,
 MP4 verticali separati, campioni orari e copia esatta dei pacchetti delle
 10/14/18 nello storico vecchio, concatenazione nativa continua, pulizia firmata,
@@ -208,7 +268,11 @@ vero encode/decode FFmpeg 2304×1296 con conteggio fotogrammi identico.
 La selezione annuale verifica fuso/DST, ore mancanti, singoli scatti pubblicati,
 packet hash identici per i soli tre orari, Range/seek e download uguale al preview.
 Gli originali rimangono byte per byte invariati.
-Otto regressioni frontend verificano il player desktop/mobile, rotazione,
+Le prove spool usano camera/SD isolate: perdita conferma, interruzione prima del
+commit, recupero senza duplicati dopo compressione, SHA errato non confermato,
+SD assente/piena, scatto autonomo, POST obbligatorio e rifiuto dei percorsi esterni.
+Il recupero di blocchi fuori ordine verifica selezione temporale e indice MP4.
+Dieci regressioni frontend verificano il player desktop/mobile, rotazione,
 selezione anno/orientamenti, esclusione dei filmati notturni, conteggio foto diurne,
 conferma della pulizia, errori visibili e selezione vuota. Controlli sintattici JavaScript. CI del branch richiesta prima della
 fusione; prove live e limiti operativi vanno riportati separatamente dai test.
@@ -276,3 +340,16 @@ Backup mirato `serra-daylight-*` prima di distribuire insieme `serra_camera.py`,
 e collector. Per annullare ripristinare questi file dallo stesso backup e
 riavviare solo i due servizi; database, media e impostazioni restano compatibili.
 Non ripristinare un vecchio database sopra le foto raccolte successivamente.
+
+## Rollback dell'acquisizione SD v13
+
+Backup camera `serra-sd-*` conserva la configurazione iniziale; il cron
+preesistente non viene modificato. Lo spool
+è un namespace aggiunto, non una sostituzione del contenuto della scheda.
+Per fermare la nuova raccolta usare `S85serra-spool stop`, preservando i JPEG
+non confermati. Per tornare alla raccolta diretta disabilitare `sd_spool` nel
+file privato del server e riavviare soltanto `openastro-serra.service`.
+Ripristinare moduli/asset dal backup server `serra-sd-*` se necessario e
+riavviare solo Control/collector. Non ripristinare vecchi DB sopra le foto nuove;
+la tabella aggiunta delle ricevute è compatibile con il percorso precedente.
+Prima di rimuovere lo spool importare o copiare ogni foto non confermata.

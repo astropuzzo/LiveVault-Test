@@ -116,7 +116,7 @@
   }
   function loadPlayer(force = false) {
     const hours = q('serraWindow').value, rotation = archiveRotation(), archive = selectedArchive();
-    const version = `${archive?.newest || data?.last_compact}:${data?.last_cleanup || 0}:${['history','daylight'].includes(archive?.tier) ? data?.last_history_maintenance || 0 : 0}`;
+    const version = `${archive?.newest || data?.last_compact}:${archive?.frames || 0}:${data?.last_cleanup || 0}:${['history','daylight'].includes(archive?.tier) ? data?.last_history_maintenance || 0 : 0}`;
     q('serraDownload').href = `/api/serra/export.mp4?hours=${hours}&rotation=${rotation}`;
     if (!force && loadedHours === hours && loadedRotation === rotation && q('serraVideo').paused) return;
     if (!archive?.blocks || !authenticated || view !== 'serra' || document.hidden || !playerVisible || (!force && loadedHours === hours && loadedRotation === rotation && loadedVersion === version)) return;
@@ -147,7 +147,7 @@
 
   function render(reload = true) {
     const settings = data.settings;
-    const hasError = Boolean(data.last_error || data.encode_error || data.history_error);
+    const hasError = Boolean(data.last_error || data.encode_error || data.history_error || data.sd?.error);
     q('serraState').textContent = settings.enabled ? 'Acquisizione attiva' : 'Acquisizione in pausa';
     q('serraState').className = `status-chip ${settings.enabled && !hasError ? 'good' : 'warn'}`;
     q('serraPause').textContent = settings.enabled ? 'Metti in pausa' : 'Riprendi acquisizione';
@@ -163,7 +163,10 @@
     q('serraArchive').innerHTML = `<option value="">Attuali · ${rotation}°</option>` + previous.map(item=>`<option value="${item.rotation}">Precedenti · ${item.rotation}°</option>`).join('');
     q('serraArchive').value = previous.some(item=>String(item.rotation)===prior) ? prior : '';
     q('serraArchiveLabel').hidden = !previous.length;
-    q('serraLast').textContent = when(data.last_capture);
+    q('serraLast').textContent = when(data.sd?.enabled ? Math.max(data.last_capture || 0,data.sd.last_capture || 0) : data.last_capture);
+    q('serraSDRow').hidden = !data.sd?.enabled;
+    q('serraSD').textContent = data.sd?.enabled ? data.sd.online ? `${bytes(data.sd.used_bytes)} / ${bytes(data.sd.quota_bytes)}` : 'Collegamento alla camera in attesa' : '';
+    q('serraSDPending').textContent = data.sd?.enabled ? `${data.sd.pending || 0} foto in attesa di trasferimento · ultimo recupero ${when(data.sd.last_sync)}` : '';
     q('serraStorage').textContent = data.storage_online ? `${bytes(data.used_bytes)} / ${settings.quota_gb} GB` : 'NVMe scollegato';
     q('serraStorage').classList.toggle('warn', !data.storage_online);
     q('serraSpace').textContent = data.storage_online ? `${bytes(data.free_bytes)} liberi sul disco` : 'La raccolta riparte quando ricolleghi il disco';
@@ -177,7 +180,7 @@
     q('serraVideo').hidden = !archive?.blocks;
     if (!archive?.blocks && loadedHours !== null) stopPlayer();
     q('serraUpdated').textContent = data.last_compact ? `Ultimo blocco: ${when(data.last_compact)}` : 'In preparazione';
-    message(data.last_error || data.encode_error || data.history_error || 'Raccolta continua. Al limite di spazio vengono sostituiti prima i dettagli più vecchi, conservando lo storico diradato.', hasError);
+    message(data.last_error || data.encode_error || data.history_error || data.sd?.error || (data.sd?.enabled ? 'Le foto vengono raccolte sulla microSD della camera e trasferite con verifica. La raccolta continua anche se il server non è disponibile.' : 'Raccolta continua. Al limite di spazio vengono sostituiti prima i dettagli più vecchi, conservando lo storico diradato.'), hasError);
     controls(); if (reload) loadPlayer();
   }
   async function refresh() {

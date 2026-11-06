@@ -182,7 +182,7 @@
             <label>Uno scatto ogni<select id="serraInterval" disabled><option value="1">1 secondo</option><option value="5">5 secondi</option><option value="10">10 secondi</option><option value="15" selected>15 secondi</option><option value="30">30 secondi</option><option value="60">1 minuto</option><option value="120">2 minuti</option><option value="300">5 minuti</option><option value="600">10 minuti</option><option value="900">15 minuti</option><option value="1800">30 minuti</option><option value="3600">1 ora</option></select></label>
             <label>Dimensione massima dell’archivio<select id="serraQuota" disabled><option value="1">1 GB</option><option value="2">2 GB</option><option value="4" selected>4 GB</option><option value="8">8 GB</option><option value="16">16 GB</option></select></label>
             <div class="serra-actions"><button id="serraPause" class="button secondary" type="button" disabled>Metti in pausa</button><button id="serraCapture" class="button secondary" type="button" disabled>Scatta adesso</button></div>
-            <dl class="serra-facts"><div><dt>Ultimo scatto</dt><dd id="serraLast">In attesa</dd></div><div><dt>Archivio circolare</dt><dd id="serraStorage">Collegamento…</dd><small id="serraSpace"></small></div><div><dt id="serraCount">Nessun fotogramma</dt><dd id="serraPending">In preparazione</dd></div></dl>
+            <dl class="serra-facts"><div><dt>Ultimo scatto</dt><dd id="serraLast">In attesa</dd></div><div><dt>Archivio circolare</dt><dd id="serraStorage">Collegamento…</dd><small id="serraSpace"></small></div><div id="serraSDRow" hidden><dt>Raccolta sulla microSD</dt><dd id="serraSD">Collegamento…</dd><small id="serraSDPending"></small></div><div><dt id="serraCount">Nessun fotogramma</dt><dd id="serraPending">In preparazione</dd></div></dl>
             <p class="serra-note">Al limite di spazio i blocchi più vecchi lasciano posto ai nuovi. La durata conservata dipende da intervallo, immagini e compressione.</p>
           </section>
         </div>
@@ -670,7 +670,7 @@
   <script src="/hls.min.js?v=1.7.2" defer></script>
   <script src="/diagnostics.js?v=3.5.1" defer></script>
   <script src="/apps.js?v=3.5.1-apps2" defer></script>
-  <script src="/serra.js?v=20261105-12" defer></script>
+  <script src="/serra.js?v=20261106-13" defer></script>
   <script src="/app.js?v=3.5.1-serra-20261104-1" defer></script>
   <script src="/torrent-manager.js?v=3.5.1-torrent5" defer></script>
   <script src="/media-upload.js?v=3.5.1" defer></script>

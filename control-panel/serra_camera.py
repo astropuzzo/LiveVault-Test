@@ -16,6 +16,7 @@ import socket
 import sqlite3
 import struct
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -25,6 +26,7 @@ from urllib.request import ProxyHandler, Request, build_opener
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 import mp4_view
+import serra_spool
 
 STATE = Path(os.getenv('OPENASTRO_SERRA_STATE', '/var/lib/openastro-control/serra'))
 CONFIG = Path(os.getenv('OPENASTRO_SERRA_CONFIG', '/var/lib/openastro-control/serra-camera.json'))
@@ -104,6 +106,7 @@ def _db():
     connection.execute('PRAGMA busy_timeout=10000')
     connection.execute('CREATE TABLE IF NOT EXISTS frames (name TEXT PRIMARY KEY, ts REAL, size INTEGER, batch TEXT)')
     connection.execute('CREATE TABLE IF NOT EXISTS segments (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE, start REAL, end REAL, frames INTEGER, size INTEGER, init INTEGER, duration REAL)')
+    connection.execute('CREATE TABLE IF NOT EXISTS spool_receipts (name TEXT PRIMARY KEY,digest TEXT NOT NULL,ts REAL NOT NULL,acked_at REAL)')
     with _lock('schema'):
         for table, additions in {'frames':{'rotation':'INTEGER NOT NULL DEFAULT 0','tier':"TEXT NOT NULL DEFAULT 'recent'"},
                                  'segments':{'rotation':'INTEGER NOT NULL DEFAULT 0','width':'INTEGER NOT NULL DEFAULT 2304','height':'INTEGER NOT NULL DEFAULT 1296',
@@ -135,6 +138,11 @@ def set_settings(payload):
         if rotation and not shutil.which('jpegtran'):
             raise SerraError('Rotazione JPEG non disponibile sul server.', 503)
         _json(STATE / 'settings.json', {**current, 'enabled': enabled, 'interval_seconds': interval, 'quota_gb': quota, 'rotation_degrees': rotation})
+    if _read(CONFIG).get('sd_spool') is True:
+        try:
+            serra_spool.configure(sys.modules[__name__])
+        except SerraError:
+            _state(sd_error='Impostazioni salvate sul server: invio alla camera al prossimo collegamento.')
     return {'ok': True}
 
 
@@ -177,7 +185,7 @@ def storage(*, write=False):
         os.close(descriptor)
 
 
-def _upstream(resource, **params):
+def _upstream(resource, *, body=None, **params):
     config = _read(CONFIG)
     key, hostname = config.get('api_key', ''), config.get('hostname', '')
     if not key or not re.fullmatch(r'[A-Za-z0-9.-]+', hostname):
@@ -190,7 +198,8 @@ def _upstream(resource, **params):
     for index, host in enumerate(hosts):
         try:
             # This uhttpd build omits custom CGI headers. Token is kept server-side.
-            return _http.open(Request(f'http://{host}/x/{resource}?{query}'), timeout=8)
+            return _http.open(Request(f'http://{host}/x/{resource}?{query}',data=body,
+                                     headers={'Content-Type':'text/plain'} if body is not None else {}), timeout=8)
         except HTTPError as exc:
             raise SerraError(f'La camera risponde con errore HTTP {exc.code}.', 502) from None
         except URLError as exc:
@@ -423,7 +432,7 @@ def compact(tier='recent'):
             _state(encoding=False, reserved_bytes=0)
 
 
-def window(hours, rotation=None):
+def window(hours, rotation=None, *, now=None):
     try:
         hours = int(hours)
     except (ValueError, TypeError):
@@ -432,10 +441,10 @@ def window(hours, rotation=None):
         raise SerraError('Scegli una finestra tra un’ora e un anno.', 400)
     with _db() as db:
         tier = 'history' if hours>72 else 'recent'
-        params = (time.time()-hours*3600,_rotation(rotation))
-        rows = [dict(row) for row in db.execute('SELECT * FROM segments WHERE end>=? AND rotation=? AND tier=? ORDER BY id', (*params,tier))]
+        params = ((time.time() if now is None else now)-hours*3600,_rotation(rotation))
+        rows = [dict(row) for row in db.execute('SELECT * FROM segments WHERE end>=? AND rotation=? AND tier=? ORDER BY start,id', (*params,tier))]
         if not rows and tier=='history' and hours<=720:
-            rows = [dict(row) for row in db.execute("SELECT * FROM segments WHERE end>=? AND rotation=? AND tier='recent' ORDER BY id",params)]
+            rows = [dict(row) for row in db.execute("SELECT * FROM segments WHERE end>=? AND rotation=? AND tier='recent' ORDER BY start,id",params)]
         return _daylight_rows(rows) if hours>720 else rows
 
 
@@ -566,6 +575,8 @@ def status():
                                  'oldest':min(row['start'] for row in rows),'newest':max(row['end'] for row in rows)})
     rotation = _rotation()
     online = _mounted()
+    sd=value.get('sd_status',{})
+    sd_enabled=_read(CONFIG).get('sd_spool') is True
     return {'ok': True, 'settings': settings(), 'storage_online': online,
             'used_bytes': totals['bytes'] + pending['bytes'], 'free_bytes': shutil.disk_usage(MOUNT).free if online else None,
             'frames': totals['frames'] + pending['n'], 'pending_frames': pending['n'], 'blocks': totals['blocks'],
@@ -573,6 +584,10 @@ def status():
             'encoding': value.get('encoding', False), 'last_compact': value.get('last_compact'),
             'last_cleanup':value.get('last_cleanup'), 'last_history_maintenance':value.get('last_history_maintenance'),
             'last_error': value.get('last_error', ''), 'encode_error': value.get('encode_error', ''), 'history_error':value.get('history_error',''),
+            'sd':{'enabled':sd_enabled,'online':sd.get('online',False) and time.time()-value.get('last_sd_contact',0)<30,
+                  'pending':sd.get('pending',0),'used_bytes':sd.get('used_kb',0)*1024,'quota_bytes':sd.get('quota_kb',0)*1024,
+                  'last_capture':sd.get('last_capture'),'last_contact':value.get('last_sd_contact'),
+                  'last_sync':value.get('last_sd_sync'),'error':value.get('sd_error','')},
             'width': 1296 if rotation in (90,270) else 2304, 'height': 2304 if rotation in (90,270) else 1296,
             'orientations': orientations,'history':{'hourly_days':30,'daily_times':['10:00','14:00','18:00'],'max_days':365,'timezone':'Europe/Rome'}}
 
@@ -704,13 +719,14 @@ def _export(handler, hours, rotation=None):
 
 def preview_info(hours, rotation=None):
     rotation = _rotation(rotation)
-    rows = window(hours, rotation)
+    now=time.time()
+    rows = window(hours, rotation,now=now)
     if not rows:
         raise SerraError('Nessuna foto delle 10:00, 14:00 o 18:00 ancora disponibile.' if int(hours)>720 else 'Il timelapse sarà disponibile dopo i primi scatti compressi.', 503)
     return {'ok': True, 'duration': sum(row['frames'] for row in rows) / FPS,
             'sampling':'daylight' if int(hours)>720 else 'archive',
             'sample_count':sum(row['frames'] for row in rows),
-            'url': f"/api/serra/preview.mp4?first={rows[0]['id']}&last={rows[-1]['id']}&rotation={rotation}&tier={rows[0]['tier']}&rev={_revision(rows)}&sampling={'daylight' if int(hours)>720 else 'archive'}&v=4"}
+            'url': f"/api/serra/preview.mp4?first={min(row['id'] for row in rows)}&last={max(row['id'] for row in rows)}&since={now-int(hours)*3600}&rotation={rotation}&tier={rows[0]['tier']}&rev={_revision(rows)}&sampling={'daylight' if int(hours)>720 else 'archive'}&v=5"}
 
 
 def _indexed_preview(handler, query, *, download=False):
@@ -734,13 +750,18 @@ def _indexed_preview(handler, query, *, download=False):
         return
     if first < 1 or last < first:
         raise SerraError('Finestra video non valida.', 400)
+    try:
+        since=float(query.get('since',['0'])[0])
+        if not math.isfinite(since) or since<0: raise ValueError()
+    except (ValueError,TypeError):
+        raise SerraError('Finestra video non valida.',400) from None
     with storage() as root:
         with _lock('retention', shared=True), _plan_lock:
             with _db() as db:
-                rows = [dict(row) for row in db.execute('SELECT * FROM segments WHERE id BETWEEN ? AND ? AND rotation=? AND tier=? ORDER BY id', (first,last,rotation,tier))]
+                rows = [dict(row) for row in db.execute('SELECT * FROM segments WHERE id BETWEEN ? AND ? AND end>=? AND rotation=? AND tier=? ORDER BY start,id', (first,last,since,rotation,tier))]
             if sampling=='daylight':
                 rows = _daylight_rows(rows)
-            if not rows or rows[0]['id'] != first or rows[-1]['id'] != last:
+            if not rows or min(row['id'] for row in rows) != first or max(row['id'] for row in rows) != last:
                 raise SerraError('Archivio aggiornato: ricarica la finestra del timelapse.', 410)
             if query.get('rev') and not hmac.compare_digest(query['rev'][0],_revision(rows)):
                 raise SerraError('Archivio aggiornato: ricarica il timelapse.',410)
@@ -892,6 +913,8 @@ def handle_post(payload):
     if action == 'settings':
         return set_settings(payload)
     if action == 'capture':
+        if _read(CONFIG).get('sd_spool') is True:
+            return serra_spool.manual_capture(sys.modules[__name__])
         return capture()
     if action == 'flush':
         _state(flush_requested=True)
@@ -949,18 +972,42 @@ def collector():
     last_cleanup = 0.0
     last_history = 0.0
     retry_history = 0.0
+    sd_mode=_read(CONFIG).get('sd_spool') is True
+    next_sd_sync=0.0
     while True:
         try:
             now = time.monotonic()
             config = settings()
             if config != previous_config:
                 next_capture = 0.0
+                next_sd_sync = 0.0
                 previous_config = config
             if not recovered:
-                recover()
-                recovered = True
+                try:
+                    recover()
+                    recovered = True
+                except SerraError:
+                    if not sd_mode: raise
+                    _state(last_error='Archivio in attesa: le foto continuano sulla microSD della camera.')
+            sd_fallback=False
+            if sd_mode:
+                if now>=next_sd_sync:
+                    next_sd_sync=now+5
+                    try:
+                        sd=serra_spool.sync(sys.modules[__name__],import_media=recovered)
+                        if recovered: _state(last_error='')
+                    except (SerraError,OSError) as exc:
+                        _state(sd_error=str(exc) if isinstance(exc,SerraError) else 'Trasferimento microSD in attesa: nuovo tentativo automatico.')
+                sd=_state().get('sd_status',{})
+                # Wi-Fi failure keeps autonomous acquisition running. Direct capture
+                # is only useful when the camera is reachable but its SD cannot save.
+                sd_fallback=(time.time()-_state().get('last_sd_contact',0)<30 and
+                             (not sd.get('online',False) or sd.get('error') in ('queue_full','sd_write_error','usage_error')))
+            if not recovered:
+                time.sleep(1)
+                continue
             history_due = _state().get('history_slot') != f"{_rotation(config.get('rotation_degrees',0))}:{int(time.time()//3600)}"
-            if config['enabled'] and (now >= next_capture or (history_due and now>=retry_history)):
+            if (not sd_mode or sd_fallback) and config['enabled'] and (now >= next_capture or (history_due and now>=retry_history)):
                 try:
                     recent = now >= next_capture
                     capture(recent=recent)

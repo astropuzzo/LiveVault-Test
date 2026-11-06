@@ -1,0 +1,25 @@
+#!/bin/sh
+SERRA_PID=/run/serra-spool.pid
+case "$1" in
+    start)
+        if [ -f "$SERRA_PID" ] && kill -0 "$(cat "$SERRA_PID")" 2>/dev/null; then exit 0; fi
+        start-stop-daemon -S -b -m -p "$SERRA_PID" -x /usr/bin/nice -- -n 10 /usr/sbin/serra-camera-spool run
+        ;;
+    stop)
+        if [ -f "$SERRA_PID" ]; then
+            SERRA_TASK=$(cat "$SERRA_PID")
+            case "$SERRA_TASK" in ''|*[!0-9]*) exit 1;; esac
+            if [ -r "/proc/$SERRA_TASK/cmdline" ] && tr '\0' ' ' < "/proc/$SERRA_TASK/cmdline" | grep -q '/usr/sbin/serra-camera-spool run'; then
+                kill -TERM "$SERRA_TASK"
+                SERRA_WAIT=0
+                while kill -0 "$SERRA_TASK" 2>/dev/null; do
+                    SERRA_WAIT=$((SERRA_WAIT + 1)); [ "$SERRA_WAIT" -le 15 ] || exit 1
+                    sleep 1
+                done
+            fi
+            rm -f "$SERRA_PID"
+        fi
+        ;;
+    restart) "$0" stop; sleep 1; "$0" start;;
+    *) exit 2;;
+esac

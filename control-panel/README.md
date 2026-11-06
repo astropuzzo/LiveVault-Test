@@ -3,7 +3,10 @@
 ## Serra: camera e timelapse
 
 Pagina `#serra` con diretta, rotazione salvata nei pixel delle foto native e
-raccolta indipendente dal browser. Il lettore MP4 con buffer è condiviso tra PC
+raccolta indipendente dal browser. La camera salva autonomamente sulla microSD;
+il server recupera i JPEG con verifica SHA-256 e conferma dopo il salvataggio
+persistente, poi prepara gli MP4 sul NVMe. Buffer SD separato da 8 GiB, ripresa
+senza duplicati e nessuna formattazione. Il pannello mostra spazio e coda SD. Il lettore MP4 con buffer è condiviso tra PC
 e telefono. Finestre da un'ora a un anno: dettaglio recente, storico orario nei
 primi 30 giorni e poi alle 10/14/18 Europe/Rome. Le viste 3/6 mesi e un anno
 mostrano soltanto i campioni delle 10/14/18, anche nei giorni recenti; conteggio

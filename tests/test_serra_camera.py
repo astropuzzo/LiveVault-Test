@@ -391,6 +391,21 @@ class SerraTests(unittest.TestCase):
         self.assertNotIn('192.168.', text)
 
     @unittest.skipUnless(shutil.which('ffmpeg') and shutil.which('ffprobe'), 'FFmpeg required')
+    def test_backfilled_segments_play_in_capture_order_with_a_frozen_window(self):
+        image=self.native_image();now=time.time()
+        for offset in (-10,-48*3600,-3600):
+            for index in (0,1):self.frame(now+offset+index,image)
+            camera.compact()
+        rows=camera.window(24)
+        self.assertEqual([row['id'] for row in rows],[3,1])
+        info=camera.preview_info(24)
+        self.assertEqual(info['sample_count'],4)
+        class Handler:
+            def send_media_file(self,media):self.size=media['size']
+        handler=Handler();camera._indexed_preview(handler,camera.parse_qs(info['url'].split('?',1)[1]))
+        self.assertGreater(handler.size,100)
+
+    @unittest.skipUnless(shutil.which('ffmpeg') and shutil.which('ffprobe'), 'FFmpeg required')
     def test_indexed_preview_has_full_duration_seek_and_identical_video_packets(self):
         payloads = []
         for color in ('green','red'):

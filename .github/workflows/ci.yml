@@ -41,7 +41,7 @@ jobs:
           node --test tests/test_nina_stellar_ui.cjs
       - name: Check shell scripts
         run: |
-          for file in scripts/*.sh control-panel/openastro-action control-panel/openastro-power-profile; do bash -n "$file"; done
+          for file in scripts/*.sh scripts/*.cgi scripts/*.init control-panel/openastro-action control-panel/openastro-power-profile; do bash -n "$file"; done
       - name: Build standalone NINA monitor image
         run: docker build -t openastro-nina-monitor:ci nina-monitor
       - name: Smoke-test isolated NINA monitor container
