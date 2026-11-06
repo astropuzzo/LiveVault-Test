@@ -15,7 +15,7 @@ workspace del nodo puntano lì. Aggiornare quella copia insieme ai documenti Git
 SOURCE.txt identifica la revisione (ultimo allineamento completo: 2026-09-30,
 incluse le guide collegate da questo file; aggiornamenti mirati per il Funnel
 e MyFreeCams: 2026-10-06; Bonsai Sensei e console App e ricavi: 2026-10-08;
-InstaVault: 2026-11-02). Il vecchio handoff duplicato è stato sostituito
+InstaVault: 2026-11-06). Il vecchio handoff duplicato è stato sostituito
 da un rinvio, con originale conservato nella directory rollback.
 
 Interfacce LiveVault e OpenAstro Control (2026-11-02): tema grafite al posto del
@@ -25,25 +25,23 @@ etichette maiuscole o numerazioni decorative; restano i colori di stato
 cache dei service worker; gli ID e i contratti JavaScript non cambiano.
 Dettagli e rollback del pannello in `control-panel/README.md`.
 
-InstaVault (2026-11-02): archivio dei profili Instagram scelti dall'utente,
-applicazione Coolify separata dal modulo `instavault/`, dominio proprio
-`https://instavault.tailf2871c.ts.net/` da un nodo Tailscale dedicato
-(`instavault-tailscale.service`); il Funnel `openastro` non cambia. Media su NVMe
-in `/mnt/livevault-nvme/instavault-media`, con pausa e ripresa dentro
-`nvme-handoff.py`. Senza NVMe scarica in un buffer eMMC da 2 GiB
-(`/data/instavault/buffer`, azione `buffer` dell'helper) e al ricollegamento
-sposta tutto sull'NVMe con verifica SHA-256. Percorsi, installazione host, limiti e rollback in
-[HOSTING.md](HOSTING.md#instavault). Il download reale richiede una sessione
-Instagram collegata dall'utente nelle Impostazioni di InstaVault.
-Correzione login 2026-11-02: accesso mobile asincrono con codici email/SMS/2FA;
-verifica cookie tramite endpoint web autenticato invece del vecchio GraphQL.
-Stato e annullamento del tentativo nelle Impostazioni; cookie e password mai nei
-log. Conservati i lavori non committati di Claude in un checkout separato.
-Login mobile reale confermato dall'utente; primo carosello verificato (3 foto).
-Il downloader riusa il trasporto mobile autenticato, senza il lookup anonimo
-di Instaloader. Pagine da 12 elementi, ripresa JSON e isolamento degli errori
-delle singole categorie. Rollback:
-redeploy della sola InstaVault dall'immagine `ib5ozkgmrnflouf4jqqzsxeg_instavault:84d26a584602908f78b002b20cb9e55cd7f0d8da`.
+InstaVault (verifica mirata 2026-11-06): archivio dei profili Instagram,
+applicazione Coolify separata `ib5ozkgmrnflouf4jqqzsxeg`, modulo `instavault/`,
+`https://instavault.tailf2871c.ts.net/`; ingressi e storage restano quelli in
+[HOSTING.md](HOSTING.md#instavault). Baseline osservata bc60729: 4857 contenuti,
+9,73 GB; blocchi ClientThrottledError su due profili. Le scansioni di commenti,
+like, follower ed evidenze non avevano un limite complessivo.
+Il nuovo controllo persistente limita tutte le richieste mobili per account e
+host, interrompe i retry e impone una pausa condivisa dopo i blocchi. Le storie
+attive e le prime pagine post/Reel precedono lo storico e le interazioni;
+frequenza dei profili conservata (default 10 minuti), niente ciclo storico ogni
+minuto. Metadati in cache e ripresa dei cursori anche dopo pause lunghe.
+Dettagli, limiti e test in [instavault/README.md](instavault/README.md#request-policy--verified-6-november-2026).
+Backup mirato `/var/backups/openastro/20261106-instavault-request-policy`.
+Rollback: redeploy della sola InstaVault dall'immagine conservata
+`ib5ozkgmrnflouf4jqqzsxeg_instavault:bc60729f99fdcd5d0564bd674b33b49236108918`.
+Le nuove tabelle sono additive; non ripristinare un DB vecchio sopra download
+successivi. Lavori locali precedenti incompleti conservati separatamente.
 
 ## Accesso pubblico — ripristinato 2026-10-06
 

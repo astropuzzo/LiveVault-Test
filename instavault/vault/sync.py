@@ -17,7 +17,7 @@ import instaloader
 import requests
 from PIL import Image, ImageOps
 
-from . import push, social, store, security
+from . import push, social, store, security, request_policy
 
 WAKE = threading.Event()
 STOP = threading.Event()
@@ -87,8 +87,8 @@ def engagement(item):
 
 
 # How often a post's commenters and likers are read again, by its age.
-REFRESH_AFTER = [(2 * 86400, 3600), (7 * 86400, 6 * 3600), (30 * 86400, 86400)]
-REFRESH_POSTS = 4
+REFRESH_AFTER = [(2 * 86400, 6 * 3600), (7 * 86400, 86400), (30 * 86400, 3 * 86400)]
+REFRESH_POSTS = 1
 
 
 def refresh_due(column, limit=REFRESH_POSTS):
@@ -238,6 +238,9 @@ def loader(account=None):
     value = new_loader()
     value.account = row['id'] if row else None
     if row:
+        if not usable(row):
+            until = (row['problem_at'] or store.now()) + (PAUSE_SECONDS if row['problem'] == 'pause' else 12*3600)
+            raise request_policy.Deferred(max(until, store.now()+600), 'account')
         item = security.decrypt_json((store.DATA / row['session_file']).read_bytes())
         if item.get('verified_via') == 'mobile_login' or (item.get('cookies') or {}).get('sessionid'):
             value.close()
@@ -338,7 +341,7 @@ def error_message(exc):
     if name == 'FeedbackRequired':
         return 'Instagram ha limitato per qualche ora l’account collegato. InstaVault riprova da solo più tardi.'
     if name in {'PleaseWaitFewMinutes', 'ClientThrottledError', 'RateLimitError'}:
-        return 'Instagram chiede una pausa. InstaVault riprova da solo tra un’ora.'
+        return 'Instagram chiede una pausa. InstaVault rispetta la pausa condivisa e riprende automaticamente quando termina.'
     if name in {'ConnectionError', 'ConnectTimeout', 'ReadTimeout', 'ClientConnectionError', 'ClientRequestTimeout'}:
         return 'Connessione a Instagram non riuscita. Riprova da solo al prossimo controllo.'
     detail = instagram_detail(exc)
@@ -565,8 +568,7 @@ class Worker:
             if likes is not None:
                 c.execute('UPDATE posts SET like_total=?,comment_total=?,counts_at=? WHERE id=?', (likes, comments, store.now(), ident))
             c.execute('UPDATE jobs SET downloaded=downloaded+1 WHERE id=?', (job_id,))
-        if not story:
-            self.save_comments(ident, shortcode)
+        # Comments are read by maintenance, after fresh media is safe.
         return True
 
     def save_comments(self, post_id, shortcode, pages=1):
@@ -579,6 +581,8 @@ class Worker:
             found = source.comments(shortcode, pages, lambda: not STOP.wait(random.uniform(2, 5))) if pages > 1 else source.comments(shortcode)
         except Exception as exc:
             self.comments_blocked = True
+            if isinstance(exc, request_policy.Deferred) or type(exc).__name__ in STOPPING:
+                raise
             print(f'InstaVault: comments {shortcode}: {type(exc).__name__}: {instagram_detail(exc)}', flush=True)
             return False
         with store.db() as c:
@@ -596,8 +600,8 @@ class Worker:
         with store.db() as c:
             stale = list(c.execute(refresh_due('comments_at'), args))
         for row in stale:
-            # Up to ten pages (about 150 comments) for a post still being commented.
-            if STOP.is_set() or not self.save_comments(row['id'], row['shortcode'], pages=10):
+            # One page only; shared maintenance budgets cover comments too.
+            if STOP.is_set() or not self.save_comments(row['id'], row['shortcode'], pages=1):
                 break
         if not hasattr(source, 'likers') or self.comments_blocked:
             return
@@ -609,6 +613,8 @@ class Worker:
             try:
                 found = source.likers(row['shortcode'])
             except Exception as exc:
+                if isinstance(exc, request_policy.Deferred) or type(exc).__name__ in STOPPING:
+                    raise
                 print(f'InstaVault: likers {row["shortcode"]}: {type(exc).__name__}: {instagram_detail(exc)}', flush=True)
                 return
             with store.db() as c:
@@ -617,7 +623,7 @@ class Worker:
                               (row['id'], user['pk'], user['username'], user['full_name'], store.now()))
                 c.execute('UPDATE posts SET likes_at=? WHERE id=?', (store.now(), row['id']))
 
-    def backfill_comments(self, profile, limit=12):
+    def backfill_comments(self, profile, limit=1):
         # Posts archived before comments existed get theirs a few at a time.
         with store.db() as c:
             rows = list(c.execute('''SELECT id,shortcode FROM posts WHERE profile_id=? AND complete=1 AND kind<>'story'
@@ -669,13 +675,13 @@ class Worker:
             snapshot['avatar'] = profile['avatar']
         store.record_history(profile['id'], snapshot)
 
-    def stream(self, profile, iterator, kind, job_id):
+    def stream(self, profile, iterator, kind, job_id, latest=False, resume_key=None):
         from instaloader.nodeiterator import FrozenNodeIterator
         with store.db() as c:
-            cursor = c.execute('SELECT * FROM cursors WHERE profile_id=? AND kind=?', (profile['id'], kind)).fetchone()
+            cursor = c.execute('SELECT * FROM cursors WHERE profile_id=? AND kind=?', (profile['id'], resume_key or kind)).fetchone()
         initial = not cursor or not cursor['complete']
         fresh = True
-        if cursor and cursor['data']:
+        if not latest and cursor and cursor['data']:
             try:
                 frozen = json.loads(cursor['data'])
                 if hasattr(iterator, 'restore'):
@@ -698,17 +704,81 @@ class Worker:
             known = 0 if added else known + 1
             with store.db() as c:
                 c.execute('UPDATE jobs SET seen=seen+1,message=? WHERE id=?', ({'reel': 'Controllo dei Reel…', 'tagged': 'Controllo dei post in cui è taggato…'}.get(kind, 'Controllo dei post…'), job_id))
-            if not initial and known >= 16:
+            if (latest and index >= 11 and known >= 3) or (not latest and (not initial or resume_key) and known >= 12):
                 break
-            if hasattr(iterator, 'freeze'):
+            if not latest and hasattr(iterator, 'freeze'):
                 snapshot = iterator.freeze()
                 frozen = json.dumps(snapshot._asdict() if hasattr(snapshot, '_asdict') else snapshot)
                 with store.db() as c:
-                    c.execute('INSERT OR REPLACE INTO cursors VALUES (?,?,?,0)', (profile['id'], kind, frozen))
-            if index >= 74:
+                    c.execute('INSERT OR REPLACE INTO cursors VALUES (?,?,?,0)', (profile['id'], resume_key or kind, frozen))
+            if index >= (23 if latest else 11):
+                if latest and hasattr(iterator, 'freeze'):
+                    snapshot = iterator.freeze()
+                    frozen = json.dumps(snapshot._asdict() if hasattr(snapshot, '_asdict') else snapshot)
+                    key = f'catchup:{kind}:{job_id:020d}'
+                    with store.db() as c:
+                        c.execute('INSERT OR IGNORE INTO cursors VALUES (?,?,?,0)', (profile['id'], key, frozen))
                 return True
+        if not latest:
+            with store.db() as c:
+                if resume_key:
+                    c.execute('DELETE FROM cursors WHERE profile_id=? AND kind=?', (profile['id'], resume_key))
+                else:
+                    c.execute('INSERT OR REPLACE INTO cursors VALUES (?,?,NULL,1)', (profile['id'], kind))
+        return False
+
+    def backfill_media(self, profile, remote, job_id):
         with store.db() as c:
-            c.execute('INSERT OR REPLACE INTO cursors VALUES (?,?,NULL,1)', (profile['id'], kind))
+            pending = c.execute("SELECT kind FROM cursors WHERE profile_id=? AND kind LIKE 'catchup:%' ORDER BY kind LIMIT 1", (profile['id'],)).fetchone()
+        if pending:
+            kind = pending['kind'].split(':')[1]
+            method = remote.get_posts if kind == 'post' else remote.get_reels
+            return self.stream(profile, method(), kind, job_id, resume_key=pending['kind'])
+        for kind, enabled, method in [('post', profile['posts'], remote.get_posts),
+                                       ('reel', profile['reels'], getattr(remote, 'get_reels', None))]:
+            if not enabled or not method:
+                continue
+            with store.db() as c:
+                row = c.execute('SELECT complete FROM cursors WHERE profile_id=? AND kind=?', (profile['id'], kind)).fetchone()
+            if row and row['complete']:
+                continue
+            return self.stream(profile, method(), kind, job_id)
+        return False
+
+    def import_highlights(self, profile, value, remote, job_id):
+        # Store IDs, not expiring CDN links. At most one collection's API per
+        # pass; new live stories have already been archived before this runs.
+        with store.db() as c:
+            row = c.execute("SELECT data FROM cursors WHERE profile_id=? AND kind='highlight-progress'", (profile['id'],)).fetchone()
+        state = json.loads(row['data']) if row and row['data'] else {}
+        completed = set(state.get('completed', []))
+        for highlight in value.get_highlights(remote):
+            key = str(getattr(highlight, 'pk', '') or getattr(highlight, 'unique_id', '') or highlight.title)
+            if key in completed:
+                continue
+            items = list(highlight.get_items())
+            start = 0
+            if state.get('current') == key:
+                start = next((i+1 for i, item in enumerate(items) if str(item.mediaid) == state.get('last')), 0)
+            for offset, item in enumerate(items[start:]):
+                self.check(job_id)
+                try:
+                    self.archive(profile, item, 'story', job_id, 'In evidenza · ' + highlight.title[:150], highlight_link(highlight))
+                except requests.HTTPError as exc:
+                    if getattr(exc.response, 'status_code', None) not in (403,404,410):
+                        raise
+                state = {'completed': sorted(completed), 'current': key, 'last': str(item.mediaid)}
+                with store.db() as c:
+                    c.execute("INSERT OR REPLACE INTO cursors VALUES (?,'highlight-progress',?,0)", (profile['id'], json.dumps(state)))
+                if offset >= 11:
+                    return True
+            completed.add(key)
+            with store.db() as c:
+                c.execute("INSERT OR REPLACE INTO cursors VALUES (?,'highlight-progress',?,0)",
+                          (profile['id'], json.dumps({'completed': sorted(completed)})))
+            return True
+        with store.db() as c:
+            c.execute("DELETE FROM cursors WHERE profile_id=? AND kind='highlight-progress'", (profile['id'],))
         return False
 
     def run_job(self, job):
@@ -760,7 +830,8 @@ class Worker:
             successful = []
             deleted = {}
             self.seen = {}
-            def section(kind, label, action):
+            def section(kind, label, action, period=0, lane='fresh'):
+                previous_lane = getattr(value, 'request_lane', 'fresh')
                 nonlocal more
                 with store.db() as c:
                     row = c.execute('SELECT data FROM cursors WHERE profile_id=? AND kind=?', (profile['id'], 'pause:' + kind)).fetchone()
@@ -768,11 +839,28 @@ class Worker:
                     previous = json.loads(row['data'])
                     if previous['until'] > store.now():
                         warnings.append(previous['message']); return
+                if period:
+                    with store.db() as c:
+                        scheduled = c.execute('SELECT next_at FROM sync_schedule WHERE profile_id=? AND kind=?', (profile['id'], kind)).fetchone()
+                    if scheduled and scheduled['next_at'] > store.now():
+                        return
+                value.request_lane = lane
                 try:
-                    more |= bool(action())
+                    pending = bool(action())
+                    more |= pending
+                    if period:
+                        with store.db() as c:
+                            c.execute('INSERT OR REPLACE INTO sync_schedule VALUES (?,?,?)',
+                                      (profile['id'], kind, store.now() + (1800 if pending else period)))
                     successful.append(kind)
                     with store.db() as c:
                         c.execute('DELETE FROM cursors WHERE profile_id=? AND kind=?', (profile['id'], 'pause:' + kind))
+                except request_policy.Deferred as exc:
+                    warnings.append(label + ': controllo secondario rinviato per lasciare spazio alle novità')
+                    with store.db() as c:
+                        c.execute('INSERT OR REPLACE INTO sync_schedule VALUES (?,?,?)', (profile['id'], kind, int(exc.until)+1))
+                    if lane == 'fresh':
+                        raise
                 except (Paused, StorageFull):
                     raise
                 except Exception as exc:
@@ -787,13 +875,8 @@ class Worker:
                     with store.db() as c:
                         c.execute('INSERT OR REPLACE INTO cursors VALUES (?,?,?,0)',
                                   (profile['id'], 'pause:' + kind, json.dumps({'until':store.now()+3600,'message':warning})))
-            if profile['posts']:
-                section('post', 'Post', lambda: self.stream(profile, remote.get_posts(), 'post', ident))
-            if profile['reels']:
-                section('reel', 'Reel', lambda: self.stream(profile, remote.get_reels(), 'reel', ident))
-            tagged = getattr(remote, 'get_tagged', None) or getattr(remote, 'get_tagged_posts', None)
-            if profile.get('tagged') and value.context.is_logged_in and tagged:
-                section('tagged', 'Post in cui è taggato', lambda: self.stream(profile, tagged(), 'tagged', ident))
+                finally:
+                    value.request_lane = previous_lane
             if profile['stories'] and value.context.is_logged_in:
                 def stories():
                     live = set()
@@ -805,43 +888,33 @@ class Worker:
                     if same_account:
                         deleted['story'] = store.mark_deleted(profile['id'], (), live, store.now() - 86400 + 600, story=True)
                 section('story', 'Storie', stories)
+            if profile['posts']:
+                section('post', 'Post nuovi', lambda: self.stream(profile, remote.get_posts(), 'post', ident, latest=True))
+            if profile['reels']:
+                section('reel', 'Reel nuovi', lambda: self.stream(profile, remote.get_reels(), 'reel', ident, latest=True))
+            # Announce fresh captures before slow work can hit a pause. Old
+            # backfill added later in this job must not produce "new" notices.
+            self.announce(profile, ident, {}, False)
+            tagged = getattr(remote, 'get_tagged', None) or getattr(remote, 'get_tagged_posts', None)
+            if profile.get('tagged') and value.context.is_logged_in and tagged:
+                section('tagged', 'Post in cui è taggato', lambda: self.stream(profile, tagged(), 'tagged', ident, latest=True), period=6*3600, lane='maintenance')
+            section('backfill', 'Archivio storico', lambda: self.backfill_media(profile, remote, ident), period=6*3600, lane='maintenance')
             if profile['highlights'] and value.context.is_logged_in:
-                def highlights():
-                    # One broken collection must not stop the others.
-                    failed = 0
-                    for highlight in value.get_highlights(remote):
-                        try:
-                            for item in highlight.get_items():
-                                try:
-                                    self.archive(profile, item, 'story', ident, 'In evidenza · ' + highlight.title[:150],
-                                                 highlight_link(highlight))
-                                except requests.HTTPError as exc:
-                                    # A file Instagram no longer serves must not hold back the rest of the collection.
-                                    if getattr(exc.response, 'status_code', None) not in (403, 404, 410):
-                                        raise
-                                    print(f'InstaVault: @{profile["username"]} highlight «{highlight.title}»: file gone ({exc.response.status_code})', flush=True)
-                        except (Paused, StorageFull):
-                            raise
-                        except Exception as exc:
-                            if type(exc).__name__ in STOPPING:
-                                raise
-                            failed += 1
-                            print(f'InstaVault: @{profile["username"]} highlight «{highlight.title}»: {type(exc).__name__}: {instagram_detail(exc)}', flush=True)
-                    if failed:
-                        warnings.append('In evidenza: Instagram non ha mandato ' + plural(failed, 'raccolta', 'raccolte')
-                                        + ', le riprendo al prossimo controllo')
-                section('highlight', 'In evidenza', highlights)
-            posts_seen = self.seen.get('post')
-            if posts_seen and posts_seen['fresh'] and posts_seen['oldest'] and 'post' in successful and same_account:
-                codes = posts_seen['codes'] | (self.seen.get('reel') or {}).get('codes', set())
-                # Only the last two weeks, and only what Instagram confirms is gone.
-                since = max(posts_seen['oldest'], store.now() - 14 * 86400)
-                deleted['post'] = store.mark_deleted(profile['id'], ('post', 'reel'), codes, since,
-                                                     gone=lambda code: removed_from_instagram(value, code))
+                section('highlight', 'In evidenza', lambda: self.import_highlights(profile, value, remote, ident), period=6*3600, lane='maintenance')
+            def check_deleted():
+                posts_seen = self.seen.get('post')
+                if posts_seen and posts_seen['fresh'] and posts_seen['oldest'] and 'post' in successful and same_account:
+                    codes = posts_seen['codes'] | (self.seen.get('reel') or {}).get('codes', set())
+                    since = max(posts_seen['oldest'], store.now() - 14*86400)
+                    deleted['post'] = store.mark_deleted(profile['id'], ('post', 'reel'), codes, since,
+                                                        gone=lambda code: removed_from_instagram(value, code), limit=1)
+            section('deleted-check', 'Verifica rimossi', check_deleted, period=6*3600, lane='maintenance')
             if warnings and not successful:
                 raise RuntimeError('Selected content categories temporarily unavailable')
-            self.refresh_recent(profile)
-            self.backfill_comments(profile)
+            def interactions():
+                self.refresh_recent(profile)
+                self.backfill_comments(profile)
+            section('interactions', 'Commenti e like', interactions, period=6*3600, lane='maintenance')
             with store.db() as c:
                 message = 'Prima importazione in corso' if more else 'Archivio aggiornato'
                 if (profile['stories'] or profile['highlights']) and not value.context.is_logged_in:
@@ -856,8 +929,15 @@ class Worker:
                     c.execute("UPDATE ig_accounts SET problem='',problem_message='',problem_at=NULL WHERE id=?", (account,))
                     c.execute('UPDATE profiles SET account_used=? WHERE id=?', (account, profile['id']))
                 c.execute("UPDATE profiles SET status='ready',error=?,last_sync=?,next_sync=? WHERE id=?",
-                          (' · '.join(warnings), store.now(), store.now() + (60 if more else next_check(profile)), profile['id']))
-            self.announce(profile, ident, deleted, more)
+                          (' · '.join(warnings), store.now(), store.now() + next_check(profile), profile['id']))
+            # Historical work must not suppress notices about a fresh capture.
+            self.announce(profile | {'notify': 0}, ident, deleted, False)
+        except request_policy.Deferred as exc:
+            until = max(store.now()+60, int(exc.until)+1)
+            message = 'Controlli in attesa: rispetto la pausa o il budget Instagram, archivio conservato.'
+            with store.db() as c:
+                c.execute("UPDATE jobs SET state='done',finished_at=?,message=? WHERE id=?", (store.now(), message, ident))
+                c.execute("UPDATE profiles SET status='ready',error=?,next_sync=? WHERE id=?", (message, until, profile['id']))
         except Exception as exc:
             message = error_message(exc)
             problem = note_account_problem(exc, account)
@@ -881,7 +961,7 @@ class Worker:
                     state = 'cancelled' if isinstance(exc, Paused) else 'error'
                     c.execute('UPDATE jobs SET state=?,finished_at=?,error=? WHERE id=?', (state, store.now(), message, ident))
                     c.execute('UPDATE profiles SET status=?,error=?,next_sync=? WHERE id=?',
-                              (state, message, store.now() + 12 * 3600, profile['id']))
+                              (state, message, max(store.now()+next_check(profile), int(request_policy.ready_at(account or 'anonymous'))+1), profile['id']))
         finally:
             if value:
                 value.close()

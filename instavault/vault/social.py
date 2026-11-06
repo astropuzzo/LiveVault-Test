@@ -17,10 +17,10 @@ from . import store, sync
 
 LISTS = ('followers', 'following')
 PAGE_SIZE = 25
-BATCH_PAGES = 40            # about 1000 people
-DAILY_PAGES = 120           # per account, all lists and likes together
-ACCOUNT_REST = (2 * 3600, 4 * 3600)
-LIST_REST = (3600, 3 * 3600)
+BATCH_PAGES = 2
+DAILY_PAGES = 12            # also subject to the shared request governor
+ACCOUNT_REST = (6 * 3600, 12 * 3600)
+LIST_REST = (24 * 3600, 48 * 3600)
 COMPLETE_SHARE = 0.95
 PROBLEM_REST = {'pause': 48 * 3600, 'login': 12 * 3600, None: 6 * 3600}
 
@@ -194,6 +194,7 @@ def run_batch(crawl, account, loader):
     pages, first_page_users = 0, 0
     try:
         source = loader(account['id'])
+        source.request_lane = 'maintenance'
         cursor = crawl['cursor']
         limit = min(BATCH_PAGES, budget_left(next(a for a in sync.accounts() if a['id'] == account['id'])))
         while pages < limit and not sync.STOP.is_set() and not busy():

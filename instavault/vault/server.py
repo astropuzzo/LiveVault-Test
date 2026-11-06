@@ -330,6 +330,7 @@ class Handler(BaseHTTPRequestHandler):
                 jobs = [dict(r) for r in c.execute('''SELECT j.*,p.username FROM jobs j JOIN profiles p ON p.id=j.profile_id
                     WHERE state IN ('running','queued','cancel_requested') ORDER BY j.id LIMIT 100''')]
             return self.send_json({'counts': counts, 'profiles': store.profile_rows(), 'jobs': jobs,
+                                   'requests': sync.request_policy.status(),
                                    'storage': store.storage_status(), 'instagram': sync.session_status(), 'settings': store.settings(),
                                    'worker': {'alive': bool(sync.worker.thread and sync.worker.thread.is_alive()), 'leader': sync.worker.leader,
                                               'draining': sync.worker.draining}})

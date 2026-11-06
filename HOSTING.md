@@ -265,9 +265,22 @@ profile and category; it never falls back to anonymous requests. Browser-cookie
 sessions remain on the web transport and are never silently converted to mobile.
 Unavailable content categories have a one-hour backoff and do not prevent other
 categories from being archived; account challenges/throttling stop the pass.
-Profiles are checked every 10
-minutes by default (choice from 10 minutes to 24 hours) with a random offset of
-up to 30 seconds. Instagram can rate-limit or flag accounts that download a lot.
+Request-policy correction (2026-11-06): all authenticated mobile HTTP
+attempts now share persistent host/account budgets, spacing and cooldowns in
+SQLite. SDK retries cannot evade these limits; an optional comments/likes
+throttle stops the whole job and is not cleared as a success. Active stories
+and newest post/Reel pages run before bounded maintenance; metadata is cached
+one hour. Default discovery remains ten minutes, with up to thirty seconds
+jitter. Historical work no longer accelerates whole-profile checks to one
+minute. Polling has no instantaneous-delivery guarantee; an imposed pause is
+respected. Thresholds and per-category schedules are documented in
+[InstaVault request policy](instavault/README.md#request-policy--verified-6-november-2026).
+Runtime baseline bc60729 and SQLite backup are preserved privately under
+`/var/backups/openastro/20261106-instavault-request-policy`.
+Policy-only rollback: redeploy the retained image
+`ib5ozkgmrnflouf4jqqzsxeg_instavault:bc60729f99fdcd5d0564bd674b33b49236108918`;
+leave additive request/schedule/cache tables and all media/session files in
+place. Do not roll back the whole database after subsequent downloads.
 
 Rollback: stop or delete only the InstaVault application in Coolify; run
 `systemctl disable --now instavault-tailscale.service` (state is kept; use

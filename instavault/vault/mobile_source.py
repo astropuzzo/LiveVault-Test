@@ -180,6 +180,8 @@ class MediaIterator:
         self._position = 0
         self._started = False
         self._next_cursor = ''
+        self._page_cursor = ''
+        self._resume_skip = 0
 
     def __iter__(self):
         return self
@@ -207,7 +209,9 @@ class MediaIterator:
                 raise ValueError('Instagram non ha restituito i post del profilo.')
             if next_cursor and (not items or next_cursor == previous_cursor):
                 raise ValueError('Instagram non ha avanzato la pagina dell’archivio.')
-            self._items, self._position = items, 0
+            self._page_cursor = previous_cursor
+            self._items, self._position = items, min(self._resume_skip, len(items))
+            self._resume_skip = 0
             self._next_cursor, self._started = next_cursor or '', True
         item = self._items[self._position]
         self._position += 1
@@ -218,6 +222,7 @@ class MediaIterator:
                 'account_id': self.source.account_id, 'profile_id': str(self.profile.userid),
                 'kind': self.kind, 'created_at': time.time(), 'started': self._started,
                 'cursor': self._next_cursor,
+                'page_cursor': self._page_cursor, 'page_position': max(0, self._position-1),
                 'remaining': [_snapshot(item) for item in self._items[max(0, self._position - 1):]]}
 
     def restore(self, value):
@@ -228,7 +233,8 @@ class MediaIterator:
                 'profile_id': str(self.profile.userid), 'kind': self.kind}.items()):
             raise ValueError('Il cursore appartiene a un altro archivio o trasporto.')
         stamp = value.get('created_at')
-        if type(stamp) not in {int, float} or not 0 <= time.time() - stamp <= CURSOR_MAX_AGE:
+        age = time.time()-stamp if type(stamp) in {int, float} else -1
+        if age < 0:
             raise ValueError('Cursore mobile scaduto: aggiorna i collegamenti dei media.')
         remaining, cursor = value.get('remaining'), value.get('cursor')
         if (not isinstance(remaining, list) or len(remaining) > 64 or not isinstance(cursor, str)
@@ -236,6 +242,14 @@ class MediaIterator:
             raise ValueError('Cursore mobile non valido.')
         if len(json.dumps(value)) > 8 * 1024 * 1024:
             raise ValueError('Cursore mobile troppo grande.')
+        if age > CURSOR_MAX_AGE:
+            # Refresh the page's signed URLs without restarting the history.
+            page, position = value.get('page_cursor'), value.get('page_position')
+            if (not value['started'] or not isinstance(page, str) or len(page)>8192
+                    or type(position) is not int or not 0 <= position <= 64):
+                raise ValueError('Cursore mobile scaduto: aggiorna i collegamenti dei media.')
+            self._next_cursor, self._resume_skip = page, position
+            return
         self._items = [_restore(item) for item in remaining]
         self._position = 0
         self._next_cursor, self._started = cursor, value['started']
@@ -336,14 +350,62 @@ class MobileSource:
             config['cookies'] = dict(config.get('cookies') or {}) | dict(cookies)
             config['authorization_data'] = {'ds_user_id': owner, 'sessionid': cookies['sessionid'],
                                             'should_use_header_over_cookies': True}
-            client = client_factory(settings=config)
+            client = client_factory(settings=config, session_retry_total=0, public_request_retries_count=1)
         self.client = client
         self.client.with_challenge_flow = False
         self.client.username = str(session.get('username', ''))
         self.context = SimpleNamespace(is_logged_in=True, username=self.client.username)
+        self.request_lane = 'fresh'
+        sender = getattr(self.client, '_send_private_request', None)
+        if sender:
+            # Every SDK attempt passes here, including its outer retry path.
+            # Transport-level retries on 429 must remain disabled after restore.
+            configure = getattr(self.client, 'set_retry_config', None)
+            if configure:
+                configure(session_retry_total=0, public_request_retries_count=1)
+            def guarded(endpoint, *args, **kwargs):
+                from . import request_policy, sync
+                from instagrapi.exceptions import PrivateError
+                class TransportDeferred(request_policy.Deferred, PrivateError):
+                    pass
+                lane = self.request_lane
+                if any(part in endpoint for part in ['/comments/', '/likers/', '/followers/', '/following/', 'highlights/']):
+                    lane = 'maintenance'
+                try:
+                    request_policy.wait(self.account_id, lane, endpoint.split('/')[0], sync.STOP)
+                except request_policy.Deferred as exc:
+                    # Paginated SDK helpers swallow ordinary Exceptions and
+                    # return an empty page. PrivateError is propagated intact.
+                    raise TransportDeferred(exc.until, exc.reason) from None
+                try:
+                    return sender(endpoint, *args, **kwargs)
+                except Exception as exc:
+                    request_policy.note_failure(self.account_id, exc)
+                    # The SDK retries these after sleeping, hiding the extra
+                    # work from callers. Defer instead, without losing cursors.
+                    if type(exc).__name__ in {'ClientRequestTimeout', 'ClientIncompleteReadError'}:
+                        raise TransportDeferred(__import__('time').time()+900, 'network') from None
+                    raise
+            self.client._send_private_request = guarded
 
     def profile(self, username):
-        return ProfileAdapter(self, self.client.user_info_by_username_v1(username))
+        from . import store
+        # Pure injected test adapters need no persistent runtime cache.
+        if not hasattr(self.client, '_send_private_request'):
+            return ProfileAdapter(self, self.client.user_info_by_username_v1(username))
+        with store.db() as c:
+            row = c.execute('SELECT data,updated_at FROM ig_profile_cache WHERE account_id=? AND username=?',
+                            (self.account_id, username)).fetchone()
+        if row and row['updated_at'] > store.now()-3600:
+            return ProfileAdapter(self, json.loads(row['data']))
+        item = self.client.user_info_by_username_v1(username)
+        fields = ['pk','username','full_name','biography','profile_pic_url_hd','profile_pic_url',
+                  'media_count','is_private','follower_count','following_count']
+        data = {key: _plain(_get(item, key)) for key in fields}
+        with store.db() as c:
+            c.execute('INSERT OR REPLACE INTO ig_profile_cache VALUES (?,?,?,?)',
+                      (self.account_id, username, json.dumps(data), store.now()))
+        return ProfileAdapter(self, item)
 
     def profile_by_id(self, user_id):
         return ProfileAdapter(self, self.client.user_info_v1(str(user_id)))

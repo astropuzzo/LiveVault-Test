@@ -628,6 +628,10 @@ def test_comments_are_saved_and_name_authors_already_archived(vault, monkeypatch
         {'id': '1', 'username': 'friend', 'full_name': 'Friend', 'text': 'Bellissima', 'created_at': 5, 'likes': 2},
         {'id': '2', 'username': 'stranger', 'full_name': '', 'text': 'Dove?', 'created_at': 6, 'likes': 0}])
     assert worker.archive(profile, image_item('WithComments'), 'post', job)
+    # Capturing media must not spend one comments request for every new post.
+    with store.db() as c:
+        assert c.execute('SELECT COUNT(*) FROM comments').fetchone()[0] == 0
+    worker.backfill_comments(profile)
     with store.db() as c:
         row = c.execute("SELECT * FROM posts WHERE shortcode='WithComments'").fetchone()
         detail = store.post_json(c, row, True)
@@ -644,6 +648,7 @@ def test_a_comment_refusal_never_stops_the_download(vault, monkeypatch):
         raise RuntimeError('Please wait a few minutes')
     worker.source = SimpleNamespace(comments=refuse)
     assert worker.archive(profile, image_item('NoComments'), 'post', job)
+    worker.backfill_comments(profile)
     assert worker.comments_blocked
     assert store.list_posts({})['items'][0]['shortcode'] == 'NoComments'
 
@@ -1155,7 +1160,7 @@ def test_recent_posts_get_counts_commenters_and_likers_again_by_age(vault, monke
     from vault import social
     profile = vault['profile']
     with store.db() as c:
-        for code, age, read in [('N', 3600, store.now() - 7200), ('W', 5 * 86400, store.now() - 7200), ('O', 90 * 86400, None)]:
+        for code, age, read in [('N', 3600, store.now() - 7*3600), ('W', 5 * 86400, store.now() - 7200), ('O', 90 * 86400, None)]:
             c.execute("INSERT INTO posts(profile_id,external_key,shortcode,kind,published_at,archived_at,complete,comments_at,likes_at) VALUES (?,?,?,'post',?,1,1,?,?)",
                       (profile, 'post:' + code, code, store.now() - age, read, read))
     asked = {'comments': [], 'likers': []}

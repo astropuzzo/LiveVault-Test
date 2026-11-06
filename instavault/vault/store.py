@@ -155,6 +155,12 @@ def initialize():
                 c.execute(f'ALTER TABLE posts ADD COLUMN {name} INTEGER')
         c.execute('CREATE INDEX IF NOT EXISTS posts_job ON posts(job_id) WHERE job_id IS NOT NULL')
         c.execute('CREATE INDEX IF NOT EXISTS posts_deleted ON posts(deleted_at) WHERE deleted_at IS NOT NULL')
+        c.execute('''CREATE TABLE IF NOT EXISTS sync_schedule (
+          profile_id INTEGER NOT NULL,kind TEXT NOT NULL,next_at INTEGER NOT NULL,
+          PRIMARY KEY(profile_id,kind))''')
+        c.execute('''CREATE TABLE IF NOT EXISTS ig_profile_cache (
+          account_id TEXT NOT NULL,username TEXT NOT NULL,data TEXT NOT NULL,updated_at INTEGER NOT NULL,
+          PRIMARY KEY(account_id,username))''')
         if 'comments_at' not in columns:
             c.execute('ALTER TABLE posts ADD COLUMN comments_at INTEGER')
         c.execute('''CREATE TABLE IF NOT EXISTS comments (

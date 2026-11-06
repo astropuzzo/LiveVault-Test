@@ -87,9 +87,9 @@ chosen posts as one ZIP grouped by profile (`/api/download?posts=1,2,3`, up to
 mouse wheel; on a phone with the finger.
 
 Posts and Reels keep the newest page of their comments (about 15, one mobile
-request per post) in `comments`; `posts.comments_at` marks the read. New posts
-get them when archived, older ones twelve per check. A refusal stops comments
-for that pass and never the media download. In the viewer a commenter's name
+request per post) in `comments`; `posts.comments_at` marks the read. Comments are collected after fresh media, at most one page for one due post
+and one older post in a maintenance pass. A throttle ends the pass and is
+remembered for the whole host; it cannot be cleared by a partial success. In the viewer a commenter's name
 opens a menu: the Instagram profile, and the archived profile or the add form.
 
 Activity shows thumbnails of what each update downloaded (`posts.job_id`).
@@ -159,9 +159,9 @@ lose the link to that history line. While Instagram waits for a login code
 the form shows the code field alone.
 
 Interazioni (`vault/social.py`) reads followers, following and likes while no
-download is due, a little at a time: batches of up to 40 pages (about 1000
-people) with random 3–9 s pauses and a longer one every ten pages, then the
-account rests 2–4 hours; each account has 120 pages a day for all of this.
+download is due, a little at a time: batches of up to two pages with random pauses, then the account rests
+6–12 hours; lists rest 24–48 hours. Each account has twelve social pages
+a day, also charged to the shared maintenance and overall request budgets.
 Measured on 3 November 2026: Instagram orders a list differently for each
 account (its cursor is just a position), so a pass is walked by one account
 from start to end and accounts take turns between passes; pages overlap, so
@@ -179,7 +179,50 @@ records username, name, bio and photo, and "Storia del profilo" plays them as a
 day-by-day timelapse.
 
 Like and comment counts (`posts.like_total`, `comment_total`, `counts_at`)
-come free with every check that lists a post. Commenters and likers of recent
-posts are read again by age (`REFRESH_AFTER`): every hour for two days, every
-six hours for a week, daily for a month, at most four posts each per check;
-a re-read takes up to ten pages of comments (about 150) with 2–5 s pauses.
+come with the feed response. Commenters and likers are secondary work, checked
+at most once per six-hour maintenance window: one post each, one comments
+page; refresh ages are 6 hours / 24 hours / 3 days for posts younger than
+2 / 7 / 30 days. Stored interactions stay available while reads are deferred.
+
+## Request policy — verified 6 November 2026
+
+`vault/request_policy.py` is applied below the SDK's pagination layer to every
+mobile attempt, including indirect calls and retries. SDK transport retries
+are disabled; timeout/incomplete-read retries are deferred. SQLite records
+attempts and rest periods across processes and restarts. Host/account spacing
+is 3/5 seconds. Rolling local ceilings: host 180/hour and 3000/day; account
+90/hour and 1800/day. Maintenance is further limited to 12/hour,120/day for
+the host and 6/hour,72/day for each account; it also counts against the totals.
+These are conservative local ceilings, not Instagram-approved safe rates.
+
+A throttle stops all accounts on this host for 3 hours, escalating to 6,12,24
+hours after repeated refusals, and respects a longer Retry-After. Authentication
+refusals stop that account. Reconnecting or pressing Update cannot bypass the
+persisted host pause. `/api/summary.requests` exposes redacted request counters.
+
+Fresh stories run first, then the newest post and Reel pages. All checks still
+use the profile's configured interval (10 minutes by default); a historical
+backlog no longer forces full checks every minute. Normally a known feed costs
+one 12-item page; up to two pages of new items are captured, with excess queued
+for catch-up. Fresh checks ignore the historical cursor. Older media advances
+one small batch per maintenance window, refreshing expired signed URLs from
+the saved page rather than restarting the archive. Profile metadata is cached
+for one hour. Tagged content, highlight collections, post-removal probes and
+interactions run separately, normally six-hourly, with pending import steps
+30 minutes apart and the shared budget always enforced. Only one highlight
+collection API and twelve items are processed per step; live stories remain
+first. Fresh notices are sent before historical work.
+
+Polling cannot guarantee capture at the exact instant of publication. An
+Instagram-imposed pause necessarily suspends discovery; hammering the service
+would lengthen the outage. No new Instagram request was used just to prove
+that an actively throttled account was still blocked.
+
+Runtime baseline on 6 November: bc60729, 4857 archived entries, 9.73 GB of
+originals, one connected account paused. In the preceding 24 hours: 248
+successful jobs saw 5828 entries and downloaded one item, plus three failed
+jobs. Evidence/SQLite backup: `/var/backups/openastro/20261106-instavault-request-policy`.
+Rollback: redeploy only InstaVault's retained bc60729 image; additive policy,
+schedule and metadata-cache tables may remain. Preserve database, encrypted
+sessions, media, and other applications. Earlier unfinished local feature
+work remains in `work/instavault-login-fix`; it is not included in this fix.
