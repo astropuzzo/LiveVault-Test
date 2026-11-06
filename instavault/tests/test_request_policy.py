@@ -165,3 +165,12 @@ def test_old_reservations_are_pruned_without_resetting_cooldown(clock):
     with store.db() as c:
         assert c.execute('SELECT COUNT(*) FROM ig_request_log').fetchone()[0] == 1
     assert policy.ready_at('a') == clock[0]+12*3600
+
+
+def test_verified_login_repairs_authentication_without_bypassing_a_throttle(clock):
+    policy.note_failure('a', make_error('ChallengeRequired'))
+    policy.authenticated('a')
+    assert policy.ready_at('a') == clock[0]
+    policy.note_failure('a', make_error('FeedbackRequired'))
+    policy.authenticated('a')
+    assert policy.ready_at('a') == clock[0]+3*3600

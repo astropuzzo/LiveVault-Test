@@ -216,3 +216,11 @@ def status():
         accounts += [scope[8:] for scope in states if scope.startswith('account:')]
         return {'host': metrics(), 'accounts': [dict(key=hashlib.sha256(a.encode()).hexdigest()[:12], **metrics(a))
                                                 for a in sorted(set(accounts))]}
+
+
+def authenticated(account):
+    """A newly verified login repairs authentication, never a throttle/budget."""
+    initialize()
+    with store.db() as c:
+        c.execute("UPDATE ig_request_state SET cooldown_until=0,reason='' WHERE scope=? AND reason='authentication'",
+                  (_scope(account),))

@@ -300,6 +300,7 @@ def save_session(value, verified_identity=None, verified_via='web_session'):
         c.execute("""INSERT INTO ig_accounts(id,username,session_file,device_file,added_at) VALUES (?,?,?,?,?)
             ON CONFLICT(id) DO UPDATE SET username=excluded.username, problem='', problem_message='', problem_at=NULL""",
                   (owner, account, target.name, device, store.now()))
+    request_policy.authenticated(owner)
     WAKE.set()
     return session_status()
 

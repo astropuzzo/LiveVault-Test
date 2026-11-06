@@ -197,7 +197,8 @@ These are conservative local ceilings, not Instagram-approved safe rates.
 
 A throttle stops all accounts on this host for 3 hours, escalating to 6,12,24
 hours after repeated refusals, and respects a longer Retry-After. Authentication
-refusals stop that account. Reconnecting or pressing Update cannot bypass the
+refusals stop that account until a newly verified login repairs authentication.
+Reconnecting or pressing Update cannot bypass the
 persisted host pause. `/api/summary.requests` exposes redacted request counters.
 
 Fresh stories run first, then the newest post and Reel pages. All checks still

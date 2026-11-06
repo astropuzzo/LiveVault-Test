@@ -261,8 +261,8 @@ session now stays on its authenticated mobile transport for profile, posts,
 Reels, stories and highlights: Instaloader 4.16 resolves profile names through an
 anonymous page even when logged in, which prevented downloads on this node.
 Mobile pagination uses 12 items per request and JSON cursors scoped to account,
-profile and category; it never falls back to anonymous requests. Browser-cookie
-sessions remain on the web transport and are never silently converted to mobile.
+profile and category; it never falls back to anonymous requests. Existing browser-cookie sessions use the authenticated mobile transport too,
+with a stable device identity; this behavior predates the request-policy fix.
 Unavailable content categories have a one-hour backoff and do not prevent other
 categories from being archived; account challenges/throttling stop the pass.
 Request-policy correction (2026-11-06): all authenticated mobile HTTP
