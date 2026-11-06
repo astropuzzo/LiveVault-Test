@@ -97,7 +97,7 @@ snapshot() {
         problem queue_full; unlock; return 1
     fi
     SERRA_RAM=$SERRA_RUN/serra-spool-image.jpg
-    if ! timeout 12 prudyntctl snapshot -c 0 -q 75 > "$SERRA_RAM" || ! jpeg_ok "$SERRA_RAM"; then
+    if ! timeout 12 prudyntctl snapshot -c 0 > "$SERRA_RAM" || ! jpeg_ok "$SERRA_RAM"; then
         problem snapshot_error; rm -f "$SERRA_RAM"; unlock; return 1
     fi
     SERRA_HASH=$(sha256sum "$SERRA_RAM"); SERRA_HASH=${SERRA_HASH%% *}

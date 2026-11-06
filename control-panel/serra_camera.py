@@ -624,7 +624,7 @@ def _live(handler):
     if not _viewers.acquire(blocking=False):
         raise SerraError('La diretta è già aperta su due dispositivi.', 429)
     try:
-        with _upstream('ch0.mjpg', f=3, q=65) as response:
+        with _upstream('ch0.mjpg', f=3) as response:
             content_type = response.headers.get('Content-Type', '')
             if not content_type.startswith('multipart/x-mixed-replace'):
                 raise SerraError('Diretta non disponibile.', 502)

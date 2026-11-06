@@ -108,6 +108,14 @@ Usa snapshot IPC, timeout, lock e stato in RAM; dopo due controlli falliti o
 identici riavvia solo Prudynt, al massimo una volta ogni 15 minuti. Non apre
 porte, non contiene chiavi e non riavvia l'host. Richiede timestamp impresso;
 non disabilitarlo senza adattare entrambi i controlli di freschezza.
+Verifica 2026-11-06: il processo Prudynt aveva ereditato il descrittore 9 del
+watchdog durante un riavvio e tratteneva il lock, impedendo i controlli successivi.
+La chiamata di restart ora chiude esplicitamente `9>&-`; la regressione prova
+che il processo avviato non lo erediti. Il vecchio processo è stato riavviato
+una volta per liberare il lock già trattenuto. Foto, spool, watchdog e diretta
+usano la qualità JPEG configurata sulla camera, senza override diversi: il
+sorgente Prudynt mostra che cambiarla ricrea il canale encoder. Risoluzione
+nativa e intervalli restano invariati.
 
 Il sensore restava a luminosità 26 con soglia notte 25. Calibrata la soglia
 notte a 35, giorno invariato a 50, mantenendo `enabled=true`, `force_mode=""`
@@ -257,7 +265,7 @@ con CSRF valido. Download e diretta sono limitati a uno e due client concorrenti
 
 ## Validazione e rollback
 
-39 test Linux Python 3.13.5: migrazione dell’indice senza perdita di righe,
+40 test Linux Python 3.13.5: migrazione dell’indice senza perdita di righe,
 rotazioni JPEG con controllo dei pixel nei quattro quadranti e dimensioni native,
 MP4 verticali separati, campioni orari e copia esatta dei pacchetti delle
 10/14/18 nello storico vecchio, concatenazione nativa continua, pulizia firmata,

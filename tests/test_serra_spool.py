@@ -199,5 +199,17 @@ class CameraScriptTests(unittest.TestCase):
         self.call('capture');self.assertIn('-r270-',self.files()[0].name)
         self.assertIn('"interval":5',self.call())
 
+    def test_restarted_video_daemon_cannot_inherit_the_health_watchdog_lock(self):
+        restart=self.bin/'restart-video'
+        marker=self.root/'restart-without-inherited-lock'
+        restart.write_text('#!/bin/sh\n[ ! -e /proc/$$/fd/9 ] || exit 1\nprintf ok > "$SERRA_TEST_RESTART_MARKER"\n')
+        restart.chmod(0o700)
+        env={**self.env,'SERRA_HEALTH_RUN':str(self.run),'SERRA_HEALTH_RESTART':str(restart),'SERRA_TEST_RESTART_MARKER':str(marker)}
+        health=ROOT/'scripts/serra-camera-health.sh'
+        for _ in range(3):subprocess.run(['sh',str(health)],env=env,check=True,timeout=20)
+        self.assertEqual(marker.read_text(),'ok')
+        # A future invocation can still take the lock; no daemon holds it forever.
+        subprocess.run(['sh',str(health)],env=env,check=True,timeout=20)
+
 
 if __name__=='__main__':unittest.main()
