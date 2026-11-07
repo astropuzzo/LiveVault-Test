@@ -34,6 +34,8 @@ import media_streaming
 import remote_dns
 import pihole_status as pihole_runtime
 import app_management
+import biglie_hunt
+import web_push
 
 
 ROOT = Path(__file__).resolve().parent
@@ -1124,6 +1126,19 @@ class Handler(BaseHTTPRequestHandler):
             payload, status = app_management.apps_summary()
             self.send_json(payload, status)
             return
+        if path == "/api/biglie/hunt":
+            if not self.require_session():
+                return
+            self.send_json(biglie_hunt.snapshot())
+            return
+        if path == "/api/push/key":
+            if not self.require_session():
+                return
+            try:
+                self.send_json({"ok": True, "key": web_push.public_key()})
+            except Exception:
+                self.send_json({"ok": False, "error": "Notifiche non disponibili su questo server."}, 503)
+            return
         if path == "/api/state":
             session = self.require_session()
             if not session:
@@ -1388,6 +1403,41 @@ class Handler(BaseHTTPRequestHandler):
                     _sessions.pop(cookie["openastro_session"].value, None)
             self.send_json({"ok": True}, headers={"Set-Cookie": "openastro_session=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Strict"})
             return
+        if self.path in {"/api/biglie/hunt", "/api/push/subscribe", "/api/push/unsubscribe", "/api/push/test"}:
+            session = self.require_session()
+            if not session:
+                return
+            if self.headers.get("X-CSRF-Token") != session["csrf"]:
+                self.send_json({"ok": False, "error": "Sessione scaduta: ricarica la pagina."}, 403)
+                return
+            try:
+                payload = self.read_payload()
+            except (ValueError, json.JSONDecodeError):
+                self.send_json({"ok": False, "error": "Richiesta non valida."}, 400)
+                return
+            if self.path == "/api/biglie/hunt":
+                result, status = biglie_hunt.action(str(payload.get("action", "")), payload.get("seconds"))
+                self.send_json(result, status)
+                return
+            try:
+                if self.path == "/api/push/subscribe":
+                    web_push.subscribe(payload)
+                    result = {"ok": True, "message": "Avvisi attivi su questo dispositivo."}
+                elif self.path == "/api/push/unsubscribe":
+                    web_push.unsubscribe(str(payload.get("endpoint", "")))
+                    result = {"ok": True, "message": "Avvisi spenti su questo dispositivo."}
+                elif web_push.notify("OpenAstro", "Gli avvisi del pannello arrivano su questo dispositivo.", biglie_hunt.NOTICE_URL):
+                    result = {"ok": True, "message": "Prova inviata."}
+                else:
+                    result = {"ok": False, "error": "Nessun dispositivo ha ricevuto la prova."}
+            except ValueError as exc:
+                self.send_json({"ok": False, "error": str(exc)}, 400)
+                return
+            except Exception:
+                self.send_json({"ok": False, "error": "Notifiche non disponibili su questo server."}, 503)
+                return
+            self.send_json(result, 200 if result["ok"] else 502)
+            return
         if self.path in {"/api/pihole/remote/test", "/api/pihole/remote/rotate"}:
             session = self.require_session()
             if not session:
@@ -1550,6 +1600,7 @@ if __name__ == "__main__":
     load_availability()
     threading.Thread(target=history_loop, name="telemetry", daemon=True).start()
     threading.Thread(target=media_streaming.maintenance_loop, name="hls-maintenance", daemon=True).start()
+    threading.Thread(target=biglie_hunt.watch_loop, name="biglie-hunt-watch", daemon=True).start()
     server = ThreadingHTTPServer((HOST, PORT), Handler)
     print(f"OpenAstro Control listening on http://{HOST}:{PORT}", flush=True)
     server.serve_forever()

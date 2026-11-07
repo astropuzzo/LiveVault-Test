@@ -17,7 +17,7 @@
   <link rel="stylesheet" href="/torrent-manager.css?v=3.5.1-graphite3">
   <link rel="stylesheet" href="/app.css?v=3.5.1-graphite3">
   <link rel="stylesheet" href="/serra.css?v=20261104-6">
-  <link rel="stylesheet" href="/apps.css?v=3.5.1-graphite3">
+  <link rel="stylesheet" href="/apps.css?v=3.5.1-biglie2">
 </head>
 <body data-view="dashboard" class="is-loading">
   <div class="app-shell">
@@ -367,6 +367,42 @@
 
       <section class="app-view" data-view-panel="apps" aria-labelledby="view-apps-title">
         <header class="view-heading"><div><h1 id="view-apps-title">App e ricavi</h1><p>Un posto per seguire gli acquisti e collegare i risultati delle tue app.</p></div><div class="apps-heading-actions"><button id="appsRefresh" class="button secondary" type="button">Aggiorna</button><button id="appsExport" class="button secondary" type="button" disabled>Esporta JSON</button></div></header>
+        <section id="biglieHunt" class="panel biglie-hunt" aria-labelledby="biglieHuntTitle" aria-busy="false">
+          <div class="panel-head">
+            <div><p class="eyebrow">Biglie</p><h2 id="biglieHuntTitle">Ricerca del server Oracle</h2><small>Lo script sull’ASIAIR cerca una macchina Arm gratuita per la regia, poi la fa crescere fino alla taglia massima gratuita.</small></div>
+            <span id="biglieHuntChip" class="status-chip" role="status">Da verificare</span>
+          </div>
+          <p id="biglieHuntSummary" class="biglie-hunt-summary">Caricamento dello stato…</p>
+          <dl class="biglie-hunt-facts">
+            <div><dt>Processo</dt><dd id="biglieHuntProcess">…</dd></div>
+            <div><dt>Giro</dt><dd id="biglieHuntRound">…</dd></div>
+            <div><dt>Ultimo aggiornamento</dt><dd id="biglieHuntUpdated">…</dd></div>
+            <div><dt>Macchina Arm</dt><dd id="biglieHuntMachine">…</dd></div>
+            <div><dt>IP pubblico</dt><dd id="biglieHuntIp">…</dd></div>
+          </dl>
+          <div class="biglie-hunt-actions">
+            <button id="biglieHuntPause" class="button secondary" type="button" disabled>Pausa</button>
+            <button id="biglieHuntStop" class="button secondary" type="button" disabled>Ferma ricerca</button>
+            <button id="biglieHuntRestart" class="button secondary" type="button" disabled>Riavvia ricerca</button>
+            <button id="biglieHuntStart" class="button" type="button" disabled>Avvia ricerca</button>
+          </div>
+          <div class="biglie-hunt-interval">
+            <div><h3 id="biglieHuntIntervalTitle" class="biglie-hunt-subtitle">Riprova ogni</h3><p id="biglieHuntIntervalNote">L’attesa tra un tentativo e l’altro, sia per trovare la macchina sia per farla crescere.</p></div>
+            <div id="biglieHuntInterval" class="range-switch" role="group" aria-labelledby="biglieHuntIntervalTitle">
+              <button type="button" data-seconds="15" aria-pressed="false" disabled>15 s</button><button type="button" data-seconds="30" aria-pressed="false" disabled>30 s</button><button type="button" data-seconds="60" aria-pressed="false" disabled>60 s</button><button type="button" data-seconds="90" aria-pressed="false" disabled>90 s</button>
+            </div>
+          </div>
+          <h3 id="biglieHuntLogTitle" class="biglie-hunt-subtitle">Ultime righe del registro <small>orari dell’ASIAIR, fuso di Londra</small></h3>
+          <div class="biglie-hunt-log" tabindex="0" role="region" aria-labelledby="biglieHuntLogTitle"><pre id="biglieHuntLog">In attesa del registro…</pre></div>
+          <div class="biglie-hunt-push">
+            <div><h3 class="biglie-hunt-subtitle">Avvisi sul telefono</h3><p>Un avviso quando trova la macchina, quando va in errore e quando il processo si ferma da solo.</p><p id="biglieHuntPushState" class="biglie-hunt-push-state">Controllo delle notifiche…</p></div>
+            <div class="biglie-hunt-push-actions">
+              <button id="biglieHuntPushOn" class="button secondary" type="button" hidden>Attiva avvisi</button>
+              <button id="biglieHuntPushTest" class="button secondary" type="button" hidden>Manda una prova</button>
+              <button id="biglieHuntPushOff" class="button secondary" type="button" hidden>Disattiva</button>
+            </div>
+          </div>
+        </section>
         <div id="appsWorkspace" class="apps-workspace" aria-busy="false">
           <article class="panel apps-app-hero">
             <div class="apps-brand-art" aria-hidden="true"><svg viewBox="0 0 64 64"><path d="M17 47h30l-4 9H21l-4-9ZM31 47V28m0 13-10-9m10 3 10-10M12 29c-3-7 1-12 8-12 0-9 13-13 18-6 10-4 18 6 13 13 6 7-2 14-10 11-5 7-14 5-17 0-6 3-12 0-12-6Z"/></svg></div>
@@ -671,7 +707,8 @@
   <script src="/diagnostics.js?v=3.5.1" defer></script>
   <script src="/apps.js?v=3.5.1-apps2" defer></script>
   <script src="/serra.js?v=20261106-13" defer></script>
-  <script src="/app.js?v=3.5.1-serra-20261104-1" defer></script>
+  <script src="/biglie-hunt.js?v=3.5.1-biglie6" defer></script>
+  <script src="/app.js?v=3.5.1-serra-biglie-1" defer></script>
   <script src="/torrent-manager.js?v=3.5.1-torrent5" defer></script>
   <script src="/media-upload.js?v=3.5.1" defer></script>
 </body>

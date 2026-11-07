@@ -26,6 +26,162 @@ PWA mobile-first per monitorare e controllare il server ASIAIR/Debian. Il serviz
 vive sulla memoria interna, resta accessibile senza NVMe e viene pubblicato solo
 in HTTPS tramite Tailscale Funnel, con autenticazione applicativa.
 
+## Ricerca server Biglie (2026-11-04)
+
+In **App e ricavi**, sopra Bonsai Sensei, la scheda «Ricerca del server Oracle» segue
+`oracle_vm.py hunt` del repository Biglie (`tools/regia`), che sull'ASIAIR gira in
+`/home/astro/biglie-oci` e cerca la macchina Arm gratuita per la regia. Mostra stato, giro,
+ultimo aggiornamento, processo vivo o fermo, taglia e IP della macchina quando c'è, le ultime 40
+righe di `hunt.log` (orari del nodo, fuso di Londra), i tasti Pausa/Riprendi, «Ferma ricerca»,
+«Riavvia ricerca» e «Avvia ricerca» e la scelta «Riprova ogni» 15, 30, 60 o 90 secondi. I tasti
+dicono «ricerca» perché il 2026-11-03 un «Riavvia» è stato scambiato per «Riavvia ASIAIR». Usa
+`hunt.sh` così com'è; se va cambiato, la modifica sta nel repository Biglie.
+
+- Lettura: `GET /api/biglie/hunt` (sessione) esegue `hunt.sh status` e `hunt.sh log 40` come
+  astro, al massimo ogni 5 s per tutti i client insieme (`biglie_hunt.snapshot`). Il browser
+  chiede ogni 10 s solo con la vista App aperta e la pagina visibile. Dal fix del 2026-11-03
+  aspetta fino a 20 s (prima 8, meno dei due timeout server da 8 s). Se la lettura fallisce,
+  conserva gli ultimi dati e il registro, mostra «Lettura in ritardo» e disabilita i comandi
+  fino alla lettura riuscita. Un HTTP 429 Oracle appare come «In attesa», con l'ora prevista
+  del nuovo tentativo quando disponibile; non è un timeout di lettura del pannello.
+- Comandi: `POST /api/biglie/hunt` con `{"action": ...}`, sessione e CSRF. Pausa, Riprendi e
+  Ferma chiamano `hunt.sh`; Avvia passa da `sudo -n openastro-action biglie_hunt_start`, che con
+  `systemd-run` crea l'unità transitoria `biglie-hunt-<epoch>.service` (utente astro,
+  `Type=forking`). La ricerca resta fuori dal cgroup del pannello: un riavvio del pannello non la
+  ferma. Riavvia è `hunt.sh stop` seguito dallo stesso avvio; il pannello non lancia mai
+  `hunt.sh start` o `restart` dal proprio processo.
+- Attesa tra i giri: `{"action": "interval", "seconds": 15|30|60|90}` esegue `hunt.sh interval`
+  (repository Biglie, commit 4f79430). Vale sia per cercare la macchina sia per farla crescere, e
+  la ricerca in corso la rilegge entro 5 s. `oracle_vm.py` (repository Biglie,
+  test in `tools/regia/test_oracle_vm.py`) dal 2026-11-04 fa partire ogni creazione almeno
+  90 s dopo l'ultima risposta di Oracle, anche fra 2/12 e 1/6 e fra giri diversi. La prova
+  prolungata ha verificato 32 richieste consecutive a 90 s senza 429 o timeout; nella prova
+  preliminare 85 s hanno prodotto un 429. Prima il limite prudente era 120 s, dopo che
+  il conteggio dall'inizio della richiesta aveva prodotto richieste troppo ravvicinate. Dopo errori aspetta 90, 180, 360
+  e al massimo 600 s; l'attesa torna a 90 s quando Oracle accetta una creazione o un resize, o
+  risponde che non ha posto. Distanziamento e attesa crescente vengono dal fix del proprietario
+  (48198f2, test in 1a4314b), che contava 90 s dall'inizio della richiesta precedente.
+  Con un `hunt.sh` più vecchio lo stato non ha `"interval"`: la scelta resta spenta e la scheda
+  dice di aggiornarlo.
+- Validazione del 2026-11-04: prova preliminare con risposte di capacità esaurita a 120, 110,
+  100, 95 e 90 s; primo 429 a 85 s. La successiva prova prolungata ha raccolto 32 richieste
+  consecutive a 90 s dalla risposta, alternando 2/12 e 1/6, senza 429, timeout o altri errori
+  diversi dalla capacità esaurita, poi l'utente ha richiesto di fermare il test e confermare
+  il cambio. Per questo è stato impostato `MIN_LAUNCH_INTERVAL = 90`
+  e selezionato `hunt.sh interval 90`. Rimane l'attesa progressiva in caso di nuovi errori.
+  Runtime: `/home/astro/biglie-oci/oracle_vm.py`; nota e cache del pannello `3.5.1-biglie6`
+  in `/opt/openastro-control/static`, senza riavvio del servizio del pannello. Rollback in
+  `/home/astro/rollback/biglie-90s-20261104/runtime-before.tar.gz`: sorgente, intervallo e
+  tre statici precedenti. Ripristinare il sorgente e l'intervallo, poi riavviare soltanto
+  la ricerca con l'aiutante; lasciare almeno 120 s dall'ultima risposta prima del primo
+  lancio dopo il ripristino. I file statici non richiedono un riavvio del pannello.
+- Servizio: `ProtectHome=true` diventa `ProtectHome=tmpfs` con
+  `BindPaths=-/home/astro/biglie-oci`. Della home il pannello vede solo quella cartella; chiavi
+  SSH e `~/.oci` restano nascoste. Il `-` lascia partire il pannello anche senza la cartella.
+- Dopo un riavvio dell'ASIAIR la ricerca non riparte da sola e la scheda propone Avvia. L'avvio
+  automatico all'accensione non c'è: si aggiunge solo con l'OK del proprietario.
+
+Avvisi sul telefono: lo stesso Web Push di InstaVault (`instavault/vault/push.py`, VAPID e
+cifratura RFC 8291), portato in `web_push.py` con chiave e iscrizioni del pannello in
+`/var/lib/openastro-control/vapid.pem` e `push-subscriptions.json` (0600). Le iscrizioni di
+InstaVault stanno nella sua cartella dati (uid 10002, 0700) e il pannello non le legge: ogni
+telefono attiva gli avvisi una volta dalla scheda, con «Attiva avvisi» e poi «Manda una prova».
+Sono accettati solo i servizi push dei browser (FCM, Mozilla, Apple, Windows), al massimo 20
+dispositivi. `sw.js` mostra la notifica e al tocco apre `/#apps`. Quando si installa mette in
+cache i file uno per uno: un file che non si scarica non blocca più l'installazione, e quindi gli
+avvisi. Su iPhone il pannello deve stare sulla schermata Home.
+
+Il thread `biglie-hunt-watch`, avviato da `upload_server.py`, legge lo stato ogni 30 s e salva
+l'ultimo visto in `/var/lib/openastro-control/biglie-hunt.json`; al primo giro memorizza senza
+avvisare. Avvisa quando nello stato compare una macchina nuova o più grande (anche se `running`
+è durato meno di 30 s), per un errore a processo vivo (lo stesso testo al massimo una volta
+l'ora), quando il processo muore senza `stopped` o `top` e senza un Ferma o Riavvia dal pannello
+nell'ultimo minuto, e dopo un riavvio dell'ASIAIR se la ricerca era attiva (`boot_id` cambiato).
+Un avviso che nessun dispositivo iscritto ha ricevuto (rete giù, errore del servizio push) viene
+rimandato a ogni controllo per un'ora al massimo; senza dispositivi iscritti non si rimanda.
+Non avvia né ferma mai la ricerca.
+
+Installazione: `scripts/biglie-hunt-panel-install.sh`, con sudo sul nodo (comandi del pacchetto
+in testa al file). Salva prima `/opt/openastro-control`, la unit e `openastro-action` in
+`/var/backups/openastro/20261103-biglie-hunt/control-before.tar.gz` e riavvia solo
+`openastro-control.service`: le sessioni del pannello vanno rifatte. Ripristino: estrarre
+quell'archivio in `/`, togliere `biglie_hunt.py`, `web_push.py` e `static/biglie-hunt.js`, poi
+`systemctl daemon-reload` e riavvio del solo pannello. I file di stato si possono lasciare.
+Lo script non tocca i documenti in `/opt/openastro-ops`. Controllo senza un secondo riavvio: dopo
+un Riavvia dal pannello, `cat /proc/$(cat ~/biglie-oci/hunt.pid)/cgroup` deve mostrare
+`biglie-hunt-<epoch>.service`.
+
+Stato al 2026-11-03: installato sul nodo alle 12:46 UTC dal commit d980414 del ramo
+`codex/biglie-hunt` e di nuovo alle 13:09 UTC dal 561e4a2, che aggiunge «Riprova ogni»; copia
+di sicurezza (del pannello senza la scheda) in `/var/backups/openastro/20261103-biglie-hunt/`.
+I nuovi `hunt.sh` e `oracle_vm.py` di Biglie sono in `/home/astro/biglie-oci` dalle 13:04 UTC,
+le copie precedenti in `/home/astro/biglie-oci.before-interval`; la ricerca avviata prima li
+usa solo dopo un Riavvia. Verificati sul nodo dopo entrambe le installazioni: i file installati
+coincidono con il ramo, `/healthz` risponde 200 e `/api/biglie/hunt` 401 senza sessione; dopo la
+prima anche che il pannello vede `hunt.sh` nel suo spazio dei mount e che il watcher ha salvato
+il primo stato (`searching`, processo vivo). Prima dell'installazione:
+`tests/test_biglie_hunt.py`, `tests/test_biglie_hunt_frontend.cjs`, anteprima locale a 1440×1000
+e 412×915 con stato e registro letti dal nodo, `systemd-analyze verify` della nuova unit e lo
+schema `Type=forking` con un'unità utente usa e getta che lanciava `sleep`. Alle 13:14 UTC
+l'ASIAIR è stata riavviata dal tasto «Riavvia ASIAIR» del pannello (`reboot` nel registro delle
+azioni) e la ricerca si è fermata, come previsto. Alle 13:16:38 è ripartita da
+`sudo -n openastro-action biglie_hunt_start`, lanciato via ssh come astro, lo stesso comando del
+tasto Avvia: gira in `biglie-hunt-1793711798.service` (cgroup `system.slice`, MainPID il processo
+Python) con il nuovo `oracle_vm.py`. Alle 13:18:23 il proprietario ha scelto 15 s dalla scheda:
+la ricerca in corso ha chiuso l'attesa di 90 s e da lì fa un giro ogni 16-17 s.
+
+Gli avvisi non arrivavano sul Firefox del proprietario, anche se Mozilla accetta i messaggi (201).
+`static/fonts` era `root:root 700` dal 2026-09-30: il pannello, che gira come astro, chiudeva la
+connessione su `/fonts/mona-sans-latin-wght.woff2`, e il service worker, che mette quel file in
+cache quando si installa, non si aggiornava. Restava attivo uno vecchio senza gestore `push`.
+Il proprietario ha lanciato `chmod -R a+rX /opt/openastro-control/static/fonts` alle 13:28 UTC:
+il font risponde 200 e la prova mandata alle 13:29 UTC con `web_push.notify` è arrivata sul
+telefono. Da allora si carica anche Mona Sans, il font dell'interfaccia grafite.
+
+Terza installazione alle 13:45:05 UTC dal bcc90ce: tasti «… ricerca» e `sw.js` che mette in cache
+un file alla volta. File uguali al ramo, `/healthz` 200, `/api/biglie/hunt` 401 senza sessione,
+font 200. La ricerca è passata attraverso il riavvio del pannello senza fermarsi: stesso processo
+delle 13:16:38 nella sua unità, giro 99 alle 13:44:49 e giro 100 alle 13:45:06. Con il service
+worker nuovo «Manda una prova» arriva sul telefono del proprietario (Firefox). Alle 15:08 UTC,
+mentre il proprietario passava l'account Oracle a Pay As You Go, la ricerca è stata limitata a 2
+OCPU e 12 GB, il massimo gratuito da giugno 2026 (repository Biglie, commit a9dac25), e
+riavviata con `openastro-action biglie_hunt_start`: allora girava in `biglie-hunt-1793718512.service`.
+
+Verifica aggiuntiva del 2026-11-03: nessun timeout nel registro Oracle; richieste concluse in
+circa un secondo, risposte 500 Out of host capacity e 429 TooManyRequests. Lo stato del
+pannello è stato letto tre volte in 46-65 ms; /healthz locale 3 ms e percorso HTTPS Tailscale
+92 ms. Il timeout segnalato sul telefono non è stato riprodotto con una sessione autenticata.
+Fix mirato: solo `static/biglie-hunt.js`, `static/index.html`, `static/sw.js` in
+`/opt/openastro-control`, pubblicati senza riavviare il pannello; cache `3.5.1-biglie4`.
+`biglie_hunt.py`, login e sessioni restano identici. Sorgente nel ramo `codex/biglie-hunt`.
+Backup e rollback: `/home/astro/rollback/biglie-timeout-20261103/runtime-before.tar.gz` contiene
+i tre statici e `oracle_vm.py` precedenti; ripristinare solo quelli necessari, senza riavviare
+il pannello. Per la ricerca usare il comando dedicato `openastro-action biglie_hunt_start`
+dopo `hunt.sh stop`; nessun reboot del nodo. La copia root `/opt/openastro-ops` resta da
+allineare con privilegi amministrativi. Limite: acquisizione ARM non ancora riuscita. Dalle 16:16
+UTC la ricerca gira con quel `oracle_vm.py` in `biglie-hunt-1793722568.service`; il pacchetto in
+`~/biglie-panel` è stato rifatto dal ramo, così lo script d'installazione non rimette gli statici
+di bcc90ce.
+
+Alle 16:44 UTC, con l'OK del proprietario, la ricerca è passata al commit Biglie b47d604: prima
+Oracle rispondeva 429 a ogni lancio partito 89-90 s dopo il precedente e l'attesa dopo errori era
+salita a 720 s. Prima della sostituzione `oracle_vm.py` sul nodo è stato confrontato con 1a4314b;
+la copia è in `~/biglie-oci/oracle_vm.py.before-spacing-fix-20261103`. La ricerca è ripartita con
+`hunt.sh stop` e `openastro-action biglie_hunt_start` in `biglie-hunt-1793724253.service`. Nei
+primi sei lanci (16:44:19-16:54:22) le risposte sono arrivate a 120-121 s l'una dall'altra, tutte
+«Out of host capacity», nessun 429: 6 tentativi veri in 10 minuti, contro 2 (più due 429) nei 10
+minuti prima, e fino alle 17:11 nessun 429. Il pacchetto `~/biglie-panel` è rifatto dal ramo. Alle
+17:11:31 UTC il proprietario ne ha copiato i tre statici con la nota nuova (cache `3.5.1-biglie5`)
+in `/opt/openastro-control/static`, senza riavviare il pannello; i file di prima sono in
+`~/rollback/biglie-spacing-20261103/static-before.tar.gz`. Verificato dopo: file uguali al ramo,
+il pannello serve la nota nuova e `biglie-hunt.js?v=3.5.1-biglie5`, `/healthz` 200,
+`/api/biglie/hunt` 401 senza sessione.
+
+Non ancora provati: Avvia e Riavvia premuti nella scheda, e un avviso vero della ricerca
+(macchina trovata, errore, processo fermo), che passa dallo stesso invio della prova. La copia in
+`/opt/openastro-ops` (root, 0700) non è aggiornata: va allineata con root, senza sovrascrivere
+aggiunte di altri rami.
+
 ## Interfaccia grafite (2026-11-02)
 
 Sostituisce il tema cosmic glass. I colori blu e viola dell'interfaccia sono

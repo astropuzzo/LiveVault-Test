@@ -838,6 +838,7 @@ function selectView(view, updateHash = false) {
   currentView = view;
   globalThis.OpenAstroApps?.setView(view);
   globalThis.OpenAstroSerra?.setView(view);
+  globalThis.OpenAstroBiglie?.setView(view);
   document.body.dataset.view = view;
   $$('[data-view-panel]').forEach(panel => panel.classList.toggle('active', panel.dataset.viewPanel === view));
   $$('[data-route]').forEach(link => {
@@ -1003,6 +1004,7 @@ function showLogin() {
   signedIn = false;
   globalThis.OpenAstroApps?.setAuthenticated(false);
   globalThis.OpenAstroSerra?.setAuthenticated(false);
+  globalThis.OpenAstroBiglie?.setAuthenticated(false);
   csrf = '';
   stopHold();
   if ($('#confirmDialog').open) $('#confirmDialog').close();
@@ -1016,6 +1018,7 @@ function hideLogin() {
   signedIn = true;
   globalThis.OpenAstroApps?.setAuthenticated(true);
   globalThis.OpenAstroSerra?.setAuthenticated(true);
+  globalThis.OpenAstroBiglie?.setAuthenticated(true);
   $('main').inert = false;
   const sidebar = $('.sidebar'); if (sidebar) sidebar.inert = false;
   const mobileNav = $('.mobile-nav'); if (mobileNav) mobileNav.inert = false;
