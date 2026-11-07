@@ -505,6 +505,7 @@ function streamPlaylistUrl(url) {
   let path = '';
   try { path = new URL(String(url || ''), location.origin).pathname; } catch (_error) { return ''; }
   if (/^\/api\/(recordings|fragments)\/\d+\/view$/.test(path)) return path.replace(/\/view$/, '/stream.m3u8');
+  if (/^\/api\/nsfw\/marks\/\d+\/view$/.test(path)) return path.replace(/\/view$/, '/stream.m3u8');
   if (/^\/api\/sources\/\d+\/capture$/.test(path)) return `${path}.m3u8`;
   return '';
 }
@@ -1663,6 +1664,7 @@ async function bulkAction(action, button) {
 
 document.addEventListener('click', event => {
   const localVideo = event.target.closest('[data-local-video]');
+  if (localVideo) $('#nsfwDialog')?.close();
   if (localVideo) {
     event.preventDefault();
     openLocalVideo(localVideo.dataset.localVideo, localVideo.dataset.localTitle || 'Copia locale');
@@ -2926,7 +2928,12 @@ function controlRoomPulseMarkup() {
       return `<g class="cr-pulse-session"><rect class="cr-pulse-live-span ${session.state === 'live' ? 'current' : ''} ${!hasRecording && !unavailableIntervals.length ? 'unrecorded' : ''}" x="${x.toFixed(3)}" y="2" width="${liveWidth.toFixed(3)}" height="12" rx="6" ry="6"></rect>${unavailable}${missed}<line class="cr-pulse-live-marker" x1="${x.toFixed(3)}" y1="0" x2="${x.toFixed(3)}" y2="16"></line>${recMarkerX === null ? '' : `<line class="cr-pulse-rec-marker" x1="${recMarkerX.toFixed(3)}" y1="1" x2="${recMarkerX.toFixed(3)}" y2="15"></line>`}${recs}<title>${esc(title)}</title></g>`;
     }).join('');
     const nsfwLayer = typeof pulseNsfwLayer === 'function' ? pulseNsfwLayer(profileSessions, xFor) : '';
-    return `<div class="cr-pulse-row" data-profile-id="${profileId}"><div class="cr-pulse-who">${creatorLinkMarkup(representative.representative_source_id, representative.display_name, 'cr-pulse-name')}${pulseSessionTimingMarkup(representative)}</div><div class="cr-pulse-track"><svg class="cr-pulse-svg" viewBox="0 0 1000 16" preserveAspectRatio="none" role="img" aria-label="Timeline ${esc(representative.display_name)}">${graphics}</svg>${nsfwLayer}</div></div>`;
+    const localFiles = profileSessions.flatMap(pulseRecordingFiles);
+    const active = localFiles.find(rec => rec.active && rec.local_url);
+    const local = localFiles.find(rec => rec.kind === 'recording' && rec.local_url && !rec.processing);
+    const wholeUrl = safeUrl(active?.local_url || local?.local_url || '');
+    const wholeButton = wholeUrl ? `<button type="button" class="btn quiet" data-local-video="${esc(wholeUrl)}" data-local-title="${esc(representative.display_name)} · REC locale" title="Apri tutta la registrazione locale">${icon('play', 'mini-icon')} REC locale</button>` : '';
+    return `<div class="cr-pulse-row" data-profile-id="${profileId}"><div class="cr-pulse-who">${creatorLinkMarkup(representative.representative_source_id, representative.display_name, 'cr-pulse-name')}${pulseSessionTimingMarkup(representative)}${wholeButton}</div><div class="cr-pulse-track"><svg class="cr-pulse-svg" viewBox="0 0 1000 16" preserveAspectRatio="none" role="img" aria-label="Timeline ${esc(representative.display_name)}">${graphics}</svg>${nsfwLayer}</div></div>`;
   }).join('');
   const hidden = Math.max(0, profileOrder.length - recentProfiles.length);
   const notice = controlRoomPulseLoading ? 'Caricamento cronologia…' : controlRoomPulseError ? (lastControlRoomPulseLoad ? `Cronologia non aggiornata · ultimo aggiornamento ${dateText(controlRoomPulseData.generated_at)}` : 'Cronologia non disponibile · nuovo tentativo automatico') : '';

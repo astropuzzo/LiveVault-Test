@@ -190,6 +190,10 @@ def cluster_marks(marks: list, gap_seconds: float = LIVE_MAX_GAP_SECONDS, step: 
     for mark in sorted(marks, key=lambda m: _aware(m.wall_at)):
         at = _aware(mark.wall_at)
         label = NSFW_LABEL.get(mark.state)
+        # A band cannot carry one seek position across different output files.
+        locator = (mark.recording_id, getattr(mark, "part_path", ""))
+        if current is not None and current["locator"] != locator:
+            close()
         if current is not None and last_at is not None and (at - last_at).total_seconds() > gap_seconds:
             close()
         if label:
@@ -201,6 +205,9 @@ def cluster_marks(marks: list, gap_seconds: float = LIVE_MAX_GAP_SECONDS, step: 
                     "_start": at, "_end": at + timedelta(seconds=step), "label": state, "count": 1,
                     "cls": combine_classes(mark.verified_cls, mark.cls), "image": mark.image or "",
                     "recording_id": mark.recording_id, "file_time": mark.file_time, "mark_id": mark.id,
+                    "locator": locator, "source_id": getattr(mark, "source_id", None),
+                    "part_time": getattr(mark, "part_time", None),
+                    "part_filename": Path(getattr(mark, "part_path", "") or "").name,
                 }
             else:
                 current["_end"] = at + timedelta(seconds=step)
@@ -226,6 +233,8 @@ def cluster_marks(marks: list, gap_seconds: float = LIVE_MAX_GAP_SECONDS, step: 
             "label": moment["label"], "class": cls, "count": moment["count"],
             "image_url": f"/api/nsfw/images/{moment['image']}" if moment["image"] else "",
             "recording_id": moment["recording_id"], "file_time": moment["file_time"], "mark_id": moment["mark_id"],
+            "source_id": moment["source_id"], "part_time": moment["part_time"],
+            "part_filename": moment["part_filename"],
         })
     return out
 

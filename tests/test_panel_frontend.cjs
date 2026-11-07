@@ -136,6 +136,16 @@ test('short recording uses exact timeline width with a separate touch target', (
   assert.match(html, /class="cr-pulse-hit"[^>]+width="24\.000"/);
 });
 
+test('whole local playback uses the active media URL even for another linked source', () => {
+  const ctx = timelineContext([session(1, {representative_source_id:7, recording_active:true, recordings:[
+    {active:true, local_url:'/api/sources/8/capture', started_at:'2026-09-09T04:10:00Z', ended_at:'2026-09-09T04:20:00Z'},
+    {kind:'fragment', local_url:'/api/fragments/99/view', started_at:'2026-09-09T04:00:00Z', ended_at:'2026-09-09T04:10:00Z'},
+  ]})]);
+  ctx.icon = () => '';
+  assert.match(ctx.controlRoomPulseMarkup(), /data-local-video="\/api\/sources\/8\/capture"/);
+  assert.doesNotMatch(ctx.controlRoomPulseMarkup(), /data-local-video="\/api\/fragments/);
+});
+
 test('active product preview labels archive covers and always retains fallback markup', () => {
   const source = fs.readFileSync('app/static/ui.js', 'utf8');
   const ctx = vm.createContext({
