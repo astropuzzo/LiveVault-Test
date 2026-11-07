@@ -179,7 +179,11 @@ def story_links(item):
         add('link', url, url, link)
     for mention in _get(item, 'mentions', []) or []:
         person(_get(_get(mention, 'user'), 'username'), mention)
-    for tag in _get(item, 'usertags', []) or []:
+    # In a carousel the people are tagged on each slide, not on the post.
+    tagged = list(_get(item, 'usertags', []) or [])
+    for slide in _get(item, 'resources', []) or []:
+        tagged += _get(slide, 'usertags', []) or []
+    for tag in tagged:
         person(_get(_get(tag, 'user'), 'username'))
     for author in _get(item, 'coauthor_producers', []) or []:
         person(_get(author, 'username'))

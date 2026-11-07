@@ -1,6 +1,7 @@
 """Tags are kept for every kind of content; imports read by the day they were saved."""
 import json
-from types import SimpleNamespace
+
+import pytest
 
 from test_archive import vault, running_job, image_item, insert_post
 from vault import mobile_source as mobile, store, sync
@@ -28,6 +29,33 @@ def test_a_story_keeps_hashtags_places_and_reshared_reels_on_the_image():
     assert by_kind(found, 'hashtag')[0]['label'] == '#tramonto'
     assert by_kind(found, 'place')[0]['y'] == .4
     assert by_kind(found, 'post')[0]['url'] == 'https://www.instagram.com/reel/DfZep-jNG7x/'
+
+
+def raw_tag(name):
+    return {'in': [{'user': {'pk': '2', 'username': name, 'full_name': '', 'profile_pic_url': PICTURE},
+                    'position': [.4, .6]}]}
+
+
+PICTURE = 'https://x.cdninstagram.com/p.jpg'
+IMAGE = {'candidates': [{'url': PICTURE, 'width': 10, 'height': 10}]}
+RAW_POST = {'pk': '11', 'id': '11_1', 'code': 'Abc', 'taken_at': 1700000000, 'media_type': 1,
+            'product_type': 'feed', 'image_versions2': IMAGE, 'like_count': 1, 'comment_count': 0,
+            'user': {'pk': '1', 'username': 'owner', 'full_name': '', 'profile_pic_url': PICTURE}}
+
+
+def test_tags_survive_the_instagram_response_of_a_single_post():
+    extract = pytest.importorskip('instagrapi.extractors').extract_media_v1
+    raw = RAW_POST | {'usertags': raw_tag('anna.b'), 'location': {'pk': 123, 'name': 'Bologna', 'short_name': '', 'lng': 1.0, 'lat': 2.0}}
+    labels = [f['label'] for f in mobile.MediaAdapter(extract(raw)).links]
+    assert labels == ['@anna.b', 'Bologna']
+
+
+def test_tags_on_carousel_slides_are_kept():
+    extract = pytest.importorskip('instagrapi.extractors').extract_media_v1
+    slides = [{'pk': '12', 'id': '12_1', 'media_type': 1, 'image_versions2': IMAGE, 'usertags': raw_tag('slide.uno')},
+              {'pk': '13', 'id': '13_1', 'media_type': 1, 'image_versions2': IMAGE, 'usertags': raw_tag('slide.due')}]
+    raw = RAW_POST | {'media_type': 8, 'carousel_media': slides}
+    assert [f['label'] for f in mobile.MediaAdapter(extract(raw)).links] == ['@slide.uno', '@slide.due']
 
 
 def test_unsafe_tags_are_dropped():
