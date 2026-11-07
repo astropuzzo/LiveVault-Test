@@ -361,7 +361,7 @@ Confronto per hash tra `main` e `/opt/openastro-control`, ignorando i fine riga.
 
 Rollback del firewall nel repository: `git revert` di questa modifica. Dependabot è stato tolto
 nella stessa data per tenere il solo ramo `main`: `yt-dlp` si aggiorna a mano in
-`requirements.txt`, e al 2026-11-07 la versione fissata è 2026.8.19 contro 2026.10.26 pubblicata.
+`requirements.txt`; il 2026-11-07 è passato da 2026.8.19 a 2026.10.26.
 
 ## Sensore di potenza ASIAIR Plus CM4
 

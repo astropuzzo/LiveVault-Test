@@ -2,6 +2,7 @@
 
 ## 3.5.5 — 2026-11-07
 
+- yt-dlp aggiornato da 2026.8.19 a 2026.10.26.
 - Cronologia: posizione NSFW nella parte locale durante la live, riproduzione al secondo rilevato e comando REC locale indipendente dai simboli. Bande separate ai confini dei file; il tempo nel file finale resta quello calcolato durante l’unione, valido anche su GoFile.
 
 ## Unreleased — 2026-10-01 · Torrent Manager nel Media Hub
