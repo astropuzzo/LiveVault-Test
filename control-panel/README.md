@@ -341,6 +341,27 @@ e non vengono conservate in chiaro sul server o nel repository.
 - azioni privilegiate: `/usr/local/sbin/openastro-action`
 - registro azioni: `/var/log/openastro-control-actions.log`
 
+## Allineamento con il nodo (verificato il 2026-11-07)
+
+Confronto per hash tra `main` e `/opt/openastro-control`, ignorando i fine riga.
+
+- `openastro-pihole-firewall`: il nodo aveva dal 2026-09-07 una versione più recente del
+  repository, con DNS IPv6 dalla LAN e DoT autenticato sul solo /128 instradato. Il repository
+  ora coincide con `/usr/local/sbin/openastro-pihole-firewall`; il nodo non è stato toccato.
+  Prima di questo allineamento, un'installazione dal repository avrebbe tolto entrambe le regole.
+- `openastro-control.service`: il repository ha `EnvironmentFile=-/etc/openastro-serra.env`
+  nella unit, il nodo lo carica da un drop-in. L'effetto è lo stesso, nessuna azione.
+- `static/index.html` e `static/sw.js`: restano diversi solo per l'ordine degli script e il nome
+  della cache (`serra-biglie-1` nel repository, `serra-20261104-1` sul nodo). Il codice caricato
+  è lo stesso. Sul nodo restano anche 14 PNG di QA e 3 copie `.bak` in `static/`, non
+  referenziate da HTML, JS o CSS.
+- Non confrontati, perché leggibili solo da root: `/etc/sudoers.d/openastro-control`
+  (`sudo -l` mostra la stessa regola del repository) e `/opt/openastro-ops`.
+
+Rollback del firewall nel repository: `git revert` di questa modifica. Dependabot è stato tolto
+nella stessa data per tenere il solo ramo `main`: `yt-dlp` si aggiorna a mano in
+`requirements.txt`, e al 2026-11-07 la versione fissata è 2026.8.19 contro 2026.10.26 pubblicata.
+
 ## Sensore di potenza ASIAIR Plus CM4
 
 Eseguire `sudo bash scripts/enable-asiair-telemetry.sh` dalla radice del repository
