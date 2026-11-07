@@ -37,7 +37,10 @@ def _plain(value):
     if hasattr(value, 'model_dump'):
         return value.model_dump(mode='json')
     if hasattr(value, '__dict__'):
-        return {k: _plain(v) for k, v in vars(value).items() if not k.startswith('_')}
+        fields = {k: _plain(v) for k, v in vars(value).items() if not k.startswith('_')}
+        # A pydantic URL keeps its text in a private attribute: it would come out as {}.
+        if fields:
+            return fields
     return str(value)
 
 
@@ -256,8 +259,9 @@ class MediaIterator:
 
 
 class ProfileAdapter:
-    def __init__(self, source, item):
+    def __init__(self, source, item, latest_reel_media=None):
         self.source = source
+        self.latest_reel_media = latest_reel_media if isinstance(latest_reel_media, int) else None
         self.userid = str(_get(item, 'pk', ''))
         if not self.userid.isdigit():
             raise ValueError('Profilo Instagram non valido.')
@@ -388,27 +392,17 @@ class MobileSource:
                     raise
             self.client._send_private_request = guarded
 
+    def _card(self, item):
+        # The SDK's User model drops the story marker; the raw reply still has it.
+        reply = getattr(self.client, 'last_json', None)
+        user = reply.get('user') if isinstance(reply, dict) else None
+        return ProfileAdapter(self, item, _get(user or {}, 'latest_reel_media'))
+
     def profile(self, username):
-        from . import store
-        # Pure injected test adapters need no persistent runtime cache.
-        if not hasattr(self.client, '_send_private_request'):
-            return ProfileAdapter(self, self.client.user_info_by_username_v1(username))
-        with store.db() as c:
-            row = c.execute('SELECT data,updated_at FROM ig_profile_cache WHERE account_id=? AND username=?',
-                            (self.account_id, username)).fetchone()
-        if row and row['updated_at'] > store.now()-3600:
-            return ProfileAdapter(self, json.loads(row['data']))
-        item = self.client.user_info_by_username_v1(username)
-        fields = ['pk','username','full_name','biography','profile_pic_url_hd','profile_pic_url',
-                  'media_count','is_private','follower_count','following_count']
-        data = {key: _plain(_get(item, key)) for key in fields}
-        with store.db() as c:
-            c.execute('INSERT OR REPLACE INTO ig_profile_cache VALUES (?,?,?,?)',
-                      (self.account_id, username, json.dumps(data), store.now()))
-        return ProfileAdapter(self, item)
+        return self._card(self.client.user_info_by_username_v1(username))
 
     def profile_by_id(self, user_id):
-        return ProfileAdapter(self, self.client.user_info_v1(str(user_id)))
+        return self._card(self.client.user_info_v1(str(user_id)))
 
     def access(self, profile):
         if not profile.is_private or profile.userid == self.account_id:

@@ -158,9 +158,9 @@ def initialize():
         c.execute('''CREATE TABLE IF NOT EXISTS sync_schedule (
           profile_id INTEGER NOT NULL,kind TEXT NOT NULL,next_at INTEGER NOT NULL,
           PRIMARY KEY(profile_id,kind))''')
-        c.execute('''CREATE TABLE IF NOT EXISTS ig_profile_cache (
-          account_id TEXT NOT NULL,username TEXT NOT NULL,data TEXT NOT NULL,updated_at INTEGER NOT NULL,
-          PRIMARY KEY(account_id,username))''')
+        # ping: started by the schedule, so an unchanged profile card ends the check.
+        if 'ping' not in {row[1] for row in c.execute('PRAGMA table_info(jobs)')}:
+            c.execute('ALTER TABLE jobs ADD COLUMN ping INTEGER NOT NULL DEFAULT 0')
         if 'comments_at' not in columns:
             c.execute('ALTER TABLE posts ADD COLUMN comments_at INTEGER')
         c.execute('''CREATE TABLE IF NOT EXISTS comments (
@@ -244,15 +244,17 @@ def storage_status():
             'buffer_full': not ready and buffer_full(used=buffered)}
 
 
-def enqueue(profile_id):
+def enqueue(profile_id, ping=False):
     with db() as c:
         profile = c.execute('SELECT * FROM profiles WHERE id=?', (profile_id,)).fetchone()
         if not profile:
             raise ValueError('Profilo non trovato.')
         existing = c.execute("SELECT id FROM jobs WHERE profile_id=? AND state IN ('queued','running','cancel_requested')", (profile_id,)).fetchone()
         if existing:
+            if not ping:
+                c.execute('UPDATE jobs SET ping=0 WHERE id=?', (existing['id'],))
             return existing['id']
-        job_id = c.execute('INSERT INTO jobs(profile_id,created_at) VALUES (?,?)', (profile_id, now())).lastrowid
+        job_id = c.execute('INSERT INTO jobs(profile_id,created_at,ping) VALUES (?,?,?)', (profile_id, now(), int(ping))).lastrowid
         c.execute("UPDATE profiles SET status='queued',error='' WHERE id=?", (profile_id,))
         return job_id
 
@@ -374,6 +376,28 @@ def record_history(profile_id, snapshot):
         return not last or snapshot['avatar_key'] != last['avatar_key']
 
 
+def repair_photo_history():
+    """Rows logged by the old profile cache, whose photo URL had turned into
+    '{}': each takes the photo of the row before it, so no false change shows."""
+    with db() as c:
+        c.execute('DROP TABLE IF EXISTS ig_profile_cache')
+        for (profile,) in c.execute("SELECT DISTINCT profile_id FROM profile_history WHERE avatar_key='{}'").fetchall():
+            rows = c.execute('SELECT id,avatar,avatar_key FROM profile_history WHERE profile_id=? ORDER BY at,id', (profile,)).fetchall()
+            known = next((r for r in rows if r['avatar_key'] != '{}'), None)
+            for row in rows:
+                if row['avatar_key'] != '{}':
+                    known = row
+                else:
+                    c.execute('UPDATE profile_history SET avatar_key=?,avatar=? WHERE id=?',
+                              (known['avatar_key'] if known else '', row['avatar'] or (known['avatar'] if known else ''), row['id']))
+
+
+def rename_photo(profile_id, before, after):
+    # The same picture under a new CDN name is not a new photo.
+    with db() as c:
+        c.execute('UPDATE profile_history SET avatar_key=? WHERE profile_id=? AND avatar_key=?', (after, profile_id, before))
+
+
 def profile_history(profile_id):
     with db() as c:
         rows = [dict(r) for r in c.execute('SELECT * FROM profile_history WHERE profile_id=? ORDER BY at, id', (profile_id,))]
@@ -381,7 +405,7 @@ def profile_history(profile_id):
     for row in rows:
         if previous:
             for field, label in [('username', 'Username'), ('full_name', 'Nome'), ('biography', 'Bio'), ('avatar_key', 'Foto profilo')]:
-                if row[field] != previous[field] and (field != 'username' or (row[field] and previous[field])):
+                if row[field] != previous[field] and (field not in ('username', 'avatar_key') or (row[field] and previous[field])):
                     changes.append({'at': row['at'], 'field': field, 'label': label,
                                     'before': previous[field] if field != 'avatar_key' else '',
                                     'after': row[field] if field != 'avatar_key' else '',

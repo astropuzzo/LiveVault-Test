@@ -201,14 +201,27 @@ refusals stop that account until a newly verified login repairs authentication.
 Reconnecting or pressing Update cannot bypass the
 persisted host pause. `/api/summary.requests` exposes redacted request counters.
 
-Fresh stories run first, then the newest post and Reel pages. All checks still
-use the profile's configured interval (10 minutes by default); a historical
-backlog no longer forces full checks every minute. Normally a known feed costs
-one 12-item page; up to two pages of new items are captured, with excess queued
+Scheduled checks are pings. Each one reads the profile card once, at the
+profile's configured interval (10 minutes by default), and compares two fields
+measured on 7 November 2026: `latest_reel_media` matched the newest archived
+story to the second and is 0 without live stories; `media_count` covers posts
+and Reels. `total_clips_count` was 1 on every profile, so it is not used. With
+no change the check ends there and the job reads "Nessuna novità". A failed
+read does not advance the saved values, so the next ping repeats it. Update and
+new profiles always read everything.
+
+Some reads still happen without a change. Stories and feeds are read every six
+hours, because a Reel kept off the grid may not move `media_count`. Live stories
+are read hourly, because only a re-read shows that an older one was deleted. A
+pending follow request is checked hourly instead of every interval. A private
+profile already followed skips the friendship call at each ping.
+
+When a ping shows news, stories run first, then the newest post and Reel pages;
+a historical backlog no longer forces full checks every minute. Normally a known
+feed costs one 12-item page; up to two pages of new items are captured, with excess queued
 for catch-up. Fresh checks ignore the historical cursor. Older media advances
 one small batch per maintenance window, refreshing expired signed URLs from
-the saved page rather than restarting the archive. Profile metadata is cached
-for one hour. Tagged content, highlight collections, post-removal probes and
+the saved page rather than restarting the archive. Tagged content, highlight collections, post-removal probes and
 interactions run separately, normally six-hourly, with pending import steps
 30 minutes apart and the shared budget always enforced. Only one highlight
 collection API and twelve items are processed per step; live stories remain

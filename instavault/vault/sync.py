@@ -57,9 +57,9 @@ def fsync_directory(path):
             os.close(fd)
 
 
-def next_check(profile):
+def next_check(profile, minimum=0):
     # A few seconds of random offset, so the checks never run like a clock.
-    return profile['interval_minutes'] * 60 + random.randint(-30, 30)
+    return max(profile['interval_minutes'], minimum) * 60 + random.randint(-30, 30)
 
 
 # Account-wide problems stop the whole pass; anything else stays in its section.
@@ -123,6 +123,56 @@ ACCOUNT_PROBLEMS = {
 
 
 PAUSE_SECONDS = 3 * 3600
+
+# A Reel kept off the grid may not move media_count, so feeds are also read on this period.
+FULL_CHECK_AFTER = 6 * 3600
+# A deleted story moves no marker unless it was the newest: live stories are re-read.
+STORY_RECHECK_AFTER = 3600
+# A pending follow request can only change when the other person answers.
+PRIVATE_WAIT_MINUTES = 60
+
+
+def read_ping(profile):
+    with store.db() as c:
+        row = c.execute("SELECT data FROM cursors WHERE profile_id=? AND kind='ping'", (profile['id'],)).fetchone()
+    return json.loads(row['data']) if row and row['data'] else None
+
+
+def fresh_due(seen, remote, account, now):
+    """What the profile card justifies reading. A card without a marker
+    (anonymous session) gives no signal, so everything is read as before."""
+    if not seen or seen.get('account') != account:
+        return {'story', 'feed'}
+    due = set()
+    stories = getattr(remote, 'latest_reel_media', None)
+    read = seen.get('story_at', 0)
+    if (stories is None or stories != seen.get('story') or now - read >= FULL_CHECK_AFTER
+            or (now - stories < 86400 and now - read >= STORY_RECHECK_AFTER)):
+        due.add('story')
+    count = getattr(remote, 'media_count', None)
+    if count is None or count != seen.get('media') or now - seen.get('feed_at', 0) >= FULL_CHECK_AFTER:
+        due.add('feed')
+    return due
+
+
+def remember_ping(profile, remote, account, seen, due, successful):
+    # Only sections that succeeded move forward: a failed read is retried at the next ping.
+    state = dict(seen or {}) if (seen or {}).get('account') == account else {}
+    state['account'] = account
+    if 'story' in due and 'story' in successful:
+        state |= {'story': getattr(remote, 'latest_reel_media', None), 'story_at': store.now()}
+    wanted = [kind for kind, enabled in [('post', profile['posts']), ('reel', profile['reels'])] if enabled]
+    if 'feed' in due and wanted and all(kind in successful for kind in wanted):
+        state |= {'media': getattr(remote, 'media_count', None), 'feed_at': store.now()}
+    with store.db() as c:
+        c.execute("INSERT OR REPLACE INTO cursors VALUES (?,'ping',?,0)", (profile['id'], json.dumps(state)))
+
+
+def photo_key(url):
+    # The file name on Instagram's CDN changes only with a new photo.
+    parsed = urlparse(str(url or ''))
+    name = parsed.path.rsplit('/', 1)[-1][:120]
+    return name if parsed.scheme == 'https' and name else ''
 
 
 def removed_from_instagram(source, shortcode):
@@ -368,7 +418,7 @@ def instagram_detail(exc):
 
 
 ACCESS_MESSAGES = {
-    'requested': 'Profilo privato: la richiesta di seguirlo è in attesa. InstaVault scarica tutto appena viene accettata.',
+    'requested': 'Profilo privato: la richiesta di seguirlo è in attesa. InstaVault controlla ogni ora e scarica tutto appena viene accettata.',
     'not_followed': 'Profilo privato: l’account collegato non lo segue. Chiedi di seguirlo per poterlo archiviare.',
 }
 
@@ -651,29 +701,37 @@ class Worker:
         return remote
 
     def record_profile(self, profile, remote, job_id):
-        # The photo's file name on Instagram's CDN changes only with a new photo.
         url = str(remote.profile_pic_url or '')
-        key = urlparse(url).path.rsplit('/', 1)[-1][:120]
-        snapshot = {'followers': getattr(remote, 'followers', None), 'following': getattr(remote, 'followees', None),
-                    'media_count': getattr(remote, 'mediacount', None) or getattr(remote, 'media_count', None),
-                    'full_name': remote.full_name or '', 'biography': remote.biography or '', 'avatar_key': key,
-                    'username': getattr(remote, 'username', '') or profile['username']}
+        key = photo_key(url)
         with store.db() as c:
             last = c.execute('SELECT avatar_key FROM profile_history WHERE profile_id=? ORDER BY at DESC, id DESC LIMIT 1', (profile['id'],)).fetchone()
-        new_photo = url and self.mode == 'media' and (not profile['avatar'] or (last and last['avatar_key'] != key))
-        if new_photo:
+        known = last['avatar_key'] if last else ''
+        # The key moves only once the photo is stored: a failed download is retried,
+        # and a card without a usable address changes nothing.
+        snapshot = {'followers': getattr(remote, 'followers', None), 'following': getattr(remote, 'followees', None),
+                    'media_count': getattr(remote, 'mediacount', None) or getattr(remote, 'media_count', None),
+                    'full_name': remote.full_name or '', 'biography': remote.biography or '', 'avatar_key': known,
+                    'username': getattr(remote, 'username', '') or profile['username']}
+        if profile['avatar']:
+            snapshot['avatar'] = profile['avatar']
+        if key and self.mode == 'media' and (key != known or not profile['avatar']):
             avatar = f'{profile["id"]}/avatar-{store.now()}.jpg'
             try:
-                self.download(url, avatar, job_id)
-                snapshot['avatar'] = avatar
-                with store.db() as c:
-                    c.execute('UPDATE profiles SET avatar=? WHERE id=?', (avatar, profile['id']))
+                _, digest = self.download(url, avatar, job_id)
             except (Paused, StorageFull):
                 raise
             except Exception as exc:
                 print(f'InstaVault: @{profile["username"]} avatar: {type(exc).__name__}', flush=True)
-        elif profile['avatar']:
-            snapshot['avatar'] = profile['avatar']
+            else:
+                current = store.MEDIA / profile['avatar'] if profile['avatar'] else None
+                if current and current.is_file() and file_digest(current) == digest:
+                    (store.MEDIA / avatar).unlink(missing_ok=True)
+                    store.rename_photo(profile['id'], known, key)
+                else:
+                    snapshot['avatar'] = avatar
+                    with store.db() as c:
+                        c.execute('UPDATE profiles SET avatar=? WHERE id=?', (avatar, profile['id']))
+                snapshot['avatar_key'] = key
         store.record_history(profile['id'], snapshot)
 
     def stream(self, profile, iterator, kind, job_id, latest=False, resume_key=None):
@@ -803,7 +861,9 @@ class Worker:
                 self.source = value
                 self.check(ident)
                 remote = self.find_profile(value, profile)
-                access = access_of(value, remote)
+                # A private profile already followed needs no second request at every ping.
+                followed = job.get('ping') and profile['is_private'] and not profile['access'] and getattr(remote, 'is_private', False)
+                access = '' if followed else access_of(value, remote)
                 with store.db() as c:
                     c.execute('UPDATE profiles SET is_private=? WHERE id=?', (int(bool(getattr(remote, 'is_private', False))), profile['id']))
                 if not access or index + 1 == len(choices):
@@ -825,7 +885,9 @@ class Worker:
                     c.execute("UPDATE jobs SET state='done',finished_at=?,message=? WHERE id=?",
                               (store.now(), ACCESS_MESSAGES[access], ident))
                     c.execute("UPDATE profiles SET status='private',error='',last_sync=?,next_sync=? WHERE id=?",
-                              (store.now(), store.now() + next_check(profile), profile['id']))
+                              (store.now(), store.now() + next_check(profile, PRIVATE_WAIT_MINUTES), profile['id']))
+                    # Once accepted, the first check must read everything.
+                    c.execute("DELETE FROM cursors WHERE profile_id=? AND kind='ping'", (profile['id'],))
                 return
             warnings = []
             successful = []
@@ -878,7 +940,9 @@ class Worker:
                                   (profile['id'], 'pause:' + kind, json.dumps({'until':store.now()+3600,'message':warning})))
                 finally:
                     value.request_lane = previous_lane
-            if profile['stories'] and value.context.is_logged_in:
+            seen = read_ping(profile)
+            due = fresh_due(seen, remote, account, store.now()) if job.get('ping') else {'story', 'feed'}
+            if 'story' in due and profile['stories'] and value.context.is_logged_in:
                 def stories():
                     live = set()
                     for story in value.get_stories([remote.userid]):
@@ -889,10 +953,11 @@ class Worker:
                     if same_account:
                         deleted['story'] = store.mark_deleted(profile['id'], (), live, store.now() - 86400 + 600, story=True)
                 section('story', 'Storie', stories)
-            if profile['posts']:
+            if 'feed' in due and profile['posts']:
                 section('post', 'Post nuovi', lambda: self.stream(profile, remote.get_posts(), 'post', ident, latest=True))
-            if profile['reels']:
+            if 'feed' in due and profile['reels']:
                 section('reel', 'Reel nuovi', lambda: self.stream(profile, remote.get_reels(), 'reel', ident, latest=True))
+            remember_ping(profile, remote, account, seen, due, successful)
             # Announce fresh captures before slow work can hit a pause. Old
             # backfill added later in this job must not produce "new" notices.
             self.announce(profile, ident, {}, False)
@@ -909,15 +974,17 @@ class Worker:
                     since = max(posts_seen['oldest'], store.now() - 14*86400)
                     deleted['post'] = store.mark_deleted(profile['id'], ('post', 'reel'), codes, since,
                                                         gone=lambda code: removed_from_instagram(value, code), limit=1)
-            section('deleted-check', 'Verifica rimossi', check_deleted, period=6*3600, lane='maintenance')
-            if warnings and not successful:
+            # Without a fresh listing there is nothing to compare, and its turn must not be spent.
+            if 'post' in self.seen:
+                section('deleted-check', 'Verifica rimossi', check_deleted, period=6*3600, lane='maintenance')
+            if due and warnings and not successful:
                 raise RuntimeError('Selected content categories temporarily unavailable')
             def interactions():
                 self.refresh_recent(profile)
                 self.backfill_comments(profile)
             section('interactions', 'Commenti e like', interactions, period=6*3600, lane='maintenance')
             with store.db() as c:
-                message = 'Prima importazione in corso' if more else 'Archivio aggiornato'
+                message = 'Prima importazione in corso' if more else 'Archivio aggiornato' if due else 'Nessuna novità'
                 if (profile['stories'] or profile['highlights']) and not value.context.is_logged_in:
                     message += ' · Collega Instagram per storie e contenuti in evidenza'
                 gone = sum(deleted.values())
@@ -1054,6 +1121,8 @@ class Worker:
         with store.db() as c:
             c.execute("UPDATE jobs SET state='queued',started_at=NULL,message='Ripresa dopo riavvio' WHERE state='running'")
             c.execute("UPDATE jobs SET state='cancelled',finished_at=? WHERE state='cancel_requested'", (store.now(),))
+        # Here and not at startup: during a rolling deploy the old worker still uses the cache table.
+        store.repair_photo_history()
 
     def loop(self):
         # A rolling deploy must never run two downloaders against the archive.
@@ -1083,7 +1152,7 @@ class Worker:
                         with store.db() as c:
                             due = list(c.execute('SELECT id FROM profiles WHERE enabled=1 AND next_sync<=?', (store.now(),)))
                         for profile in due:
-                            store.enqueue(profile['id'])
+                            store.enqueue(profile['id'], ping=True)
                     with store.db() as c:
                         row = c.execute("SELECT * FROM jobs WHERE state='queued' ORDER BY created_at,id LIMIT 1").fetchone()
                     if row:
