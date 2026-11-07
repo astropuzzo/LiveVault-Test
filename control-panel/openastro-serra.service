@@ -1,0 +1,26 @@
+[Unit]
+Description=OpenAstro greenhouse camera timelapse collector
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=astro
+Group=astro
+WorkingDirectory=/opt/openastro-control
+EnvironmentFile=-/etc/openastro-serra.env
+ExecStart=/usr/bin/python3 /opt/openastro-control/serra_camera.py
+Restart=always
+RestartSec=5
+Nice=15
+CPUWeight=10
+CPUQuota=75%
+IOWeight=10
+UMask=0027
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+TimeoutStopSec=15
+
+[Install]
+WantedBy=multi-user.target

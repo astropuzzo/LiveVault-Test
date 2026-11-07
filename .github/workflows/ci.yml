@@ -23,7 +23,7 @@ jobs:
         with:
           node-version: '22'
       - name: Install FFmpeg
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg libjpeg-turbo-progs
       - name: Install dependencies
         run: pip install -r requirements-dev.txt
       - name: Compile Python
@@ -37,10 +37,11 @@ jobs:
           node --test tests/test_panel_frontend.cjs
           node --test tests/test_control_async.cjs tests/test_panel_diagnostics.cjs
           node --test tests/test_apps_panel_frontend.cjs
+          node --test tests/test_serra_frontend.cjs
           node --test tests/test_nina_stellar_ui.cjs
       - name: Check shell scripts
         run: |
-          for file in scripts/*.sh control-panel/openastro-action control-panel/openastro-power-profile; do bash -n "$file"; done
+          for file in scripts/*.sh scripts/*.cgi scripts/*.init control-panel/openastro-action control-panel/openastro-power-profile; do bash -n "$file"; done
       - name: Build standalone NINA monitor image
         run: docker build -t openastro-nina-monitor:ci nina-monitor
       - name: Smoke-test isolated NINA monitor container

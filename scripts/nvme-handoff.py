@@ -22,6 +22,8 @@ RECORDINGS = ROOT / 'recordings'
 DATA_UUID = '5fe2d0f6-b485-44e9-8e26-31fb0d217db2'
 GPT_HARNESS_SERVICE = 'gpt-harness.service'
 INSTAVAULT_STORAGE_HELPER = Path('/usr/local/libexec/instavault-storage.py')
+SERRA_SERVICE = Path('/etc/systemd/system/openastro-serra.service')
+SERRA_STORAGE_STATE = Path('/run/openastro-serra-storage.json')
 CONTAINER_VIEW_SETTLE_SECONDS = 1.0
 CONTAINER_VIEW_REPAIR_SECONDS = 3.0
 CONTAINER_VIEW_POLL_SECONDS = 0.20
@@ -118,6 +120,13 @@ def publish(mode, **fields):
         f.flush()
         os.fsync(f.fileno())
     temporary.replace(path)
+    # The unprivileged greenhouse collector needs only the mode, never the
+    # private handoff token. /run is root-owned; publication is atomic.
+    if SERRA_SERVICE.is_file():
+        public_tmp = SERRA_STORAGE_STATE.with_suffix('.tmp')
+        public_tmp.write_text(json.dumps({'mode': mode}), encoding='utf-8')
+        public_tmp.chmod(0o644)
+        public_tmp.replace(SERRA_STORAGE_STATE)
 
 
 def quiesce():
