@@ -789,9 +789,22 @@ def test_profile_history_keeps_a_row_a_day_and_every_change(vault, monkeypatch):
     clock[0] += 600; store.record_history(profile, base | {'biography': 'Foto e viaggi'})
     clock[0] += 86400; assert store.record_history(profile, base | {'biography': 'Foto e viaggi', 'avatar_key': 'b.jpg', 'avatar': '1/avatar-2.jpg', 'followers': 120})
     history = store.profile_history(profile)
-    assert [p['followers'] for p in history['points']] == [100, 100, 120]
+    assert [p['followers'] for p in history['points']] == [101, 100, 120]
     assert [(c['label'], c['before'], c['after']) for c in history['changes']] == [('Foto profilo', '', ''), ('Bio', 'Foto', 'Foto e viaggi')]
     assert history['changes'][0]['before_photo'] and history['changes'][0]['after_photo']
+
+
+def test_follower_count_stays_current_during_the_day(vault, monkeypatch):
+    profile = vault['profile']
+    base = {'followers': 100, 'following': 5, 'media_count': 10, 'full_name': 'Ana', 'biography': 'Foto', 'avatar_key': 'a.jpg', 'avatar': ''}
+    clock = [1767225600]
+    monkeypatch.setattr(store, 'now', lambda: clock[0])
+    store.record_history(profile, base)
+    clock[0] += 3600; store.record_history(profile, base | {'followers': 104, 'media_count': 11})
+    clock[0] += 3600; store.record_history(profile, base | {'followers': None, 'following': None, 'media_count': None})
+    points = store.profile_history(profile)['points']
+    assert [(p['followers'], p['following'], p['media_count']) for p in points] == [(104, 5, 11)]
+    assert points[0]['at'] == 1767225600
 
 
 def test_push_text_is_encrypted_for_the_browser_only(vault):

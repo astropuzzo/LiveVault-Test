@@ -369,6 +369,10 @@ def record_history(profile_id, snapshot):
         last = c.execute('SELECT * FROM profile_history WHERE profile_id=? ORDER BY at DESC, id DESC LIMIT 1', (profile_id,)).fetchone()
         changed = not last or any(snapshot.get(k, '') != last[k] for k in ['full_name', 'biography', 'avatar_key', 'username'] if k != 'username' or last[k])
         if last and not changed and time.strftime('%Y-%m-%d', time.gmtime(last['at'])) == time.strftime('%Y-%m-%d', time.gmtime(now())):
+            # One point a day, with the latest figures. `at` stays: it dates the changes.
+            c.execute('''UPDATE profile_history SET followers=COALESCE(?,followers), following=COALESCE(?,following),
+                media_count=COALESCE(?,media_count) WHERE id=?''',
+                      (snapshot['followers'], snapshot['following'], snapshot['media_count'], last['id']))
             return False
         c.execute('''INSERT INTO profile_history(profile_id,at,followers,following,media_count,full_name,biography,avatar,avatar_key,username)
             VALUES (?,?,?,?,?,?,?,?,?,?)''', (profile_id, now(), snapshot['followers'], snapshot['following'], snapshot['media_count'],
