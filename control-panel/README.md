@@ -351,10 +351,11 @@ Confronto per hash tra `main` e `/opt/openastro-control`, ignorando i fine riga.
   Prima di questo allineamento, un'installazione dal repository avrebbe tolto entrambe le regole.
 - `openastro-control.service`: il repository ha `EnvironmentFile=-/etc/openastro-serra.env`
   nella unit, il nodo lo carica da un drop-in. L'effetto è lo stesso, nessuna azione.
-- `static/index.html` e `static/sw.js`: restano diversi solo per l'ordine degli script e il nome
-  della cache (`serra-biglie-1` nel repository, `serra-20261104-1` sul nodo). Il codice caricato
-  è lo stesso. Sul nodo restano anche 14 PNG di QA e 3 copie `.bak` in `static/`, non
-  referenziate da HTML, JS o CSS.
+- `/opt/openastro-control`: 41 file su 41 coincidono con `main`. `static/index.html` e
+  `static/sw.js` sono stati installati da `main` il 2026-11-07 alle 11:51 UTC, senza riavvio,
+  con cache `serra-biglie-1`. 14 PNG di QA e 3 copie `.bak` non referenziate sono state tolte da
+  `static/`. Ripristino: i file precedenti sono in `~/rollback/panel-static-20261107`
+  (scarti in `retired/`); ricopiare `index.html` e `sw.js` in `static/`, nessun riavvio.
 - Non confrontati, perché leggibili solo da root: `/etc/sudoers.d/openastro-control`
   (`sudo -l` mostra la stessa regola del repository) e `/opt/openastro-ops`.
 
