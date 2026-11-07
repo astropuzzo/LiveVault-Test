@@ -2,6 +2,26 @@
 set -Eeuo pipefail
 
 TABLE="openastro_pihole"
+REMOTE_CONFIG="${OPENASTRO_DNS_CONFIG:-/var/lib/openastro-control/remote-dns.json}"
+
+dot_ipv6() {
+    python3 - "$REMOTE_CONFIG" <<'PYADDR'
+import ipaddress,json,sys
+try:
+    data=json.load(open(sys.argv[1], encoding="utf-8"))
+    value=str((data.get("dot") or {}).get("ipv6") or "")
+    ip=ipaddress.ip_address(value)
+    if ip.version == 6 and ip.is_global:
+        print(ip)
+except Exception:
+    pass
+PYADDR
+}
+
+lan_ipv6_prefix() {
+    ip -6 route show dev eth0 proto ra 2>/dev/null \
+        | awk '$1 ~ /^[0-9a-fA-F:]+\/64$/ && $1 !~ /^fe80:/ { print $1; exit }'
+}
 
 remove_table() {
     if nft list table inet "$TABLE" >/dev/null 2>&1; then
@@ -11,7 +31,26 @@ remove_table() {
 
 apply_rules() {
     remove_table
-    nft -f - <<'NFT'
+    local dot_addr dot_rules lan6_prefix lan6_rules
+    dot_addr="$(dot_ipv6)"
+    dot_rules=""
+    lan6_prefix="$(lan_ipv6_prefix)"
+    lan6_rules=""
+    if [[ -n "$lan6_prefix" ]]; then
+        lan6_rules="
+        iifname \"eth0\" ip6 saddr $lan6_prefix udp dport 53 accept
+        iifname \"eth0\" ip6 saddr $lan6_prefix tcp dport 53 accept"
+    fi
+    if [[ -n "$dot_addr" ]]; then
+        # The routed service /128 is a deliberate Internet ingress identity.
+        # Permit only essential ICMPv6 and authenticated DoT; everything else
+        # addressed to it is dropped before wildcard-bound host services see it.
+        dot_rules="
+        ip6 daddr $dot_addr meta l4proto ipv6-icmp accept
+        ip6 daddr $dot_addr tcp dport 853 accept
+        ip6 daddr $dot_addr drop"
+    fi
+    nft -f - <<NFT
 table inet openastro_pihole {
     chain input {
         type filter hook input priority -20; policy accept;
@@ -24,13 +63,15 @@ table inet openastro_pihole {
         iifname "tailscale0" tcp dport 53 accept
         iifname "eth0" ip saddr 192.168.1.0/24 udp dport 53 accept
         iifname "eth0" ip saddr 192.168.1.0/24 tcp dport 53 accept
+${lan6_rules}
+
+${dot_rules}
 
         # No Internet-facing classic DNS, on either IP family.
         udp dport 53 drop
         tcp dport 53 drop
 
-        # Android Private DNS is intentionally unpublished until an authenticated
-        # remote design exists; this prevents accidental public DoT exposure.
+        # DoT is allowed only on the dedicated routed /128 above.
         tcp dport 853 drop
     }
 }
