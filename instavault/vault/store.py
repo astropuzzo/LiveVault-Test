@@ -154,6 +154,7 @@ def initialize():
             if name not in columns:
                 c.execute(f'ALTER TABLE posts ADD COLUMN {name} INTEGER')
         c.execute('CREATE INDEX IF NOT EXISTS posts_job ON posts(job_id) WHERE job_id IS NOT NULL')
+        c.execute('CREATE INDEX IF NOT EXISTS posts_archived ON posts(complete,archived_at DESC,id DESC)')
         c.execute('CREATE INDEX IF NOT EXISTS posts_deleted ON posts(deleted_at) WHERE deleted_at IS NOT NULL')
         c.execute('''CREATE TABLE IF NOT EXISTS sync_schedule (
           profile_id INTEGER NOT NULL,kind TEXT NOT NULL,next_at INTEGER NOT NULL,
@@ -576,9 +577,11 @@ def list_posts(query):
         if str(query.get(key, '')).isdigit():
             conditions.append(f'p.published_at{op}?'); args.append(int(query[key]))
     older = query.get('order') == 'oldest'
+    # Imports read by the day InstaVault saved them, not the day they were published.
+    column = 'archived_at' if query.get('sort') == 'archived' else 'published_at'
     if query.get('cursor'):
         stamp, ident = map(int, query['cursor'].split(':'))
-        conditions.append('(p.published_at,p.id) ' + ('>' if older else '<') + ' (?,?)'); args += [stamp, ident]
+        conditions.append(f'(p.{column},p.id) ' + ('>' if older else '<') + ' (?,?)'); args += [stamp, ident]
     direction = 'ASC' if older else 'DESC'
     # A removed profile's posts stay hidden, unless a collab also belongs to a listed profile.
     conditions.append('(r.removed=0 OR p.id IN (SELECT s.post_id FROM shared s JOIN profiles q ON q.id=s.profile_id WHERE q.removed=0))')
@@ -586,8 +589,8 @@ def list_posts(query):
         conditions.append('p.published_at>=?'); args.append(int(query['since']))
     sql = '''SELECT p.*,r.username,r.full_name,r.avatar,(SELECT COUNT(*) FROM comments k WHERE k.post_id=p.id) AS comment_count
           FROM posts p JOIN profiles r ON p.profile_id=r.id
-          WHERE ''' + ' AND '.join(conditions) + f' ORDER BY p.published_at {direction},p.id {direction} LIMIT 49'
+          WHERE ''' + ' AND '.join(conditions) + f' ORDER BY p.{column} {direction},p.id {direction} LIMIT 49'
     with db() as c:
         rows = list(c.execute(sql, args)); has_more = len(rows) > 48; rows = rows[:48]
         return {'items': [post_json(c, r) for r in rows],
-                'next': f"{rows[-1]['published_at']}:{rows[-1]['id']}" if has_more and rows else None}
+                'next': f"{rows[-1][column]}:{rows[-1]['id']}" if has_more and rows else None}

@@ -148,6 +148,8 @@ class MediaAdapter:
 
 
 def _box(item):
+    if item is None:
+        return {'x': 0, 'y': 0, 'w': 0, 'h': 0}
     try:
         return {k: round(float(_get(item, n, 0) or 0), 4) for k, n in
                 [('x', 'x'), ('y', 'y'), ('w', 'width'), ('h', 'height')]}
@@ -156,23 +158,47 @@ def _box(item):
 
 
 def story_links(item):
-    """Tappable areas of a story: link stickers and @mentions, with their box
-    (centre x/y, width, height as fractions of the image)."""
+    """What a post or story points to: link stickers, people, hashtags, places
+    and reshared posts. x, y, w, h place it on the image as fractions; a tag
+    Instagram sends without a place stays at 0 and is listed beside the media."""
     found = []
+    def add(kind, url, label, place=None):
+        if url.startswith(('https://', 'http://')) and all(f['url'] != url for f in found):
+            found.append({'kind': kind, 'url': url, 'label': str(label)} | _box(place))
+    def person(name, place=None):
+        name = str(name or '')
+        if re.fullmatch(r'[A-Za-z0-9._]{1,30}', name):
+            add('mention', f'https://www.instagram.com/{name}/', '@' + name, place)
     for sticker in _get(item, 'stickers', []) or []:
         link = _get(sticker, 'story_link')
         url = _url(_get(link, 'url')) if link else ''
         if url:
-            found.append({'url': url, 'label': str(_get(link, 'link_title', '') or _get(link, 'display_url', '') or url)} | _box(sticker))
+            add('link', url, _get(link, 'display_url', '') or _get(link, 'link_title', '') or url, sticker)
     for link in _get(item, 'links', []) or []:
         url = _url(_get(link, 'webUri'))
-        if url and all(f['url'] != url for f in found):
-            found.append({'url': url, 'label': url} | _box(link))
+        add('link', url, url, link)
     for mention in _get(item, 'mentions', []) or []:
-        name = str(_get(_get(mention, 'user'), 'username', '') or '')
-        if re.fullmatch(r'[A-Za-z0-9._]{1,30}', name):
-            found.append({'url': f'https://www.instagram.com/{name}/', 'label': '@' + name} | _box(mention))
-    return [f for f in found if f['url'].startswith(('https://', 'http://'))][:20]
+        person(_get(_get(mention, 'user'), 'username'), mention)
+    for tag in _get(item, 'usertags', []) or []:
+        person(_get(_get(tag, 'user'), 'username'))
+    for author in _get(item, 'coauthor_producers', []) or []:
+        person(_get(author, 'username'))
+    for tag in _get(item, 'hashtags', []) or []:
+        name = str(_get(_get(tag, 'hashtag'), 'name', '') or '')
+        if re.fullmatch(r'[\w.]{1,100}', name):
+            add('hashtag', f'https://www.instagram.com/explore/tags/{name}/', '#' + name, tag)
+    places = [(_get(entry, 'location'), entry) for entry in _get(item, 'locations', []) or []]
+    if _get(item, 'location'):
+        places.append((_get(item, 'location'), None))
+    for place, box in places:
+        if str(_get(place, 'pk', '') or '').isdigit() and _get(place, 'name'):
+            add('place', f'https://www.instagram.com/explore/locations/{_get(place, "pk")}/', _get(place, 'name'), box)
+    for media in _get(item, 'medias', []) or []:
+        code = str(_get(media, 'media_code', '') or '')
+        if re.fullmatch(r'[A-Za-z0-9_-]{1,80}', code):
+            reel = _get(media, 'product_type') == 'clips'
+            add('post', f'https://www.instagram.com/{"reel" if reel else "p"}/{code}/', 'Reel ricondiviso' if reel else 'Post ricondiviso', media)
+    return found[:20]
 
 
 class MediaIterator:

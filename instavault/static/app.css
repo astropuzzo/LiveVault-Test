@@ -232,7 +232,25 @@ input[readonly]{background:var(--raised)}
 .feed-meta span,.feed-meta .link{display:inline-flex;align-items:center;gap:6px;min-height:32px;color:inherit}
 .feed-meta svg{width:18px;height:18px}
 .feed-caption{font-size:14px;line-height:20px;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere;white-space:pre-line}
+.feed-caption .link{display:inline;min-height:0}
 .feed-more{height:1px}
+.stamp .link,.stamp .mention{font:inherit}
+.stamp .link{min-height:0}
+.avatar-link{display:inline-grid;flex:none;padding:0;border-radius:50%}
+.avatar-link:hover .avatar{box-shadow:0 0 0 2px var(--line)}
+
+/* Imports: the day is the landmark, the profile the group, so a glance answers "what arrived today, and from whom". */
+.imports{display:grid;gap:32px}
+.import-day{display:grid;gap:12px}
+.import-day>h2{position:sticky;top:0;z-index:2;padding:8px 0;background:var(--bg);font-size:20px;line-height:28px;font-weight:500}
+.import-day>h2::first-letter{text-transform:uppercase}
+.import-group{display:grid;gap:10px;padding-bottom:20px;border-bottom:1px solid var(--line)}
+.import-day .import-group:last-child{border-bottom:0;padding-bottom:0}
+.import-group>header{display:flex;align-items:center;gap:10px;min-width:0}
+.import-group>header>div{display:grid;min-width:0}
+.import-group .name{justify-self:start;min-height:24px;overflow-wrap:anywhere}
+.import-group .stamp{overflow-wrap:anywhere}
+.import-tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(132px,1fr));gap:4px}
 .collections-row{position:relative;margin-bottom:8px}
 .collections{display:flex;gap:16px;overflow-x:auto;padding:4px 4px 16px;scrollbar-width:none;overscroll-behavior-x:contain;touch-action:pan-x pan-y}
 .scroll-back,.scroll-more{position:absolute;top:42px;z-index:1}
@@ -374,17 +392,21 @@ input[readonly]{background:var(--raised)}
 .viewer-shared{display:flex;align-items:center;gap:8px;padding:12px 16px 0;font-size:13px;line-height:18px;color:var(--text-2)}
 .viewer-shared svg{width:18px;height:18px;flex:none}
 .viewer-shared .link{min-height:24px;font-weight:600}
-.viewer-links{list-style:none;margin:0;padding:0 16px 12px;display:grid;gap:4px}
-.viewer-links a{display:flex;align-items:center;gap:8px;min-height:40px;padding:8px 12px;border:1px solid var(--line);border-radius:8px;color:var(--text);overflow-wrap:anywhere}
-.viewer-links a:hover{background:var(--raised)}
-.viewer-links svg{width:16px;height:16px;flex:none}
-.story-links{position:absolute;z-index:1}
-.story-links a{position:absolute;min-width:24px;min-height:24px;border-radius:8px}
-.story-links a:hover,.story-links a:focus-visible{box-shadow:0 0 0 2px #fff,0 0 0 4px rgba(0,0,0,.5)}
+.viewer-links{list-style:none;margin:0;padding:16px 16px 12px;display:flex;flex-wrap:wrap;gap:6px}
+.viewer-caption:not([hidden])+.viewer-links{padding-top:0}
+.viewer-links li{max-width:100%}
+.viewer-links .mention{display:block}
+.tag-chip{display:inline-flex;align-items:center;gap:6px;max-width:100%;min-height:40px;padding:8px 12px;border:1px solid var(--line);border-radius:8px;color:var(--text);font-size:13px;line-height:18px;text-align:left;overflow-wrap:anywhere;transition:background-color 150ms var(--ease)}
+.tag-chip:hover{background:var(--raised)}
+.tag-chip:active{background:var(--raised-2)}
+.tag-chip svg{width:16px;height:16px;flex:none}
+/* The layer lets taps through to the story; only the tagged areas catch them, and they stay visible because a story shows no other hint. */
+.story-links{position:absolute;z-index:1;pointer-events:none}
+.story-links a,.story-links button{position:absolute;min-width:44px;min-height:44px;padding:0;border-radius:8px;box-shadow:0 0 0 1px rgba(255,255,255,.7),0 0 0 2px rgba(0,0,0,.35);pointer-events:auto}
+.story-links a:hover,.story-links button:hover,.story-links a:focus-visible,.story-links button:focus-visible{box-shadow:0 0 0 2px #fff,0 0 0 4px rgba(0,0,0,.5)}
 .viewer-scroll{flex:1;min-height:0;overflow:auto}
 .tag-link{display:inline;min-height:0;padding:0;font:inherit;font-weight:600;color:var(--text)}
 .mention{position:relative;display:inline-block;white-space:normal}
-.mention .menu{top:24px;left:0}
 #monthFilter{width:auto;min-width:0;max-width:170px}
 .viewer-caption{padding:16px;white-space:pre-wrap;overflow-wrap:anywhere}
 .viewer-comments{list-style:none;margin:0;padding:0 16px 16px;display:grid;gap:14px}
@@ -393,7 +415,7 @@ input[readonly]{background:var(--raised)}
 .viewer-comments p{font-size:14px;line-height:20px;overflow-wrap:anywhere}
 .viewer-comments .name{font-weight:600;min-height:24px}
 .viewer-comments .stamp{font-size:12px;margin-top:2px}
-.menu{position:absolute;z-index:5;top:28px;left:42px;min-width:220px;display:grid;padding:6px;border:1px solid var(--line);border-radius:10px;background:var(--bg);box-shadow:0 12px 32px rgba(0,0,0,.25)}
+.menu{position:fixed;z-index:30;top:0;left:0;min-width:220px;max-width:calc(100vw - 16px);display:grid;padding:6px;border:1px solid var(--line);border-radius:10px;background:var(--bg);box-shadow:0 12px 32px rgba(0,0,0,.25)}
 .menu-title{display:grid;padding:8px 10px;font-weight:600}
 .menu-title small{font-weight:400;color:var(--muted)}
 .menu a,.menu button{display:flex;align-items:center;gap:10px;min-height:44px;padding:0 10px;border-radius:6px;color:var(--text);text-align:left}
@@ -473,6 +495,13 @@ input[readonly]{background:var(--raised)}
   .collection{flex-basis:64px}
   .collections{margin:0 -16px 8px;padding:4px 16px 12px}
   .main>.view>.grid{margin:0 -16px}
+  .toolbar .filters,.page-head .filters{flex-wrap:wrap}
+  .toolbar .search{flex:1 1 100%}
+  .import-day>h2{top:52px}
+  .import-tiles{grid-template-columns:repeat(3,minmax(0,1fr));gap:2px;margin:0 -16px}
+  #importsView .filters{flex-wrap:wrap}
+  #importsView .filters select{flex:1 1 40%}
+  #importsView .filters .button{flex:1 1 100%}
   .grid{gap:2px}
   .row{flex-wrap:wrap;align-items:flex-start}
   .row-side{width:100%;justify-items:start;padding-left:56px}
@@ -487,8 +516,16 @@ input[readonly]{background:var(--raised)}
   .round-button.previous{left:8px}
   .round-button.next{right:8px}
 }
+/* Eight tabs stop reaching 44px here: Attività stays one tap away from Importati. */
+@media (max-width:351px){
+  .nav-item[data-view="activity"]{display:none}
+}
 @media (pointer:coarse){
   .tabs button,.nav-item{min-height:56px}
+  .tag-chip{min-height:44px}
+  .link.name{min-height:44px}
+  .avatar-link{min-width:44px;min-height:44px;place-items:center}
+  .feed-caption .link.name{min-height:0}
 }
 @media (prefers-reduced-motion:reduce){
   *,*::before,*::after{transition:none!important;animation:none!important}

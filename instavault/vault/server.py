@@ -325,8 +325,8 @@ class Handler(BaseHTTPRequestHandler):
         if path == '/api/summary':
             with store.db() as c:
                 counts = dict(c.execute('''SELECT COUNT(*) AS posts,COALESCE(SUM(kind='reel'),0) AS reels,
-                  COALESCE(SUM(kind='story'),0) AS stories FROM posts WHERE complete=1
-                  AND profile_id IN (SELECT id FROM profiles WHERE removed=0)''').fetchone())
+                  COALESCE(SUM(kind='story'),0) AS stories,COALESCE(SUM(archived_at>=?),0) AS imported FROM posts WHERE complete=1
+                  AND profile_id IN (SELECT id FROM profiles WHERE removed=0)''', (store.now()-86400,)).fetchone())
                 jobs = [dict(r) for r in c.execute('''SELECT j.*,p.username FROM jobs j JOIN profiles p ON p.id=j.profile_id
                     WHERE state IN ('running','queued','cancel_requested') ORDER BY j.id LIMIT 100''')]
             return self.send_json({'counts': counts, 'profiles': store.profile_rows(), 'jobs': jobs,

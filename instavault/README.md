@@ -184,6 +184,19 @@ at most once per six-hour maintenance window: one post each, one comments
 page; refresh ages are 6 hours / 24 hours / 3 days for posts younger than
 2 / 7 / 30 days. Stored interactions stay available while reads are deferred.
 
+`posts.links` holds what a post or story points to, each entry with a `kind`:
+`link`, `mention`, `hashtag`, `place` or `post` (a reshared post or Reel), plus
+its place on the image when Instagram sends one. Post people, coauthors and
+locations come from the same listing as the media, so they cost no request, and
+any listing that passes over an archived item fills in its tags. Stories that
+have left Instagram and older posts no longer listed keep what they had. In the
+viewer a mention opens a small menu, or the archive when the profile is known; a
+hashtag searches the archive; outside links skip Instagram's redirect.
+
+Importati (`/api/posts?sort=archived`) lists content by the day InstaVault saved
+it, then by profile, with the publication dates in each group so a historical
+import reads differently from fresh posts. Controls without news stay in Attività.
+
 ## Request policy — verified 6 November 2026
 
 `vault/request_policy.py` is applied below the SDK's pagination layer to every

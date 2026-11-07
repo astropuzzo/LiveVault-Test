@@ -554,9 +554,13 @@ class Worker:
         # A tagged post is someone else's: its own key, so it never mixes with the profile's posts.
         external = ('story:' if story else 'tagged:' if kind == 'tagged' else 'post:') + shortcode
         likes, comments = engagement(item) if not story else (None, None)
+        links = json.dumps(getattr(item, 'links', []) or [], ensure_ascii=False)
         with store.db() as c:
             existing = c.execute('SELECT * FROM posts WHERE profile_id=? AND external_key=?', (profile['id'], external)).fetchone()
             assets = list(c.execute('SELECT * FROM media WHERE post_id=?', (existing['id'],))) if existing else []
+            # Any listing that passes by fills in the tags, with no request of its own.
+            if existing and links != '[]' and links != existing['links']:
+                c.execute('UPDATE posts SET links=? WHERE id=?', (links, existing['id']))
             if existing and likes is not None:
                 c.execute('UPDATE posts SET like_total=?,comment_total=?,counts_at=? WHERE id=?', (likes, comments, store.now(), existing['id']))
             if existing and existing['complete'] and assets and all(self.stored(a) for a in assets):
@@ -581,7 +585,6 @@ class Worker:
         if not permalink:
             permalink = f'https://www.instagram.com/stories/{profile["username"]}/{shortcode}/' if story else f'https://www.instagram.com/p/{shortcode}/'
         owner = str(getattr(item, 'owner_username', '') or '')[:30]
-        links = json.dumps(getattr(item, 'links', []) or [], ensure_ascii=False) if story else ''
         if not story and item.typename == 'GraphSidecar':
             nodes = list(item.get_sidecar_nodes())
             parts = [(n.is_video, n.video_url if n.is_video else n.display_url, n.display_url) for n in nodes]

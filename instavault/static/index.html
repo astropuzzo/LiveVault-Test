@@ -40,6 +40,7 @@
 <symbol id="i-sound" viewBox="0 0 24 24"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path d="M15.5 9a4.2 4.2 0 0 1 0 6M18 6.5a7.8 7.8 0 0 1 0 11"/></symbol>
 <symbol id="i-tag" viewBox="0 0 24 24"><path d="M12 3.5 4 7v10l8 3.5 8-3.5V7z"/><circle cx="12" cy="10" r="2.5"/><path d="M8 16c.8-1.6 2.2-2.5 4-2.5s3.2.9 4 2.5"/></symbol>
 <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="10" rx="2"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5"/></symbol>
+<symbol id="i-place" viewBox="0 0 24 24"><path d="M12 21s-7-6.2-7-11.5a7 7 0 0 1 14 0C19 14.8 12 21 12 21Z"/><circle cx="12" cy="9.5" r="2.5"/></symbol>
 <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.4-4.4"/></symbol>
 <symbol id="i-logout" viewBox="0 0 24 24"><path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4M9.5 16.5 5 12l4.5-4.5M5 12h10"/></symbol>
 </defs></svg>
@@ -70,6 +71,7 @@
     <div class="nav-items">
       <a class="nav-item" href="#home" data-view="home"><svg aria-hidden="true"><use href="#i-home"/></svg><span>Home</span></a>
       <a class="nav-item" href="#archive" data-view="archive"><svg aria-hidden="true"><use href="#i-grid"/></svg><span>Archivio</span><small id="navCount" class="nav-count"></small></a>
+      <a class="nav-item" href="#imports" data-view="imports"><svg aria-hidden="true"><use href="#i-download"/></svg><span>Importati</span><small id="navImports" class="nav-count" title="Importati nelle ultime 24 ore"></small></a>
       <a class="nav-item" href="#profiles" data-view="profiles"><svg aria-hidden="true"><use href="#i-users"/></svg><span>Profili</span></a>
       <a class="nav-item" href="#favorites" data-view="favorites"><svg aria-hidden="true"><use href="#i-heart"/></svg><span>Salvati</span></a>
       <a class="nav-item" href="#deleted" data-view="deleted"><svg aria-hidden="true"><use href="#i-deleted"/></svg><span>Cancellati</span></a>
@@ -175,6 +177,24 @@
         </div>
         <button id="loadMore" class="button load-more" type="button" hidden>Carica altri</button>
       </div>
+    </section>
+
+    <section id="importsView" class="view" aria-labelledby="importsTitle" hidden>
+      <header class="page-head">
+        <div>
+          <h1 id="importsTitle">Importati</h1>
+          <p id="importsMeta" class="page-meta"></p>
+        </div>
+        <div class="filters">
+          <label class="sr-only" for="importsProfile">Profilo</label>
+          <select id="importsProfile"><option value="">Tutti i profili</option></select>
+          <label class="sr-only" for="importsKind">Tipo di contenuto</label>
+          <select id="importsKind"><option value="">Tutti i tipi</option><option value="post">Post</option><option value="reel">Reel</option><option value="story">Storie</option><option value="highlight">In evidenza</option><option value="tagged">Taggati</option></select>
+          <a class="button" href="#activity" data-view="activity">Attività</a>
+        </div>
+      </header>
+      <div id="importsList" class="imports" aria-busy="false"></div>
+      <button id="importsMore" class="button load-more" type="button" hidden>Carica altri</button>
     </section>
 
     <section id="profilesView" class="view" aria-labelledby="profilesTitle" hidden>
@@ -370,7 +390,7 @@
       <p id="postShared" class="viewer-shared" hidden></p>
       <div class="viewer-scroll">
         <p id="postCaption" class="viewer-caption"></p>
-        <ul id="postLinks" class="viewer-links" aria-label="Link nella storia" hidden></ul>
+        <ul id="postLinks" class="viewer-links" aria-label="Tag e link" hidden></ul>
         <ol id="postComments" class="viewer-comments" aria-label="Commenti" hidden></ol>
       </div>
       <p id="postMetadata" class="stamp viewer-stamp"></p>
